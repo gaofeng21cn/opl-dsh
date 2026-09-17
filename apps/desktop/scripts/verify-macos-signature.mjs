@@ -115,7 +115,14 @@ function runCodeSign(args) {
 export async function signMacOSRuntimeCode(path, identifier, expected) {
   await runAppleCommandAsync('/usr/bin/codesign', [
     '--force',
-    '--sign', expected.signingIdentity,
+    // The release environment carries the certificate qualifier without its
+    // class prefix, and `codesign` resolves a bare name against every class.
+    // A keychain that holds a same-named `Apple Distribution` certificate —
+    // common on a machine that also ships Mac App Store builds — then fails
+    // with "ambiguous". Naming the class makes the lookup exact; the caller
+    // cannot supply it itself, because `resolveMacOSSigningEnvironment` rejects
+    // a value that already carries the prefix.
+    '--sign', `Developer ID Application: ${expected.signingIdentity}`,
     '--identifier', identifier,
     '--timestamp',
     '--options', 'runtime',

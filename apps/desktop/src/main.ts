@@ -18,6 +18,7 @@ import { DesktopHostProcess } from './host-process.ts'
 import { DesktopBackendController, type DesktopBackendState } from './backend-controller.ts'
 import { DESKTOP_IPC, type DesktopUpdateState } from './ipc.ts'
 import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
+import { desktopApplicationMenuTemplate, installDesktopContextMenu } from './menus.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { desktopErrorState } from './startup-error.ts'
@@ -107,6 +108,7 @@ function createWindow(preload: string, show = false): BrowserWindow {
     },
   })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  installDesktopContextMenu(window)
   window.webContents.on('will-navigate', (event, url) => {
     if (new URL(url).protocol !== `${SCHEME}:`) event.preventDefault()
     const page = emergencyPages.get(window)
@@ -438,9 +440,9 @@ async function main(): Promise<void> {
     void pluginWindow.loadURL(`${SCHEME}://shell/plugin-manager.html`)
   }
 
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{
-    label: process.platform === 'darwin' ? app.name : messages.application,
-    submenu: [
+  Menu.setApplicationMenu(Menu.buildFromTemplate(desktopApplicationMenuTemplate(
+    process.platform === 'darwin' ? app.name : messages.application,
+    [
       {
         label: development === undefined ? messages.pluginsMenu : messages.pluginsMenuPackagedOnly,
         accelerator: 'CmdOrCtrl+,',
@@ -451,7 +453,7 @@ async function main(): Promise<void> {
       { type: 'separator' },
       { role: 'quit' },
     ],
-  }]))
+  )))
 
   const createMainWindow = (): BrowserWindow => {
     const window = createWindow(appPreload, true)
