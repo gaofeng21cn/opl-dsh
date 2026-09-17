@@ -1,5 +1,4 @@
 /** Keep experimental packages outside default installations, runtime imports, and shipped compositions. */
-
 import { existsSync, globSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, extname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,6 +9,7 @@ import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { loadOverlayPatches } from '../packages/boot/app-boot/src/index.ts'
 import { composeEntries } from '../packages/boot/app-boot/src/profile.ts'
 import { isCordisGroupEntry, loadCordisYaml } from './cordis-yaml.ts'
+import { isWorkspacePackageName } from './package-scope.ts'
 import {
   collectRuntimeLocalSourceSpecifiers,
   collectRuntimeSourceSpecifiers,
@@ -112,7 +112,9 @@ export function verifyDefaultProductIsolation(root: string): ProductIsolationRes
     }
     const pkg = packages.get(packageName)
     if (pkg !== undefined) add(pkg, origin)
-    else if (packageName.startsWith('@deepseek-ai/')) failures.push(`${origin}: unknown workspace package ${name}`)
+    // A dependency that carries a workspace scope but resolves to nothing is a
+    // layout bug worth failing on, under either scope.
+    else if (isWorkspacePackageName(packageName)) failures.push(`${origin}: unknown workspace package ${name}`)
   }
   const dependency = (name: string, range: string, owner: Package, origin: string): void => {
     reference(name, origin, owner)

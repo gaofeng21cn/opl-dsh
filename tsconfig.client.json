@@ -31,6 +31,7 @@
     "packages/client/tsdown.client.ts",
     "scripts/client-build-environment.ts",
     "scripts/bundle-input-isolation.ts",
+    "scripts/package-scope.ts",
     "scripts/*.client.spec.ts",
     "scripts/client-bundle-css.spec.ts",
     "scripts/client-bundle-purity.spec.ts"
@@ -111,6 +112,7 @@
     { "path": "./packages/client/ui-settings" },
     { "path": "./packages/client/ui-settings-general" },
     { "path": "./packages/client/ui-settings-models" },
+    { "path": "./packages/client/ui-settings-opl-gateway" },
     { "path": "./packages/client/ui-settings-plugin-inventory" },
     { "path": "./packages/client/ui-settings-unarchive-sessions" },
     { "path": "./packages/client/locale" },

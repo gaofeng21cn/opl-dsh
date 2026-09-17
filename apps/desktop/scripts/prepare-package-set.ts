@@ -23,6 +23,7 @@ import {
 } from '../src/core-package-set.ts'
 import { capture } from '../../../scripts/release/process.ts'
 import { tarballFiles } from '../../../scripts/release/tarball.ts'
+import { isWorkspacePackageName } from '../../../scripts/package-scope.ts'
 import { resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
 
 const DSH_PACKAGE = '@deepseek-ai/dsh'
@@ -65,7 +66,11 @@ export function selectDesktopPackageClosure(
     for (const section of REQUIRED_DEPENDENCY_SECTIONS) {
       for (const dependency of dependencyNames(packed.manifest, section)) {
         if (available.has(dependency)) visit(dependency)
-        else if (dependency.startsWith('@deepseek-ai/')) {
+        // A workspace-owned dependency that the pack inputs did not carry is a
+        // packaging bug, not a third-party package to resolve later: the
+        // runtime tree is complete by construction, so omitting one silently
+        // would ship an application whose profile cannot boot.
+        else if (isWorkspacePackageName(dependency)) {
           throw new Error(`desktop package set: ${name} requires unpacked internal package ${dependency}`)
         }
       }
