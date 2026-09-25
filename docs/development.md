@@ -1,6 +1,6 @@
 # 开发与验证
 
-OPL DSH 独立维护增强包，复用未修改的官方 DeepSeek Harness 桌面。当前增强版本为 0.2.0，配套验收的官方版本为 0.1.7-rc.2，支持 Apple Silicon Mac 与 Windows x64。
+OPL DSH 独立维护增强包，复用未修改的官方 DeepSeek Harness 桌面。当前增强版本为 0.2.1，配套验收的官方版本为 0.1.7-rc.2，支持 Apple Silicon Mac 与 Windows x64。
 
 ## 代码与构建
 
@@ -9,7 +9,7 @@ OPL DSH 独立维护增强包，复用未修改的官方 DeepSeek Harness 桌面
 - `src/client`：Gateway、搜索、首启和协作设置界面。
 - `installer`：官方包校验、独立 profile、旧数据导入、快捷入口、Skill 及增强自动更新。
 
-开发需要 Node.js 24；使用者无需单独安装运行时。
+开发需要 Node.js 24；分发 ZIP 使用 Python 3 标准库写入跨平台 UTF-8 文件名。使用者无需单独安装这些运行时。
 
 ```sh
 npm ci
@@ -37,7 +37,7 @@ node package.mjs
 
 官方桌面由官方更新器负责。OPL 快捷入口在启动官方进程前调用 `update.mjs`，读取本仓库最新正式 Release 的 `OPL-DSH-Enhancements.zip`，验证 GitHub 资产摘要、内部清单及每个文件，再使用官方插件管理器安装。增强更新不会重装或修改官方桌面。
 
-运行中 profile 会跳过更新；同一更新过程使用独占锁；离线或验证失败继续旧版。安装失败会尝试恢复上一增强版本。状态写入 `enhancement-update.json`，旧 release 与源数据保留。安装包内的首次官方下载版本固定，后续官方更新可能改变运行时版本；目前 peer 范围为 `>=0.1.7-rc.2 <0.2.0`，这不是对所有未来版本的验收承诺。
+运行中 profile 会跳过更新；同一更新过程使用独占锁；离线或验证失败继续旧版。安装失败会尝试恢复上一增强版本。状态写入 `enhancement-update.json`，旧 release 与源数据保留。安装包内的首次官方下载版本固定，后续官方更新可能改变运行时版本；目前 peer 范围为 `>=0.1.7-rc.2 <0.2.1`，这不是对所有未来版本的验收承诺。
 
 首次欢迎衔接使用父子私有 CDP pipe，仅调用官方 skip 方法；对未知官方版本保留官方欢迎窗口。生产启动不开放 TCP 调试端口，不修改官方签名资源。测试时使用过仅隔离环境启用的 pipe relay，它不包含在分发包内。
 
