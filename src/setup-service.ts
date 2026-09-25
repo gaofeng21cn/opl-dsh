@@ -79,4 +79,3 @@ export function installSetupChannel(ctx: Context): void {
     }))
   }
 }
-
