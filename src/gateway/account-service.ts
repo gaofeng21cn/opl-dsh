@@ -5,10 +5,6 @@
  * machine with no OPL installation can sign in, receive an inference key, and
  * see the account. Nothing here shells out to a command line.
  *
- * OPL is still consulted, but only as a *convenience*: if this machine already
- * signed in through the OPL application, its recorded account and binding are
- * read so the operator needs no second sign-in. That read is a plain file read
- * (see `./opl-credentials.ts`) and never a requirement.
  */
 
 import { homedir, hostname } from 'node:os'
@@ -27,8 +23,6 @@ import {
   type GatewayUsage,
 } from './gateway-control.ts'
 import { keyFingerprint, readAdoptedFingerprint, writeAdoptedFingerprint } from './adoption.ts'
-import { importOplGatewayKey, oplGatewayStateDirectories, readOplGatewayAccount } from './opl-credentials.ts'
-import type { OplGatewayAccount } from './opl-credentials.ts'
 import { clearFacts, clearSession, readFacts, readSession, writeFacts, writeSession } from './session-store.ts'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -46,9 +40,6 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 
 /** Cordis service key and Remote namespace of this surface. */
 export const OPL_GATEWAY_ACCOUNT_SERVICE = 'oplGatewayAccount'
-
-/** OPL account statuses that mean the recorded account is usable as it stands. */
-const CONNECTED_OPL_STATUSES = new Set(['connected', 'setup_required'])
 
 /** Map one control failure reason onto the vocabulary this surface declares. */
 function remoteCode(reason: string): keyof import('@deepseek-ai/dsh-typert-protocol').RemoteErrorDetailsMap {
@@ -113,8 +104,6 @@ export class OplGatewayAccountService extends TypertRemoteService {
       readonly endpoint: () => string
       /** Models this route advertises. */
       readonly models: () => readonly GatewayAccountModel[]
-      /** OPL state directory consulted as a convenience, never a requirement. */
-      readonly stateDirectory?: () => string | readonly string[]
       /** Control transport override, for tests. */
       readonly control?: GatewayControlClient
       /** Last successful channel, for the account page. */
@@ -143,7 +132,7 @@ export class OplGatewayAccountService extends TypertRemoteService {
 
   /**
    * Whether the adapter can authenticate right now. A key stored by the page,
-   * adopted from OPL, or resolved from the environment all count.
+   * or resolved from this profile’s environment, counts.
    * @returns whether the reference resolves.
    */
   private async keyReady(): Promise<boolean> {
@@ -151,19 +140,7 @@ export class OplGatewayAccountService extends TypertRemoteService {
     if (credentials === undefined) return false
     const hit = await credentials.resolve(this.options.credentialRef())
     if (hit !== undefined && hit.value.length > 0) return true
-    // Adoption covers the common case, but a deployment whose credential store
-    // refused the write still authenticates through OPL's own binding, and the
-    // page must not claim a working route has no key.
-    return this.importedKey() !== undefined
-  }
-
-  private importedKey(): ReturnType<typeof importOplGatewayKey> {
-    try {
-      return importOplGatewayKey()
-    }
-    catch {
-      return undefined
-    }
+    return false
   }
 
   /**
@@ -185,16 +162,6 @@ export class OplGatewayAccountService extends TypertRemoteService {
     return configured === undefined || configured === '' ? join(homedir(), '.dsh') : configured
   }
 
-  /** OPL's recorded account, read straight from its state directory. */
-  private oplAccount(): OplGatewayAccount | undefined {
-    try {
-      return readOplGatewayAccount(this.options.stateDirectory?.() ?? oplGatewayStateDirectories())
-    }
-    catch {
-      return undefined
-    }
-  }
-
   /** Facts assembled from one control-plane read. */
   private factsFrom(
     profile: GatewayProfile,
@@ -213,25 +180,6 @@ export class OplGatewayAccountService extends TypertRemoteService {
       totalCost: usage?.totalCost ?? null,
       usageCurrency: usage?.currency ?? profile.balanceCurrency,
       keyName,
-    }
-  }
-
-  /** Account facts for an account OPL recorded. */
-  private factsFromOpl(account: OplGatewayAccount): GatewayAccountFacts {
-    return {
-      displayName: account.displayName,
-      email: account.email,
-      status: account.accountStatus ?? account.status,
-      balanceAmount: account.balanceAmount,
-      balanceCurrency: account.balanceCurrency,
-      todayTokens: account.todayTokens,
-      totalTokens: account.totalTokens,
-      todayCost: account.todayCost,
-      totalCost: account.totalCost,
-      usageCurrency: account.usageCurrency,
-      keyName: account.keyName,
-      observedAt: account.observedAt,
-      stale: account.stale,
     }
   }
 
@@ -269,40 +217,8 @@ export class OplGatewayAccountService extends TypertRemoteService {
         }
       }
     }
-    // OPL is a convenience source: a machine that signed in through the OPL
-    // application needs no second sign-in here.
-    const opl = this.oplAccount()
-    if (opl !== undefined) {
-      const attention = !CONNECTED_OPL_STATUSES.has(opl.status) || !base.keyReady
-      return {
-        ...base,
-        phase: attention ? 'unavailable' : 'connected',
-        source: 'opl',
-        account: this.factsFromOpl(opl),
-        ...attention ? { error: { code: base.keyReady ? opl.status : 'group_selection_required', message: this.attentionMessage(base.keyReady ? opl.status : 'group_selection_required') } } : {},
-      }
-    }
     if (this.failure !== undefined) return { ...base, phase: 'unavailable', error: this.failure }
     return { ...base, phase: 'signed-out' }
-  }
-
-  /** What the operator has to do next, in terms they can act on. */
-  private attentionMessage(problem: string | null): string {
-    switch (problem) {
-      case 'setup_required':
-      case 'group_selection_required':
-        return 'Choose a key group for this account, then sign in again'
-      case 'reauth_required':
-        return 'Sign in again to renew this account'
-      case 'managed_key_missing':
-      case 'managed_key_conflict':
-      case 'managed_key_identity_drift':
-        return 'The account key needs repair; sign in again'
-      case 'account_disabled':
-        return 'This gateway account is disabled'
-      default:
-        return 'This account needs attention'
-    }
   }
 
   /**

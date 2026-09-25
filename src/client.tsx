@@ -5,9 +5,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { Context } from '@deepseek-ai/cordis'
 import remote from './generated/gateway-remote.mjs'
-import * as settings from './client/gateway/index.ts'
-import { OplGatewaySection } from './client/gateway/OplGatewaySection.tsx'
-export const inject = ['remote', 'slots', 'locale']
+import * as settings from './client/gateway/index.tsx'
+import { SetupScreen } from './client/SetupScreen.tsx'
+import type { LoginChoice } from './setup-config.ts'
+export const inject = ['remote', 'slots', 'locale', 'configForms']
 /** Register remote calls and settings with the same plugin lifecycle.
  * @param ctx - Official browser context.
  * @returns After the Gateway Remote namespace is mounted.
@@ -25,12 +26,13 @@ export async function apply(ctx: Context): Promise<void> {
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({
         name: 'shell.overlay', id: 'opl-setup', locale: 'settings.oplGateway',
         inject: () => ({
+          choose: (choice: LoginChoice) => ctx.configForms.get('opl-suite').set('loginChoice', choice),
           status: async () => unwrap(await ctx.remote.oplGatewayAccount.status()),
           signIn: async (email: string, password: string) => unwrap(await ctx.remote.oplGatewayAccount.signIn(email, password)),
           refresh: async () => unwrap(await ctx.remote.oplGatewayAccount.refresh()),
           signOut: async () => unwrap(await ctx.remote.oplGatewayAccount.signOut()),
         }),
-      }, (props) => <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'var(--bg-main, white)', overflow: 'auto', padding: '40px max(24px, calc((100vw - 720px) / 2))' }}><OplGatewaySection {...props} /></div>))
+      }, (props) => <SetupScreen {...props} close={() => {}} />))
     }
   })
 }

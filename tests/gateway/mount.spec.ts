@@ -7,7 +7,7 @@
  * directory (because that page renders an editable profile card, and this
  * route has no profile to edit — its surface is the account page).
  */
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -60,6 +60,19 @@ async function mount(): Promise<Context> {
 }
 
 describe('OPL Gateway composition', () => {
+  it('does not treat another OPL app account as this installation’s login', async () => {
+    await writeFile(join(stateRoot, 'account.json'), JSON.stringify({
+      surface_kind: 'opl_gateway_account_state.v1', status: 'connected',
+      snapshot: { email: 'previous@example.test' },
+    }), { mode: 0o600 })
+    const ctx = await mount()
+    const status = await ctx.get('oplGatewayAccount')?.status()
+    expect(status).toMatchObject({ phase: 'signed-out', keyReady: false })
+    expect(status?.account).toBeUndefined()
+    expect(status?.error).toBeUndefined()
+    expect(status?.source).toBeUndefined()
+  })
+
   it('registers the route so its model is selectable', async () => {
     const ctx = await mount()
     expect(ctx.llm.listProviders()).toContainEqual({ id: 'opl-gateway', name: 'OPL Gateway' })
@@ -134,7 +147,7 @@ describe('account flow without any local OPL installation', () => {
     return { control, calls, keys }
   }
 
-  async function service(control: GatewayControlClient, home: string) {
+  async function service(control: GatewayControlClient) {
     // A bare context: the plugin itself is covered above, and mounting it would
     // register the very service this harness constructs by hand.
     const ctx = await seams()
@@ -145,7 +158,6 @@ describe('account flow without any local OPL installation', () => {
         credentialRef: () => (ctx.get('llm'), 'OPL_GATEWAY_DEEPSEEK_API_KEY' as never),
         endpoint: () => 'https://gateway.example/v1',
         models: () => [{ id: 'deepseek-flash', name: 'DeepSeek-V4.1-Flash' }],
-        stateDirectory: () => home,
         control,
       }),
       credentials: credentials!,
@@ -154,7 +166,7 @@ describe('account flow without any local OPL installation', () => {
 
   it('takes a fresh machine from no account to a working key', async () => {
     const { control, calls } = gateway()
-    const { account, credentials } = await service(control, stateRoot)
+    const { account, credentials } = await service(control)
 
     expect(await account.status()).toMatchObject({ phase: 'signed-out', keyReady: false })
 
@@ -180,7 +192,7 @@ describe('account flow without any local OPL installation', () => {
       id: '9', name, key: 'sk-existing', status: 'active', groupId: '22', raw: { id: 9, name, status: 'active' },
     }
     const { control, calls } = gateway({ existingKeys: [existing, { ...existing, id: '10', name: gatewayKeyName('Codex'), groupId: '3' }] })
-    const { account, credentials } = await service(control, stateRoot)
+    const { account, credentials } = await service(control)
 
     expect((await account.signIn('person@example.test', 'right')).createdKey).toBe(false)
     expect((await credentials.resolve('OPL_GATEWAY_DEEPSEEK_API_KEY' as never))?.value).toBe('sk-existing')
@@ -189,7 +201,7 @@ describe('account flow without any local OPL installation', () => {
 
   it('reports bad credentials without leaving a session behind', async () => {
     const { control } = gateway()
-    const { account, credentials } = await service(control, stateRoot)
+    const { account, credentials } = await service(control)
 
     await expect(account.signIn('person@example.test', 'wrong')).rejects.toMatchObject({
       code: 'opl-gateway/credentials',
@@ -200,7 +212,7 @@ describe('account flow without any local OPL installation', () => {
 
   it('releases the key on sign-out and forgets the session', async () => {
     const { control, calls } = gateway()
-    const { account, credentials } = await service(control, stateRoot)
+    const { account, credentials } = await service(control)
     await account.signIn('person@example.test', 'right')
 
     expect(await account.signOut()).toMatchObject({ phase: 'signed-out', keyReady: false })
@@ -214,7 +226,7 @@ describe('account flow without any local OPL installation', () => {
 
   it('restores a missing compatibility credential when refreshing an existing login', async () => {
     const { control, calls } = gateway()
-    const { account, credentials } = await service(control, stateRoot)
+    const { account, credentials } = await service(control)
     await account.signIn('person@example.test', 'right')
     await credentials.unset('OPL_GATEWAY_CODEX_API_KEY' as never)
     expect(await account.refresh()).toMatchObject({ keyReady: true, codexKeyReady: true })
@@ -225,7 +237,7 @@ describe('account flow without any local OPL installation', () => {
   it('keeps the default route usable when the Codex group is unavailable', async () => {
     const { control } = gateway()
     control.groups = async () => [{ id: '22', label: 'DeepSeek' }]
-    const { account } = await service(control, stateRoot)
+    const { account } = await service(control)
     const result = await account.signIn('person@example.test', 'right')
     expect(result.status).toMatchObject({ phase: 'connected', keyReady: true, codexKeyReady: false })
     expect(result.status.channelError).toContain('unavailable')
@@ -233,7 +245,7 @@ describe('account flow without any local OPL installation', () => {
 
   it('retains the compatibility credential after a temporary refresh failure', async () => {
     const { control } = gateway()
-    const { account, credentials } = await service(control, stateRoot)
+    const { account, credentials } = await service(control)
     await account.signIn('person@example.test', 'right')
     const listKeys = control.keys.bind(control)
     control.keys = async (token, name) => {
@@ -246,7 +258,7 @@ describe('account flow without any local OPL installation', () => {
 
   it('renews a stored session on refresh without another sign-in', async () => {
     const { control, calls } = gateway()
-    const { account } = await service(control, stateRoot)
+    const { account } = await service(control)
     await account.signIn('person@example.test', 'right')
 
     // A second context over the same home and credential file is the restart
@@ -256,7 +268,6 @@ describe('account flow without any local OPL installation', () => {
       credentialRef: () => 'OPL_GATEWAY_DEEPSEEK_API_KEY' as never,
       endpoint: () => 'https://gateway.example/v1',
       models: () => [],
-      stateDirectory: () => stateRoot,
       control,
     })
     expect(await restarted.refresh()).toMatchObject({ phase: 'connected', account: { email: 'person@example.test' } })

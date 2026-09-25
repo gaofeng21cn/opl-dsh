@@ -154,129 +154,61 @@ export function OplGatewaySection(props: OplGatewaySectionProps) {
   const account = state?.account
   const phase = state?.phase ?? 'signed-out'
 
-  return (
-    <div className={css.section}>
-      <p className={css.intro}>{t('intro')}</p>
-      {state === undefined || state.models.length === 0
-        ? null
-        : (
-          <p className={css.muted}>
-            {t('provides', { names: state.models.map(model => model.name).join(', ') })}
-          </p>
-        )}
-      {error === null ? null : <p className={`${css.notice} ${css.error}`} role="alert">{t('failure', { message: error })}</p>}
-      {notice === null ? null : <p className={css.notice} role="status">{notice}</p>}
-
-      {state === undefined
-        ? <p className={css.muted}>{busy === 'loading' ? t('loading') : t('signedOut')}</p>
-        : (
-          <div className={css.card}>
-            <div className={css.header}>
-              <div className={css.identity}>
-                <span className={css.name}>{t('title')}</span>
-                <span className={css.muted}>
-                  {phase === 'connected' ? t('connected') : phase === 'unavailable' ? t('unavailable') : t('signedOut')}
-                  {account?.email === undefined || account.email === null ? null : ` · ${account.email}`}
-                </span>
-              </div>
-              {phase === 'connected'
-                ? (
-                  <div className={css.actions}>
-                    <Button variant='outline' disabled={busy !== 'idle'} onClick={() => { void load(true) }}>
-                      {busy === 'loading' ? t('refreshing') : t('refresh')}
-                    </Button>
-                    {/* Only a session this client holds can be ended here. An
-                        account merely read from OPL's record is signed out in
-                        the OPL application, and offering the button would be a
-                        no-op that reads as a broken control. */}
-                    {state.source !== 'session'
-                      ? null
-                      : (
-                        <Button variant='outline' disabled={busy !== 'idle'} onClick={() => { void leave() }}>
-                          {busy === 'signing-out' ? t('signingIn') : t('signOut')}
-                        </Button>
-                      )}
-                  </div>
-                )
-                : null}
-            </div>
-
-            {phase === 'connected' && account !== undefined
-              ? (
-                <dl className={css.facts}>
-                  {account.displayName === null ? null : <Fact label={t('accountStatus')} value={account.status} />}
-                  <Fact label={t('balance')} value={money(account.balanceAmount, account.balanceCurrency)} />
-                  <Fact label={t('todayTokens')} value={tokens(account.todayTokens)} />
-                  <Fact label={t('totalTokens')} value={tokens(account.totalTokens)} />
-                  <Fact label={t('todayCost')} value={money(account.todayCost, account.usageCurrency)} />
-                  <Fact label={t('totalCost')} value={money(account.totalCost, account.usageCurrency)} />
-                  {account.keyName === null ? null : <Fact label={t('keyName')} value={account.keyName} wide />}
-                  <Fact label={t('endpoint')} value={state.endpoint} wide />
-                </dl>
-              )
-              : null}
-
-            {phase === 'connected'
-              ? (
-                <div>
-                  <p className={css.muted}>{state.keyReady ? t('keyReady') : t('keyMissing')}</p>
-                  <p className={css.muted}>{state.codexKeyReady ? t('codexReady') : t('codexMissing')}</p>
-                  <p className={css.muted}>{t('failoverHint')}</p>
-                  {state.activeChannel === undefined ? null : <p className={css.muted}>{t('activeChannel', { channel: state.activeChannel === 'deepseek' ? 'DeepSeek / Messages' : 'Codex / OpenAI' })}</p>}
-                  {state.channelError === undefined ? null : <p className={css.muted}>{t('codexMissing')}</p>}
-                  {state.source !== 'opl'
-                    ? null
-                    : <p className={css.muted}>{t('connectedViaOpl')}</p>}
-                  {state.source !== 'opl' || account?.observedAt === undefined || account.observedAt === null
-                    ? null
-                    : (
-                      <p className={css.muted} title={observedLabel(account.observedAt)}>
-                        {t('observedAt', { time: observedAge(account.observedAt, t) })}
-                        {account.stale === true ? ` · ${t('observedStale')}` : ''}
-                      </p>
-                    )}
-                </div>
-              )
-              : (
-                <form
-                  className={css.form}
-                  onSubmit={(event) => { event.preventDefault(); void submit() }}
-                >
-                  <p className={css.muted}>{state.keyReady ? t('keyAlreadyConfigured') : t('notSignedInHint')}</p>
-                  <label className={css.field}>
-                    <span className={css.label}>{t('email')}</span>
-                    <input
-                      className={css.input}
-                      type='email'
-                      autoComplete='username'
-                      placeholder={t('emailPlaceholder')}
-                      value={email}
-                      onChange={(event) => { setEmail(event.target.value) }}
-                    />
-                  </label>
-                  <label className={css.field}>
-                    <span className={css.label}>{t('password')}</span>
-                    <input
-                      className={css.input}
-                      type='password'
-                      autoComplete='current-password'
-                      placeholder={t('passwordPlaceholder')}
-                      value={password}
-                      onChange={(event) => { setPassword(event.target.value) }}
-                    />
-                  </label>
-                  <div className={css.actions}>
-                    <Button
-                      type='submit'
-                      disabled={busy !== 'idle' || email.trim() === '' || password === ''}
-                    >
-                      {busy === 'signing-in' ? t('signingIn') : t('signIn')}
-                    </Button>
-                  </div>
-                </form>
-              )}
-          </div>
-        )}
-    </div>
-  )
+  const connected = phase === 'connected'
+  return <div className={css.section}>
+    <header className={css.header}>
+      <div className={css.identity}>
+        <h2 className={css.title}>{t(connected ? 'nav' : 'loginTitle')}</h2>
+        <p className={css.intro}>{connected ? (account?.email ?? t('connected')) : t('intro')}</p>
+      </div>
+      {connected && <Button variant='outline' disabled={busy !== 'idle'} onClick={() => { void load(true) }}>{busy === 'loading' ? t('refreshing') : t('refresh')}</Button>}
+    </header>
+    {error && <p className={`${css.notice} ${css.error}`} role='alert'>{t('failure', { message: error })}</p>}
+    {notice && <p className={css.notice} role='status'>{notice}</p>}
+    {!state ? <p className={css.muted}>{t('loading')}</p> : <>
+      <div className={css.card}>
+        {connected && <div className={css.identity}>
+          <span className={css.name}>{state.models.map(model => model.name).join(', ')}</span>
+          <span className={css.muted}>{state.keyReady && state.codexKeyReady ? t('channelsReady') : state.keyReady ? t('primaryReady') : t('signInToStart')}</span>
+        </div>}
+        {state.keyReady && !state.codexKeyReady && <p className={css.muted}>{t('backupUnavailable')}</p>}
+        {!state.keyReady && connected && <p className={css.error}>{t('keyMissing')}</p>}
+        {connected && account && <dl className={css.metrics}>
+          <Fact label={t('balance')} value={money(account.balanceAmount, account.balanceCurrency)} />
+          <Fact label={t('todayCost')} value={money(account.todayCost, account.usageCurrency)} />
+        </dl>}
+        {!connected && <form className={css.form} onSubmit={event => { event.preventDefault(); void submit() }}>
+          <label className={css.field}><span className={css.label}>{t('email')}</span>
+            <input className={css.input} type='email' autoComplete='username' placeholder={t('emailPlaceholder')} value={email} onChange={event => setEmail(event.target.value)} />
+          </label>
+          <label className={css.field}><span className={css.label}>{t('password')}</span>
+            <input className={css.input} type='password' autoComplete='current-password' placeholder={t('passwordPlaceholder')} value={password} onChange={event => setPassword(event.target.value)} />
+          </label>
+          <Button type='submit' disabled={busy !== 'idle' || !email.trim() || !password}>{busy === 'signing-in' ? t('signingIn') : t('signIn')}</Button>
+        </form>}
+      </div>
+      {connected && <details className={css.details}>
+        <summary>{t('usageDetails')}</summary>
+        <dl className={css.facts}>
+          <Fact label={t('todayTokens')} value={tokens(account?.todayTokens)} />
+          <Fact label={t('totalTokens')} value={tokens(account?.totalTokens)} />
+          <Fact label={t('totalCost')} value={money(account?.totalCost, account?.usageCurrency ?? '')} />
+          {account?.observedAt && <Fact label={t('updated')} value={observedLabel(account.observedAt)} />}
+        </dl>
+      </details>}
+      {(connected || state.keyReady || state.codexKeyReady) && <details className={css.details}>
+        <summary>{t('advanced')}</summary>
+        <p className={css.muted}>{t('managedHint')}</p>
+        <dl className={css.facts}>
+          <Fact label={t('primaryChannel')} value={state.keyReady ? t('ready') : t('notReady')} />
+          <Fact label={t('backupChannel')} value={state.codexKeyReady ? t('ready') : t('notReady')} />
+          <Fact label={t('endpoint')} value={state.endpoint} wide />
+          {state.activeChannel && <Fact label={t('lastChannel')} value={state.activeChannel === 'deepseek' ? 'DeepSeek / Messages' : 'Codex / OpenAI'} />}
+          {account?.keyName && <Fact label={t('keyName')} value={account.keyName} wide />}
+        </dl>
+        {state.channelError && <p className={css.error}>{t('backupUnavailable')}</p>}
+        {state.source === 'session' && <Button variant='outline' disabled={busy !== 'idle'} onClick={() => { void leave() }}>{busy === 'signing-out' ? t('signingOut') : t('signOut')}</Button>}
+      </details>}
+    </>}
+  </div>
 }

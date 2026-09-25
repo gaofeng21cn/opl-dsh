@@ -221,3 +221,20 @@ it('allows the queue steer mutation through the allowlist and carries its refusa
     }))
   } finally { await stop(); rmSync(dir, { recursive: true, force: true }) }
 })
+
+it('admits setup status and completion only through authenticated local control', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'opl-control-setup-'))
+  const file = join(dir, 'control.json')
+  const invoke = vi.fn(async () => ({ choice: 'gateway' }))
+  const stop = await startControlBridge({ invoke } as unknown as TypertGateway, file)
+  try {
+    const binding = readBinding(file)
+    for (const method of ['setupStatus', 'finishSetup']) {
+      const body = { namespace: 'oplSuite', method, args: {} }
+      expect((await fetch(binding.endpoint, { method: 'POST', body: JSON.stringify(body) })).status).toBe(403)
+      expect((await rpc(binding, body)).status).toBe(200)
+    }
+    expect((await rpc(binding, { namespace: 'oplSuite', method: 'delete', args: {} })).status).toBe(403)
+    expect(invoke).toHaveBeenCalledTimes(2)
+  } finally { await stop(); rmSync(dir, { recursive: true, force: true }) }
+})

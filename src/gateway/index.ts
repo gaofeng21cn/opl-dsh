@@ -1,13 +1,4 @@
-/**
- * Register the OPL Gateway as one provider route.
- *
- * The route speaks the gateway's native Messages protocol
- * through the DeepSeek adapter, advertises the gateway's `deepseek-flash` as
- * `DeepSeek-V4.1-Flash`, and authenticates with the key OPL provisioned for
- * this account. A deployment that mounts the plugin therefore reaches the
- * model with no model, endpoint, protocol, or key entered by hand; the Models
- * page still writes a key into the credentials seam, and that stored key wins.
- */
+/** OPL-owned credentials and dual-channel routing over official DSH adapters. */
 
 import type { Context } from '@deepseek-ai/cordis'
 import { assertUsableApiKey, LlmAdapter, LlmError, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
@@ -21,11 +12,10 @@ import { resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek-api-key'
 import type { ResolvedDeepSeekOptions } from '@deepseek-ai/dsh-llm-deepseek-api-key'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/dsh-settings'
-import { adoptOplGatewayKey } from './adoption.ts'
 import { OplGatewayAccountService } from './account-service.ts'
 import { DualChannelAdapter, OPENAI_PROVIDER } from './dual-channel.ts'
 import { Config, CODEX_API_KEY_REF, toAdapterConfig } from './config.ts'
-import { OPL_GATEWAY_INFERENCE_BASE_URL, importOplGatewayKey, oplGatewayStateDirectories } from './opl-credentials.ts'
+import { OPL_GATEWAY_INFERENCE_BASE_URL } from './opl-credentials.ts'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import {
@@ -110,26 +100,11 @@ export function apply(ctx: Context, config: Config): void {
   let lastRaw: Config | undefined
   let lastGood: ResolvedDeepSeekOptions | undefined
 
-  /**
-   * The endpoint the OPL account binding records for this key. Requests can
-   * fail against the canonical root while that one answers — a gateway may
-   * serve a chain some runtimes reject — so the account's own record wins over
-   * the built-in fallback until a settings section names an endpoint.
-   */
-  function boundBaseURL(): string {
-    try {
-      return importOplGatewayKey()?.baseURL ?? OPL_GATEWAY_INFERENCE_BASE_URL
-    }
-    catch {
-      return OPL_GATEWAY_INFERENCE_BASE_URL
-    }
-  }
-
   const options = (): ResolvedDeepSeekOptions => {
     const raw = current()
     if (raw === lastRaw && lastGood !== undefined) return lastGood
     try {
-      const next = resolveAdapterOptions(toAdapterConfig(raw, boundBaseURL()), launchEnvironmentOf(ctx))
+      const next = resolveAdapterOptions(toAdapterConfig(raw, OPL_GATEWAY_INFERENCE_BASE_URL), launchEnvironmentOf(ctx))
       lastRaw = raw
       lastGood = next
       return next
@@ -161,23 +136,9 @@ export function apply(ctx: Context, config: Config): void {
     if (stored !== undefined && stored.length > 0) {
       return assertUsableApiKey(stored, 'llm-opl-gateway', ref)
     }
-    // The OPL application keeps this account's gateway key beside the binding
-    // it wrote for its own client; reuse it instead of asking the operator to
-    // copy a key between two products that already share an account.
-    let imported
-    try {
-      imported = importOplGatewayKey()
-    } catch (error) {
-      ctx.logger.warn('llm-opl-gateway: could not read the OPL Gateway binding')
-      ctx.logger.warn(error)
-      imported = undefined
-    }
-    if (imported !== undefined) {
-      return assertUsableApiKey(imported.key, 'llm-opl-gateway', `OPL Gateway (${imported.providerId})`)
-    }
     throw new LlmError(
-      `llm-opl-gateway: no credential for provider route "${PROVIDER}"; sign in to OPL Gateway in the`
-      + ` OPL application, or store ${ref} through the credentials service (the web Models page writes it)`,
+      `llm-opl-gateway: no credential for provider route "${PROVIDER}"; sign in through Settings > OPL Gateway`
+      + ` to configure ${ref}`,
       'MISSING_CREDENTIAL',
     )
   }
@@ -237,12 +198,6 @@ export function apply(ctx: Context, config: Config): void {
     }
   })
 
-  /**
-   * Adoption runs once the credentials seam exists, which the loader may order
-   * after this plugin. Until then the callback is a no-op, and requests are
-   * unaffected because the resolver reads OPL's binding directly.
-   */
-  let adoptAccountKey = (): void => {}
   let account: OplGatewayAccountService | undefined
   ctx.inject(['credentials'], (credentialsCtx) => {
     const credentials = credentialsCtx.get('credentials')
@@ -254,21 +209,7 @@ export function apply(ctx: Context, config: Config): void {
       activeChannel: () => activeChannel,
       endpoint: () => options().baseURL,
       models: () => options().models.map(model => ({ id: model.id, name: model.name ?? model.id })),
-      stateDirectory: () => oplGatewayStateDirectories(),
     })
-    adoptAccountKey = (): void => {
-      // Let the Models page show this route as ready for an operator who
-      // signed in to OPL and never typed a key here.
-      void adoptOplGatewayKey({ credentials, home: dshHomePath(), ref: options().apiKeyEnv }).then((outcome) => {
-        if (outcome === 'unavailable') {
-          ctx.logger.warn('llm-opl-gateway: could not adopt the OPL Gateway key into this Harness home')
-        }
-      }).catch((error: unknown) => {
-        ctx.logger.warn('llm-opl-gateway: OPL Gateway key adoption failed')
-        ctx.logger.warn(error)
-      })
-    }
-    adoptAccountKey()
     void account.refresh().catch(() => { ctx.logger.warn('OPL Gateway account refresh failed') })
   })
 

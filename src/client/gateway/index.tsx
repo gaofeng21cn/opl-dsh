@@ -10,6 +10,7 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings-models/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the `ctx.remote` Context merge plus the account namespace
 // this page calls. The wire vocabulary comes from the Host package's public
@@ -41,7 +42,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-opl-gateway: dictionaries')
 
   const t = ctx.locale.bind(NS)
-  const unwrap = <T>(result: { ok: true; value: T } | { ok: false; error: { code: string; message: string } }): T => {
+  const unwrap = <T,>(result: { ok: true; value: T } | { ok: false; error: { code: string; message: string } }): T => {
     // The code is a support handle, not copy: the page shows the sentence.
     if (!result.ok) throw new Error(result.error.message)
     return result.value
@@ -52,6 +53,14 @@ export function apply(ctx: ClientContext): void {
     refresh: async () => unwrap(await ctx.remote.oplGatewayAccount.refresh()),
     signOut: async () => unwrap(await ctx.remote.oplGatewayAccount.signOut()),
   })
+
+  // Keep the managed fallback route available to DSH readiness and dispatch,
+  // while its ordinary key editor stays out of the account settings flow.
+  ctx.slots.inject('settings.models.provider-card', () => ctx.slots.register({
+    name: 'settings.models.provider-card', key: 'llm-pi-ai',
+  }, ({ provider }) => provider.provider === 'opl-gateway-openai'
+    ? <><style>{'li:has([data-opl-managed-provider="opl-gateway-openai"]) { display: none; }'}</style><span hidden data-opl-managed-provider="opl-gateway-openai" /></>
+    : null))
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',

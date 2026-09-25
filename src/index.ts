@@ -2,6 +2,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import * as gateway from './gateway/index.ts'
 import * as control from './control.ts'
+import { Config } from './setup-config.ts'
+export { Config } from './setup-config.ts'
 
 export const name = 'opl-suite'
 export const inject = ['llm', 'typertGateway']
@@ -9,7 +11,8 @@ export const inject = ['llm', 'typertGateway']
 /** Mount account services and publish the authenticated local control binding.
  * @param ctx - Official Host context.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config): void {
   ctx.plugin(gateway, {})
-  ctx.plugin(control)
+  ctx.plugin(control, { choice: () => config.loginChoice.get() })
+  ctx.inject(['settings'], child => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
 }

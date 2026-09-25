@@ -6,7 +6,7 @@ import { homedir } from 'node:os'
 import { spawnSync, spawn } from 'node:child_process'
 const [app, root, payload, ...flags] = process.argv.slice(2)
 const home = join(root, 'data')
-const executable = join(app,'Contents/MacOS/DeepSeek Harness')
+const executable = process.platform === 'win32' ? join(app,'DeepSeek Harness.exe') : join(app,'Contents/MacOS/DeepSeek Harness')
 const bindingPath = join(home,'profiles/desktop/control.json')
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const quote = value => "'"+value.replaceAll("'", "'\\''")+"'"
@@ -39,13 +39,15 @@ const patch=join(home,'profiles/desktop/cordis.patch.yml')
 mkdirSync(dirname(patch),{recursive:true,mode:0o700})
 if(!existsSync(patch)) writeFileSync(patch,'- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n    compression: gzip\n    compressionLevel: 1\n    compressionThresholdBytes: 1024\n',{mode:0o600,flag:'wx'})
 run(executable,[join(release,'profile.cjs'),app,home,join(release,artifact.name)],{ELECTRON_RUN_AS_NODE:'1'})
-const launcher=join(root,'launch.command')
+const launcher=process.env.OPL_DESKTOP_LAUNCHER ?? join(root,'launch.command')
+if (!process.env.OPL_DESKTOP_LAUNCHER) {
 const launch=`#!/bin/bash\nset -euo pipefail\nunset ELECTRON_RUN_AS_NODE\nexport NODE_USE_SYSTEM_CA=1\nexport DSH_HOME=${quote(home)}\nexec ${quote(executable)} --user-data-dir=${quote(join(root,'electron'))} >>${quote(join(root,'desktop.log'))} 2>&1\n`
 writeFileSync(launcher,launch,{mode:0o700})
 const shortcut=join(dirname(app),'OPL DSH.command')
 const shortcutBody=`#!/bin/bash\nexec ${quote(launcher)}\n`
 if(existsSync(shortcut) && !readFileSync(shortcut,'utf8').includes(quote(launcher))) throw new Error('已有同名 OPL DSH.command，已保留；请使用套件目录内的启动入口')
 writeFileSync(shortcut,shortcutBody,{mode:0o700})
+}
 const codexHome=process.env.OPL_CODEX_HOME ?? process.env.CODEX_HOME ?? join(homedir(),'.codex')
 const skillDir=join(codexHome,'skills/opl-dsh-official')
 const skillManifest=join(skillDir,'.opl-install.json')
@@ -71,5 +73,5 @@ console.log('官方桌面和 OPL 增强已安装。Codex Skill：opl-dsh-officia
 if(!flags.includes('--no-launch')) {
   const env={...process.env};delete env.ELECTRON_RUN_AS_NODE
   const child=spawn(launcher,[],{env,detached:true,stdio:'ignore'});child.unref()
-  run(executable,[join(release,'setup.mjs'),home,String(child.pid),launcher],{ELECTRON_RUN_AS_NODE:'1'})
+  run(executable,[join(release,'setup.mjs'),home,String(child.pid),launcher,app],{ELECTRON_RUN_AS_NODE:'1'})
 }
