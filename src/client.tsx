@@ -14,7 +14,7 @@ import { AccountLauncher } from './client/AccountLauncher.tsx'
 import { SetupScreen } from './client/SetupScreen.tsx'
 import type { SetupStatus } from './setup-types.ts'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-export const inject = ['remote', 'slots', 'locale', 'configForms', 'connection']
+export const inject = ['remote', 'slots', 'locale', 'configForms', 'connection', 'layout']
 /** Register remote calls and settings with the same plugin lifecycle.
  * @param ctx - Official browser context.
  * @returns After the Gateway Remote namespace is mounted.
