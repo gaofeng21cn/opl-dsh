@@ -33,8 +33,8 @@ export async function refreshEnhancements(root, application) {
     const result=await fetch(api,{headers:{accept:'application/vnd.github+json'},signal:AbortSignal.timeout(6000)})
     if(result.status===404){await status({state:'current'});return}
     if(!result.ok)throw Error('update unavailable')
-    const release=await result.json(), version=release.tag_name?.replace(/^v/,'')
-    if(release.draft||release.prerelease||!newer(version,current.suiteVersion??'0.1.0')){await status({state:'current'});return}
+    const release=await result.json()
+    if(release.draft||release.prerelease){await status({state:'current'});return}
     const asset=release.assets.find(a=>a.name==='OPL-DSH-Enhancements.zip')
     if(!asset||!/^sha256:[a-f0-9]{64}$/.test(asset.digest)||!asset.browser_download_url.startsWith('https://github.com/gaofeng21cn/opl-dsh/releases/download/'))throw Error('invalid release')
     if(asset.size>32*1024*1024)throw Error('invalid package size')
@@ -50,7 +50,9 @@ export async function refreshEnhancements(root, application) {
       : spawnSync('/usr/bin/ditto',['-x','-k',archive,payload])
     if(extract.status!==0)throw Error('extract failed')
     const manifest=JSON.parse(await readFile(join(payload,'artifact.json'),'utf8'))
-    if(manifest.version!==version||manifest.suiteSha256!==digest(JSON.stringify(manifest.payloadFiles)))throw Error('invalid manifest')
+    const version=manifest.enhancementVersion??manifest.version
+    if(!manifest.officialVersion||manifest.suiteSha256!==digest(JSON.stringify(manifest.payloadFiles)))throw Error('invalid manifest')
+    if(!newer(version,current.suiteVersion??'0.1.0')){await status({state:'current',officialVersion:manifest.officialVersion});return}
     // Verify every executable byte before invoking a newly downloaded installer.
     for(const [path,hash]of Object.entries(manifest.payloadFiles)){
       if(path.startsWith('/')||path.includes('\\')||path.split('/').some(s=>!s||s==='.'||s==='..')||digest(await readFile(join(payload,path)))!==hash)throw Error('invalid payload')
@@ -66,7 +68,7 @@ export async function refreshEnhancements(root, application) {
     }
     const installed=JSON.parse(await readFile(installationFile,'utf8'))
     if(installed.suiteVersion!==version)throw Error('version not confirmed')
-    await status({state:'updated',version})
+    await status({state:'updated',version,officialVersion:manifest.officialVersion})
   } catch {
     // Keep the installed release usable when offline or an update is refused.
     await status({state:'deferred',message:'本次增强更新未完成，继续使用已安装版本。'}).catch(()=>{})

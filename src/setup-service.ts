@@ -47,7 +47,7 @@ export function installSetupChannel(ctx: Context): void {
       }
       if (endpoint === 'official-start') {
         await ctx.typertGateway.invoke({ namespace: 'account', method: 'startSignIn', args: {
-          client: { version: '0.1.7-rc.2', locale: 'zh', timezoneOffsetSeconds: -new Date().getTimezoneOffset() * 60 },
+          client: { version: process.env.OPL_OFFICIAL_VERSION ?? '0.0.0', locale: 'zh', timezoneOffsetSeconds: -new Date().getTimezoneOffset() * 60 },
           callbackOrigin: `http://127.0.0.1:${ctx.webServer.port}`, loginSource: 'desktop',
         } })
         return { ok: true, value: null }

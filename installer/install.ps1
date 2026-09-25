@@ -1,27 +1,79 @@
-﻿param([string]$Root = (Join-Path $env:APPDATA 'OPL DSH Suite'),[string]$Payload = $PSScriptRoot,[string]$Launcher = '',[switch]$NoLaunch)
+﻿param([string]$Root = $(if ($env:OPL_SUITE_ROOT) { $env:OPL_SUITE_ROOT } else { Join-Path $env:APPDATA 'OPL DSH Suite' }),[string]$Payload = $PSScriptRoot,[switch]$NoLaunch)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$app = Join-Path $Root 'runtime\0.1.7-rc.2\DeepSeek Harness'
-$exe = Join-Path $app 'DeepSeek Harness.exe'
 New-Item -ItemType Directory -Force -Path (Join-Path $Root 'cache') | Out-Null
-if (-not (Test-Path -LiteralPath $exe)) {
-  $archive = Join-Path $Root 'cache\deepseek-harness-0.1.7-rc.2-win-x64.exe'
-  $expected = '018edfe397583bb045adf81a2e6cd73563f4a5abe5c6449bb1e84fa3f585e8f5dc15d0caddf175a0750fb3fe1fd9bcd13a042f9bac1281ac19fe0ed4cdb3d19b'
-  if (-not (Test-Path -LiteralPath $archive)) {
-    Invoke-WebRequest -UseBasicParsing -Uri 'https://download.deepseek.com/dsh-desk/bin/win-x64/deepseek-harness-0.1.7-rc.2-win-x64.exe' -OutFile ($archive + '.part')
-    Move-Item -LiteralPath ($archive + '.part') -Destination $archive
+Start-Transcript -Path (Join-Path $Root 'installer.log') -Append | Out-Null
+$lock = $null
+try {
+  $lock = [IO.File]::Open((Join-Path $Root 'install.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
+  function Assert-OfficialSignature([string]$Path) {
+    $s = Get-AuthenticodeSignature -LiteralPath $Path
+    if ($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch '^CN="?Hangzhou DeepSeek Artificial Intelligence Co\., Ltd\.') { throw 'DeepSeek 官方签名验证失败。' }
   }
-  if ((Get-FileHash -LiteralPath $archive -Algorithm SHA512).Hash.ToLowerInvariant() -ne $expected) { throw '官方安装文件校验失败。' }
-  if ((Get-AuthenticodeSignature -LiteralPath $archive).Status -ne 'Valid') { throw '官方安装文件签名无效。' }
-  $process = Start-Process -FilePath $archive -ArgumentList @('/S', "/D=$app") -Wait -PassThru
-  if ($process.ExitCode -ne 0) { throw '官方运行环境安装失败。' }
+  function Feed-Scalar([string]$Text,[string]$Name) {
+    $m = [regex]::Matches($Text, '(?m)^' + $Name + ':\s*(?:[>|]-?\r?\n[ \t]+)?([^\r\n]+)\r?$')
+    if ($m.Count -ne 1) { throw '官方更新清单无效。' }
+    return $m[0].Groups[1].Value.Trim()
+  }
+  Write-Output '正在检查 DeepSeek 官方桌面更新…'
+  $content = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 30 -Uri 'https://download.deepseek.com/dsh-desk/feeds/win-x64/nightly.yml').Content
+  $feed = if ($content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($content) } else { [string]$content }
+  $officialVersion = Feed-Scalar $feed 'version'
+  $url = Feed-Scalar $feed 'path'
+  $sha512 = Feed-Scalar $feed 'sha512'
+  if ($officialVersion -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$' -or $sha512 -notmatch '^[A-Za-z0-9+/]{86}==$') { throw '官方版本或校验信息无效。' }
+  if ($url -cne ('https://download.deepseek.com/dsh-desk/bin/win-x64/deepseek-harness-' + $officialVersion + '-win-x64.exe')) { throw '官方更新地址无效。' }
+  $app = Join-Path $Root 'runtime\DeepSeek Harness'
+  $needsInstall = $true
+  $previous = Join-Path $Root 'installation.json'
+  if (Test-Path -LiteralPath $previous) {
+    $installed = Get-Content -LiteralPath $previous -Raw -Encoding UTF8 | ConvertFrom-Json
+    $app = $installed.app
+  } else {
+    # Reuse the vendor's registered per-user desktop. Avoid a second installation
+    # and preserve its official updater's directory and uninstall registration.
+    $registrations = @(Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue |
+      ForEach-Object { Get-ItemProperty $_.PSPath } |
+      Where-Object { $_.DisplayName -match '^DeepSeek Harness( |$)' -and $_.InstallLocation })
+    $registered = $registrations | Select-Object -First 1
+    if ($registered) { $app = $registered.InstallLocation.TrimEnd('\') }
+  }
+  $oldExe = Join-Path $app 'DeepSeek Harness.exe'
+  if (Test-Path -LiteralPath $oldExe) {
+    Assert-OfficialSignature $oldExe
+    if (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $oldExe }) { throw '请先退出 DeepSeek Harness，再运行安装器。' }
+    $env:ELECTRON_RUN_AS_NODE='1'
+    $args = @((Join-Path $Payload 'compare.cjs'), $app, (Get-Item $oldExe).VersionInfo.FileVersion, $officialVersion) | ForEach-Object { '"' + $_ + '"' }
+    $comparison = Start-Process -FilePath $oldExe -ArgumentList $args -Wait -PassThru
+    if ($comparison.ExitCode -eq 0) { $needsInstall = $false }
+  }
+  $exe = Join-Path $app 'DeepSeek Harness.exe'
+  if (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }) { throw '请先退出 DeepSeek Harness，再运行安装器。' }
+  if ($needsInstall) {
+    $archive = Join-Path $Root ('cache\deepseek-harness-' + $officialVersion + '-win-x64.exe')
+    if (-not (Test-Path -LiteralPath $archive)) {
+      Write-Output ('正在下载官方 DeepSeek Harness ' + $officialVersion + '…')
+      Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile ($archive + '.part')
+      Move-Item -LiteralPath ($archive + '.part') -Destination $archive
+    }
+    $expected = [BitConverter]::ToString([Convert]::FromBase64String($sha512)).Replace('-', '')
+    if ((Get-FileHash -LiteralPath $archive -Algorithm SHA512).Hash -ne $expected) { throw '官方安装文件校验失败。' }
+    Assert-OfficialSignature $archive
+    $process = Start-Process -FilePath $archive -ArgumentList @('/S', "/D=$app") -Wait -PassThru
+    if ($process.ExitCode -ne 0) { throw '官方运行环境安装失败。' }
+    if ((Get-Item -LiteralPath $exe).VersionInfo.FileVersion -ne $officialVersion) { throw '官方版本与清单不符。' }
+  }
+  Assert-OfficialSignature $exe
+  $env:ELECTRON_RUN_AS_NODE = '1'
+  $env:NODE_USE_SYSTEM_CA = '1'
+  $installArgs = @((Join-Path $Payload 'install.mjs'), $app, $Root, $Payload, '--no-launch') | ForEach-Object { '"' + $_ + '"' }
+  $installed = Start-Process -FilePath $exe -ArgumentList $installArgs -Wait -PassThru
+  if ($installed.ExitCode -ne 0) { throw 'OPL 增强安装失败。' }
+  if (-not $NoLaunch -and $env:OPL_INSTALL_NO_LAUNCH -ne '1') { Start-Process -FilePath 'wscript.exe' -ArgumentList ('"' + (Join-Path $Root 'launch.vbs') + '"') }
+} catch {
+  Write-Error $_ -ErrorAction Continue
+  exit 1
+} finally {
+  if ($lock) { $lock.Dispose() }
+  Stop-Transcript | Out-Null
 }
-if ((Get-Item -LiteralPath $exe).VersionInfo.FileVersion -ne '0.1.7-rc.2') { throw '运行环境版本与本次 OPL DSH 不匹配。' }
-if ((Get-AuthenticodeSignature -LiteralPath $exe).Status -ne 'Valid') { throw '运行环境签名无效。' }
-$env:ELECTRON_RUN_AS_NODE = '1'
-$env:NODE_USE_SYSTEM_CA = '1'
-if ($Launcher) { $env:OPL_DESKTOP_LAUNCHER = $Launcher } else { Remove-Item Env:OPL_DESKTOP_LAUNCHER -ErrorAction SilentlyContinue }
-$installArgs = @((Join-Path $Payload 'install.mjs'), $app, $Root, $Payload, '--no-launch') | ForEach-Object { '"' + $_ + '"' }
-$installed = Start-Process -FilePath $exe -ArgumentList $installArgs -Wait -PassThru
-if ($installed.ExitCode -ne 0) { throw 'OPL 增强安装失败。' }
-if (-not $NoLaunch) { Start-Process -FilePath 'wscript.exe' -ArgumentList ('"' + (Join-Path $Root 'launch.vbs') + '"') }

@@ -1,9 +1,8 @@
 import { refreshEnhancements } from './update.mjs'
 /** Launch the signed official app; let the OPL plugin own the in-app first run.
- * The version-bound native welcome bridge uses a private Chromium pipe (no TCP
- * debugging port). Only the official skip operation is invoked; no credentials
- * or application resources are injected. Keep this small seam covered by a real
- * official-desktop smoke test whenever the pinned desktop version changes.
+ * The native welcome bridge uses a private Chromium pipe (no TCP debugging
+ * port). If a future desktop does not expose the skip operation, its own
+ * welcome window remains available.
  */
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
@@ -12,7 +11,9 @@ const [home, root, application] = process.argv.slice(2)
 if (!home || !root || !application) throw new Error('缺少桌面启动路径')
 await refreshEnhancements(root, application)
 const executable = process.platform === 'win32' ? join(application, 'DeepSeek Harness.exe') : join(application, 'Contents/MacOS/DeepSeek Harness')
-const env = { ...process.env, DSH_HOME: home, NODE_USE_SYSTEM_CA: '1' }
+const resources = process.platform === 'win32' ? join(application, 'resources') : join(application, 'Contents/Resources')
+const manifest = JSON.parse(readFileSync(join(resources, 'app.asar/package.json'), 'utf8'))
+const env = { ...process.env, DSH_HOME: home, NODE_USE_SYSTEM_CA: '1', OPL_OFFICIAL_VERSION: manifest.version }
 delete env.ELECTRON_RUN_AS_NODE
 const log = openSync(join(root, 'desktop.log'), 'a', 0o600)
 const child = spawn(executable, ['--user-data-dir=' + join(root, 'electron'), '--remote-debugging-pipe'], { env, stdio: ['ignore', log, log, 'pipe', 'pipe'] })
@@ -50,9 +51,6 @@ child.stdio[4].on('data', bytes => {
 // Forward an explicit launcher shutdown, never terminate a separate user process.
 for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { child.kill(signal) })
 try {
-  const resources = process.platform === 'win32' ? join(application, 'resources') : join(application, 'Contents/Resources')
-  const manifest = JSON.parse(readFileSync(join(resources, 'app.asar/package.json'), 'utf8'))
-  if (manifest.version !== '0.1.7-rc.2') throw new Error('官方桌面版本尚未验证')
   let entered = false
   for (let n = 0; n < 120 && !stopped && !entered; n++) {
     const { targetInfos } = await call('Target.getTargets')

@@ -8,7 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 const digest = (text: string) => createHash('sha256').update(text).digest('hex')
 const root = () => dirname(dshHomePath())
 async function installation() {
-  const value = JSON.parse(await readFile(join(root(),'installation.json'),'utf8')) as { home: string; release: string; app: string; launcher: string; skillDir: string; suiteVersion?: string }
+  const value = JSON.parse(await readFile(join(root(),'installation.json'),'utf8')) as { home: string; release: string; app: string; launcher: string; skillDir: string; suiteVersion?: string; officialVersion?: string }
   if (value.home !== dshHomePath()) throw new Error('安装信息与当前 profile 不匹配')
   return value
 }
@@ -18,7 +18,7 @@ export async function coordinationAction(ctx: Context, action: string, payload: 
     const config = JSON.parse(await readFile(join(installed.skillDir,'config.json'),'utf8').catch(()=>'{}')) as { autoStart?: boolean; home?: string }
     const state = await readFile(join(root(),'enhancement-update.json'),'utf8').catch(()=>'{}')
     const settings = ctx.settings.describe().find(item=>item.ns==='opl-suite')?.value as { wakeTransport?: string; wakeExecutable?: string; wakeExecution?: string; wakeDistro?: string }
-    return { installed: config.home === installed.home, autoStart: config.autoStart !== false, version: installed.suiteVersion ?? '0.1.0', update: JSON.parse(state), ...settings }
+    return { installed: config.home === installed.home, autoStart: config.autoStart !== false, version: process.env.OPL_OFFICIAL_VERSION ?? installed.officialVersion ?? 'unknown', update: JSON.parse(state), ...settings }
   }
   if (action === 'skill-install') {
     const module = await import(pathToFileURL(join(installed.release,'skill-install.mjs')).href) as { installSkill: (options: object) => string }

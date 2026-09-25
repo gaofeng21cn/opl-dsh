@@ -19,7 +19,7 @@ export function CoordinationSection({ call }: { call: (action: string, value?: u
         <Button disabled={busy} onClick={()=>{void act('wake-settings',status)}}>保存通知设置</Button>
       </div>}
     </details>
-    <details className={css.details}><summary>OPL 增强更新</summary><p className={css.muted}>增强版本 {status?.version??'—'}。在桌面启动前自动检查并安装增强更新；应用运行中不更换插件，网络不可用时继续使用当前版本。DeepSeek 官方桌面独立更新。</p></details>
+    <details className={css.details}><summary>OPL 增强更新</summary><p className={css.muted}>当前官方桌面版本 {status?.version??'—'}。在桌面启动前自动检查并安装兼容增强；应用运行中不更换插件，网络不可用时继续使用当前版本。官方桌面可独立更新。</p></details>
     {notice&&<p className={css.notice} role='status'>{notice}</p>}
   </div>
 }

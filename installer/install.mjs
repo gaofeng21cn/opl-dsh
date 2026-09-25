@@ -9,6 +9,8 @@ const [app, root, payload, ...flags] = process.argv.slice(2)
 const home = join(root, 'data')
 const executable = process.platform === 'win32' ? join(app,'DeepSeek Harness.exe') : join(app,'Contents/MacOS/DeepSeek Harness')
 const bindingPath = join(home,'profiles/desktop/control.json')
+const previousInstallation = existsSync(join(root,'installation.json')) ? JSON.parse(readFileSync(join(root,'installation.json'),'utf8')) : undefined
+const codexHome = process.env.OPL_CODEX_HOME ?? process.env.CODEX_HOME ?? (previousInstallation?.skillDir ? dirname(dirname(previousInstallation.skillDir)) : join(homedir(),'.codex'))
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const quote = value => "'"+value.replaceAll("'", "'\\''")+"'"
 function run(command,args,env={}) {
@@ -39,7 +41,7 @@ if (existsSync(release)) {
 const patch=join(home,'profiles/desktop/cordis.patch.yml')
 mkdirSync(dirname(patch),{recursive:true,mode:0o700})
 if(!existsSync(patch)) writeFileSync(patch,'- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n    compression: gzip\n    compressionLevel: 1\n    compressionThresholdBytes: 1024\n',{mode:0o600,flag:'wx'})
-verifySkill(join(process.env.OPL_CODEX_HOME??process.env.CODEX_HOME??join(homedir(),'.codex'),'skills/opl-dsh-official'))
+verifySkill(join(codexHome,'skills/opl-dsh-official'))
 run(executable,[join(release,'migrate.cjs'),app,home,root],{ELECTRON_RUN_AS_NODE:'1'})
 run(executable,[join(release,'profile.cjs'),app,home,join(release,artifact.name)],{ELECTRON_RUN_AS_NODE:'1'})
 const launcher=process.env.OPL_DESKTOP_LAUNCHER ?? join(root,process.platform==='win32'?'launch.vbs':'launch.command')
@@ -66,8 +68,8 @@ if (process.platform === 'win32') {
   }
 }
 }
-const skillDir=installSkill({executable,home,launcher,root,release})
-writeFileSync(join(root,'installation.json'),JSON.stringify({version:1,suiteVersion:artifact.version,officialVersion:JSON.parse(readFileSync(join(app,process.platform==='win32'?'resources':'Contents/Resources','app.asar/package.json'),'utf8')).version,app,home,release,enhancementSha256:artifact.sha256,suiteSha256:artifact.suiteSha256,launcher,skillDir,installedAt:new Date().toISOString()},null,2)+'\n',{mode:0o600})
+const skillDir=installSkill({executable,home,launcher,root,release,codexHome})
+writeFileSync(join(root,'installation.json'),JSON.stringify({version:1,suiteVersion:artifact.enhancementVersion??artifact.version,officialVersion:JSON.parse(readFileSync(join(app,process.platform==='win32'?'resources':'Contents/Resources','app.asar/package.json'),'utf8')).version,app,home,release,enhancementSha256:artifact.sha256,suiteSha256:artifact.suiteSha256,launcher,skillDir,installedAt:new Date().toISOString()},null,2)+'\n',{mode:0o600})
 console.log('官方桌面和 OPL 增强已安装。Codex Skill：opl-dsh-official。')
 if(!flags.includes('--no-launch')) {
   const env={...process.env};delete env.ELECTRON_RUN_AS_NODE

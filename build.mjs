@@ -6,7 +6,8 @@ import { build } from 'esbuild'
 import { execFileSync } from 'node:child_process'
 const root = import.meta.dirname
 const output = join(root, 'dist')
-const version = JSON.parse(await readFile(join(root,'package.json'),'utf8')).version
+const project = JSON.parse(await readFile(join(root,'package.json'),'utf8'))
+const version = project.version
 await rm(join(output,'package'), { recursive: true, force: true })
 await mkdir(join(output, 'package/lib'), { recursive: true })
 await build({entryPoints:[join(root,'src/index.ts')],bundle:true,platform:'node',format:'esm',target:'node24',packages:'external',external:['@deepseek-ai/*'],tsconfig:join(root,'tsconfig.host.json'),outfile:join(output,'package/lib/index.js')})
@@ -24,7 +25,7 @@ export const TYPERT = { ...gateway, schemas: [...gateway.schemas, ...feedback.sc
 `)
 const content = await readFile(join(output, 'package/lib/index.js'), 'utf8')
 const imports = [...content.matchAll(/from ["']([^"']+)["']/g)].map(x => x[1]).filter(x => !x.startsWith('node:'))
-const peers = Object.fromEntries([...new Set(imports)].map(name => [name, name.startsWith('@deepseek-ai/dsh-') ? '>=0.1.7-rc.2 <0.2.0' : '*']))
+const peers = Object.fromEntries([...new Set(imports)].map(name => [name, '*']))
 await writeFile(join(output, 'package/package.json'), JSON.stringify({
   name: '@one-person-lab/dsh-opl', version, type: 'module', license: 'MIT',
   main: './lib/index.js', exports: { '.': './lib/index.js', './client': './lib/client.js', './typert': './lib/typert.host.js', './package.json': './package.json' },
@@ -46,12 +47,15 @@ await rm(installer,{recursive:true,force:true})
 await cp(join(root,'installer'),installer,{recursive:true})
 await cp(join(output,name),join(installer,name))
 const payloadFiles = {}
-for (const file of ['install.command', 'install.cmd', 'install.ps1', 'install.mjs', 'profile.cjs', 'migrate.cjs', 'setup.mjs', 'desktop-platform.mjs', 'update.mjs', 'skill-install.mjs', 'skill/SKILL.md', 'skill/control.mjs', name]) {
+for (const file of ['official-feed.awk', 'compare.cjs', 'install.command', 'install.cmd', 'install.ps1', 'install.mjs', 'profile.cjs', 'migrate.cjs', 'setup.mjs', 'desktop-platform.mjs', 'update.mjs', 'skill-install.mjs', 'skill/SKILL.md', 'skill/control.mjs', name]) {
   payloadFiles[file] = createHash('sha256').update(await readFile(join(installer,file))).digest('hex')
 }
 const suiteSha256 = createHash('sha256').update(JSON.stringify(payloadFiles)).digest('hex')
 const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
-const artifact = { version, sourceCommit, name, sha256: digest, suiteSha256, payloadFiles }
+const officialVersion = process.env.OPL_OFFICIAL_VERSION ?? project.devDependencies['@deepseek-ai/dsh-agent']
+// The public release identity follows the official desktop. The enhancement
+// revision remains an internal rollback/update identity.
+const artifact = { version: officialVersion, officialVersion, enhancementVersion: version, sourceCommit, name, sha256: digest, suiteSha256, payloadFiles }
 await writeFile(join(output,'artifact.json'),JSON.stringify(artifact,null,2)+'\n')
 await writeFile(join(installer,'artifact.json'),JSON.stringify(artifact,null,2)+'\n')
 console.log(installer)
