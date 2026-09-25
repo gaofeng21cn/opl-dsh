@@ -1,6 +1,6 @@
 cask "opl-dsh" do
-  version "0.1.7-rc.2,1"
-  sha256 "810c5ad2147e9a3afb905ded1974dc0727a60d7731087b24c566dec8d7cbdc60"
+  version "0.1.7-rc.2,2"
+  sha256 "41472bc7ed6c198663a66782fb400fbe8d5424848e939c25aafb78168bea7bc1"
 
   url "https://github.com/gaofeng21cn/opl-dsh/releases/download/dsh-v#{version.csv.first}-opl.#{version.csv.second}/OPL-DSH-Enhancements.zip"
   name "OPL DSH"
@@ -13,7 +13,14 @@ cask "opl-dsh" do
 
   installer script: {
     executable: "/bin/bash",
-    args:       [staged_path.join("install.command"), "--no-launch"],
+    args:       ["-c", <<~EOS, "--", staged_path],
+      set -euo pipefail
+      /bin/bash "$1/install.command" --no-launch
+      root="${OPL_SUITE_ROOT:-$HOME/Library/Application Support/OPL DSH Suite}"
+      expected=$(/usr/bin/plutil -extract suiteSha256 raw -o - "$1/artifact.json")
+      actual=$(/usr/bin/plutil -extract suiteSha256 raw -o - "$root/installation.json")
+      [[ "$actual" == "$expected" ]] || { echo 'OPL DSH 安装记录与增强包不符。' >&2; exit 1; }
+    EOS
     sudo:       false,
   }
 
