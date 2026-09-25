@@ -49,7 +49,7 @@ fi
 if [[ "$NEED_INSTALL" == 1 ]]; then
   ARCHIVE="${OPL_OFFICIAL_ARCHIVE:-$ROOT/cache/deepseek-harness-$OFFICIAL_VERSION.zip}"
   if [[ ! -f "$ARCHIVE" ]]; then
-    echo "正在下载官方 DeepSeek Harness $OFFICIAL_VERSION…"
+    echo "正在下载官方 DeepSeek Harness ${OFFICIAL_VERSION}…"
     curl --fail --location --retry 2 --proto '=https' --proto-redir '=https' "$URL" -o "$ARCHIVE.part"
     mv "$ARCHIVE.part" "$ARCHIVE"
   fi

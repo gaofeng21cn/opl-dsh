@@ -49,3 +49,30 @@ test('bootstrap rejects unexpected release redirects', () => {
   assert.notEqual(result.status, 0)
   assert.match(result.stderr, /无法读取 OPL DSH 发布版本/)
 })
+
+test('Mac installer reaches the download branch in a UTF-8 locale and propagates failure', () => {
+  const root = mkdtempSync(join(tmpdir(), 'opl-download-test-'))
+  const bin = join(root, 'bin')
+  mkdirSync(bin)
+  writeFileSync(join(bin, 'uname'), '#!/bin/bash\nif [[ "$1" == -s ]]; then echo Darwin; else echo arm64; fi\n', { mode: 0o700 })
+  writeFileSync(join(bin, 'curl'), `#!/bin/bash
+if [[ "$*" == *nightly-mac.yml* ]]; then
+  echo 'version: 0.1.7-rc.2'
+  echo 'path: https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-0.1.7-rc.2-mac-arm64.zip'
+  echo 'sha512: ${'A'.repeat(86)}=='
+else
+  echo 'EXPECTED_DOWNLOAD_FAILURE' >&2
+  exit 23
+fi
+`, { mode: 0o700 })
+  try {
+    const result = spawnSync('/bin/bash', [new URL('../installer/install.command', import.meta.url).pathname], {
+      encoding: 'utf8', env: { ...process.env, LC_ALL: 'en_US.UTF-8', PATH: bin + ':' + process.env.PATH,
+        OPL_SUITE_ROOT: join(root, 'suite'), OPL_APPLICATIONS_DIR: join(root, 'apps') },
+    })
+    assert.notEqual(result.status, 0)
+    assert.match(result.stdout, /正在下载官方 DeepSeek Harness 0.1.7-rc.2…/)
+    assert.match(result.stderr, /EXPECTED_DOWNLOAD_FAILURE/)
+    assert.doesNotMatch(result.stderr, /unbound variable/)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
