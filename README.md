@@ -10,6 +10,8 @@
 
 你只需使用 OPL DSH 这一个入口。官方桌面和增强插件由 OPL DSH 配套管理，无需分别安装、选择版本或更新。
 
+首次启动可在应用内选择 OPL Gateway、DeepSeek 官方或稍后登录，无需额外打开 OPL 登录网页。详见[首次启动与登录](docs/first-run.md)。
+
 ## 可以做什么
 
 - **连接 OPL Gateway**：登录后自动配置模型与备用通道，默认使用 DeepSeek-V4.1-Flash。

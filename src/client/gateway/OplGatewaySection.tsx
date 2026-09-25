@@ -95,7 +95,7 @@ function Fact({ label, value, wide = false }: { label: string; value: string; wi
 }
 
 /** The OPL Gateway account page. */
-export function OplGatewaySection(props: OplGatewaySectionProps) {
+export function OplGatewaySection(props: OplGatewaySectionProps & { onboarding?: boolean; onReady?: () => Promise<void>; onBusyChange?: (busy: boolean) => void }) {
   const { t, status: readStatus, signIn, refresh, signOut } = props
   const [state, setState] = useState<GatewayAccountStatus | undefined>(undefined)
   const [email, setEmail] = useState('')
@@ -122,6 +122,7 @@ export function OplGatewaySection(props: OplGatewaySectionProps) {
 
   const submit = useCallback(async (): Promise<void> => {
     setBusy('signing-in')
+    props.onBusyChange?.(true)
     setNotice(null)
     setError(null)
     try {
@@ -131,12 +132,14 @@ export function OplGatewaySection(props: OplGatewaySectionProps) {
       // The password has done its work; keeping it in renderer state would
       // leave a live credential in a component nobody is looking at.
       setPassword('')
+      if (result.status.keyReady && props.onReady) await props.onReady()
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure))
     } finally {
       setBusy('idle')
+      props.onBusyChange?.(false)
     }
-  }, [email, password, signIn, t])
+  }, [email, password, signIn, t, props.onReady, props.onBusyChange])
 
   const leave = useCallback(async (): Promise<void> => {
     setBusy('signing-out')
@@ -155,7 +158,7 @@ export function OplGatewaySection(props: OplGatewaySectionProps) {
   const phase = state?.phase ?? 'signed-out'
 
   const connected = phase === 'connected'
-  return <div className={css.section}>
+  return <div className={`${css.section} ${!connected ? css.loginSection : ''}`}>
     <header className={css.header}>
       <div className={css.identity}>
         <h2 className={css.title}>{t(connected ? 'nav' : 'loginTitle')}</h2>
@@ -164,9 +167,9 @@ export function OplGatewaySection(props: OplGatewaySectionProps) {
       {connected && <Button variant='outline' disabled={busy !== 'idle'} onClick={() => { void load(true) }}>{busy === 'loading' ? t('refreshing') : t('refresh')}</Button>}
     </header>
     {error && <p className={`${css.notice} ${css.error}`} role='alert'>{t('failure', { message: error })}</p>}
-    {notice && <p className={css.notice} role='status'>{notice}</p>}
+    {notice && !props.onboarding && <p className={css.notice} role='status'>{notice}</p>}
     {!state ? <p className={css.muted}>{t('loading')}</p> : <>
-      <div className={css.card}>
+      <div className={connected ? css.card : css.loginCard}>
         {connected && <div className={css.identity}>
           <span className={css.name}>{state.models.map(model => model.name).join(', ')}</span>
           <span className={css.muted}>{state.keyReady && state.codexKeyReady ? t('channelsReady') : state.keyReady ? t('primaryReady') : t('signInToStart')}</span>
@@ -179,15 +182,16 @@ export function OplGatewaySection(props: OplGatewaySectionProps) {
         </dl>}
         {!connected && <form className={css.form} onSubmit={event => { event.preventDefault(); void submit() }}>
           <label className={css.field}><span className={css.label}>{t('email')}</span>
-            <input className={css.input} type='email' autoComplete='username' placeholder={t('emailPlaceholder')} value={email} onChange={event => setEmail(event.target.value)} />
+            <input className={css.input} required disabled={busy !== 'idle'} data-modal-autofocus type='email' autoComplete='username' placeholder={t('emailPlaceholder')} value={email} onChange={event => setEmail(event.target.value)} />
           </label>
           <label className={css.field}><span className={css.label}>{t('password')}</span>
-            <input className={css.input} type='password' autoComplete='current-password' placeholder={t('passwordPlaceholder')} value={password} onChange={event => setPassword(event.target.value)} />
+            <input className={css.input} required disabled={busy !== 'idle'} type='password' autoComplete='current-password' placeholder={t('passwordPlaceholder')} value={password} onChange={event => setPassword(event.target.value)} />
           </label>
-          <Button type='submit' disabled={busy !== 'idle' || !email.trim() || !password}>{busy === 'signing-in' ? t('signingIn') : t('signIn')}</Button>
+          <Button className={css.primaryButton} type='submit' disabled={busy !== 'idle' || !email.trim() || !password}>{busy === 'signing-in' ? t('signingIn') : t('signIn')}</Button>
         </form>}
       </div>
-      {connected && <details className={css.details}>
+      {connected && props.onboarding && <Button className={css.primaryButton} disabled={busy !== 'idle'} onClick={() => { void props.onReady?.().catch(() => setError(t('setupFailed'))) }}>{t('saveAndEnter')}</Button>}
+      {connected && !props.onboarding && <details className={css.details}>
         <summary>{t('usageDetails')}</summary>
         <dl className={css.facts}>
           <Fact label={t('todayTokens')} value={tokens(account?.todayTokens)} />
@@ -196,7 +200,7 @@ export function OplGatewaySection(props: OplGatewaySectionProps) {
           {account?.observedAt && <Fact label={t('updated')} value={observedLabel(account.observedAt)} />}
         </dl>
       </details>}
-      {(connected || state.keyReady || state.codexKeyReady) && <details className={css.details}>
+      {!props.onboarding && (connected || state.keyReady || state.codexKeyReady) && <details className={css.details}>
         <summary>{t('advanced')}</summary>
         <p className={css.muted}>{t('managedHint')}</p>
         <dl className={css.facts}>

@@ -13,6 +13,6 @@ export const inject = ['llm', 'typertGateway']
  */
 export function apply(ctx: Context, config: Config): void {
   ctx.plugin(gateway, {})
-  ctx.plugin(control, { choice: () => config.loginChoice.get() })
+  ctx.plugin(control, {})
   ctx.inject(['settings'], child => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
 }

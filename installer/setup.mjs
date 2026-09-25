@@ -1,50 +1,72 @@
-import { openLoginPage, focusApplication } from './desktop-platform.mjs'
-/** Open OPL's own settings before the official native first-run credential gate. */
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+/** Launch the signed official app; let the OPL plugin own the in-app first run.
+ * The version-bound native welcome bridge uses a private Chromium pipe (no TCP
+ * debugging port). Only the official skip operation is invoked; no credentials
+ * or application resources are injected. Keep this small seam covered by a real
+ * official-desktop smoke test whenever the pinned desktop version changes.
+ */
 import { spawn } from 'node:child_process'
-const [home,appPid,launcher,application]=process.argv.slice(2)
-let binding
-for(let n=0;n<120;n++) {
-  try { binding=JSON.parse(await readFile(join(home,'profiles/desktop/control.json'),'utf8'));process.kill(binding.pid,0);break } catch { await new Promise(resolve=>setTimeout(resolve,500)) }
+import { join } from 'node:path'
+import { openSync, closeSync, readFileSync } from 'node:fs'
+const [home, root, application] = process.argv.slice(2)
+if (!home || !root || !application) throw new Error('缺少桌面启动路径')
+const executable = process.platform === 'win32' ? join(application, 'DeepSeek Harness.exe') : join(application, 'Contents/MacOS/DeepSeek Harness')
+const env = { ...process.env, DSH_HOME: home, NODE_USE_SYSTEM_CA: '1' }
+delete env.ELECTRON_RUN_AS_NODE
+const log = openSync(join(root, 'desktop.log'), 'a', 0o600)
+const child = spawn(executable, ['--user-data-dir=' + join(root, 'electron'), '--remote-debugging-pipe'], { env, stdio: ['ignore', log, log, 'pipe', 'pipe'] })
+closeSync(log)
+let next = 0, buffer = '', stopped = false
+const pending = new Map()
+function call(method, params = {}, sessionId) {
+  return new Promise((resolve, reject) => {
+    const id = ++next
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error('桌面欢迎流程响应超时')) }, 10000)
+    pending.set(id, { timer, resolve, reject })
+    child.stdio[3].write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + '\0', error => { if (error) { clearTimeout(timer); pending.delete(id); reject(error) } })
+  })
 }
-if(!binding) throw new Error('官方桌面未能启动，请检查套件目录 desktop.log')
-async function rpc(namespace,method,args={}) {
-  const response=await fetch(binding.endpoint,{method:'POST',headers:{authorization:'Bearer '+binding.token,'content-type':'application/json'},body:JSON.stringify({namespace,method,args}),signal:AbortSignal.timeout(15000)})
-  const result=await response.json();if(!result.ok)throw new Error(result.error);return result.value
+function stop() {
+  stopped = true
+  for (const item of pending.values()) { clearTimeout(item.timer); item.reject(new Error('桌面已退出')) }
+  pending.clear()
 }
-const ready = (setup, gateway) => setup.choice === 'later' || (setup.choice === 'official' ? Boolean(setup.officialProvider) : gateway.keyReady && gateway.codexKeyReady)
-let setup = await rpc('oplSuite','setupStatus')
-let gateway = await rpc('oplGatewayAccount','status')
-if (!ready(setup, gateway)) {
-  const url = await rpc('oplSuite','setupUrl')
-  openLoginPage(url)
-  console.log('请在打开的页面选择 DeepSeek 官方或 OPL Gateway，并完成登录。')
-  let focusedOfficial = false
-  for (let n=0; n<600; n++) {
-    await new Promise(resolve=>setTimeout(resolve,1000))
-    setup = await rpc('oplSuite','setupStatus')
-    gateway = await rpc('oplGatewayAccount','status')
-    if (setup.choice === 'official' && !focusedOfficial) {
-      focusApplication(application)
-      focusedOfficial = true
+child.once('error', () => { console.error('无法启动官方桌面'); stop(); process.exitCode = 1 })
+child.once('exit', code => { stop(); process.exitCode = code ?? 0 })
+child.stdio[3].on('error', stop)
+child.stdio[4].on('error', stop)
+child.stdio[4].on('data', bytes => {
+  buffer += bytes
+  let boundary
+  while ((boundary = buffer.indexOf('\0')) >= 0) {
+    let message
+    try { message = JSON.parse(buffer.slice(0, boundary)) } catch { stop(); return }
+    buffer = buffer.slice(boundary + 1)
+    const item = pending.get(message.id)
+    if (item) { clearTimeout(item.timer); pending.delete(message.id); message.error ? item.reject(new Error('桌面欢迎接口不可用')) : item.resolve(message.result) }
+  }
+})
+// Forward an explicit launcher shutdown, never terminate a separate user process.
+for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { child.kill(signal) })
+try {
+  const resources = process.platform === 'win32' ? join(application, 'resources') : join(application, 'Contents/Resources')
+  const manifest = JSON.parse(readFileSync(join(resources, 'app.asar/package.json'), 'utf8'))
+  if (manifest.version !== '0.1.7-rc.2') throw new Error('官方桌面版本尚未验证')
+  let entered = false
+  for (let n = 0; n < 120 && !stopped && !entered; n++) {
+    const { targetInfos } = await call('Target.getTargets')
+    const welcome = targetInfos.find(target => target.type === 'page' && target.url.startsWith('file:') && target.url.endsWith('/app.asar/renderer/welcome.html'))
+    if (welcome) {
+      const { sessionId } = await call('Target.attachToTarget', { targetId: welcome.targetId, flatten: true })
+      const check = await call('Runtime.evaluate', { expression: 'typeof window.dshWelcome?.skip', returnByValue: true }, sessionId)
+      if (check.result?.value === 'function') {
+        const outcome = await call('Runtime.evaluate', { expression: 'window.dshWelcome.skip()', awaitPromise: true, returnByValue: true }, sessionId)
+        if (outcome.exceptionDetails) throw new Error('官方欢迎窗口未能继续')
+        entered = true
+      } else await call('Target.detachFromTarget', { sessionId })
     }
-    if (setup.choice !== 'official') focusedOfficial = false
-    if (ready(setup,gateway)) break
+    if (!entered) await new Promise(resolve => setTimeout(resolve, 250))
   }
-  if (!ready(setup,gateway)) throw new Error('登录尚未完成。可稍后退出应用并重新运行安装器，已有配置会保留。')
-  if (setup.choice === 'later') {
-    focusApplication(application)
-    console.log('安装完成，可在官方欢迎窗口选择稍后设置。')
-    process.exit(0)
-  }
-  await rpc('oplSuite','finishSetup')
-  process.kill(Number(appPid),'SIGTERM')
-  for (let n=0;n<60;n++) {
-    try { process.kill(Number(appPid),0) } catch { break }
-    await new Promise(resolve=>setTimeout(resolve,500))
-  }
-  const env={...process.env}; delete env.ELECTRON_RUN_AS_NODE
-  const child=spawn(launcher,[],{env,detached:true,stdio:'ignore'}); child.unref()
-  console.log('账户已配置，正在打开官方桌面。')
-} else console.log(setup.choice === 'later' ? '安装完成，可稍后登录。' : '账户连接已就绪。')
+} catch {
+  if (!stopped) console.error('未能自动衔接首次设置。请在官方欢迎窗口选择 API Key → 稍后设置，随后可在应用内登录 OPL Gateway。')
+}
+// The pipe remains private for this app lifetime; no further evaluation occurs.

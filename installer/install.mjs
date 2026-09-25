@@ -41,7 +41,7 @@ if(!existsSync(patch)) writeFileSync(patch,'- id: webserver\n  config:\n    host
 run(executable,[join(release,'profile.cjs'),app,home,join(release,artifact.name)],{ELECTRON_RUN_AS_NODE:'1'})
 const launcher=process.env.OPL_DESKTOP_LAUNCHER ?? join(root,'launch.command')
 if (!process.env.OPL_DESKTOP_LAUNCHER) {
-const launch=`#!/bin/bash\nset -euo pipefail\nunset ELECTRON_RUN_AS_NODE\nexport NODE_USE_SYSTEM_CA=1\nexport DSH_HOME=${quote(home)}\nexec ${quote(executable)} --user-data-dir=${quote(join(root,'electron'))} >>${quote(join(root,'desktop.log'))} 2>&1\n`
+const launch=`#!/bin/bash\nset -euo pipefail\nunset ELECTRON_RUN_AS_NODE\nexport NODE_USE_SYSTEM_CA=1\nexport DSH_HOME=${quote(home)}\nexport ELECTRON_RUN_AS_NODE=1\nexec ${quote(executable)} ${quote(join(release,'setup.mjs'))} ${quote(home)} ${quote(root)} ${quote(app)} >>${quote(join(root,'desktop.log'))} 2>&1\n`
 writeFileSync(launcher,launch,{mode:0o700})
 const shortcut=join(dirname(app),'OPL DSH.command')
 const shortcutBody=`#!/bin/bash\nexec ${quote(launcher)}\n`
@@ -73,5 +73,4 @@ console.log('官方桌面和 OPL 增强已安装。Codex Skill：opl-dsh-officia
 if(!flags.includes('--no-launch')) {
   const env={...process.env};delete env.ELECTRON_RUN_AS_NODE
   const child=spawn(launcher,[],{env,detached:true,stdio:'ignore'});child.unref()
-  run(executable,[join(release,'setup.mjs'),home,String(child.pid),launcher,app],{ELECTRON_RUN_AS_NODE:'1'})
 }
