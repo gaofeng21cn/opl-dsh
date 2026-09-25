@@ -23,3 +23,11 @@
               low: low
               high: high
               max: xhigh
+- id: ui-settings-general
+  config:
+    welcomeNoticeVersion: '2026-08-13.1'
+- id: ui-settings-account
+  config:
+    version: 1
+    step: done
+    completion: skipped
