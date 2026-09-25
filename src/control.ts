@@ -44,8 +44,9 @@ export function apply(ctx: Context, _config: Record<string, never>): void {
       execute: async (args, exec) => {
         const cwd = agent.session.header.cwd
         if (!cwd) throw Error('请先选择项目目录，再派发组合任务')
+        if(args.sessionId){const previous=await harness.snapshot({sessionId:args.sessionId});if(previous.origin.kind!=='dsh'||previous.origin.sessionId!==agent.id)throw Error('只能继续当前对话委派的任务')}
         const policy = agent.ctx.get('sandboxPolicy')?.resolve({session:agent.session})
-        const sandbox = policy?.mode === 'read-only' ? 'read-only' : 'workspace'
+        const sandbox = !policy || policy.mode === 'read-only' ? 'read-only' : 'workspace'
         const started = await harness.start({combination:args.combination,cwd,taskId:args.taskId,
           origin:{kind:'dsh',sessionId:agent.id},sandbox,
           ...(args.sessionId?{existingSessionId:args.sessionId}:{})})
@@ -60,6 +61,17 @@ export function apply(ctx: Context, _config: Record<string, never>): void {
             text:turn?.text??'',approvalRequired:result.approvals.length>0,
             note:result.approvals.length?'请在执行组合面板确认权限，之后读取原会话；不要重派任务。':''}
         } finally {exec.signal.removeEventListener('abort',cancel)}
+      },
+    }))
+    scope.tools.register(defineTool({
+      name:'harness_result',description:'读取或等待当前对话委派的组合任务结果。授权在执行组合界面完成后，用此工具继续等待，不要重派。',
+      parameters:{sessionId:{type:'string',required:true},wait:{type:'boolean'}},
+      output:{schema:{type:'json'},render:(_args,value)=>[{type:'text',text:JSON.stringify(value)}]},
+      execute:async(args,exec)=>{
+        const snapshot=await harness.snapshot({sessionId:args.sessionId})
+        if(snapshot.origin.kind!=='dsh'||snapshot.origin.sessionId!==agent.id)throw Error('只能读取当前对话委派的任务')
+        const result=args.wait?await harness.wait({sessionId:args.sessionId},exec.signal):snapshot
+        return {sessionId:result.id,state:result.state,combination:result.combination,text:result.turns.at(-1)?.text??'',approvalRequired:result.state==='waiting_approval'}
       },
     }))
   })

@@ -10,6 +10,8 @@ import { EventEmitter } from 'node:events'
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
+import { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
+import { setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { GROK_API_KEY_REF } from '../gateway/config.ts'
@@ -127,7 +129,8 @@ export class HarnessService {
       if(!record.acpSessionId) {
         await this.native('create',{sessionId:id,cwd:record.cwd})
         await this.native('selectModel',{sessionId:id,provider:'opl-gateway',model:'deepseek-flash'})
-        await this.native('selectPermissions',{sessionId:id,preset:record.sandbox==='read-only'?'read-only':'workspace-write'})
+        const session=this.ctx.sessions.get(brandString<SessionId>(id));if(!session)throw Error('DSH 子会话未创建')
+        setSandboxMode(session,record.sandbox==='read-only'?'read-only':'workspace-write');setApprovalPolicy(session,'ask')
         await this.native('rename',{sessionId:id,title:'DeepSeek · DSH · 组合协作'})
         record.acpSessionId=id
       }
@@ -234,15 +237,23 @@ export class HarnessService {
         turn.stopReason=String(result.stopReason??'unknown')
         turn.state=turn.stopReason==='end_turn'?'completed':turn.stopReason==='cancelled'?'cancelled':'failed'
       }else{
-        await this.native('prompt',{sessionId:record.acpSessionId,requestId:'opl-harness-'+hash([record.id,turn.operationId]),mode:'queue',content:[{type:'text',text:turn.prompt}]})
-        const agent=this.ctx.agents.get(brandString<SessionId>(record.acpSessionId));if(!agent)throw Error('DSH 会话未就绪')
-        await agent.whenIdle()
-        const result=await waitForSession(this.ctx,{sessionId:agent.id},new AbortController().signal)
-        turn.state=result.outcome.kind==='completed'?'completed':result.outcome.kind==='cancelled'?'cancelled':'failed'
-        turn.stopReason=result.outcome.kind
-        const messages=agent.session.deriveMessages()
-        const last=messages.filter(m=>m.role==='assistant').at(-1)
-        turn.text=last?.content.filter(c=>c.type==='text').map(c=>c.text).join('')??''
+        const unlisten=this.ctx.on('session/event',(session,event)=>{
+          if(session.id!==record.acpSessionId)return
+          if(event.type==='assistant/message')turn.text+=event.data.message.content.filter(c=>c.type==='text').map(c=>c.text).join('')
+          if(event.type==='approval/asked')turn.state='waiting_approval'
+          if(event.type==='approval/decided')turn.state='running'
+          if(event.type==='tool/call')turn.tools.push({id:event.data.callId,title:event.data.name,status:'pending',kind:'other'})
+          if(event.type==='tool/result'){const tool=turn.tools.find(t=>t.id===event.data.message.toolCallId);if(tool)tool.status=event.data.message.isError?'failed':'completed'}
+          this.changed(record)
+        })
+        try{
+          await this.native('prompt',{sessionId:record.acpSessionId,requestId:'opl-harness-'+hash([record.id,turn.operationId]),mode:'queue',content:[{type:'text',text:turn.prompt}]})
+          const agent=this.ctx.agents.get(brandString<SessionId>(record.acpSessionId));if(!agent)throw Error('DSH 会话未就绪')
+          await agent.whenIdle()
+          const result=await waitForSession(this.ctx,{sessionId:agent.id},new AbortController().signal)
+          turn.state=result.outcome.kind==='completed'?'completed':result.outcome.kind==='cancelled'?'cancelled':'failed'
+          turn.stopReason=result.outcome.kind
+        }finally{unlisten()}
       }
     }catch{turn.state=active.cancelled?'cancelled':'failed';turn.error='执行未完成，请检查 Grok 安装、Gateway 连接或原生会话状态。原任务未自动重发。'}
     finally {

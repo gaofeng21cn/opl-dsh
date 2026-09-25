@@ -13,8 +13,8 @@ async function connected(){try{const b=JSON.parse(await readFile(join(config.hom
 if(!await connected()){
  if(config.autoStart===false)throw new Error('自动启动已关闭，请先打开 OPL DSH')
  const env={...process.env};delete env.ELECTRON_RUN_AS_NODE
- const child=spawn(process.platform==='win32'?'wscript.exe':config.launcher,process.platform==='win32'?[config.launcher]:[],{env,detached:true,stdio:'ignore'});child.unref()
- for(let i=0;i<120&&!await connected();i++)await new Promise(resolve=>setTimeout(resolve,500))
+ const child=spawn(process.platform==='win32'?'wscript.exe':config.launcher,process.platform==='win32'?[config.launcher]:[],{env,detached:true,stdio:'ignore'});let launchError;child.once('error',()=>{launchError=true});child.unref()
+ for(let i=0;i<120&&!launchError&&!await connected();i++)await new Promise(resolve=>setTimeout(resolve,500))
  if(!binding)throw new Error('DSH 启动失败，请运行 OPL 一键安装器检查配置')
 }
 async function rpc(method,input,timeout=150000,namespace='session'){
