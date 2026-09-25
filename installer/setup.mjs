@@ -1,3 +1,4 @@
+import { refreshEnhancements } from './update.mjs'
 /** Launch the signed official app; let the OPL plugin own the in-app first run.
  * The version-bound native welcome bridge uses a private Chromium pipe (no TCP
  * debugging port). Only the official skip operation is invoked; no credentials
@@ -9,6 +10,7 @@ import { join } from 'node:path'
 import { openSync, closeSync, readFileSync } from 'node:fs'
 const [home, root, application] = process.argv.slice(2)
 if (!home || !root || !application) throw new Error('缺少桌面启动路径')
+await refreshEnhancements(root, application)
 const executable = process.platform === 'win32' ? join(application, 'DeepSeek Harness.exe') : join(application, 'Contents/MacOS/DeepSeek Harness')
 const env = { ...process.env, DSH_HOME: home, NODE_USE_SYSTEM_CA: '1' }
 delete env.ELECTRON_RUN_AS_NODE

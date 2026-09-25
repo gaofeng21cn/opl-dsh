@@ -1,3 +1,4 @@
+import { CoordinationSection } from './client/CoordinationSection.tsx'
 /** Install the suite's own Remote namespaces before mounting its settings. */
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -25,6 +26,8 @@ export async function apply(ctx: Context): Promise<void> {
         return result.value
       }
       const setup = async <T,>(endpoint: string, payload: unknown = null): Promise<T> => unwrap(await (ctx.get('connection') as ConnectionHandle).rpc.call('/api', 'oplSetup/' + endpoint, payload)) as T
+      const coordination = (action: string, value?: unknown) => setup(action,value)
+      ctx.slots.inject('settings.section', () => ctx.slots.register({name:'settings.section',id:'opl-codex',order:32,label:()=> 'Codex 协作',inject:()=>({call:coordination})}, CoordinationSection))
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({
         name: 'shell.overlay', id: 'opl-setup', locale: 'settings.oplGateway',
         inject: () => ({

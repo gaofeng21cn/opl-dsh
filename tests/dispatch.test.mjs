@@ -10,7 +10,7 @@ import { spawn } from 'node:child_process'
 test('a retry sends one prompt; changed content under the same operation is refused', async t => {
  const root=await mkdtemp(join(tmpdir(),'opl-dispatch-'));t.after(()=>rm(root,{recursive:true,force:true}))
  let prompts=0
- const server=createServer(async(req,res)=>{assert.equal(req.headers.authorization,'Bearer test-only');let body='';for await(const part of req)body+=part;const data=JSON.parse(body);if(data.method==='prompt')prompts++;res.setHeader('content-type','application/json');res.end(JSON.stringify({ok:true,value:data.method==='create'?{sessionId:data.args.request.sessionId}:data.method==='prompt'?{accepted:true}:{}}))})
+ const server=createServer(async(req,res)=>{assert.equal(req.headers.authorization,'Bearer test-only');let body='';for await(const part of req)body+=part;const data=JSON.parse(body);if(data.method==='prompt')prompts++;res.setHeader('content-type','application/json');res.end(JSON.stringify({ok:true,value:data.method==='create'?{sessionId:data.args.request.sessionId}:data.method==='prompt'?{accepted:true}:data.method==='register'?{task:data.args.request}:{}}))})
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)))
  await mkdir(join(root,'profiles/desktop'),{recursive:true});await writeFile(join(root,'profiles/desktop/control.json'),JSON.stringify({pid:process.pid,endpoint:`http://127.0.0.1:${server.address().port}`,token:'test-only'}))
  await cp(new URL('../installer/skill/control.mjs',import.meta.url),join(root,'control.mjs'))

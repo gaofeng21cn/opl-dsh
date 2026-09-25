@@ -17,4 +17,4 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' sna
 
 同一 task 的后续指令使用新的 operation ID，helper 保留同一个 DSH Session。需要用户授权或补充信息时报告真实等待状态；不自动扩大权限。任务完成后读取 snapshot，独立检查产物。默认使用 opl-gateway/deepseek-flash；可用 `--provider opl-gateway-openai` 直接选择备用通道。
 
-此基线支持派发、续接、等待、快照和取消。它不承诺 DSH 在 Codex 任务停止后主动唤醒 Codex；旧版 task-feedback 反向唤醒尚未移植。
+任务会在派发前登记到持久化反馈服务。可使用 `tasks`、`outbox`、`wake` 查看任务、通知与回调状态；`task`、`receive`、`consume`、`resumeFailed` 接受 `--request-file` JSON 请求。需要接收回调时，在 DSH 的“设置 → Codex 协作”配置实际可用的 Codex 队列桥；未配置或探测未通过时，不得声称能够后台唤醒 Codex。继续、重试和回调验收必须核对任务与会话，权限和结构化问题由用户在 DSH 中决定。

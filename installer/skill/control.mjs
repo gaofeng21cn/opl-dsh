@@ -11,13 +11,14 @@ const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex
 let binding
 async function connected(){try{const b=JSON.parse(await readFile(join(config.home,'profiles/desktop/control.json'),'utf8'));process.kill(b.pid,0);binding=b;return true}catch{return false}}
 if(!await connected()){
+ if(config.autoStart===false)throw new Error('自动启动已关闭，请先打开 OPL DSH')
  const env={...process.env};delete env.ELECTRON_RUN_AS_NODE
- const child=spawn(config.launcher,[],{env,detached:true,stdio:'ignore'});child.unref()
+ const child=spawn(process.platform==='win32'?'wscript.exe':config.launcher,process.platform==='win32'?[config.launcher]:[],{env,detached:true,stdio:'ignore'});child.unref()
  for(let i=0;i<120&&!await connected();i++)await new Promise(resolve=>setTimeout(resolve,500))
  if(!binding)throw new Error('DSH 启动失败，请运行 OPL 一键安装器检查配置')
 }
-async function rpc(method,input,timeout=150000){
- const response=await fetch(binding.endpoint,{method:'POST',headers:{authorization:'Bearer '+binding.token,'content-type':'application/json'},body:JSON.stringify({namespace:'session',method,args:method==='wait'?input:{request:input},timeoutMs:timeout}),signal:AbortSignal.timeout(timeout+5000)})
+async function rpc(method,input,timeout=150000,namespace='session'){
+ const response=await fetch(binding.endpoint,{method:'POST',headers:{authorization:'Bearer '+binding.token,'content-type':'application/json'},body:JSON.stringify({namespace,method,args:['tasks','outbox','wake','receipts','flush'].includes(method)?{}:method==='wait'?input:{request:input},timeoutMs:timeout}),signal:AbortSignal.timeout(timeout+5000)})
  const result=await response.json();if(!result.ok)throw new Error(result.error);return result.value
 }
 if(command==='dispatch'){
@@ -38,11 +39,14 @@ if(command==='dispatch'){
   if(previous&&previous.fingerprint!==fingerprint)throw new Error('同一个 operation ID 的内容发生变化，请为新指令使用新 ID')
   if(previous?.accepted){console.log(JSON.stringify({...previous,idempotent:true}));process.exitCode=0}
   else {
-   const record={sessionId,requestId,fingerprint,accepted:false}
+   const taskId=requestId
+   const record={sessionId,requestId,taskId,fingerprint,accepted:false}
    async function save(value){const temp=file+'.'+randomUUID();const out=await open(temp,'wx',0o600);try{await out.writeFile(JSON.stringify(value)+'\n');await out.sync()}finally{await out.close()}await rename(temp,file)}
    await save(record)
    await rpc('create',{sessionId,cwd:args.cwd})
    await rpc('selectModel',{sessionId,provider,model:'deepseek-flash'})
+   const registered=await rpc('register',{taskId,sessionId,target:{kind:'codex-thread',threadId:thread},acceptance:args.acceptance??'读取结果并独立检查产物'},150000,'taskFeedback')
+   if(registered.task?.taskId!==taskId)throw new Error('任务反馈登记未确认，未发送提示词')
    const receipt=await rpc('prompt',{sessionId,requestId,mode:'queue',content:[{type:'text',text:prompt}]})
    if(receipt.accepted!==true)throw new Error('未确认接收，请沿用同一个 operation ID 重试')
    await save({...record,accepted:true});console.log(JSON.stringify({...record,accepted:true}))
@@ -51,4 +55,9 @@ if(command==='dispatch'){
 } else if(['wait','snapshot','cancel'].includes(command)){
  if(!args.session)throw new Error('缺少 --session')
  console.log(JSON.stringify(await rpc(command,command==='snapshot'?{address:{kind:'session',sessionId:args.session},maxMessages:30,assistantStream:true}:{sessionId:args.session},command==='wait'?Number(args.timeout??150000):150000)))
-} else throw new Error('用法：dispatch | wait | snapshot | cancel')
+} else if(['tasks','outbox','wake','receipts','flush'].includes(command)){
+ console.log(JSON.stringify(await rpc(command,{},150000,'taskFeedback')))
+} else if(['task','receive','consume','resumeFailed'].includes(command)){
+ if(!args['request-file'])throw new Error('需要 --request-file 指向请求 JSON 文件')
+ console.log(JSON.stringify(await rpc(command,JSON.parse(await readFile(args['request-file'],'utf8')),150000,'taskFeedback')))
+} else throw new Error('用法：dispatch | wait | snapshot | cancel | tasks | outbox | wake | task | receive | consume | resumeFailed')

@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Root,[Parameter(Mandatory=$true)][string]$Payload,[Parameter(Mandatory=$true)][string]$Launcher)
+﻿param([string]$Root = (Join-Path $env:APPDATA 'OPL DSH Suite'),[string]$Payload = $PSScriptRoot,[string]$Launcher = '',[switch]$NoLaunch)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $app = Join-Path $Root 'runtime\0.1.7-rc.2\DeepSeek Harness'
@@ -16,10 +16,12 @@ if (-not (Test-Path -LiteralPath $exe)) {
   $process = Start-Process -FilePath $archive -ArgumentList @('/S', "/D=$app") -Wait -PassThru
   if ($process.ExitCode -ne 0) { throw '官方运行环境安装失败。' }
 }
-if ((Get-Item -LiteralPath $exe).VersionInfo.ProductVersion -ne '0.1.7-rc.2') { throw '运行环境版本与本次 OPL DSH 不匹配。' }
+if ((Get-Item -LiteralPath $exe).VersionInfo.FileVersion -ne '0.1.7-rc.2') { throw '运行环境版本与本次 OPL DSH 不匹配。' }
 if ((Get-AuthenticodeSignature -LiteralPath $exe).Status -ne 'Valid') { throw '运行环境签名无效。' }
 $env:ELECTRON_RUN_AS_NODE = '1'
 $env:NODE_USE_SYSTEM_CA = '1'
-$env:OPL_DESKTOP_LAUNCHER = $Launcher
-& $exe (Join-Path $Payload 'install.mjs') $app $Root $Payload '--no-launch'
-if ($LASTEXITCODE -ne 0) { throw 'OPL 增强安装失败。' }
+if ($Launcher) { $env:OPL_DESKTOP_LAUNCHER = $Launcher } else { Remove-Item Env:OPL_DESKTOP_LAUNCHER -ErrorAction SilentlyContinue }
+$installArgs = @((Join-Path $Payload 'install.mjs'), $app, $Root, $Payload, '--no-launch') | ForEach-Object { '"' + $_ + '"' }
+$installed = Start-Process -FilePath $exe -ArgumentList $installArgs -Wait -PassThru
+if ($installed.ExitCode -ne 0) { throw 'OPL 增强安装失败。' }
+if (-not $NoLaunch) { Start-Process -FilePath 'wscript.exe' -ArgumentList ('"' + (Join-Path $Root 'launch.vbs') + '"') }

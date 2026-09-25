@@ -13,7 +13,7 @@ test('tarball checksum and contents bind the installer to an external plugin',as
  const files=execFileSync('tar',['-tzf',new URL(manifest.name,output).pathname],{encoding:'utf8'})
  assert.doesNotMatch(files,/node_modules|app\.asar|credentials|\/\.env/)
  const pkg=JSON.parse(await readFile(new URL('package/package.json',output),'utf8'))
- assert.equal(pkg.name,'@one-person-lab/dsh-opl');assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-llm'],'0.1.7-rc.2')
+ assert.equal(pkg.name,'@one-person-lab/dsh-opl');assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-llm'],'>=0.1.7-rc.2 <0.2.0')
  const code=await readFile(new URL('package/lib/index.js',output),'utf8')
  assert.match(code,/from "@deepseek-ai\/dsh-llm-deepseek"/)
  assert.doesNotMatch(code,/class LlmRuntime|class AgentLoop|resolveProfiles|credentialStoreFrom|authContextFrom/)

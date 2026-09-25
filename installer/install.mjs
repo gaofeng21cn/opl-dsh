@@ -1,3 +1,4 @@
+import { installSkill, verifySkill } from './skill-install.mjs'
 /** Install only OPL-owned files, then launch the unmodified official application. */
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync, mkdirSync, cpSync, writeFileSync, renameSync, rmSync, lstatSync } from 'node:fs'
@@ -38,39 +39,37 @@ if (existsSync(release)) {
 const patch=join(home,'profiles/desktop/cordis.patch.yml')
 mkdirSync(dirname(patch),{recursive:true,mode:0o700})
 if(!existsSync(patch)) writeFileSync(patch,'- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n    compression: gzip\n    compressionLevel: 1\n    compressionThresholdBytes: 1024\n',{mode:0o600,flag:'wx'})
+verifySkill(join(process.env.OPL_CODEX_HOME??process.env.CODEX_HOME??join(homedir(),'.codex'),'skills/opl-dsh-official'))
+run(executable,[join(release,'migrate.cjs'),app,home,root],{ELECTRON_RUN_AS_NODE:'1'})
 run(executable,[join(release,'profile.cjs'),app,home,join(release,artifact.name)],{ELECTRON_RUN_AS_NODE:'1'})
-const launcher=process.env.OPL_DESKTOP_LAUNCHER ?? join(root,'launch.command')
+const launcher=process.env.OPL_DESKTOP_LAUNCHER ?? join(root,process.platform==='win32'?'launch.vbs':'launch.command')
 if (!process.env.OPL_DESKTOP_LAUNCHER) {
-const launch=`#!/bin/bash\nset -euo pipefail\nunset ELECTRON_RUN_AS_NODE\nexport NODE_USE_SYSTEM_CA=1\nexport DSH_HOME=${quote(home)}\nexport ELECTRON_RUN_AS_NODE=1\nexec ${quote(executable)} ${quote(join(release,'setup.mjs'))} ${quote(home)} ${quote(root)} ${quote(app)} >>${quote(join(root,'desktop.log'))} 2>&1\n`
-writeFileSync(launcher,launch,{mode:0o700})
-const shortcut=join(dirname(app),'OPL DSH.command')
-const shortcutBody=`#!/bin/bash\nexec ${quote(launcher)}\n`
-if(existsSync(shortcut) && !readFileSync(shortcut,'utf8').includes(quote(launcher))) throw new Error('已有同名 OPL DSH.command，已保留；请使用套件目录内的启动入口')
-writeFileSync(shortcut,shortcutBody,{mode:0o700})
-}
-const codexHome=process.env.OPL_CODEX_HOME ?? process.env.CODEX_HOME ?? join(homedir(),'.codex')
-const skillDir=join(codexHome,'skills/opl-dsh-official')
-const skillManifest=join(skillDir,'.opl-install.json')
-if(existsSync(skillDir)) {
-  if(lstatSync(skillDir).isSymbolicLink() || !existsSync(skillManifest)) throw new Error('已有非本安装器管理的 opl-dsh-official Skill，已保留')
-  const previous=JSON.parse(readFileSync(skillManifest,'utf8'))
-  if(previous.owner!=='opl-dsh-suite' || readdirSync(skillDir).some(file=>file!=='.opl-install.json' && !Object.hasOwn(previous.files,file)) || Object.entries(previous.files).some(([file,hash])=>!existsSync(join(skillDir,file)) || digest(readFileSync(join(skillDir,file)))!==hash)) throw new Error('Codex Skill 已被手动修改，已保留；请先备份并移走该目录再更新')
-}
-const skillStage=skillDir+'.stage-'+process.pid
-mkdirSync(skillStage,{recursive:true,mode:0o700})
-cpSync(join(release,'skill'),skillStage,{recursive:true})
-writeFileSync(join(skillStage,'config.json'),JSON.stringify({executable,home,launcher,ledger:join(root,'codex-ledger')},null,2)+'\n',{mode:0o600})
-const files=Object.fromEntries(['SKILL.md','control.mjs','config.json'].map(file=>[file,digest(readFileSync(join(skillStage,file)))]))
-writeFileSync(join(skillStage,'.opl-install.json'),JSON.stringify({owner:'opl-dsh-suite',files})+'\n',{mode:0o600})
-if(existsSync(skillDir) && Object.entries(files).every(([file,hash])=>digest(readFileSync(join(skillDir,file)))===hash)) {
-  rmSync(skillStage,{recursive:true})
+if (process.platform === 'win32') {
+  const quoteVbs = value => '"' + value.replaceAll('"', '""') + '"'
+  const command = `"${executable}" "${join(release,'setup.mjs')}" "${home}" "${root}" "${app}"`
+  writeFileSync(launcher, 'Set shell = CreateObject("WScript.Shell")\r\nshell.Environment("Process")("ELECTRON_RUN_AS_NODE") = "1"\r\nshell.Environment("Process")("NODE_USE_SYSTEM_CA") = "1"\r\nshell.Run '+quoteVbs(command)+', 0, False\r\n')
+  const script = "$s = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath('Programs')) 'OPL DSH.lnk')); $s.TargetPath = 'wscript.exe'; $s.Arguments = [char]34 + $env:OPL_SHORTCUT_SCRIPT + [char]34; $s.IconLocation = $env:OPL_SHORTCUT_ICON; $s.Save()"
+  run('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{OPL_SHORTCUT_SCRIPT:launcher,OPL_SHORTCUT_ICON:executable})
 } else {
-  if(existsSync(skillDir)) renameSync(skillDir,skillDir+'.backup-'+Date.now())
-  renameSync(skillStage,skillDir)
+  const launch=`#!/bin/bash\nset -euo pipefail\nexport NODE_USE_SYSTEM_CA=1\nexport ELECTRON_RUN_AS_NODE=1\nexec ${quote(executable)} ${quote(join(release,'setup.mjs'))} ${quote(home)} ${quote(root)} ${quote(app)} >>${quote(join(root,'desktop.log'))} 2>&1\n`
+  writeFileSync(launcher,launch,{mode:0o700})
+  const shortcut=join(dirname(app),'OPL DSH.command')
+  if(existsSync(shortcut) && !readFileSync(shortcut,'utf8').includes(quote(launcher))) throw new Error('已有同名 OPL DSH.command，已保留；请使用套件目录内的启动入口')
+  writeFileSync(shortcut,`#!/bin/bash\nexec ${quote(launcher)}\n`,{mode:0o700})
+  const shortcutApp=join(dirname(app),'OPL DSH.app')
+  const marker=join(shortcutApp,'Contents/Resources/opl-launcher-owner.txt')
+  if(!existsSync(shortcutApp) || (existsSync(marker)&&readFileSync(marker,'utf8')===root)) {
+    const source=join(root,'shortcut.applescript')
+    writeFileSync(source,'on run\n  do shell script '+JSON.stringify(quote(launcher)+" >/dev/null 2>&1 &")+'\nend run\n')
+    run('/usr/bin/osacompile',['-o',shortcutApp,source])
+    writeFileSync(marker,root)
+  }
 }
-writeFileSync(join(root,'installation.json'),JSON.stringify({version:1,officialVersion:'0.1.7-rc.2',app,home,release,enhancementSha256:artifact.sha256,suiteSha256:artifact.suiteSha256,launcher,skillDir,installedAt:new Date().toISOString()},null,2)+'\n',{mode:0o600})
+}
+const skillDir=installSkill({executable,home,launcher,root,release})
+writeFileSync(join(root,'installation.json'),JSON.stringify({version:1,suiteVersion:artifact.version,officialVersion:JSON.parse(readFileSync(join(app,process.platform==='win32'?'resources':'Contents/Resources','app.asar/package.json'),'utf8')).version,app,home,release,enhancementSha256:artifact.sha256,suiteSha256:artifact.suiteSha256,launcher,skillDir,installedAt:new Date().toISOString()},null,2)+'\n',{mode:0o600})
 console.log('官方桌面和 OPL 增强已安装。Codex Skill：opl-dsh-official。')
 if(!flags.includes('--no-launch')) {
   const env={...process.env};delete env.ELECTRON_RUN_AS_NODE
-  const child=spawn(launcher,[],{env,detached:true,stdio:'ignore'});child.unref()
+  const child=spawn(process.platform==='win32'?'wscript.exe':launcher,process.platform==='win32'?[launcher]:[],{env,detached:true,stdio:'ignore'});child.unref()
 }

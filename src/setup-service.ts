@@ -1,3 +1,4 @@
+import { coordinationAction } from './coordination/settings.ts'
 /** First-run completion belongs to the Host; the desktop and browser share this channel. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
@@ -39,6 +40,7 @@ export async function finishSetup(ctx: Context, choice: Exclude<LoginChoice, 'un
 export function installSetupChannel(ctx: Context): void {
   const handle = async (endpoint: string, payload: unknown) => {
     try {
+      if (['coordination-status','skill-install','auto-start','wake-settings'].includes(endpoint)) return { ok: true, value: await coordinationAction(ctx, endpoint, payload) }
       if (endpoint === 'status') return { ok: true, value: await setupStatus(ctx) }
       if (endpoint === 'finish' && (payload === 'gateway' || payload === 'official' || payload === 'later')) {
         await finishSetup(ctx, payload); return { ok: true, value: null }
@@ -68,7 +70,7 @@ export function installSetupChannel(ctx: Context): void {
       return { ok: false, error: { code: 'setup-failed', message: '未能完成设置，请检查连接后重试。', details: {} } }
     }
   }
-  for (const endpoint of ['status', 'finish', 'official-start', 'official-cancel', 'official-key']) {
+  for (const endpoint of ['status', 'finish', 'official-start', 'official-cancel', 'official-key','coordination-status','skill-install','auto-start','wake-settings']) {
     ctx.effect(() => ctx.connection.fetch.register({
       path: '/api/oplSetup/' + endpoint, methods: ['POST'], requestBody: 'buffered',
       fetch: async request => {
