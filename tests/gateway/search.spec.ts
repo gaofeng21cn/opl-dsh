@@ -17,12 +17,11 @@ const KEY = 'opl-search-key'
 function options(overrides: Partial<OplGatewaySearchProviderOptions> = {}): OplGatewaySearchProviderOptions {
   return {
     apiKey: KEY,
-    apiKeyEnv: credentialRef('OPL_GATEWAY_DEEPSEEK_API_KEY'),
+    apiKeyEnv: credentialRef('OPL_GATEWAY_CODEX_API_KEY'),
     baseURL: 'https://gateway.test/v1',
-    model: 'gpt-6-astra',
+    model: 'gpt-6-luna',
     maxOutputTokens: 1024,
     timeoutMs: 30_000,
-    maxSearches: 3,
     ...overrides,
   }
 }
@@ -138,8 +137,7 @@ describe('OplGatewaySearchProvider', () => {
   it('posts the streaming Responses request to the configured gateway', async () => {
     const fetchMock = vi.fn(async () => streamResponse([citedFrames().join('')]))
     vi.stubGlobal('fetch', fetchMock)
-    const recorded: unknown[] = []
-    const provider = new OplGatewaySearchProvider(() => options({ recordRequest: request => recorded.push(request) }))
+    const provider = new OplGatewaySearchProvider(() => options())
 
     const result = await provider.search({ query: 'what is DeepSeek Harness', maxResults: 5 })
 
@@ -153,24 +151,12 @@ describe('OplGatewaySearchProvider', () => {
     expect(new Headers(init.headers).get('authorization')).toBe(`Bearer ${KEY}`)
     expect(new Headers(init.headers).get('accept')).toBe('text/event-stream')
     expect(JSON.parse(String(init.body))).toEqual({
-      model: 'gpt-6-astra',
+      model: 'gpt-6-luna',
       input: 'Perform a web search for the query: what is DeepSeek Harness',
       tools: [{ type: 'web_search' }],
       max_output_tokens: 1024,
       stream: true,
     })
-    // The logged record is secret-free and identical to what was sent.
-    expect(recorded).toEqual([{
-      endpoint: 'https://gateway.test/v1/responses',
-      body: {
-        model: 'gpt-6-astra',
-        input: 'Perform a web search for the query: what is DeepSeek Harness',
-        tools: [{ type: 'web_search' }],
-        max_output_tokens: 1024,
-        stream: true,
-      },
-    }])
-    expect(JSON.stringify(recorded)).not.toContain(KEY)
     expect(result.sources.map(source => source.url))
       .toEqual(['https://a.test/harness', 'https://b.test/premier'])
   })
@@ -207,7 +193,7 @@ describe('OplGatewaySearchProvider', () => {
     await expect(provider.search({ query: 'q' })).rejects.toMatchObject({
       code: 'WEB_PROVIDER_CREDENTIAL_MISSING',
     })
-    await expect(provider.search({ query: 'q' })).rejects.toThrow(/OPL_GATEWAY_DEEPSEEK_API_KEY/)
+    await expect(provider.search({ query: 'q' })).rejects.toThrow(/OPL_GATEWAY_CODEX_API_KEY/)
     // A missing credential is decided before dispatch, so no key can leak.
     expect(fetchMock).not.toHaveBeenCalled()
   })

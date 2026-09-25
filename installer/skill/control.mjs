@@ -21,7 +21,36 @@ async function rpc(method,input,timeout=150000,namespace='session'){
  const response=await fetch(binding.endpoint,{method:'POST',headers:{authorization:'Bearer '+binding.token,'content-type':'application/json'},body:JSON.stringify({namespace,method,args:['tasks','outbox','wake','receipts','flush'].includes(method)?{}:method==='wait'?input:{request:input},timeoutMs:timeout}),signal:AbortSignal.timeout(timeout+5000)})
  const result=await response.json();if(!result.ok)throw new Error(result.error);return result.value
 }
-if(command==='dispatch'){
+async function harnessRpc(method,input,timeout=600000){
+ const response=await fetch(binding.endpoint,{method:'POST',headers:{authorization:'Bearer '+binding.token,'content-type':'application/json'},body:JSON.stringify({namespace:'harness',method,args:input,timeoutMs:timeout}),signal:AbortSignal.timeout(timeout+5000)})
+ const result=await response.json();if(!result.ok)throw new Error(result.error);return result.value
+}
+if(['delegate','delegate-start','delegate-prompt','delegate-cancel','delegate-snapshot','delegate-list','delegate-wait'].includes(command)){
+ if(command==='delegate-list')console.log(JSON.stringify(await harnessRpc('list',{})))
+ else if(['delegate-cancel','delegate-snapshot','delegate-wait'].includes(command)){
+  if(!args.session)throw Error('缺少 --session')
+  console.log(JSON.stringify(await harnessRpc(command.slice(9),{sessionId:args.session,...(args.operation?{operationId:args.operation}:{})})))
+ }else{
+  if(command!=='delegate-prompt')for(const key of ['combination','cwd','task'])if(!args[key])throw Error('缺少 --'+key)
+  if(args.cwd&&!isAbsolute(args.cwd))throw Error('--cwd 必须为绝对路径')
+  let text
+  if(command!=='delegate-start'){
+   for(const key of ['operation','prompt-file'])if(!args[key])throw Error('缺少 --'+key)
+   if(!isAbsolute(args['prompt-file']))throw Error('--prompt-file 必须为绝对路径')
+   text=await readFile(args['prompt-file'],'utf8');if(!text.trim())throw Error('任务不能为空')
+  }
+  const origin={kind:'codex',sessionId:process.env.CODEX_THREAD_ID??'manual'}
+  const started=command==='delegate-prompt'?{id:args.session}:await harnessRpc('start',{combination:args.combination,cwd:args.cwd,taskId:args.task,origin,...(args.session?{existingSessionId:args.session}:{})})
+  if(command==='delegate-start')console.log(JSON.stringify(started))
+  else{
+   if(!started.id)throw Error('缺少 --session')
+   await harnessRpc('prompt',{sessionId:started.id,text,operationId:args.operation})
+   // The Host records acceptance and results, so a disconnect can be reconciled
+   // without sending the prompt again. Permission waits return immediately.
+   console.log(JSON.stringify(await harnessRpc('wait',{sessionId:started.id,operationId:args.operation})))
+  }
+ }
+} else if(command==='dispatch'){
  for(const key of ['task','operation','cwd','prompt-file'])if(!args[key])throw new Error('缺少 --'+key)
  if(!isAbsolute(args.cwd)||!isAbsolute(args['prompt-file']))throw new Error('cwd 和 prompt-file 必须为绝对路径')
  const thread=process.env.CODEX_THREAD_ID??'manual'
@@ -60,4 +89,4 @@ if(command==='dispatch'){
 } else if(['task','receive','consume','resumeFailed'].includes(command)){
  if(!args['request-file'])throw new Error('需要 --request-file 指向请求 JSON 文件')
  console.log(JSON.stringify(await rpc(command,JSON.parse(await readFile(args['request-file'],'utf8')),150000,'taskFeedback')))
-} else throw new Error('用法：dispatch | wait | snapshot | cancel | tasks | outbox | wake | task | receive | consume | resumeFailed')
+} else throw new Error('用法：dispatch | delegate | delegate-start | delegate-prompt | delegate-cancel | delegate-snapshot | wait | snapshot | cancel | tasks | outbox | wake | task | receive | consume | resumeFailed')

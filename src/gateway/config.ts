@@ -10,18 +10,15 @@ import {
 import type { DeepSeekCatalogModel } from '@deepseek-ai/dsh-llm-deepseek'
 import type { Options } from '@deepseek-ai/dsh-llm-deepseek-api-key'
 import { OPL_GATEWAY_INFERENCE_BASE_URL } from './opl-credentials.ts'
-import {
-  OPL_GATEWAY_SEARCH_DEFAULT_MAX_OUTPUT_TOKENS,
-  OPL_GATEWAY_SEARCH_DEFAULT_MAX_SEARCHES,
-  OPL_GATEWAY_SEARCH_DEFAULT_MODEL,
-  OPL_GATEWAY_SEARCH_DEFAULT_TIMEOUT_MS,
-} from './search.ts'
 
 /** Credential reference the Models page writes when a gateway key is typed in. */
 export const DEFAULT_API_KEY_REF = 'OPL_GATEWAY_DEEPSEEK_API_KEY'
 
 /** Independent Codex-group credential used only by the OpenAI compatibility channel. */
 export const CODEX_API_KEY_REF = 'OPL_GATEWAY_CODEX_API_KEY'
+
+/** Independent Grok-group credential used only by the Grok Build harness. */
+export const GROK_API_KEY_REF = 'OPL_GATEWAY_GROK_API_KEY'
 
 /**
  * The one model this route advertises. The gateway serves the id
@@ -41,28 +38,6 @@ export const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
 ]
 
 const MODEL_MODALITIES = ['text', 'image'] as const
-
-/**
- * Auxiliary web search served from this gateway's Responses route.
- *
- * Search runs on a model that serves the gateway's `web_search` tool, which the
- * account's DeepSeek routes are not; the conversation model stays a separate
- * choice. Every field falls back to this route's own endpoint and credential.
- */
-export interface SearchConfig {
-  /** Model that runs the auxiliary search turn. */
-  model?: string
-  /** Credential reference; defaults to this route's `apiKeyEnv`. */
-  apiKeyEnv?: string
-  /** Inference root; `/responses` is appended. Defaults to this route's endpoint. */
-  baseURL?: string
-  /** Upper bound on generated tokens for the search turn. */
-  maxOutputTokens?: number
-  /** Budget for one search, covering connection, search, and answer. */
-  timeoutMs?: number
-  /** Upper bound on server-side searches one request may run. */
-  maxSearches?: number
-}
 
 /**
  * Plugin config, validated by the same-named schema and doubling as the
@@ -94,8 +69,6 @@ export interface Config {
   streamIdleTimeoutMs?: number
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
-  /** Auxiliary web search; omitted mounts the route's own search provider with these defaults. */
-  search?: SearchConfig
 }
 
 const catalogModel: z<DeepSeekCatalogModel> = z.object({
@@ -120,14 +93,7 @@ export const Config: z<Config> = z.object({
   defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
   streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
   retryPolicy: RetryPolicySchema,
-  search: z.object({
-    model: z.string().default(OPL_GATEWAY_SEARCH_DEFAULT_MODEL),
-    apiKeyEnv: z.string(),
-    baseURL: z.string(),
-    maxOutputTokens: z.number().step(1).min(1).default(OPL_GATEWAY_SEARCH_DEFAULT_MAX_OUTPUT_TOKENS),
-    timeoutMs: z.number().step(1).min(1).default(OPL_GATEWAY_SEARCH_DEFAULT_TIMEOUT_MS),
-    maxSearches: z.number().step(1).min(1).default(OPL_GATEWAY_SEARCH_DEFAULT_MAX_SEARCHES),
-  }),
+
 })
 
 /**

@@ -11,10 +11,10 @@ const allowed: Readonly<Record<string, readonly string[]>> = {
     'permissions', 'selectPermissions', 'updateQueue', 'page', 'snapshot', 'controlSnapshot', 'wait',
   ],
   workspace: ['follow', 'moveSession'],
-  oplSearch: ['status', 'configure', 'models', 'test'],
   oplSuite: ['setupUrl', 'setupStatus', 'finishSetup'],
   oplGatewayAccount: ['status', 'refresh'],
   taskFeedback: ['register', 'task', 'tasks', 'outbox', 'wake', 'ack', 'receive', 'receipts', 'consume', 'resumeFailed', 'flush'],
+  harness: ['start', 'prompt', 'cancel', 'snapshot', 'list', 'wait'],
 }
 
 /**

@@ -12,7 +12,7 @@ const skillStage=skillDir+'.stage-'+process.pid
 mkdirSync(skillStage,{recursive:true,mode:0o700})
 cpSync(join(release,'skill'),skillStage,{recursive:true})
 writeFileSync(join(skillStage,'config.json'),JSON.stringify({executable,home,launcher,ledger:join(root,'codex-ledger'),autoStart:previousConfig?.autoStart ?? true},null,2)+'\n',{mode:0o600})
-const files=Object.fromEntries(['SKILL.md','control.mjs','config.json'].map(file=>[file,digest(readFileSync(join(skillStage,file)))]))
+const files=Object.fromEntries(['SKILL.md','control.mjs','harness-mcp.mjs','config.json'].map(file=>[file,digest(readFileSync(join(skillStage,file)))]))
 writeFileSync(join(skillStage,'.opl-install.json'),JSON.stringify({owner:'opl-dsh-suite',files})+'\n',{mode:0o600})
 if(existsSync(skillDir) && Object.entries(files).every(([file,hash])=>digest(readFileSync(join(skillDir,file)))===hash)) {
   rmSync(skillStage,{recursive:true})

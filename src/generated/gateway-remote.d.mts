@@ -3,7 +3,7 @@ import type {
   RemoteResult,
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { GatewayAccountStatus, GatewaySignInResult, OplSearchPreferences, OplSearchStatus, OplSearchTestResult } from '../gateway/types.ts'
+import type { GatewayAccountStatus, GatewaySignInResult } from '../gateway/types.ts'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$6f706c476174657761794163636f756e74 {
@@ -12,25 +12,14 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     signOut: () => Promise<RemoteResult<GatewayAccountStatus>>
     status: () => Promise<RemoteResult<GatewayAccountStatus>>
   }
-  interface TypertRemoteNamespace$6f706c536561726368 {
-    configure: (preferences: OplSearchPreferences) => Promise<RemoteResult<OplSearchStatus>>
-    models: (signal?: AbortSignal) => Promise<RemoteResult<string[]>>
-    status: () => Promise<RemoteResult<OplSearchStatus>>
-    test: (preferences: OplSearchPreferences, query: string, signal?: AbortSignal) => Promise<RemoteResult<OplSearchTestResult>>
-  }
   interface TypertRemoteMap {
     'oplGatewayAccount/refresh': () => Promise<RemoteResult<GatewayAccountStatus>>
     'oplGatewayAccount/signIn': (email: string, password: string) => Promise<RemoteResult<GatewaySignInResult>>
     'oplGatewayAccount/signOut': () => Promise<RemoteResult<GatewayAccountStatus>>
     'oplGatewayAccount/status': () => Promise<RemoteResult<GatewayAccountStatus>>
-    'oplSearch/configure': (preferences: OplSearchPreferences) => Promise<RemoteResult<OplSearchStatus>>
-    'oplSearch/models': (signal?: AbortSignal) => Promise<RemoteResult<string[]>>
-    'oplSearch/status': () => Promise<RemoteResult<OplSearchStatus>>
-    'oplSearch/test': (preferences: OplSearchPreferences, query: string, signal?: AbortSignal) => Promise<RemoteResult<OplSearchTestResult>>
   }
   interface TypertRemoteNamespaceMap {
     'oplGatewayAccount': TypertRemoteNamespace$6f706c476174657761794163636f756e74
-    'oplSearch': TypertRemoteNamespace$6f706c536561726368
   }
 }
 

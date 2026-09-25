@@ -10,9 +10,13 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
+import WebRuntime from '@deepseek-ai/dsh-web'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { TYPERT } from '../../src/generated/gateway-host.mjs'
+import { TYPERT_REMOTE } from '../../src/generated/gateway-remote.mjs'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
 import * as OplGateway from '../../src/gateway/index.ts'
 import { OplGatewayAccountService, gatewayKeyName } from '../../src/gateway/account-service.ts'
@@ -36,6 +40,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.unstubAllGlobals()
   if (previousStateRoot === undefined) delete process.env.OPL_GATEWAY_STATE_ROOT
   else process.env.OPL_GATEWAY_STATE_ROOT = previousStateRoot
   if (previousDshHome === undefined) delete process.env.DSH_HOME
@@ -60,6 +65,35 @@ async function mount(): Promise<Context> {
 }
 
 describe('OPL Gateway composition', () => {
+  it('routes native search with the Codex key and keeps page fetch independent', async () => {
+    const ctx = await mount()
+    await ctx.plugin(WebRuntime, { searchProvider: 'opl-gateway', fetchProvider: 'http' })
+    await ctx.credentials.set(credentialRef('OPL_GATEWAY_CODEX_API_KEY'), 'search-group-key')
+    const fetchPage = vi.fn(async () => ({ url: 'https://example.org', statusCode: 200, body: { kind: 'text' as const, content: 'official fetch' }, truncated: false }))
+    ctx.web.registerFetchProvider({ id: 'http', available: () => true, fetch: fetchPage })
+    const fetchMock = vi.fn(async () => new Response('data: ' + JSON.stringify({ type: 'response.output_text.annotation.added', output_index: 0, annotation: { type: 'url_citation', url: 'https://example.org', title: 'Example' } }) + '\n\n'))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      expect((await ctx.web.search({ query: 'Example' })).sources[0]?.url).toBe('https://example.org')
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+      expect(url).toBe('https://gateway.medopl.com/v1/responses')
+      expect(JSON.parse(String(init.body)).model).toBe('gpt-6-luna')
+      expect(new Headers(init.headers).get('authorization')).toBe('Bearer search-group-key')
+      expect((await ctx.web.fetch({ url: 'https://example.org' })).body).toEqual({ kind: 'text', content: 'official fetch' })
+      expect(fetchPage).toHaveBeenCalledOnce()
+      expect(fetchMock).toHaveBeenCalledOnce()
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('carries account capability fields across both Host and Client codecs', () => {
+    const status = { phase: 'connected', endpoint: 'https://gateway.test/v1', keyReady: true, codexKeyReady: true, grokKeyReady: true, harnessError: 'unavailable', activeChannel: 'grok', models: [] }
+    for (const descriptors of [TYPERT.invocations, TYPERT_REMOTE.descriptors]) {
+      expect(descriptors.map(item => item.namespace)).toEqual(Array(4).fill('oplGatewayAccount'))
+      const codec = descriptors.find(item => item.method === 'status')!.result.create()
+      expect(codec.parse(status)).toMatchObject(status)
+    }
+  })
+
   it('does not treat another OPL app account as this installation’s login', async () => {
     await writeFile(join(stateRoot, 'account.json'), JSON.stringify({
       surface_kind: 'opl_gateway_account_state.v1', status: 'connected',
@@ -107,7 +141,7 @@ describe('OPL Gateway composition', () => {
  */
 describe('account flow without any local OPL installation', () => {
   /** A scripted gateway recording what the plugin asked it to do. */
-  function gateway(options: { existingKeys?: GatewayManagedKey[]; withKey?: boolean } = {}) {
+  function gateway(options: { existingKeys?: GatewayManagedKey[]; withKey?: boolean; groups?: { id: string; label: string }[] } = {}) {
     const calls: string[] = []
     const keys: GatewayManagedKey[] = options.existingKeys ?? []
     const control: GatewayControlClient = Object.assign(new GatewayControlClient(), {
@@ -127,7 +161,7 @@ describe('account flow without any local OPL installation', () => {
         return { userId: '7', displayName: 'Person', email: 'person@example.test', status: 'active', balanceAmount: 12.5, balanceCurrency: 'USD' }
       },
       usage: async () => ({ todayTokens: 1024, totalTokens: 4096, todayCost: 0.25, totalCost: 3, currency: 'USD' }),
-      groups: async () => [{ id: '3', label: 'Codex' }, { id: '22', label: 'DeepSeek' }],
+      groups: async () => options.groups ?? [{ id: '3', label: 'Codex' }, { id: '22', label: 'DeepSeek' }],
       keys: async () => {
         calls.push('keys')
         return keys
@@ -241,6 +275,18 @@ describe('account flow without any local OPL installation', () => {
     const result = await account.signIn('person@example.test', 'right')
     expect(result.status).toMatchObject({ phase: 'connected', keyReady: true, codexKeyReady: false })
     expect(result.status.channelError).toContain('unavailable')
+  })
+
+  it('provisions and later releases an independent Grok group key', async () => {
+    const { control, calls } = gateway({ groups: [{ id: '3', label: 'Codex' }, { id: '22', label: 'DeepSeek' }, { id: '41', label: 'Grok' }] })
+    const { account, credentials } = await service(control)
+    const result = await account.signIn('person@example.test', 'right')
+    expect(result.status).toMatchObject({ keyReady: true, codexKeyReady: true, grokKeyReady: true })
+    expect(calls).toContain('createKey:OPL DSH · ' + (await import('node:os')).hostname() + ' · Grok:41')
+    expect((await credentials.resolve('OPL_GATEWAY_GROK_API_KEY' as never))?.value).toBe('sk-issued-41')
+    await account.signOut()
+    expect(calls).toContain('setKeyStatus:6:disabled')
+    expect(await credentials.resolve('OPL_GATEWAY_GROK_API_KEY' as never)).toBeUndefined()
   })
 
   it('retains the compatibility credential after a temporary refresh failure', async () => {

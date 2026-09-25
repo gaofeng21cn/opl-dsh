@@ -11,7 +11,7 @@ import { homedir, hostname } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { CODEX_API_KEY_REF } from './config.ts'
+import { CODEX_API_KEY_REF, GROK_API_KEY_REF } from './config.ts'
 import type { CredentialProvider, CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { GatewayAccountFacts, GatewayAccountModel, GatewayAccountStatus, GatewaySignInResult } from './types.ts'
@@ -68,12 +68,12 @@ function describe(error: unknown): { code: string; message: string } {
  * @param group - Gateway group whose independent key is named.
  * @returns the canonical key name.
  */
-export function gatewayKeyName(group: 'DeepSeek' | 'Codex' = 'DeepSeek'): string {
+export function gatewayKeyName(group: 'DeepSeek' | 'Codex' | 'Grok' = 'DeepSeek'): string {
   return `OPL DSH · ${hostname()} · ${group}`
 }
 
 /** Resolve the explicit DeepSeek group before issuing an inference key. */
-function preferredGroup(groups: readonly { id: string; label: string }[], name: 'DeepSeek' | 'Codex'): string {
+function preferredGroup(groups: readonly { id: string; label: string }[], name: 'DeepSeek' | 'Codex' | 'Grok'): string {
   const matches = groups.filter(group => group.label.trim().toLowerCase() === name.toLowerCase())
   if (matches.length !== 1) {
     throw new GatewayControlError('group_selection_required', `This account needs one available ${name} key group`)
@@ -91,7 +91,9 @@ export class OplGatewayAccountService extends TypertRemoteService {
   private failure: { code: string; message: string } | undefined
   private key: GatewayManagedKey | undefined
   private codexKey: GatewayManagedKey | undefined
+  private grokKey: GatewayManagedKey | undefined
   private channelFailure: string | undefined
+  private harnessFailure: string | undefined
   private pending: Promise<unknown> = Promise.resolve()
   private defaultControl: GatewayControlClient | undefined
 
@@ -107,7 +109,7 @@ export class OplGatewayAccountService extends TypertRemoteService {
       /** Control transport override, for tests. */
       readonly control?: GatewayControlClient
       /** Last successful channel, for the account page. */
-      readonly activeChannel?: () => 'deepseek' | 'codex' | undefined
+      readonly activeChannel?: () => 'deepseek' | 'codex' | 'grok' | undefined
     },
   ) {
     // The Typert analyzer reads the service key from this call site, so it must
@@ -190,13 +192,16 @@ export class OplGatewayAccountService extends TypertRemoteService {
   @Remote
   async status(): Promise<GatewayAccountStatus> {
     const codexCredential = await this.credentials()?.resolve(credentialRef(CODEX_API_KEY_REF))
+    const grokCredential = await this.credentials()?.resolve(credentialRef(GROK_API_KEY_REF))
     const base = {
       endpoint: this.options.endpoint(),
       keyReady: await this.keyReady(),
       models: this.options.models(),
       codexKeyReady: codexCredential !== undefined && codexCredential.value.length > 0,
+      grokKeyReady: grokCredential !== undefined && grokCredential.value.length > 0,
       activeChannel: this.options.activeChannel?.(),
       channelError: this.channelFailure,
+      harnessError: this.harnessFailure,
     }
     if (this.facts !== undefined) {
       return { ...base, phase: 'connected', source: this.source ?? 'session', account: this.facts }
@@ -258,6 +263,7 @@ export class OplGatewayAccountService extends TypertRemoteService {
       writeAdoptedFingerprint(this.home(), keyFingerprint(key.key))
       this.key = key
       await this.ensureCodexKey(accessToken, groups, credentials, true)
+      await this.ensureGrokKey(accessToken, groups, credentials, true)
       this.facts = this.factsFrom(profile, usage, key.name)
       this.source = 'session'
       writeFacts(this.home(), this.facts, new Date().toISOString())
@@ -283,7 +289,7 @@ export class OplGatewayAccountService extends TypertRemoteService {
   private async ensureKey(
     accessToken: string,
     groups: readonly { id: string; label: string }[],
-    group: 'DeepSeek' | 'Codex',
+    group: 'DeepSeek' | 'Codex' | 'Grok',
   ): Promise<{ key: GatewayManagedKey; created: boolean }> {
     const name = gatewayKeyName(group)
     const groupId = preferredGroup(groups, group)
@@ -291,6 +297,28 @@ export class OplGatewayAccountService extends TypertRemoteService {
     const match = existing.find(entry => entry.name === name && entry.groupId === groupId && entry.status === 'active')
     if (match !== undefined) return { key: match, created: false }
     return { key: await this.control().createKey(accessToken, name, groupId), created: true }
+  }
+
+  private async ensureGrokKey(
+    accessToken: string,
+    groups: readonly { id: string; label: string }[],
+    credentials: CredentialProvider,
+    replacingAccount = false,
+  ): Promise<void> {
+    try {
+      const { key } = await this.ensureKey(accessToken, groups, 'Grok')
+      await credentials.set(credentialRef(GROK_API_KEY_REF), key.key)
+      writeAdoptedFingerprint(this.home(), keyFingerprint(key.key), 'grok')
+      this.grokKey = key
+      this.harnessFailure = undefined
+    } catch (error) {
+      const ref = credentialRef(GROK_API_KEY_REF)
+      const stored = await credentials.resolve(ref)
+      if ((replacingAccount || error instanceof GatewayControlError && error.code === 'group_selection_required')
+        && stored !== undefined && keyFingerprint(stored.value) === readAdoptedFingerprint(this.home(), 'grok')) await credentials.unset(ref)
+      this.grokKey = undefined
+      this.harnessFailure = 'Grok Build 组合暂不可用；请刷新账号信息并确认账号有 Grok 分组权限。'
+    }
   }
 
   private async ensureCodexKey(
@@ -359,6 +387,7 @@ export class OplGatewayAccountService extends TypertRemoteService {
         writeAdoptedFingerprint(this.home(), keyFingerprint(key.key))
         this.key = key
         await this.ensureCodexKey(accessToken, groups, credentials)
+        await this.ensureGrokKey(accessToken, groups, credentials)
       }
       this.facts = this.factsFrom(profile, usage, this.facts?.keyName ?? this.key?.name ?? null)
       this.source = 'session'
@@ -403,8 +432,18 @@ export class OplGatewayAccountService extends TypertRemoteService {
         await credentials.unset(ref)
       }
     }
+    if (credentials !== undefined) {
+      const ref = credentialRef(GROK_API_KEY_REF)
+      const stored = await credentials.resolve(ref)
+      if (stored !== undefined && keyFingerprint(stored.value) === readAdoptedFingerprint(this.home(), 'grok')) {
+        await credentials.unset(ref)
+      }
+    }
     if (this.session !== undefined && this.codexKey !== undefined) {
       await this.control().setKeyStatus(this.session.accessToken, this.codexKey, 'disabled').catch(() => undefined)
+    }
+    if (this.session !== undefined && this.grokKey !== undefined) {
+      await this.control().setKeyStatus(this.session.accessToken, this.grokKey, 'disabled').catch(() => undefined)
     }
     if (this.session !== undefined && this.key !== undefined) {
       // Best effort: the local session ends either way, and an unreachable
@@ -418,7 +457,9 @@ export class OplGatewayAccountService extends TypertRemoteService {
     this.source = undefined
     this.key = undefined
     this.codexKey = undefined
+    this.grokKey = undefined
     this.channelFailure = undefined
+    this.harnessFailure = undefined
     this.failure = undefined
     return this.status()
   }

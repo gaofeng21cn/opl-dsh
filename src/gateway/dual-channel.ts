@@ -23,7 +23,7 @@ export class DualChannelAdapter extends LlmAdapter {
   constructor(
     private readonly primary: LlmAdapter,
     private readonly compatibility: LlmAdapter,
-    private readonly onChannel: (channel: 'deepseek' | 'codex') => void,
+    private readonly onChannel: (channel: 'deepseek' | 'codex' | 'grok') => void,
     private readonly onFallback: (code: string) => void,
   ) { super() }
 

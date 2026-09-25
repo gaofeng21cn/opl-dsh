@@ -32,6 +32,7 @@ await writeFile(join(output, 'package/package.json'), JSON.stringify({
   peerDependencies: peers,
   dsh: { bundle: { patch: './cordis.patch.yml' }, client: { inject: ['@deepseek-ai/dsh-client-locale', '@deepseek-ai/dsh-client-ui-settings'], platform: 'web' } }
 }, null, 2)+'\n')
+await cp(join(root,'installer/skill/harness-mcp.mjs'),join(output,'package/lib/harness-mcp.mjs'))
 await cp(join(root,'cordis.patch.yml'),join(output,'package/cordis.patch.yml'))
 for (const file of ['LICENSE', 'NOTICE']) await cp(join(root,file),join(output,'package',file))
 execFileSync('tar', ['-czf', join(output, `opl-dsh-enhancements-${version}.tgz`), '-C', output, 'package'])
@@ -47,7 +48,7 @@ await rm(installer,{recursive:true,force:true})
 await cp(join(root,'installer'),installer,{recursive:true})
 await cp(join(output,name),join(installer,name))
 const payloadFiles = {}
-for (const file of ['official-feed.awk', 'compare.cjs', 'install.command', 'install.cmd', 'install.ps1', 'install.mjs', 'profile.cjs', 'migrate.cjs', 'setup.mjs', 'desktop-platform.mjs', 'update.mjs', 'skill-install.mjs', 'skill/SKILL.md', 'skill/control.mjs', name]) {
+for (const file of ['official-feed.awk', 'compare.cjs', 'install.command', 'install.cmd', 'install.ps1', 'install.mjs', 'profile.cjs', 'migrate.cjs', 'setup.mjs', 'desktop-platform.mjs', 'update.mjs', 'skill-install.mjs', 'skill/SKILL.md', 'skill/control.mjs', 'skill/harness-mcp.mjs', name]) {
   payloadFiles[file] = createHash('sha256').update(await readFile(join(installer,file))).digest('hex')
 }
 const suiteSha256 = createHash('sha256').update(JSON.stringify(payloadFiles)).digest('hex')

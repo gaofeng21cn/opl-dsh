@@ -10,7 +10,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GatewayAccountStatus, GatewaySignInResult } from '../../gateway/types.ts'
-import css from './OplGatewaySection.module.css'
+import settingsCss from '../SettingsSection.module.css'
+import setupCss from '../SetupScreen.module.css'
+const css = settingsCss
 
 /** Registration-side face the section drives. */
 export interface OplGatewaySectionInjected {
@@ -88,14 +90,15 @@ export function observedLabel(observedAt: string): string {
 function Fact({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
   return (
     <div className={wide ? css.wide : undefined}>
-      <span className={css.factLabel}>{label}</span>
-      <span className={css.factValue}>{value}</span>
+      <dt className={css.factLabel}>{label}</dt>
+      <dd className={css.factValue}>{value}</dd>
     </div>
   )
 }
 
 /** The OPL Gateway account page. */
 export function OplGatewaySection(props: OplGatewaySectionProps & { onboarding?: boolean; onReady?: () => Promise<void>; onBusyChange?: (busy: boolean) => void }) {
+  const css = props.onboarding ? { ...settingsCss, ...setupCss } : settingsCss
   const { t, status: readStatus, signIn, refresh, signOut } = props
   const [state, setState] = useState<GatewayAccountStatus | undefined>(undefined)
   const [email, setEmail] = useState('')
@@ -158,7 +161,7 @@ export function OplGatewaySection(props: OplGatewaySectionProps & { onboarding?:
   const phase = state?.phase ?? 'signed-out'
 
   const connected = phase === 'connected'
-  return <div className={`${css.section} ${!connected ? css.loginSection : ''}`}>
+  return <div className={`${css.section} ${props.onboarding && !connected ? setupCss.loginSection : ''}`}>
     <header className={css.header}>
       <div className={css.identity}>
         <h2 className={css.title}>{t(connected ? 'nav' : 'loginTitle')}</h2>
@@ -175,6 +178,7 @@ export function OplGatewaySection(props: OplGatewaySectionProps & { onboarding?:
           <span className={css.muted}>{state.keyReady && state.codexKeyReady ? t('channelsReady') : state.keyReady ? t('primaryReady') : t('signInToStart')}</span>
         </div>}
         {state.keyReady && !state.codexKeyReady && <p className={css.muted}>{t('backupUnavailable')}</p>}
+        {state.keyReady && !state.grokKeyReady && <p className={css.muted}>{t('harnessUnavailable')}</p>}
         {!state.keyReady && connected && <p className={css.error}>{t('keyMissing')}</p>}
         {connected && account && <dl className={css.metrics}>
           <Fact label={t('balance')} value={money(account.balanceAmount, account.balanceCurrency)} />
@@ -187,7 +191,7 @@ export function OplGatewaySection(props: OplGatewaySectionProps & { onboarding?:
           <label className={css.field}><span className={css.label}>{t('password')}</span>
             <input className={css.input} required disabled={busy !== 'idle'} type='password' autoComplete='current-password' placeholder={t('passwordPlaceholder')} value={password} onChange={event => setPassword(event.target.value)} />
           </label>
-          <Button className={css.primaryButton} type='submit' disabled={busy !== 'idle' || !email.trim() || !password}>{busy === 'signing-in' ? t('signingIn') : t('signIn')}</Button>
+          <Button variant='primary' className={props.onboarding ? setupCss.primaryButton : undefined} type='submit' disabled={busy !== 'idle' || !email.trim() || !password}>{busy === 'signing-in' ? t('signingIn') : t('signIn')}</Button>
         </form>}
       </div>
       {connected && props.onboarding && <Button className={css.primaryButton} disabled={busy !== 'idle'} onClick={() => { void props.onReady?.().catch(() => setError(t('setupFailed'))) }}>{t('saveAndEnter')}</Button>}
@@ -200,17 +204,19 @@ export function OplGatewaySection(props: OplGatewaySectionProps & { onboarding?:
           {account?.observedAt && <Fact label={t('updated')} value={observedLabel(account.observedAt)} />}
         </dl>
       </details>}
-      {!props.onboarding && (connected || state.keyReady || state.codexKeyReady) && <details className={css.details}>
+      {!props.onboarding && (connected || state.keyReady || state.codexKeyReady || state.grokKeyReady) && <details className={css.details}>
         <summary>{t('advanced')}</summary>
         <p className={css.muted}>{t('managedHint')}</p>
         <dl className={css.facts}>
           <Fact label={t('primaryChannel')} value={state.keyReady ? t('ready') : t('notReady')} />
           <Fact label={t('backupChannel')} value={state.codexKeyReady ? t('ready') : t('notReady')} />
+          <Fact label={t('harnessChannel')} value={state.grokKeyReady ? t('ready') : t('notReady')} />
           <Fact label={t('endpoint')} value={state.endpoint} wide />
-          {state.activeChannel && <Fact label={t('lastChannel')} value={state.activeChannel === 'deepseek' ? 'DeepSeek / Messages' : 'Codex / OpenAI'} />}
+          {state.activeChannel && <Fact label={t('lastChannel')} value={state.activeChannel === 'deepseek' ? 'DeepSeek / Messages' : state.activeChannel === 'codex' ? 'Codex / OpenAI' : 'Grok Build'} />}
           {account?.keyName && <Fact label={t('keyName')} value={account.keyName} wide />}
         </dl>
         {state.channelError && <p className={css.error}>{t('backupUnavailable')}</p>}
+        {state.harnessError && <p className={css.error}>{t('harnessUnavailable')}</p>}
         {state.source === 'session' && <Button variant='outline' disabled={busy !== 'idle'} onClick={() => { void leave() }}>{busy === 'signing-out' ? t('signingOut') : t('signOut')}</Button>}
       </details>}
     </>}

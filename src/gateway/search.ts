@@ -22,29 +22,18 @@ import type {
   WebSearchSource,
 } from '@deepseek-ai/dsh-web'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
-import type {} from '@deepseek-ai/dsh-session'
-import type { OplGatewaySearchLlmRequest } from './search-types.ts'
 
 /** Stable id this provider registers under in `ctx.web`. */
 export const OPL_GATEWAY_SEARCH_PROVIDER_ID = 'opl-gateway'
 
-/**
- * Default model that performs the search.
- *
- * Search is an OpenAI-family capability on this gateway: the account's DeepSeek
- * routes accept the request and ignore the tool. A deployment whose account
- * enables another search-capable model names it through `search.model`.
- */
-export const OPL_GATEWAY_SEARCH_DEFAULT_MODEL = 'gpt-6-astra'
+/** Internal auxiliary search model, independent of the conversation model. */
+export const OPL_GATEWAY_SEARCH_DEFAULT_MODEL = 'gpt-6-luna'
 
 /** Default upper bound on generated tokens for the search turn. */
 export const OPL_GATEWAY_SEARCH_DEFAULT_MAX_OUTPUT_TOKENS = 1024
 
 /** Default budget for one search, covering connection, search, and answer. */
 export const OPL_GATEWAY_SEARCH_DEFAULT_TIMEOUT_MS = 60_000
-
-/** Default upper bound on server-side searches one request may run. */
-export const OPL_GATEWAY_SEARCH_DEFAULT_MAX_SEARCHES = 3
 
 /** Attribution header sent on every request. Bump with the package version. */
 const USER_AGENT = 'deepseek-harness/0.0.1'
@@ -65,15 +54,7 @@ export interface OplGatewaySearchProviderOptions {
   maxOutputTokens: number
   /** Budget for one search. */
   timeoutMs: number
-  /** Upper bound on server-side searches one request may run. */
-  maxSearches: number
-  /**
-   * Record the exact secret-free request immediately before dispatch. A throw
-   * prevents dispatch so model-visible auxiliary input cannot escape logging.
-   */
-  recordRequest?: (request: OplGatewaySearchLlmRequest) => void
-  /** Provider-reported usage; called even when a completed response has no sources. */
-  recordUsage?: (usage: { inputTokens?: number; outputTokens?: number; cachedTokens?: number }) => void
+
 }
 
 /** One `url_citation` annotation the gateway attached to answer text. */
@@ -87,7 +68,6 @@ export interface OplSearchCitation {
 
 /** Everything one streamed search response yielded. */
 export interface OplSearchStream {
-  readonly usage?: { inputTokens?: number; outputTokens?: number; cachedTokens?: number }
   /** Citations in arrival order, deduplicated by URL. */
   readonly citations: readonly OplSearchCitation[]
   /** Answer text per `output_index`, used to derive snippets for citations. */
@@ -102,7 +82,6 @@ export interface OplSearchStream {
 
 /** Mutable accumulator one stream writes into. */
 interface SearchAccumulator {
-  usage?: { inputTokens?: number; outputTokens?: number; cachedTokens?: number }
   citations: OplSearchCitation[]
   citationItems: number[]
   readonly seen: Set<string>
@@ -131,18 +110,7 @@ function index(value: unknown): number | undefined {
 export function absorbSearchEvent(event: unknown, state: SearchAccumulator): void {
   if (!isRecord(event)) return
   const type = text(event.type)
-  if (isRecord(event.response) && isRecord(event.response.usage)) {
-    const usage = event.response.usage
-    const numeric = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
-    const input = numeric(usage.input_tokens)
-    const output = numeric(usage.output_tokens)
-    const cached = numeric(isRecord(usage.input_tokens_details) ? usage.input_tokens_details.cached_tokens : undefined)
-    state.usage = {
-      ...(input === undefined ? {} : { inputTokens: input }),
-      ...(output === undefined ? {} : { outputTokens: output }),
-      ...(cached === undefined ? {} : { cachedTokens: cached }),
-    }
-  }
+
   if (type === 'response.web_search_call.completed') {
     state.searches += 1
     return
@@ -229,7 +197,6 @@ export async function readSearchStream(
     itemText: state.itemText,
     citationItems: state.citationItems,
     searches: state.searches,
-    ...state.usage === undefined ? {} : { usage: state.usage },
     ...state.failure === undefined ? {} : { failure: state.failure },
   }
 }
@@ -296,7 +263,6 @@ export class OplGatewaySearchProvider implements WebSearchProvider {
       && options.model.trim().length > 0
       && isPositiveInteger(options.maxOutputTokens)
       && isPositiveInteger(options.timeoutMs)
-      && isPositiveInteger(options.maxSearches)
   }
 
   /**
@@ -310,14 +276,13 @@ export class OplGatewaySearchProvider implements WebSearchProvider {
     const apiKey = await this.apiKey(options, signal)
     throwIfSearchAborted(signal)
     const endpoint = `${options.baseURL.replace(/\/+$/u, '')}/responses`
-    const body: OplGatewaySearchLlmRequest['body'] = {
+    const body = {
       model: options.model,
       input: `Perform a web search for the query: ${request.query}`,
       tools: [{ type: 'web_search' }],
       max_output_tokens: options.maxOutputTokens,
       stream: true,
     }
-    options.recordRequest?.({ endpoint, body })
     throwIfSearchAborted(signal)
     const budget = AbortSignal.any([
       ...signal === undefined ? [] : [signal],
@@ -351,7 +316,6 @@ export class OplGatewaySearchProvider implements WebSearchProvider {
     }
     try {
       const parsed = await readSearchStream(response.body, budget)
-      if (parsed.usage) options.recordUsage?.(parsed.usage)
       return mapSearchStream(parsed)
     } catch (error: unknown) {
       if (signal?.aborted === true) throw searchAborted(signal, error)
@@ -400,7 +364,7 @@ export class OplGatewaySearchProvider implements WebSearchProvider {
       )
     }
     if (resolved !== undefined && resolved.length > 0) return resolved
-    const ref = options.apiKeyEnv ?? 'OPL_GATEWAY_DEEPSEEK_API_KEY'
+    const ref = options.apiKeyEnv ?? 'OPL_GATEWAY_CODEX_API_KEY'
     throw new WebError(
       `OPL Gateway search has no API key for "${ref}"; sign in to OPL Gateway in this app, or store it`
       + ' through the credentials service',
@@ -413,9 +377,8 @@ export class OplGatewaySearchProvider implements WebSearchProvider {
 function searchEndpointError(endpoint: string, message: string, cause?: unknown): WebError {
   return new WebError(
     `${message}\n\nThe web search request used endpoint ${JSON.stringify(endpoint)}. `
-    + 'Search runs on the OPL Gateway Responses route with the model named by llm-opl-gateway.search.model,'
-    + ' which is separate from the conversation model. An operator who did not intend that endpoint or model'
-    + ' changes them in the llm-opl-gateway plugin configuration.',
+    + 'Search uses the OPL Gateway Codex channel independently of the conversation model. '
+    + 'Check the OPL Gateway account connection and retry.',
     'WEB_PROVIDER_ERROR',
     cause === undefined ? undefined : { cause },
   )

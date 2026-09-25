@@ -4,9 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { assertUsableApiKey, LlmAdapter, LlmError, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
 import type { LlmProviderInfo } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-attachment'
-import type {} from '@deepseek-ai/dsh-agent'
 import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
-import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { DeepSeekAdapter, catalogModelInfo } from '@deepseek-ai/dsh-llm-deepseek'
 import { resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek-api-key'
 import type { ResolvedDeepSeekOptions } from '@deepseek-ai/dsh-llm-deepseek-api-key'
@@ -17,28 +15,23 @@ import { DualChannelAdapter, OPENAI_PROVIDER } from './dual-channel.ts'
 import { Config, CODEX_API_KEY_REF, toAdapterConfig } from './config.ts'
 import { OPL_GATEWAY_INFERENCE_BASE_URL } from './opl-credentials.ts'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import {
   OPL_GATEWAY_SEARCH_DEFAULT_MAX_OUTPUT_TOKENS,
-  OPL_GATEWAY_SEARCH_DEFAULT_MAX_SEARCHES,
   OPL_GATEWAY_SEARCH_DEFAULT_MODEL,
   OPL_GATEWAY_SEARCH_DEFAULT_TIMEOUT_MS,
 } from './search.ts'
 import type { OplGatewaySearchProviderOptions } from './search.ts'
-import { OplSearchService } from './search-service.ts'
-export { OplSearchService } from './search-service.ts'
+import { OplGatewaySearchProvider } from './search.ts'
 
 export const name = 'llm-opl-gateway'
 export const inject = ['llm']
 
-export { Config, DEFAULT_API_KEY_REF, DEFAULT_MODELS } from './config.ts'
+export { Config, CODEX_API_KEY_REF, DEFAULT_API_KEY_REF, DEFAULT_MODELS, GROK_API_KEY_REF } from './config.ts'
 export type { Config as OplGatewayConfig } from './config.ts'
 export { OplGatewaySearchProvider } from './search.ts'
 export type { OplGatewaySearchProviderOptions, OplSearchCitation, OplSearchStream } from './search.ts'
-export type { OplGatewaySearchLlmRequest } from './search-types.ts'
 export {
   OPL_GATEWAY_SEARCH_DEFAULT_MAX_OUTPUT_TOKENS,
-  OPL_GATEWAY_SEARCH_DEFAULT_MAX_SEARCHES,
   OPL_GATEWAY_SEARCH_DEFAULT_MODEL,
   OPL_GATEWAY_SEARCH_DEFAULT_TIMEOUT_MS,
   OPL_GATEWAY_SEARCH_PROVIDER_ID,
@@ -173,7 +166,7 @@ export function apply(ctx: Context, config: Config): void {
   // reads as a broken twin of the official DeepSeek card. An undeclared live
   // route still reaches the model picker and still counts as a usable provider
   // for first-run readiness, so the surfaces that matter keep working.
-  let activeChannel: 'deepseek' | 'codex' | undefined
+  let activeChannel: 'deepseek' | 'codex' | 'grok' | undefined
   // The bundle configures the official pi-ai plugin's public OpenAI route.
   // Delegate through the public LLM service; no private adapter helpers are used.
   const compatibility = new class extends LlmAdapter {
@@ -216,59 +209,25 @@ export function apply(ctx: Context, config: Config): void {
   // Non-volatile Config is remounted by the Loader when its profile patch changes.
   ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
 
-  /**
-   * The gateway key, resolved the way the adapter resolves it: the credentials
-   * seam for the search reference first, then the token OPL recorded for its own
-   * client. One sign-in therefore serves both the conversation and the search.
-   * @param ref - reference to resolve.
-   * @returns the key, or undefined when this machine holds none.
-   */
-  const resolveSearchApiKey = async (ref: CredentialRef): Promise<string | undefined> => {
-    const credentials = ctx.get('credentials')
-    const stored = credentials === undefined
-      ? launchEnvironmentOf(ctx).get(ref)?.value
-      : (await credentials.resolve(ref))?.value
-    if (stored !== undefined && stored.length > 0) return stored
-    try {
-      return undefined
-    } catch (error) {
-      ctx.logger.warn('llm-opl-gateway: could not read the OPL Gateway binding for search')
-      ctx.logger.warn(error)
-      return undefined
-    }
-  }
-
-  /** Search options for the NEXT operation, projected from the current section. */
-  const searchOptions = (): OplGatewaySearchProviderOptions => {
-    const route = options()
-    const search = current().search
-    const apiKeyEnv = credentialRef(search?.apiKeyEnv ?? CODEX_API_KEY_REF)
-    return {
-      resolveApiKey: () => resolveSearchApiKey(apiKeyEnv),
-      apiKeyEnv,
-      baseURL: search?.baseURL ?? route.baseURL,
-      model: search?.model ?? OPL_GATEWAY_SEARCH_DEFAULT_MODEL,
-      maxOutputTokens: search?.maxOutputTokens ?? OPL_GATEWAY_SEARCH_DEFAULT_MAX_OUTPUT_TOKENS,
-      timeoutMs: search?.timeoutMs ?? OPL_GATEWAY_SEARCH_DEFAULT_TIMEOUT_MS,
-      maxSearches: search?.maxSearches ?? OPL_GATEWAY_SEARCH_DEFAULT_MAX_SEARCHES,
-    }
-  }
-
-  // Web search is a second capability of the same account: the responses route
-  // names its own model and the same key. Registered only where a web seam
-  // exists, so a composition without one still mounts the conversation route.
+  // Search uses the account's Codex-group credential; fetching stays in the
+  // official HTTP provider. No separate preferences, Remote or accounting store.
   ctx.inject(['web'], (webCtx) => {
     const web = webCtx.get('web')
     if (web === undefined) return
-    const service = new OplSearchService(webCtx, {
-      path: dshHomePath('opl-search.json'),
-      cloud: searchOptions,
-      fetchPage: (url, signal) => web.fetch({ url }, signal),
-      sessionId: () => webCtx.get('agents')?.currentInitiator()?.session.id ?? null,
-    })
-    webCtx.effect(
-      () => web.registerSearchProvider({ id: 'opl-gateway', available: () => true, search: (request, signal) => service.search(request, signal) }),
-      'llm-opl-gateway: OPL Gateway web search provider',
-    )
+    const apiKeyEnv = credentialRef(CODEX_API_KEY_REF)
+    const provider = new OplGatewaySearchProvider((): OplGatewaySearchProviderOptions => ({
+      apiKeyEnv,
+      resolveApiKey: async () => {
+        const credentials = webCtx.get('credentials')
+        return credentials === undefined
+          ? launchEnvironmentOf(webCtx).get(apiKeyEnv)?.value
+          : (await credentials.resolve(apiKeyEnv))?.value
+      },
+      baseURL: options().baseURL,
+      model: OPL_GATEWAY_SEARCH_DEFAULT_MODEL,
+      maxOutputTokens: OPL_GATEWAY_SEARCH_DEFAULT_MAX_OUTPUT_TOKENS,
+      timeoutMs: OPL_GATEWAY_SEARCH_DEFAULT_TIMEOUT_MS,
+    }))
+    webCtx.effect(() => web.registerSearchProvider(provider), 'llm-opl-gateway: web search')
   })
 }

@@ -54,10 +54,14 @@ export interface GatewayAccountStatus {
   readonly keyReady: boolean
   /** Independent Codex-group key for OpenAI fallback. */
   readonly codexKeyReady?: boolean
+  /** Independent Grok-group key for the Grok Build harness. */
+  readonly grokKeyReady?: boolean
   /** Last channel that returned model output in this process. */
-  readonly activeChannel?: 'deepseek' | 'codex' | undefined
+  readonly activeChannel?: 'deepseek' | 'codex' | 'grok' | undefined
   /** Provisioning failure of the optional compatibility channel. */
   readonly channelError?: string | undefined
+  /** Provisioning failure of the optional Grok Build combination. */
+  readonly harnessError?: string | undefined
   /** Models this route serves, so the account page can name what it provides. */
   readonly models: readonly GatewayAccountModel[]
   /**
@@ -75,38 +79,4 @@ export interface GatewaySignInResult {
   readonly status: GatewayAccountStatus
   /** Whether this attempt minted a new inference key rather than reusing one. */
   readonly createdKey: boolean
-}
-
-/** Search settings stored on this machine, independent of conversation models. */
-export interface OplSearchPreferences {
-  mode: 'cloud' | 'local'
-  model: string
-}
-/** Reported usage only; absent provider usage is counted separately. */
-export interface OplSearchTotals {
-  calls: number
-  succeeded: number
-  failed: number
-  durationMs: number
-  inputTokens: number
-  outputTokens: number
-  cachedTokens: number
-  unknownUsage: number
-}
-/** One locally persisted search accounting bucket. */
-export interface OplSearchBucket extends OplSearchTotals {
-  mode: 'cloud' | 'local'
-  model: string
-  sessionId: string | null
-}
-/** Settings and per-model/per-session statistics, with no query text. */
-export interface OplSearchStatus {
-  preferences: OplSearchPreferences
-  totals: OplSearchTotals
-  buckets: OplSearchBucket[]
-}
-/** A real test response, never inferred from model discovery. */
-export interface OplSearchTestResult {
-  sources: { url: string; title?: string }[]
-  durationMs: number
 }

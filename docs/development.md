@@ -4,9 +4,10 @@ OPL DSH 独立维护增强包，复用未修改的官方 DeepSeek Harness 桌面
 
 ## 代码与构建
 
-- `src/gateway`：账户、两组密钥、模型通道与故障切换。
+- `src/gateway`：账户、分组密钥、模型通道、原生网页搜索与故障切换。
 - `src/coordination`：协作设置、任务等待、持久化反馈与可选 Codex 队列桥。
-- `src/client`：Gateway、搜索、首启和协作设置界面。
+- `src/coordination/harness.ts`：外部 Harness 组合的 ACP 子进程、会话恢复、连续提示和取消。
+- `src/client`：Gateway、首启和协作设置界面。
 - `installer`：官方包校验、独立 profile、旧数据导入、快捷入口、Skill 及增强自动更新。
 - `install.sh` / `install.ps1`：公开终端入口，选定最新 Release 后下载同一版本的增强 ZIP 与 SHA-256 清单，校验后调用现有安装器。
 - `Casks/opl-dsh.rb`：直接以本仓库作为 Homebrew Tap，固定增强 ZIP 的发布地址与 SHA-256；安装时仍动态获取最新官方桌面。
@@ -25,6 +26,14 @@ node package.mjs
 构建输出插件 tarball、带逐文件 SHA-256 的安装清单及Mac DMG 和 Windows EXE 在线安装器。桌面官方服务保留为 runtime peer，插件不携带另一套 Agent 循环。`dsh-llm-pi-ai` 为官方协议适配库，备用通道不会改用 Pi Harness。
 
 新增正式 Release 后，同步更新 Cask 的 `version`（官方版本、OPL 发布修订）和增强 ZIP 的 `sha256`，不得指向可变的 latest 下载地址。终端入口自动解析 latest，无需更新脚本。Cask 只调用 `install.command --no-launch`，不维护第二套安装实现；卸载保留官方桌面、数据和 Skill，只移除经过归属校验的默认快捷入口。
+
+## 模型 + Harness 组合
+
+组合由 `harness.ts` 按 `组合 ID + 工作目录 + 外部会话 ID` 管理。首个外部组合为 `grok-build/grok-4.7`：Host 启动官方 `grok agent stdio`，通过 ACP 发送提示词、接收流式文本和工具状态，默认拒绝权限请求，并把会话 ID 保存到独立的 `harness-sessions.json`。DSH 重启后使用 ACP `session/load` 恢复，不把 Grok 的会话文件转成 DSH V4/V5 格式。
+
+DSH 原生工具 `delegate_to_harness` 与 Codex Skill 的 `delegate`、`delegate-start`、`delegate-prompt`、`delegate-snapshot`、`delegate-cancel` 共享同一个 Host 管理器。它们都会在当前项目目录创建或恢复独立 Harness 子对话并返回结果；Skill 不把 Grok 任务伪装成 DeepSeek Session，也不复用 DeepSeek/Codex 的 key。登录 OPL Gateway 后自动申请 Grok 分组密钥，Host 通过 `GROK_CONFIG` 的 `env_key` 注入，不把密钥写入 Grok 配置文件。Grok 保留自己的工具、上下文和会话状态；权限请求默认拒绝，不会绕过 DSH 的权限边界。
+
+实现顺序是先复用这一 ACP Host 管理器接入其他官方 Harness，再增加设置页中的组合选择器和跨组合衔接摘要。当前首版命令路径已覆盖 Grok 的连续对话、工具调用、权限拒绝、取消和进程重启恢复；Windows 以及 Claude 组合尚未宣称已验证。
 
 ## 安装位置
 

@@ -37,9 +37,13 @@ export async function finishSetup(ctx: Context, choice: Exclude<LoginChoice, 'un
   await ctx.settings.update('opl-suite', { loginChoice: choice, setupCompleted: true })
 }
 /** Reuse the official authenticated Connection transport, without exposing the private control token. */
-export function installSetupChannel(ctx: Context): void {
+export function installSetupChannel(ctx: Context, harness?: (method: string, input: unknown) => Promise<unknown>): void {
   const handle = async (endpoint: string, payload: unknown) => {
     try {
+      if (endpoint === 'harness' && harness && payload && typeof payload === 'object') {
+        const p = payload as {method:string;input:unknown}
+        return {ok:true,value:await harness(p.method,p.input)}
+      }
       if (['coordination-status','skill-install','auto-start','wake-settings'].includes(endpoint)) return { ok: true, value: await coordinationAction(ctx, endpoint, payload) }
       if (endpoint === 'status') return { ok: true, value: await setupStatus(ctx) }
       if (endpoint === 'finish' && (payload === 'gateway' || payload === 'official' || payload === 'later')) {
@@ -65,12 +69,13 @@ export function installSetupChannel(ctx: Context): void {
         return { ok: true, value: null }
       }
       return { ok: false, error: { code: 'invalid', message: '无效的首次设置操作。', details: {} } }
-    } catch {
+    } catch (error) {
+      if (endpoint === 'harness') return {ok:false,error:{code:'harness-failed',message:error instanceof Error?error.message:'组合操作失败',details:{}}}
       // Provider failures can contain credentials. Keep diagnostics out of the login surface.
       return { ok: false, error: { code: 'setup-failed', message: '未能完成设置，请检查连接后重试。', details: {} } }
     }
   }
-  for (const endpoint of ['status', 'finish', 'official-start', 'official-cancel', 'official-key','coordination-status','skill-install','auto-start','wake-settings']) {
+  for (const endpoint of ['harness', 'status', 'finish', 'official-start', 'official-cancel', 'official-key','coordination-status','skill-install','auto-start','wake-settings']) {
     ctx.effect(() => ctx.connection.fetch.register({
       path: '/api/oplSetup/' + endpoint, methods: ['POST'], requestBody: 'buffered',
       fetch: async request => {

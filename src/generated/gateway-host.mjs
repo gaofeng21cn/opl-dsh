@@ -7,8 +7,10 @@ const _one_person_lab_dsh_llm_opl_gateway_oplGatewayAccount_refresh_result$schem
   'endpoint': z.string().readonly(),
   'keyReady': z.boolean().readonly(),
   'codexKeyReady': z.boolean().readonly().optional(),
-  'activeChannel': z.union([z.undefined(), z.literal("deepseek"), z.literal("codex")]).readonly().optional(),
+  'grokKeyReady': z.boolean().readonly().optional(),
+  'activeChannel': z.union([z.undefined(), z.literal("deepseek"), z.literal("codex"), z.literal("grok")]).readonly().optional(),
   'channelError': z.union([z.undefined(), z.string()]).readonly().optional(),
+  'harnessError': z.union([z.undefined(), z.string()]).readonly().optional(),
   'models': z.array(z.object({
   'id': z.string().readonly(),
   'name': z.string().readonly(),
@@ -45,8 +47,10 @@ const _one_person_lab_dsh_llm_opl_gateway_oplGatewayAccount_signIn_result$schema
   'endpoint': z.string().readonly(),
   'keyReady': z.boolean().readonly(),
   'codexKeyReady': z.boolean().readonly().optional(),
-  'activeChannel': z.union([z.undefined(), z.literal("deepseek"), z.literal("codex")]).readonly().optional(),
+  'grokKeyReady': z.boolean().readonly().optional(),
+  'activeChannel': z.union([z.undefined(), z.literal("deepseek"), z.literal("codex"), z.literal("grok")]).readonly().optional(),
   'channelError': z.union([z.undefined(), z.string()]).readonly().optional(),
+  'harnessError': z.union([z.undefined(), z.string()]).readonly().optional(),
   'models': z.array(z.object({
   'id': z.string().readonly(),
   'name': z.string().readonly(),
@@ -80,8 +84,10 @@ const _one_person_lab_dsh_llm_opl_gateway_oplGatewayAccount_signOut_result$schem
   'endpoint': z.string().readonly(),
   'keyReady': z.boolean().readonly(),
   'codexKeyReady': z.boolean().readonly().optional(),
-  'activeChannel': z.union([z.undefined(), z.literal("deepseek"), z.literal("codex")]).readonly().optional(),
+  'grokKeyReady': z.boolean().readonly().optional(),
+  'activeChannel': z.union([z.undefined(), z.literal("deepseek"), z.literal("codex"), z.literal("grok")]).readonly().optional(),
   'channelError': z.union([z.undefined(), z.string()]).readonly().optional(),
+  'harnessError': z.union([z.undefined(), z.string()]).readonly().optional(),
   'models': z.array(z.object({
   'id': z.string().readonly(),
   'name': z.string().readonly(),
@@ -113,8 +119,10 @@ const _one_person_lab_dsh_llm_opl_gateway_oplGatewayAccount_status_result$schema
   'endpoint': z.string().readonly(),
   'keyReady': z.boolean().readonly(),
   'codexKeyReady': z.boolean().readonly().optional(),
-  'activeChannel': z.union([z.undefined(), z.literal("deepseek"), z.literal("codex")]).readonly().optional(),
+  'grokKeyReady': z.boolean().readonly().optional(),
+  'activeChannel': z.union([z.undefined(), z.literal("deepseek"), z.literal("codex"), z.literal("grok")]).readonly().optional(),
   'channelError': z.union([z.undefined(), z.string()]).readonly().optional(),
+  'harnessError': z.union([z.undefined(), z.string()]).readonly().optional(),
   'models': z.array(z.object({
   'id': z.string().readonly(),
   'name': z.string().readonly(),
@@ -140,89 +148,6 @@ const _one_person_lab_dsh_llm_opl_gateway_oplGatewayAccount_status_result$schema
   'message': z.string().readonly(),
 }).readonly().optional(),
 }))
-let _one_person_lab_dsh_llm_opl_gateway_oplSearch_configure_parameter_0$schema$value
-const _one_person_lab_dsh_llm_opl_gateway_oplSearch_configure_parameter_0$schema = () => (_one_person_lab_dsh_llm_opl_gateway_oplSearch_configure_parameter_0$schema$value ??= z.object({
-  'mode': z.union([z.literal("cloud"), z.literal("local")]),
-  'model': z.string(),
-}))
-let _one_person_lab_dsh_llm_opl_gateway_oplSearch_configure_result$schema$value
-const _one_person_lab_dsh_llm_opl_gateway_oplSearch_configure_result$schema = () => (_one_person_lab_dsh_llm_opl_gateway_oplSearch_configure_result$schema$value ??= z.object({
-  'preferences': z.object({
-  'mode': z.union([z.literal("cloud"), z.literal("local")]),
-  'model': z.string(),
-}),
-  'totals': z.object({
-  'calls': z.number(),
-  'succeeded': z.number(),
-  'failed': z.number(),
-  'durationMs': z.number(),
-  'inputTokens': z.number(),
-  'outputTokens': z.number(),
-  'cachedTokens': z.number(),
-  'unknownUsage': z.number(),
-}),
-  'buckets': z.array(z.object({
-  'mode': z.union([z.literal("cloud"), z.literal("local")]),
-  'model': z.string(),
-  'sessionId': z.union([z.literal(null), z.string()]),
-  'calls': z.number(),
-  'succeeded': z.number(),
-  'failed': z.number(),
-  'durationMs': z.number(),
-  'inputTokens': z.number(),
-  'outputTokens': z.number(),
-  'cachedTokens': z.number(),
-  'unknownUsage': z.number(),
-})),
-}))
-let _one_person_lab_dsh_llm_opl_gateway_oplSearch_models_result$schema$value
-const _one_person_lab_dsh_llm_opl_gateway_oplSearch_models_result$schema = () => (_one_person_lab_dsh_llm_opl_gateway_oplSearch_models_result$schema$value ??= z.array(z.string()))
-let _one_person_lab_dsh_llm_opl_gateway_oplSearch_status_result$schema$value
-const _one_person_lab_dsh_llm_opl_gateway_oplSearch_status_result$schema = () => (_one_person_lab_dsh_llm_opl_gateway_oplSearch_status_result$schema$value ??= z.object({
-  'preferences': z.object({
-  'mode': z.union([z.literal("cloud"), z.literal("local")]),
-  'model': z.string(),
-}),
-  'totals': z.object({
-  'calls': z.number(),
-  'succeeded': z.number(),
-  'failed': z.number(),
-  'durationMs': z.number(),
-  'inputTokens': z.number(),
-  'outputTokens': z.number(),
-  'cachedTokens': z.number(),
-  'unknownUsage': z.number(),
-}),
-  'buckets': z.array(z.object({
-  'mode': z.union([z.literal("cloud"), z.literal("local")]),
-  'model': z.string(),
-  'sessionId': z.union([z.literal(null), z.string()]),
-  'calls': z.number(),
-  'succeeded': z.number(),
-  'failed': z.number(),
-  'durationMs': z.number(),
-  'inputTokens': z.number(),
-  'outputTokens': z.number(),
-  'cachedTokens': z.number(),
-  'unknownUsage': z.number(),
-})),
-}))
-let _one_person_lab_dsh_llm_opl_gateway_oplSearch_test_parameter_0$schema$value
-const _one_person_lab_dsh_llm_opl_gateway_oplSearch_test_parameter_0$schema = () => (_one_person_lab_dsh_llm_opl_gateway_oplSearch_test_parameter_0$schema$value ??= z.object({
-  'mode': z.union([z.literal("cloud"), z.literal("local")]),
-  'model': z.string(),
-}))
-let _one_person_lab_dsh_llm_opl_gateway_oplSearch_test_parameter_1$schema$value
-const _one_person_lab_dsh_llm_opl_gateway_oplSearch_test_parameter_1$schema = () => (_one_person_lab_dsh_llm_opl_gateway_oplSearch_test_parameter_1$schema$value ??= z.string())
-let _one_person_lab_dsh_llm_opl_gateway_oplSearch_test_result$schema$value
-const _one_person_lab_dsh_llm_opl_gateway_oplSearch_test_result$schema = () => (_one_person_lab_dsh_llm_opl_gateway_oplSearch_test_result$schema$value ??= z.object({
-  'sources': z.array(z.object({
-  'url': z.string(),
-  'title': z.string().optional(),
-})),
-  'durationMs': z.number(),
-}))
-
 export const TYPERT = {
   package: '@one-person-lab/dsh-llm-opl-gateway',
   face: 'host',
@@ -309,98 +234,7 @@ export const TYPERT = {
       },
       sourceLocation: {"file":"packages/llm/llm-opl-gateway/src/account-service.ts","line":243,"column":9},
     },
-    {
-      id: '@one-person-lab/dsh-llm-opl-gateway#oplSearch/configure',
-      service: 'oplSearch',
-      namespace: 'oplSearch',
-      method: 'configure',
-      invocation: { kind: 'direct' },
-      parameters: [
-        {
-          name: 'preferences',
-          wire: 'preferences',
-          source: 'json',
-          codec: {
-            mode: 'strict',
-            typeSymbol: '@one-person-lab/dsh-llm-opl-gateway/types#OplSearchPreferences',
-            create: _one_person_lab_dsh_llm_opl_gateway_oplSearch_configure_parameter_0$schema,
-          },
-        },
-      ],
-      result: {
-        mode: 'strict',
-        typeSymbol: '@one-person-lab/dsh-llm-opl-gateway/types#OplSearchStatus',
-        create: _one_person_lab_dsh_llm_opl_gateway_oplSearch_configure_result$schema,
-      },
-      sourceLocation: {"file":"packages/llm/llm-opl-gateway/src/search-service.ts","line":73,"column":3},
-    },
-    {
-      id: '@one-person-lab/dsh-llm-opl-gateway#oplSearch/models',
-      service: 'oplSearch',
-      namespace: 'oplSearch',
-      method: 'models',
-      invocation: { kind: 'direct' },
-      parameters: [
-      ],
-      cancellation: { parameter: 'signal' },
-      result: {
-        mode: 'strict',
-        typeSymbol: '@one-person-lab/dsh-llm-opl-gateway#oplSearch/models:result',
-        create: _one_person_lab_dsh_llm_opl_gateway_oplSearch_models_result$schema,
-      },
-      sourceLocation: {"file":"packages/llm/llm-opl-gateway/src/search-service.ts","line":86,"column":9},
-    },
-    {
-      id: '@one-person-lab/dsh-llm-opl-gateway#oplSearch/status',
-      service: 'oplSearch',
-      namespace: 'oplSearch',
-      method: 'status',
-      invocation: { kind: 'direct' },
-      parameters: [
-      ],
-      result: {
-        mode: 'strict',
-        typeSymbol: '@one-person-lab/dsh-llm-opl-gateway/types#OplSearchStatus',
-        create: _one_person_lab_dsh_llm_opl_gateway_oplSearch_status_result$schema,
-      },
-      sourceLocation: {"file":"packages/llm/llm-opl-gateway/src/search-service.ts","line":66,"column":3},
-    },
-    {
-      id: '@one-person-lab/dsh-llm-opl-gateway#oplSearch/test',
-      service: 'oplSearch',
-      namespace: 'oplSearch',
-      method: 'test',
-      invocation: { kind: 'direct' },
-      parameters: [
-        {
-          name: 'preferences',
-          wire: 'preferences',
-          source: 'json',
-          codec: {
-            mode: 'strict',
-            typeSymbol: '@one-person-lab/dsh-llm-opl-gateway/types#OplSearchPreferences',
-            create: _one_person_lab_dsh_llm_opl_gateway_oplSearch_test_parameter_0$schema,
-          },
-        },
-        {
-          name: 'query',
-          wire: 'query',
-          source: 'json',
-          codec: {
-            mode: 'strict',
-            typeSymbol: '@one-person-lab/dsh-llm-opl-gateway#oplSearch/test:query',
-            create: _one_person_lab_dsh_llm_opl_gateway_oplSearch_test_parameter_1$schema,
-          },
-        },
-      ],
-      cancellation: { parameter: 'signal' },
-      result: {
-        mode: 'strict',
-        typeSymbol: '@one-person-lab/dsh-llm-opl-gateway/types#OplSearchTestResult',
-        create: _one_person_lab_dsh_llm_opl_gateway_oplSearch_test_result$schema,
-      },
-      sourceLocation: {"file":"packages/llm/llm-opl-gateway/src/search-service.ts","line":103,"column":9},
-    },
+
   ],
   model: {
     "services": [],

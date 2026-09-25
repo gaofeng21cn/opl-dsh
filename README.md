@@ -2,7 +2,7 @@
 
 **官方 DeepSeek Harness 桌面 + OPL 增强，一次安装即可使用。**
 
-OPL DSH 提供 OPL Gateway 登录、模型双通道、搜索和 Codex 协作。桌面、Agent 循环、工具执行及权限管理均由官方 DSH 提供；增强功能以独立插件维护。
+OPL DSH 提供 OPL Gateway 登录、模型双通道、搜索、Codex 协作和模型 + Harness 执行组合。桌面、Agent 循环、工具执行及权限管理均由官方 DSH 或所选官方 Harness 提供；增强功能以独立插件维护。
 
 ## 下载安装
 
@@ -49,12 +49,22 @@ Windows · x64，在 PowerShell 中运行：
 ## 增强能力
 
 - **OPL Gateway**：应用内登录，统一查看账户、余额和连接状态。默认模型 ID 为 `deepseek-flash`，显示 **DeepSeek-V4.1-Flash**。
-- **双通道与故障切换**：自动管理 DeepSeek、Codex 两组密钥。默认通过官方 DeepSeek adapter 使用 Messages；备用通过官方 `dsh-llm-pi-ai` 协议库使用 OpenAI 兼容接口，仍由 DSH 执行工具和管理会话。
+- **双通道与故障切换**：自动管理 DeepSeek、Codex 两组模型密钥，并为 Grok Build 管理独立的 Grok 分组密钥。默认通过官方 DeepSeek adapter 使用 Messages；备用通过官方 `dsh-llm-pi-ai` 协议库使用 OpenAI 兼容接口，仍由 DSH 执行工具和管理会话。
 - **Codex ↔ DSH 协作**：自动安装 `opl-dsh-official` Skill，可启动 DSH、连续派发任务、等待结果、读取持久化反馈。设置中可修复 Skill、调整自动启动和可选通知桥。
-- **搜索**：支持 Gateway 云端搜索及本地搜索配置。
+- **模型 + Harness 组合**：在任意 DSH 或 Codex 对话中可把一个明确任务交给 `grok-build/grok-4.7`。DSH 提供 `delegate_to_harness` 工具，Codex Skill 提供 `delegate` 命令；两者都会在同一项目目录创建独立的官方 Grok Build ACP 会话，保留 Grok 自己的工具、上下文和会话恢复，再把结果返回当前对话。登录 OPL Gateway 后自动维护 DeepSeek、Codex、Grok 三个分组的独立密钥，Grok 进程通过环境变量引用该密钥。
+- **网页搜索**：登录 OPL Gateway 后，DSH 原生 `web_search` 使用 OPL 的搜索路由；`web_fetch` 继续使用官方公共 HTTP 提供方。搜索固定使用低成本的 `gpt-6-luna`，无需额外配置；不提供独立搜索设置页或本地统计。
 - **简化首启**：统一账户选择，支持稍后登录；完成后不再重复提示，不导入其他 OPL 应用的登录状态。
 
 Codex 协作保留 DSH 的权限与问题确认。后台主动唤醒 Codex 需要另行配置可用的队列桥；默认通过 Skill 等待或读取结果。
+
+当前可用组合：
+
+| 组合 | Harness | 状态 |
+| --- | --- | --- |
+| DeepSeek-V4.1-Flash · DSH | 官方 DeepSeek Harness | 默认对话路径 |
+| Grok 4.7 · Grok Build | 官方 Grok Build，经 ACP | 已验证 macOS；可从 DSH 工具或 Codex Skill 委派 |
+
+向 Grok 委派任务时，Skill 会要求绝对工作目录和明确提示词；同一组合会话可用返回的 `sessionId` 继续、查看或取消。切换组合是一次显式交接，各 Harness 的内部上下文不会伪装成同一份模型会话。
 
 ## 自动更新与数据
 
