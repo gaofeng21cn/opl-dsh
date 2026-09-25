@@ -1,7 +1,7 @@
 /** OPL projections over native Harness sessions. No provider secrets cross this face. */
 export const GROK_COMBINATION = 'grok-build/grok-4.7'
 export const DSH_COMBINATION = 'dsh/deepseek-flash'
-export type HarnessState = 'idle' | 'running' | 'waiting_approval' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
+export type HarnessState = 'idle' | 'running' | 'waiting_approval' | 'waiting_input' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
 export type HarnessOrigin = { kind: 'codex' | 'dsh' | 'harness' | 'desktop'; sessionId: string }
 export interface HarnessApproval {
   id: string
@@ -36,6 +36,6 @@ export interface HarnessSnapshot extends HarnessSession {
   approvals: HarnessApproval[]
 }
 export interface HarnessCatalog {
-  combinations: { id: string; name: string; available: boolean; reason?: string }[]
+  combinations: { id: string; name: string; model: string; modelId: string; harness: string; available: boolean; reason?: string }[]
   sessions: HarnessSnapshot[]
 }

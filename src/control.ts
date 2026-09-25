@@ -17,7 +17,7 @@ import { createHarnessService, HARNESS_NAMESPACE } from './coordination/harness.
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 
-export const inject = ['typertGateway', 'sessions', 'agents', 'sessionProjections', 'connection', 'webServer', 'settings', 'credentials', 'agentDefaultModel', 'oplGatewayAccount']
+export const inject = ['typertGateway', 'sessions', 'agents', 'sessionProjections', 'connection', 'webServer', 'settings', 'credentials', 'agentDefaultModel', 'oplGatewayAccount', 'workspaceRegistry']
 /** Keep admission, model selection, tools and permissions in the official Host.
  * @param ctx - Official Host context.
  */
@@ -58,8 +58,8 @@ export function apply(ctx: Context, _config: Record<string, never>): void {
           const result=await harness.wait({sessionId:started.id,operationId:args.operationId},exec.signal)
           const turn=result.turns.find(t=>t.operationId===args.operationId)
           return {sessionId:result.id,combination:result.combination,cwd:result.cwd,state:turn?.state??result.state,
-            text:turn?.text??'',approvalRequired:result.approvals.length>0,
-            note:result.approvals.length?'请在执行组合面板确认权限，之后读取原会话；不要重派任务。':''}
+            text:turn?.text??'',approvalRequired:result.state==='waiting_approval',inputRequired:result.state==='waiting_input',
+            note:['waiting_approval','waiting_input'].includes(result.state)?(result.combination==='dsh/deepseek-flash'?`请在 DSH 原生会话 ${result.acpSessionId} 处理权限或问题，之后读取原会话；不要重派任务。`:'请在执行组合面板确认权限，之后读取原会话；不要重派任务。'):''}
         } finally {exec.signal.removeEventListener('abort',cancel)}
       },
     }))
@@ -71,7 +71,7 @@ export function apply(ctx: Context, _config: Record<string, never>): void {
         const snapshot=await harness.snapshot({sessionId:args.sessionId})
         if(snapshot.origin.kind!=='dsh'||snapshot.origin.sessionId!==agent.id)throw Error('只能读取当前对话委派的任务')
         const result=args.wait?await harness.wait({sessionId:args.sessionId},exec.signal):snapshot
-        return {sessionId:result.id,state:result.state,combination:result.combination,text:result.turns.at(-1)?.text??'',approvalRequired:result.state==='waiting_approval'}
+        return {sessionId:result.id,state:result.state,combination:result.combination,text:result.turns.at(-1)?.text??'',approvalRequired:result.state==='waiting_approval',inputRequired:result.state==='waiting_input'}
       },
     }))
   })

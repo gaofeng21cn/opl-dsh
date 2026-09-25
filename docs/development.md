@@ -29,11 +29,19 @@ node package.mjs
 
 ## 模型 + Harness 组合
 
-组合由 `harness.ts` 按 `组合 ID + 工作目录 + 外部会话 ID` 管理。首个外部组合为 `grok-build/grok-4.7`：Host 启动官方 `grok agent stdio`，通过 ACP 发送提示词、接收流式文本和工具状态，默认拒绝权限请求，并把会话 ID 保存到独立的 `harness-sessions.json`。DSH 重启后使用 ACP `session/load` 恢复，不把 Grok 的会话文件转成 DSH V4/V5 格式。
+组合由 `harness.ts` 管理。`来源对话 + 稳定 task ID + 规范项目目录 + 组合` 确定关联对话身份；每轮 operation ID 和指令指纹用于防重派发。`harness-sessions.json` 保存原生会话映射、来源、权限边界和各轮结果。创建前先保存身份，重启将未完成轮次标记为 `interrupted`，不会自行重发。
 
-DSH 原生工具 `delegate_to_harness` 与 Codex Skill 的 `delegate`、`delegate-start`、`delegate-prompt`、`delegate-snapshot`、`delegate-cancel` 共享同一个 Host 管理器。它们都会在当前项目目录创建或恢复独立 Harness 子对话并返回结果；Skill 不把 Grok 任务伪装成 DeepSeek Session，也不复用 DeepSeek/Codex 的 key。登录 OPL Gateway 后自动申请 Grok 分组密钥，Host 通过 `GROK_CONFIG` 的 `env_key` 注入，不把密钥写入 Grok 配置文件。Grok 保留自己的工具、上下文和会话状态；权限请求默认拒绝，不会绕过 DSH 的权限边界。
+`DeepSeek + DSH`（模型 ID `deepseek-flash`，显示名 DeepSeek-V4.1-Flash）使用官方 Session API、Workspace Registry、sandbox policy 和 approval policy。子对话加入同项目的官方侧栏，保留原生授权卡片。`Grok + Grok Build`（模型 ID `grok-4.7`）启动官方 `grok agent stdio`，使用 ACP v1 的 initialize、new/load、prompt、update、permission 和 cancel notification。Grok 保留自己的 Agent 循环和会话文件，重启后通过 `session/load` 继续。
 
-实现顺序是先复用这一 ACP Host 管理器接入其他官方 Harness，再增加设置页中的组合选择器和跨组合衔接摘要。当前首版命令路径已覆盖 Grok 的连续对话、工具调用、权限拒绝、取消和进程重启恢复；Windows 以及 Claude 组合尚未宣称已验证。
+DSH Agent scope 注册 `delegate_to_harness`、`harness_result`；Codex Skill 提供 `delegate`、`delegate-start`、`delegate-prompt`、`delegate-list`、`delegate-wait`、`delegate-snapshot` 和 `delegate-cancel`。Grok 通过随 ACP 会话注入的 MCP 协作工具反向委派 DSH。MCP 只持有当前父对话的受限能力，不能使用 Host 全局令牌，不能换项目、提权或操作其他父对话的子任务。跨 DSH/Grok 的协作深度统一限制，取消父任务会取消仍在执行的子任务。
+
+Gateway 分别维护 DeepSeek、Codex、Grok 三组 key。Grok 使用套件独立 `GROK_HOME`，无密钥 TOML 的 `env_key` 引用子进程环境中的 Grok key；模型配置不能放进会过滤 model 表的 `GROK_CONFIG` overlay。缺少对应 key 时明确失败，不读取机器上的其他分组凭据。ACP 权限暂停等待用户在组合面板选择本次允许或拒绝，通用 control bridge 不开放授权接口。
+
+官方 `main` 插槽承载组合面板，设置页与账户菜单提供入口；面板按项目分组、展示来源/状态/工具/结果，支持新建、继续、取消和显式交接。Codex 原生侧栏任务创建及组合后台通知尚未实现；组合结果使用持久记录与 wait/snapshot，旧 `taskFeedback` 仍仅服务原生 dispatch。Claude、Grok CLI 自动安装及 Windows Grok 是后续扩展，不代表本版已支持。
+
+### 执行目录
+
+`execution-catalog.json` 是用户配置的单一入口，分为 `connections`、`models`、`harnesses` 和 `combinations` 四组。连接保存地址和认证引用，模型保存供应方模型 ID 与协议，Harness 保存运行时和适配器，组合保存四者关系、默认标记、启用状态及 sandbox 边界。密钥不写入目录。安装器首次创建 DeepSeek + DSH、Grok + Grok Build 两个默认组合；设置页可以修改组合名称、默认组合、权限边界，也可以登记 OpenAI 兼容模型。没有适配器的自定义组合保留在目录中但显示为不可运行，避免把配置存在误报为真实能力。
 
 ## 安装位置
 

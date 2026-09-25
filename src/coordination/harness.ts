@@ -14,11 +14,14 @@ import { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import { setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-workspace'
+import type {} from '@deepseek-ai/dsh-user-questions'
 import { GROK_API_KEY_REF } from '../gateway/config.ts'
 import { OPL_GATEWAY_INFERENCE_BASE_URL } from '../gateway/opl-credentials.ts'
 import { AcpProcess, object } from './acp.ts'
 import { waitForSession } from './wait.ts'
 import { DSH_COMBINATION, GROK_COMBINATION, type HarnessApproval, type HarnessCatalog, type HarnessOrigin, type HarnessSession, type HarnessSnapshot, type HarnessTurn } from './harness-types.ts'
+import { catalogView, ExecutionCatalogStore, type ExecutionCatalog } from './catalog.ts'
 export { GROK_COMBINATION, DSH_COMBINATION } from './harness-types.ts'
 export const HARNESS_NAMESPACE = 'harness'
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -33,13 +36,6 @@ export function grokConfiguration(): string {
   return `[cli]\nauto_update = false\n[models]\ndefault = "grok-4.7"\nweb_search = "grok-4.7"\n[model."grok-4.7"]\nmodel = "grok-4.7"\nname = "Grok 4.7"\nbase_url = "${OPL_GATEWAY_INFERENCE_BASE_URL}"\nenv_key = "${GROK_API_KEY_REF}"\napi_backend = "responses"\ncontext_window = 500000\nsupports_reasoning_effort = true\n[shell_environment_policy]\nexclude = ["OPL_GATEWAY_*", "DSH_*", "GROK_CONFIG*"]\n[compat.claude]\nskills = false\nrules = false\nmcps = false\nhooks = false\nsessions = false\n[compat.cursor]\nskills = false\nrules = false\nmcps = false\nhooks = false\n`;
 }
 
-/** Compatibility projection used by older diagnostics; runtime uses TOML above. */
-export function grokConfigOverlay(): string {
-  return JSON.stringify({
-    models: { default: 'grok-4.7' },
-    model: { 'grok-4.7': { model: 'grok-4.7', name: 'Grok 4.7', base_url: OPL_GATEWAY_INFERENCE_BASE_URL, env_key: GROK_API_KEY_REF, api_backend: 'responses' } },
-  })
-}
 function launchEnvironment(home: string, key: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {}
   for (const name of ['PATH','HOME','USERPROFILE','APPDATA','LOCALAPPDATA','SYSTEMROOT','TEMP','TMP','TMPDIR','LANG','LC_ALL','TERM','SHELL','USER','LOGNAME','HTTPS_PROXY','HTTP_PROXY','ALL_PROXY','NO_PROXY','https_proxy','http_proxy','all_proxy','no_proxy','SSL_CERT_FILE','SSL_CERT_DIR','NODE_EXTRA_CA_CERTS']) if (process.env[name]) env[name] = process.env[name]
@@ -49,15 +45,18 @@ export class HarnessService {
   private readonly records = new Map<string, HarnessSession>()
   private readonly active = new Map<string, Active>()
   private readonly starting = new Map<string, Promise<HarnessSnapshot>>()
+  private readonly connecting = new Map<string, Promise<void>>()
   private readonly events = new EventEmitter()
   private writeQueue: Promise<void> = Promise.resolve()
   private readonly ready: Promise<void>
   private disposed = false
   readonly directory: string
   private readonly filename: string
+  private readonly catalogStore: ExecutionCatalogStore
   constructor(private readonly ctx: Context, private readonly options: { home?: string; command?: string; prefix?: string[]; resolveKey?: () => Promise<string | undefined> } = {}) {
     this.directory = options.home ?? dshHomePath()
     this.filename = join(this.directory, 'profiles/desktop/harness-sessions.json')
+    this.catalogStore = new ExecutionCatalogStore(this.directory)
     this.events.setMaxListeners(100)
     this.ready = this.load()
   }
@@ -69,7 +68,7 @@ export class HarnessService {
       const item = object(raw)
       if (typeof item.id !== 'string' || ![GROK_COMBINATION,DSH_COMBINATION].includes(item.combination) || typeof item.cwd !== 'string' || typeof item.acpSessionId !== 'string') throw Error('组合会话记录损坏，原文件已保留')
       const record: HarnessSession = { ...item, origin: item.origin ?? {kind:'desktop',sessionId:'legacy'}, sandbox: item.sandbox ?? 'read-only', title: item.title ?? 'Grok 4.7', turns: item.turns ?? [] } as HarnessSession
-      for (const turn of record.turns) if (['running','waiting_approval'].includes(turn.state)) { turn.state = 'interrupted'; turn.error = 'Host 已重启；原轮次不会自动重发，可用新的 operation 继续原生会话' }
+      for (const turn of record.turns) if (['running','waiting_approval','waiting_input'].includes(turn.state)) { turn.state = 'interrupted'; turn.error = 'Host 已重启；原轮次不会自动重发，可用新的 operation 继续原生会话' }
       this.records.set(record.id, record)
     }
   }
@@ -84,14 +83,18 @@ export class HarnessService {
   private command() { return this.options.command ?? process.env.OPL_GROK_COMMAND?.trim() ?? join(homedir(),'.grok/bin/grok') }
   async list(): Promise<HarnessCatalog> {
     await this.ready
+    const catalog = await this.catalogStore.get()
     const cli = await access(this.command(),constants.X_OK).then(()=>true,()=>false)
     const key = !!(await this.key())
     const account = await this.ctx.get('oplGatewayAccount')?.status()
-    return { combinations: [
-      {id:DSH_COMBINATION,name:'DeepSeek-V4.1-Flash · DSH',available:account?.keyReady === true},
-      {id:GROK_COMBINATION,name:'Grok 4.7 · Grok Build',available:cli&&key,...(!cli?{reason:'未找到官方 Grok Build CLI'}:!key?{reason:'请登录或刷新 OPL Gateway，准备 Grok 分组密钥'}:{})},
-    ], sessions: [...this.records.values()].map(r=>this.view(r)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)) }
+    const availability = new Map<string, { available: boolean; reason?: string }>([
+      [DSH_COMBINATION, { available: account?.keyReady === true, ...(account?.keyReady === true ? {} : { reason: '请先配置 DeepSeek 连接' }) }],
+      [GROK_COMBINATION, { available: cli && key, ...(!cli ? { reason: '未找到官方 Grok Build CLI' } : !key ? { reason: '请登录或刷新 OPL Gateway，准备 Grok 分组密钥' } : {}) }],
+    ])
+    return { combinations: catalogView(catalog, availability), sessions: [...this.records.values()].map(r=>this.view(r)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)) }
   }
+  async executionCatalog(): Promise<ExecutionCatalog> { await this.ready; return this.catalogStore.get() }
+  async saveExecutionCatalog(value: unknown): Promise<ExecutionCatalog> { await this.ready; const catalog = await this.catalogStore.set(value); this.events.emit('catalog'); return catalog }
   private view(record: HarnessSession): HarnessSnapshot {
     const active=this.active.get(record.id)
     return structuredClone({...record,connected:record.combination===DSH_COMBINATION?!!this.ctx.agents?.get(brandString<SessionId>(record.acpSessionId)):!!active?.acp&&!active.acp.closed,state:record.turns.at(-1)?.state??'idle',approvals:[...(active?.approvals.values()??[])].map(({rpcId:_,...a})=>a)})
@@ -104,12 +107,20 @@ export class HarnessService {
   async start(input: HarnessStartRequest): Promise<HarnessSnapshot> {
     await this.ready
     if(this.disposed)throw Error('组合服务已关闭')
-    if(![GROK_COMBINATION,DSH_COMBINATION].includes(input?.combination))throw Error('未知的模型 + Harness 组合')
+    const catalog = await this.catalogStore.get()
+    const definition = catalog.combinations.find(x => x.id === input?.combination && x.enabled)
+    if(!definition)throw Error('未知或已停用的模型 + Harness 组合')
+    if(![GROK_COMBINATION,DSH_COMBINATION].includes(definition.id))throw Error('该组合已保存，但尚未安装对应 Harness 适配器')
     const supplied=required(input.cwd,'cwd');if(!isAbsolute(supplied)||supplied.includes('\0'))throw Error('工作目录必须为绝对路径')
     const cwd=await realpath(supplied);if(!(await stat(cwd)).isDirectory())throw Error('工作目录不存在')
     const origin=input.origin??{kind:'desktop',sessionId:'manual'}
     if(!['codex','dsh','harness','desktop'].includes(origin.kind))throw Error('无效的来源')
     required(origin.sessionId,'origin.sessionId')
+    const parent=this.parentOf(origin)
+    if(origin.kind==='harness'&&!parent)throw Error('来源组合会话不存在')
+    if(parent&&(parent.cwd!==cwd||input.sandbox&&input.sandbox!==parent.sandbox))throw Error('子对话必须继承原项目和权限边界')
+    let ancestor=parent,depth=0
+    while(ancestor){if(++depth>=4)throw Error('协作嵌套已达上限');ancestor=this.parentOf(ancestor.origin)}
     const id=input.existingSessionId??`harness-${hash([origin,input.taskId??randomUUID(),cwd,input.combination]).slice(0,24)}`
     const prior=this.records.get(id)
     if(input.existingSessionId&&!prior)throw Error('指定会话不存在，不会自动创建替代会话')
@@ -117,23 +128,39 @@ export class HarnessService {
     if(input.sandbox!==undefined&&!['workspace','read-only'].includes(input.sandbox))throw Error('无效的权限边界')
     if(prior&&input.sandbox&&prior.sandbox!==input.sandbox)throw Error('不能通过继续会话扩大权限')
     if(this.starting.has(id))return this.starting.get(id)!
-    const record:HarnessSession=prior??{id,combination:input.combination,cwd,origin,sandbox:input.sandbox??'workspace',acpSessionId:'',title:input.combination===GROK_COMBINATION?'Grok 4.7':'DeepSeek · DSH',createdAt:now(),updatedAt:now(),turns:[]}
-    const pending=this.connect(record).then(async()=>{this.records.set(id,record);await this.save();return this.view(record)}).finally(()=>this.starting.delete(id))
+    const record:HarnessSession=prior??{id,combination:input.combination,cwd,origin,sandbox:parent?.sandbox??input.sandbox??definition.sandbox,acpSessionId:'',title:definition.name,createdAt:now(),updatedAt:now(),turns:[]}
+    // Persist the identity before creating a native session. A failed setup can
+    // then resume the same mapping rather than orphaning an invisible session.
+    this.records.set(id,record)
+    const pending=this.save().then(()=>this.connect(record)).then(()=>this.view(record)).finally(()=>this.starting.delete(id))
     this.starting.set(id,pending);return pending
   }
-  private async connect(record: HarnessSession) {
+  private parentOf(origin:HarnessOrigin):HarnessSession|undefined {
+    return origin.kind==='harness'?this.records.get(origin.sessionId):origin.kind==='dsh'?[...this.records.values()].find(r=>r.combination===DSH_COMBINATION&&r.acpSessionId===origin.sessionId):undefined
+  }
+  private connect(record: HarnessSession):Promise<void> {
+    if(this.disposed)return Promise.reject(Error('组合服务已关闭'))
+    const pending=this.connecting.get(record.id)
+    if(pending)return pending
+    const connection=this.openConnection(record).finally(()=>this.connecting.delete(record.id))
+    this.connecting.set(record.id,connection)
+    return connection
+  }
+  private async openConnection(record: HarnessSession) {
     const existing=this.active.get(record.id)
     if(existing && (record.combination===DSH_COMBINATION || existing.acp&&!existing.acp.closed))return
     if(record.combination===DSH_COMBINATION) {
       const id=record.acpSessionId||`session-${record.id}`
-      if(!record.acpSessionId) {
-        await this.native('create',{sessionId:id,cwd:record.cwd})
-        await this.native('selectModel',{sessionId:id,provider:'opl-gateway',model:'deepseek-flash'})
-        const session=this.ctx.sessions.get(brandString<SessionId>(id));if(!session)throw Error('DSH 子会话未创建')
-        setSandboxMode(session,record.sandbox==='read-only'?'read-only':'workspace-write');setApprovalPolicy(session,'ask')
-        await this.native('rename',{sessionId:id,title:'DeepSeek · DSH · 组合协作'})
-        record.acpSessionId=id
-      }
+      const isNew=!record.acpSessionId
+      // The official create operation adopts an existing identity, including
+      // a cold persisted session, after validating its working directory.
+      const workspace=await this.ctx.workspaceRegistry.create(record.cwd)
+      await this.native('create',{sessionId:id,workspaceId:workspace.id})
+      record.acpSessionId=id;await this.save()
+      await this.native('selectModel',{sessionId:id,provider:'opl-gateway',model:'deepseek-flash'})
+      const session=this.ctx.sessions.get(brandString<SessionId>(id));if(!session)throw Error('DSH 子会话未创建')
+      setSandboxMode(session,record.sandbox==='read-only'?'read-only':'workspace-write');setApprovalPolicy(session,'ask')
+      if(isNew)await this.native('rename',{sessionId:id,title:'DeepSeek · DSH · 组合协作'})
       this.active.set(record.id,{cancelled:false,turn:undefined,done:undefined,approvals:new Map()});return
     }
     const key=await this.key();if(!key)throw Error('Grok 分组密钥未就绪，请在 OPL Gateway 页面刷新账号；不会回退到其他分组密钥')
@@ -151,8 +178,6 @@ export class HarnessService {
       if(request.method==='start'){
         // A Grok child can request only a same-project DSH sibling, with its
         // own parent identity and inherited filesystem boundary.
-        let depth=0,cursor:HarnessSession|undefined=record
-        while(cursor?.origin.kind==='harness'){depth++;cursor=this.records.get(cursor.origin.sessionId);if(depth>=4)throw Error('协作嵌套已达上限')}
         if(p.existingSessionId){const prior=this.records.get(p.existingSessionId);if(prior?.origin.kind!=='harness'||prior.origin.sessionId!==record.id)throw Error('会话不属于当前组合')}
         return this.start({combination:DSH_COMBINATION,cwd:record.cwd,taskId:required(p.taskId,'taskId'),origin:{kind:'harness',sessionId:record.id},sandbox:record.sandbox,...(p.existingSessionId?{existingSessionId:p.existingSessionId}:{})})
       }
@@ -174,7 +199,7 @@ export class HarnessService {
       if(init.protocolVersion!==1)throw Error('Grok Build 未协商 ACP v1')
       if(record.acpSessionId&&!object(init.agentCapabilities).loadSession)throw Error('此 Grok Build 不支持恢复原生会话')
       const session=object(await acp.request(record.acpSessionId?'session/load':'session/new',{...(record.acpSessionId?{sessionId:record.acpSessionId}:{}),cwd:record.cwd,mcpServers:servers}))
-      if(!record.acpSessionId)record.acpSessionId=required(session.sessionId,'ACP sessionId')
+      if(!record.acpSessionId){record.acpSessionId=required(session.sessionId,'ACP sessionId');await this.save()}
       const model=object(session.models).currentModelId
       if(model!==undefined&&model!=='grok-4.7')throw Error('Grok Build 返回了不同的模型，已停止')
       this.active.set(record.id,active)
@@ -211,6 +236,7 @@ export class HarnessService {
   }
   async prompt(input:HarnessPromptRequest):Promise<HarnessSnapshot> {
     await this.ready
+    if(this.disposed)throw Error('组合服务已关闭')
     const record=this.records.get(required(input?.sessionId,'sessionId'));if(!record)throw Error('组合会话不存在')
     const text=required(input.text,'text'),operation=required(input.operationId,'operationId')
     const fingerprint=hash([record.id,text])
@@ -245,7 +271,12 @@ export class HarnessService {
           if(event.type==='tool/call')turn.tools.push({id:event.data.callId,title:event.data.name,status:'pending',kind:'other'})
           if(event.type==='tool/result'){const tool=turn.tools.find(t=>t.id===event.data.message.toolCallId);if(tool)tool.status=event.data.message.isError?'failed':'completed'}
           this.changed(record)
-        })
+        },{global:true})
+        const offQuestions=this.ctx.on('user-questions/request',async(request,next)=>{
+          if(request.agent?.id!==record.acpSessionId)return next()
+          turn.state='waiting_input';this.changed(record);await this.save()
+          try{return await next()}finally{if(active.turn===turn&&!active.cancelled){turn.state='running';this.changed(record)}}
+        },{global:true})
         try{
           await this.native('prompt',{sessionId:record.acpSessionId,requestId:'opl-harness-'+hash([record.id,turn.operationId]),mode:'queue',content:[{type:'text',text:turn.prompt}]})
           const agent=this.ctx.agents.get(brandString<SessionId>(record.acpSessionId));if(!agent)throw Error('DSH 会话未就绪')
@@ -253,7 +284,7 @@ export class HarnessService {
           const result=await waitForSession(this.ctx,{sessionId:agent.id},new AbortController().signal)
           turn.state=result.outcome.kind==='completed'?'completed':result.outcome.kind==='cancelled'?'cancelled':'failed'
           turn.stopReason=result.outcome.kind
-        }finally{unlisten()}
+        }finally{unlisten();offQuestions()}
       }
     }catch{turn.state=active.cancelled?'cancelled':'failed';turn.error='执行未完成，请检查 Grok 安装、Gateway 连接或原生会话状态。原任务未自动重发。'}
     finally {
@@ -280,6 +311,7 @@ export class HarnessService {
     const record=this.records.get(required(input.sessionId,'sessionId')),active=this.active.get(input.sessionId)
     if(!record)throw Error('组合会话不存在')
     if(active?.turn){active.cancelled=true;for(const a of active.approvals.values())active.acp?.answer(a.rpcId);active.approvals.clear()
+      await Promise.all([...this.records.values()].filter(child=>this.parentOf(child.origin)?.id===record.id&&this.active.get(child.id)?.turn).map(child=>this.cancel({sessionId:child.id})))
       if(record.combination===DSH_COMBINATION)await this.native('cancel',{sessionId:record.acpSessionId})
       else active.acp?.cancel(record.acpSessionId)
       const timer=setTimeout(()=>{void active.acp?.dispose()},5000)
@@ -291,6 +323,8 @@ export class HarnessService {
     const p=object(input)
     switch(method){
       case'list':return this.list()
+      case'catalog':return this.executionCatalog()
+      case'save-catalog':return this.saveExecutionCatalog(p.catalog)
       case'start':return this.start(p as HarnessStartRequest)
       case'prompt':return this.prompt(p as HarnessPromptRequest)
       case'snapshot':return this.snapshot({sessionId:p.sessionId})
@@ -300,6 +334,11 @@ export class HarnessService {
       default:throw Error('不支持的组合操作')
     }
   }
-  async dispose(){this.disposed=true;await this.ready;await Promise.all([...this.active.values()].map(async a=>{a.cancelled=true;await a.acp?.dispose();await a.bridgeStop?.();await a.done}));await this.writeQueue}
+  async dispose(){
+    this.disposed=true;await this.ready
+    await Promise.allSettled([...this.connecting.values()])
+    await Promise.all([...this.active.entries()].map(async([id,a])=>{await this.cancel({sessionId:id});await a.acp?.dispose();await a.bridgeStop?.()}))
+    await this.writeQueue; await this.catalogStore.dispose()
+  }
 }
 export const createHarnessService=(ctx:Context)=>new HarnessService(ctx)

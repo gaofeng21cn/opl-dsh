@@ -11,6 +11,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
  const m=JSON.parse(line)
  if(m.method==='initialize')answer(m.id,{protocolVersion:1,agentCapabilities:{loadSession:true}})
  else if(m.method==='session/new'||m.method==='session/load'){
+  await appendFile(join(process.cwd(),'connections.txt'),m.method+'\n')
   sessionId=m.params.sessionId??'test-native'
   await writeFile(join(process.cwd(),'launch.json'),JSON.stringify({envKey:!!process.env.OPL_GATEWAY_GROK_API_KEY,hasCodex:!!process.env.OPL_GATEWAY_CODEX_API_KEY,home:process.env.GROK_HOME,args:process.argv.slice(2)}))
   answer(m.id,{sessionId,models:{currentModelId:'grok-4.7'}})

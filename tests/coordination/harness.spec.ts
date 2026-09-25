@@ -46,4 +46,22 @@ describe('external Harness production transport',()=>{
   await expect(start(service,root)).rejects.toThrow('分组密钥')
   expect(grokConfiguration()).toContain('env_key = "OPL_GATEWAY_GROK_API_KEY"')
  })
+ it('shares one cold connection across concurrent retries after restart',async()=>{
+  const {root,service,ctx,options}=await setup();const a=await start(service,root)
+  await service.dispose();const resumed=new HarnessService(ctx,options);cleanups.push(()=>resumed.dispose())
+  const request={sessionId:a.id,text:'wait',operationId:'retry'}
+  await Promise.all([resumed.prompt(request),resumed.prompt(request)])
+  expect((await readFile(join(root,'connections.txt'),'utf8')).trim().split('\n')).toEqual(['session/new','session/load'])
+  expect((await readFile(join(root,'calls.txt'),'utf8')).trim().split('\n')).toEqual(['wait'])
+  expect((await resumed.cancel({sessionId:a.id})).state).toBe('cancelled')
+ })
+ it('inherits project permissions and cancels child work with its parent',async()=>{
+  const {root,service}=await setup();const a=await start(service,root)
+  await expect(service.start({combination:GROK_COMBINATION,cwd:root,origin:{kind:'harness',sessionId:a.id},sandbox:'read-only'})).rejects.toThrow('权限边界')
+  const child=await service.start({combination:GROK_COMBINATION,cwd:root,origin:{kind:'harness',sessionId:a.id}})
+  await service.prompt({sessionId:a.id,text:'wait',operationId:'parent'})
+  await service.prompt({sessionId:child.id,text:'wait',operationId:'child'})
+  await service.cancel({sessionId:a.id})
+  expect((await service.snapshot({sessionId:child.id})).state).toBe('cancelled')
+ })
 })

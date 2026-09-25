@@ -51,9 +51,11 @@ Windows · x64，在 PowerShell 中运行：
 - **OPL Gateway**：应用内登录，统一查看账户、余额和连接状态。默认模型 ID 为 `deepseek-flash`，显示 **DeepSeek-V4.1-Flash**。
 - **双通道与故障切换**：自动管理 DeepSeek、Codex 两组模型密钥，并为 Grok Build 管理独立的 Grok 分组密钥。默认通过官方 DeepSeek adapter 使用 Messages；备用通过官方 `dsh-llm-pi-ai` 协议库使用 OpenAI 兼容接口，仍由 DSH 执行工具和管理会话。
 - **Codex ↔ DSH 协作**：自动安装 `opl-dsh-official` Skill，可启动 DSH、连续派发任务、等待结果、读取持久化反馈。设置中可修复 Skill、调整自动启动和可选通知桥。
-- **模型 + Harness 组合**：在任意 DSH 或 Codex 对话中可把一个明确任务交给 `grok-build/grok-4.7`。DSH 提供 `delegate_to_harness` 工具，Codex Skill 提供 `delegate` 命令；两者都会在同一项目目录创建独立的官方 Grok Build ACP 会话，保留 Grok 自己的工具、上下文和会话恢复，再把结果返回当前对话。登录 OPL Gateway 后自动维护 DeepSeek、Codex、Grok 三个分组的独立密钥，Grok 进程通过环境变量引用该密钥。
+- **模型 + Harness 组合**：在任意 DSH 或 Codex 对话中可把一个明确任务交给 `Grok + Grok Build`。DSH 提供 `delegate_to_harness` 工具，Codex Skill 提供 `delegate` 命令；两者都会在同一项目目录创建独立的官方 Grok Build ACP 会话，保留 Grok 自己的工具、上下文和会话恢复，再把结果返回当前对话。登录 OPL Gateway 后自动维护 DeepSeek、Codex、Grok 三个分组的独立密钥，Grok 进程通过环境变量引用该密钥。
 - **网页搜索**：登录 OPL Gateway 后，DSH 原生 `web_search` 使用 OPL 的搜索路由；`web_fetch` 继续使用官方公共 HTTP 提供方。搜索固定使用低成本的 `gpt-6-luna`，无需额外配置；不提供独立搜索设置页或本地统计。
 - **简化首启**：统一账户选择，支持稍后登录；完成后不再重复提示，不导入其他 OPL 应用的登录状态。
+
+设置页按四层管理：**连接与账号**保存 OPL Gateway、DeepSeek 官方或自定义兼容接口；**模型**记录模型 ID 和显示名；**Harness**显示已安装的 DSH、Grok Build 及其适配器；**执行组合**把模型、Harness、连接和权限绑定成一个实际调用单位。普通使用只需要选择执行组合，OpenAI 备用通道等协议细节放在连接详情中。默认组合为 DeepSeek + DSH，也可以修改显示名、默认项、连接来源和工作区权限；新增的模型只有在存在匹配 Harness 适配器时才会显示为可运行。
 
 Codex 协作保留 DSH 的权限与问题确认。后台主动唤醒 Codex 需要另行配置可用的队列桥；默认通过 Skill 等待或读取结果。
 
@@ -61,10 +63,16 @@ Codex 协作保留 DSH 的权限与问题确认。后台主动唤醒 Codex 需�
 
 | 组合 | Harness | 状态 |
 | --- | --- | --- |
-| DeepSeek-V4.1-Flash · DSH | 官方 DeepSeek Harness | 默认对话路径 |
-| Grok 4.7 · Grok Build | 官方 Grok Build，经 ACP | 已验证 macOS；可从 DSH 工具或 Codex Skill 委派 |
+| DeepSeek + DSH | 模型：DeepSeek-V4.1-Flash；Harness：官方 DSH | 默认对话路径 |
+| Grok + Grok Build | 模型：Grok 4.7；Harness：官方 Grok Build，经 ACP | 已验证 macOS；可从 DSH 工具或 Codex Skill 委派 |
 
-向 Grok 委派任务时，Skill 会要求绝对工作目录和明确提示词；同一组合会话可用返回的 `sessionId` 继续、查看或取消。切换组合是一次显式交接，各 Harness 的内部上下文不会伪装成同一份模型会话。
+例如，在 Codex 或 DSH 中说：“让 Grok + Grok Build 在当前项目检查这个模块，把结果返回这里。”派发方会建立关联子对话，继承项目目录，并用指定组合执行；组合详情会显示模型为 Grok 4.7。Grok 对话也能通过内置协作工具把任务交给 DeepSeek + DSH。
+
+在 **账户菜单 → 执行组合** 可按项目查看子对话、工具过程和结果，继续追问或“交给另一组合”。Grok 的操作授权在这里确认，DSH 授权仍在原生对话确认。各 Harness 保留自己的上下文、工具和持久会话；交接时提供明确任务说明。
+
+Codex Skill 的 `delegate` 返回组合会话 `id`，用它继续、等待或取消；稳定的 task/operation ID 避免断线重试造成重复执行。当前组合结果通过等待或读取返回，尚未接入原生 DSH 的通知 outbox；外部对话显示在 OPL 组合面板，不会自动创建 Codex 原生侧栏任务。
+
+Grok 组合目前复用本机已安装的官方 Grok Build CLI（默认 `~/.grok/bin/grok`），缺少时显示“未就绪”；按需安装 CLI、Windows Grok 和 Claude 组合尚未提供。
 
 ## 自动更新与数据
 
