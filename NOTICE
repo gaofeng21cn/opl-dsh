@@ -1,0 +1,12 @@
+OPL DSH
+Copyright (c) 2026 One Person Lab contributors
+
+This enhancement suite includes and adapts OPL Gateway and coordination code
+from gaofeng21cn/opl-dsh-legacy, originally developed on DeepSeek Harness.
+Code derived from DeepSeek Harness remains subject to its MIT license:
+Copyright (c) 2026 DeepSeek.
+Source: https://github.com/deepseek-ai/deepseek-harness
+
+Official DeepSeek Harness Desktop is downloaded separately from DeepSeek.
+Its original resources, signature, attribution and licenses are not modified.
+OPL DSH is independently maintained and is not affiliated with DeepSeek.
