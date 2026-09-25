@@ -1,0 +1,51 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createHash } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
+
+function bootstrap(mode) {
+  const root = mkdtempSync(join(tmpdir(), 'opl-bootstrap-test-'))
+  const bin = join(root, 'bin')
+  mkdirSync(bin)
+  const script = (name, body) => writeFileSync(join(bin, name), '#!/bin/bash\nset -eu\n' + body, { mode: 0o700 })
+  script('uname', 'if [[ "$1" == -s ]]; then echo Darwin; else echo arm64; fi\n')
+  script('curl', `output=''; url=''
+while [[ $# -gt 0 ]]; do
+  case "$1" in -o) output="$2"; shift;; https://*) url="$1";; esac
+  shift
+done
+case "$url" in
+  */latest) echo 'https://github.com/gaofeng21cn/opl-dsh/releases/tag/${mode === 'bad-tag' ? '../wrong' : 'dsh-v0.1.7-rc.2-opl.1'}';;
+  */download/dsh-v0.1.7-rc.2-opl.1/SHA256SUMS) echo '${createHash('sha256').update('fixture').digest('hex')}  OPL-DSH-Enhancements.zip' > "$output";;
+  */download/dsh-v0.1.7-rc.2-opl.1/OPL-DSH-Enhancements.zip) printf '%s' '${mode === 'corrupt' ? 'corrupt' : 'fixture'}' > "$output";;
+  *) exit 42;;
+esac
+`)
+  script('ditto', `mkdir -p "$4"
+printf '%s\\n' '#!/bin/bash' 'echo "INSTALLER_CALLED:$*"' > "$4/install.command"
+`)
+  try {
+    return spawnSync('/bin/bash', [new URL('../install.sh', import.meta.url).pathname, '--no-launch'], {
+      encoding: 'utf8', env: { ...process.env, TMPDIR: root, PATH: bin + ':' + process.env.PATH },
+    })
+  } finally { rmSync(root, { recursive: true, force: true }) }
+}
+test('bootstrap pins both downloads to one release and forwards installer flags', () => {
+  const result = bootstrap('valid')
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /INSTALLER_CALLED:--no-launch/)
+})
+test('bootstrap rejects corrupt downloads before extraction or execution', () => {
+  const result = bootstrap('corrupt')
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /增强包校验失败/)
+  assert.doesNotMatch(result.stdout, /INSTALLER_CALLED/)
+})
+test('bootstrap rejects unexpected release redirects', () => {
+  const result = bootstrap('bad-tag')
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /无法读取 OPL DSH 发布版本/)
+})

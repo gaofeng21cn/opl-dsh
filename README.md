@@ -6,6 +6,33 @@ OPL DSH 提供 OPL Gateway 登录、模型双通道、搜索和 Codex 协作。�
 
 ## 下载安装
 
+### Homebrew（macOS · Apple Silicon）
+
+```sh
+brew tap gaofeng21cn/opl-dsh https://github.com/gaofeng21cn/opl-dsh.git
+brew install --cask gaofeng21cn/opl-dsh/opl-dsh
+```
+
+安装完成后打开 `~/Applications/OPL DSH.app`。Homebrew 会自动下载官方桌面、安装增强并配置 Codex Skill，无需额外运行安装脚本。
+
+### 终端一键安装
+
+macOS · Apple Silicon：
+
+```sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/gaofeng21cn/opl-dsh/main/install.sh)"
+```
+
+Windows · x64，在 PowerShell 中运行：
+
+```powershell
+& ([scriptblock]::Create((Invoke-RestMethod https://raw.githubusercontent.com/gaofeng21cn/opl-dsh/main/install.ps1)))
+```
+
+命令会获取最新 OPL 增强发布包，校验后调用同一套安装器；无需安装 Git、Node.js 或手动解压文件。
+
+### 图形安装器
+
 | 系统 | 下载 |
 | --- | --- |
 | macOS · Apple Silicon | [Mac 一键安装器（DMG）](https://github.com/gaofeng21cn/opl-dsh/releases/latest/download/OPL-DSH-Installer-mac-arm64.dmg) |
@@ -35,9 +62,9 @@ Codex 协作保留 DSH 的权限与问题确认。后台主动唤醒 Codex 需�
 
 增强插件、数据和 Skill 位于官方应用外部，官方应用更新不会覆盖这些文件。界面和安装记录显示实际官方桌面版本；不按版本号人为拒绝新版；若首启衔接接口缺失，会保留官方欢迎窗口。插件 API 的实质变化仍可能需要兼容修复。请保留 **OPL DSH** 启动入口，直接打开官方应用不会自动选择 OPL 的独立数据目录。
 
-首次安装可导入旧公开版 OPL DSH 的会话、设置和本产品凭据，原目录完整保留。已验证旧版 V3 会话可在官方桌面打开。未公开开发版 V5 会话不会被自动逆转换；若检测到这种格式，会保留原会话及关联存储并提示，其他账户配置仍可导入。
+Homebrew 用户可用 `brew upgrade --cask gaofeng21cn/opl-dsh/opl-dsh` 更新安装器；应用日常更新仍走上述官方桌面与增强各自的更新机制。Homebrew 卸载仅移除 OPL 快捷入口，保留官方桌面、用户数据和 Codex Skill。
 
-从旧的 0.2.x ZIP 安装升级时，请运行一次本页的新安装器，以切换到新的版本命名和自动更新机制；原套件目录与数据保留。
+数据保存在独立的 OPL DSH Suite 目录中，重新安装会保留已有登录、会话和设置。安装位置与数据兼容细节见[开发与验证说明](docs/development.md)。
 
 详见[首次启动与登录](docs/first-run.md)、[开发与验证说明](docs/development.md)和[发布记录](https://github.com/gaofeng21cn/opl-dsh/releases)。
 
@@ -45,4 +72,4 @@ Codex 协作保留 DSH 的权限与问题确认。后台主动唤醒 Codex 需�
 
 本仓库是 One Person Lab 独立维护的增强套件，与 DeepSeek 官方无隶属关系。官方桌面与 Harness 来自 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，本仓库仅维护增强插件、协作 Skill 和安装更新工具。
 
-采用 [MIT 许可](LICENSE)，来源声明见 [NOTICE](NOTICE)。旧版源码与发布记录保存在 [opl-dsh-legacy](https://github.com/gaofeng21cn/opl-dsh-legacy)。
+采用 [MIT 许可](LICENSE)，来源声明见 [NOTICE](NOTICE)。

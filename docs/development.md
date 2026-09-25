@@ -8,6 +8,8 @@ OPL DSH 独立维护增强包，复用未修改的官方 DeepSeek Harness 桌面
 - `src/coordination`：协作设置、任务等待、持久化反馈与可选 Codex 队列桥。
 - `src/client`：Gateway、搜索、首启和协作设置界面。
 - `installer`：官方包校验、独立 profile、旧数据导入、快捷入口、Skill 及增强自动更新。
+- `install.sh` / `install.ps1`：公开终端入口，选定最新 Release 后下载同一版本的增强 ZIP 与 SHA-256 清单，校验后调用现有安装器。
+- `Casks/opl-dsh.rb`：直接以本仓库作为 Homebrew Tap，固定增强 ZIP 的发布地址与 SHA-256；安装时仍动态获取最新官方桌面。
 
 开发需要 Node.js 24；分发安装器使用 Python 3、macOS 系统工具和 NSIS（`brew install nsis`）生成。使用者无需单独安装这些运行时。
 
@@ -21,6 +23,8 @@ node package.mjs
 ```
 
 构建输出插件 tarball、带逐文件 SHA-256 的安装清单及Mac DMG 和 Windows EXE 在线安装器。桌面官方服务保留为 runtime peer，插件不携带另一套 Agent 循环。`dsh-llm-pi-ai` 为官方协议适配库，备用通道不会改用 Pi Harness。
+
+新增正式 Release 后，同步更新 Cask 的 `version`（官方版本、OPL 发布修订）和增强 ZIP 的 `sha256`，不得指向可变的 latest 下载地址。终端入口自动解析 latest，无需更新脚本。Cask 只调用 `install.command --no-launch`，不维护第二套安装实现；卸载保留官方桌面、数据和 Skill，只移除经过归属校验的默认快捷入口。
 
 ## 安装位置
 
