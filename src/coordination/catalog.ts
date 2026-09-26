@@ -3,17 +3,23 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { DSH_COMBINATION, GROK_COMBINATION, type HarnessCatalog } from './harness-types.ts'
-import type { ExecutionCatalog } from './catalog-types.ts'
+import type { ConnectionRoute, ExecutionCatalog } from './catalog-types.ts'
 export type { ExecutionCatalog } from './catalog-types.ts'
 
 export const defaultExecutionCatalog = (): ExecutionCatalog => ({
   connections: [
-    { id: 'opl-gateway', name: 'OPL Gateway', kind: 'opl-gateway', endpoint: 'https://gateway.medopl.com/v1', authRef: 'managed' },
+    { id: 'opl-gateway', name: 'OPL Gateway', kind: 'opl-gateway', endpoint: 'https://gateway.medopl.com/v1', authRef: 'managed', routes: [
+      { id: 'deepseek', name: 'DeepSeek 分组', protocol: 'messages', group: 'DeepSeek' },
+      { id: 'codex', name: 'Codex 分组', protocol: 'openai-completions', group: 'Codex', internal: true },
+      { id: 'grok', name: 'Grok 分组', protocol: 'responses', group: 'Grok', internal: true },
+      { id: 'gemini', name: 'Gemini 分组', protocol: 'responses', group: 'Gemini', internal: true },
+      { id: 'aws', name: 'AWS 分组', protocol: 'anthropic-messages', group: 'AWS', internal: true },
+    ] },
     { id: 'deepseek-official', name: 'DeepSeek 官方', kind: 'deepseek-official', authRef: 'DSH 官方凭据' },
   ],
   models: [
-    { id: 'deepseek-flash', name: 'DeepSeek-V4.1-Flash', modelId: 'deepseek-flash', connectionId: 'opl-gateway', protocol: 'messages' },
-    { id: 'grok-4.7', name: 'Grok 4.7', modelId: 'grok-4.7', connectionId: 'opl-gateway', protocol: 'responses' },
+    { id: 'deepseek-flash', name: 'DeepSeek-V4.1-Flash', modelId: 'deepseek-flash', connectionId: 'opl-gateway', routeId: 'deepseek', protocol: 'messages' },
+    { id: 'grok-4.7', name: 'Grok 4.7', modelId: 'grok-4.7', connectionId: 'opl-gateway', routeId: 'grok', protocol: 'responses' },
   ],
   harnesses: [
     { id: 'dsh', name: 'DSH', kind: 'dsh', adapter: 'native-session' },
@@ -36,9 +42,9 @@ const validate = (value: unknown): ExecutionCatalog => {
   if (!Array.isArray(input.connections) || !Array.isArray(input.models) || !Array.isArray(input.harnesses) || !Array.isArray(input.combinations)) throw Error('执行目录缺少必要分组')
   const ids = new Set<string>()
   const unique = (id: string) => { if (ids.has(id)) throw Error(`执行目录存在重复 ID：${id}`); ids.add(id) }
-  const connections = input.connections.map(raw => { const x = raw as any; const id = text(x.id, 'connection.id'); unique(`connection:${id}`); return { id, name: text(x.name, 'connection.name'), kind: x.kind, ...(typeof x.endpoint === 'string' && x.endpoint ? { endpoint: x.endpoint } : {}), ...(typeof x.authRef === 'string' && x.authRef ? { authRef: x.authRef } : {}) } })
+  const connections = input.connections.map(raw => { const x = raw as any; const id = text(x.id, 'connection.id'); unique(`connection:${id}`); const routes = Array.isArray(x.routes) ? x.routes.map((rawRoute: any) => { const routeId = text(rawRoute.id, 'connection.route.id'); return { id: routeId, name: text(rawRoute.name, 'connection.route.name'), protocol: rawRoute.protocol, ...(typeof rawRoute.group === 'string' && rawRoute.group ? { group: rawRoute.group } : {}), ...(rawRoute.internal === true ? { internal: true } : {}) } }) : undefined; return { id, name: text(x.name, 'connection.name'), kind: x.kind, ...(typeof x.endpoint === 'string' && x.endpoint ? { endpoint: x.endpoint } : {}), ...(typeof x.authRef === 'string' && x.authRef ? { authRef: x.authRef } : {}), ...(routes ? { routes } : {}) } })
   const connectionIds = new Set(connections.map(x => x.id))
-  const models = input.models.map(raw => { const x = raw as any; const id = text(x.id, 'model.id'); unique(`model:${id}`); if (!connectionIds.has(x.connectionId)) throw Error(`模型 ${id} 的连接不存在`); return { id, name: text(x.name, 'model.name'), modelId: text(x.modelId, 'model.modelId'), connectionId: x.connectionId, protocol: x.protocol } })
+  const models = input.models.map(raw => { const x = raw as any; const id = text(x.id, 'model.id'); unique(`model:${id}`); if (!connectionIds.has(x.connectionId)) throw Error(`模型 ${id} 的连接不存在`); const connection = connections.find(item => item.id === x.connectionId)!; if (x.routeId && !connection.routes?.some((route: ConnectionRoute) => route.id === x.routeId)) throw Error(`模型 ${id} 的连接路由不存在`); return { id, name: text(x.name, 'model.name'), modelId: text(x.modelId, 'model.modelId'), connectionId: x.connectionId, protocol: x.protocol, ...(typeof x.routeId === 'string' && x.routeId ? { routeId: x.routeId } : {}) } })
   const modelIds = new Set(models.map(x => x.id))
   const harnesses = input.harnesses.map(raw => { const x = raw as any; const id = text(x.id, 'harness.id'); unique(`harness:${id}`); return { id, name: text(x.name, 'harness.name'), kind: x.kind, ...(typeof x.command === 'string' && x.command ? { command: x.command } : {}), ...(typeof x.adapter === 'string' && x.adapter ? { adapter: x.adapter } : {}) } })
   const harnessIds = new Set(harnesses.map(x => x.id))

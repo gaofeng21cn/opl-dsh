@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import type { Context } from '@deepseek-ai/cordis'
 const digest = (text: string) => createHash('sha256').update(text).digest('hex')
-const root = () => dirname(dshHomePath())
+const root = () => join(dshHomePath(), 'opl-dsh')
 async function installation() {
   const value = JSON.parse(await readFile(join(root(),'installation.json'),'utf8')) as { home: string; release: string; app: string; launcher: string; skillDir: string; suiteVersion?: string; officialVersion?: string }
   if (value.home !== dshHomePath()) throw new Error('安装信息与当前 profile 不匹配')

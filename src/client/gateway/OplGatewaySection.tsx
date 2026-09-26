@@ -174,11 +174,11 @@ export function OplGatewaySection(props: OplGatewaySectionProps & { onboarding?:
     {!state ? <p className={css.muted}>{t('loading')}</p> : <>
       <div className={connected ? css.card : css.loginCard}>
         {connected && <div className={css.identity}>
-          <span className={css.name}>{state.models.map(model => model.name).join(', ')}</span>
+          <span className={css.name}>{t('connected')}</span>
           <span className={css.muted}>{state.keyReady && state.codexKeyReady ? t('channelsReady') : state.keyReady ? t('primaryReady') : t('signInToStart')}</span>
         </div>}
-        {state.keyReady && !state.codexKeyReady && <p className={css.muted}>{t('backupUnavailable')}</p>}
-        {state.keyReady && !state.grokKeyReady && <p className={css.muted}>{t('harnessUnavailable')}</p>}
+        {state.keyReady && !state.codexKeyReady && <p className={css.muted}>{t('capabilitySyncHint')}</p>}
+        {state.keyReady && !state.grokKeyReady && <p className={css.muted}>{t('capabilitySyncHint')}</p>}
         {!state.keyReady && connected && <p className={css.error}>{t('keyMissing')}</p>}
         {connected && account && <dl className={css.metrics}>
           <Fact label={t('balance')} value={money(account.balanceAmount, account.balanceCurrency)} />

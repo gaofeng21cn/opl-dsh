@@ -8,7 +8,7 @@ OPL DSH 独立维护增强包，复用未修改的官方 DeepSeek Harness 桌面
 - `src/coordination`：协作设置、任务等待、持久化反馈与可选 Codex 队列桥。
 - `src/coordination/harness.ts`：外部 Harness 组合的 ACP 子进程、会话恢复、连续提示和取消。
 - `src/client`：Gateway、首启和协作设置界面。
-- `installer`：官方包校验、独立 profile、旧数据导入、快捷入口、Skill 及增强自动更新。
+- `installer`：官方包校验、默认 `~/.dsh` profile、旧数据导入、兼容入口、Skill 及增强自动更新。
 - `install.sh` / `install.ps1`：公开终端入口，选定最新 Release 后下载同一版本的增强 ZIP 与 SHA-256 清单，校验后调用现有安装器。
 - `Casks/opl-dsh.rb`：直接以本仓库作为 Homebrew Tap，固定增强 ZIP 的发布地址与 SHA-256；安装时仍动态获取最新官方桌面。
 
@@ -37,7 +37,7 @@ DSH Agent scope 注册 `delegate_to_harness`、`harness_result`；Codex Skill �
 
 Gateway 分别维护 DeepSeek、Codex、Grok 三组 key。Grok 使用套件独立 `GROK_HOME`，无密钥 TOML 的 `env_key` 引用子进程环境中的 Grok key；模型配置不能放进会过滤 model 表的 `GROK_CONFIG` overlay。缺少对应 key 时明确失败，不读取机器上的其他分组凭据。ACP 权限暂停等待用户在组合面板选择本次允许或拒绝，通用 control bridge 不开放授权接口。
 
-官方 `main` 插槽承载组合面板，设置页与账户菜单提供入口；面板按项目分组、展示来源/状态/工具/结果，支持新建、继续、取消和显式交接。Codex 原生侧栏任务创建及组合后台通知尚未实现；组合结果使用持久记录与 wait/snapshot，旧 `taskFeedback` 仍仅服务原生 dispatch。Claude、Grok CLI 自动安装及 Windows Grok 是后续扩展，不代表本版已支持。
+官方 `main` 插槽承载组合工作区，设置页负责模型与组合目录管理；账户菜单只保留设置和账户登录。工作区按项目分组、展示来源/状态/工具/结果，支持新建、继续、取消和显式交接。Codex 原生侧栏任务创建及组合后台通知尚未实现；组合结果使用持久记录与 wait/snapshot，旧 `taskFeedback` 仍仅服务原生 dispatch。Claude、Grok CLI 自动安装及 Windows Grok 是后续扩展，不代表本版已支持。
 
 ### 执行目录
 
@@ -48,11 +48,11 @@ Gateway 分别维护 DeepSeek、Codex、Grok 三组 key。Grok 使用套件独�
 | 内容 | macOS | Windows |
 | --- | --- | --- |
 | 套件与数据 | `~/Library/Application Support/OPL DSH Suite` | `%APPDATA%/OPL DSH Suite` |
-| 官方桌面 | `~/Applications/DeepSeek Harness.app` | 优先复用官方已安装位置；首次为套件下 `runtime/DeepSeek Harness` |
-| OPL 快捷入口 | `~/Applications/OPL DSH.app` | 开始菜单 `OPL DSH` |
+| 官方桌面 | `~/Applications/DeepSeek Harness.app` | 优先复用官方已安装位置 |
+| OPL 兼容入口 | 套件目录 `launch.command` | 套件目录 `launch.vbs` / 开始菜单 `OPL DSH` |
 | Codex Skill | `~/.codex/skills/opl-dsh-official` | `%USERPROFILE%/.codex/skills/opl-dsh-official` |
 
-套件内 `data` 为独立 `DSH_HOME`，`releases` 保留已安装增强，`installation.json` 记录有效版本与路径。可用 `OPL_CODEX_HOME` 指定 Skill 安装位置；用户手动修改的 Skill 不会被静默覆盖。配置中的自动启动偏好随更新保留。
+官方 `~/.dsh` 是唯一 DSH profile；`~/.dsh/opl-dsh/installation.json` 记录与官方 profile 的绑定。套件目录的 `releases` 保留已安装增强和回滚版本，旧 `data` 目录仅作为迁移来源保留。可用 `OPL_CODEX_HOME` 指定 Skill 安装位置；用户手动修改的 Skill 不会被静默覆盖。配置中的自动启动偏好随更新保留。
 
 ## 版本与两套更新的边界
 
@@ -64,7 +64,7 @@ Mac 已安装的官方桌面若不旧于当前 feed 则复用；Windows 优先�
 
 运行中 profile 会跳过更新；同一更新过程使用独占锁；离线或验证失败继续旧版。安装失败会尝试恢复上一增强版本。状态写入 `enhancement-update.json`，旧 release 与源数据保留。安装器读取官方桌面 `nightly-mac.yml` / `nightly.yml`，验证清单中的平台下载地址、SHA-512 和 DeepSeek 发布者签名；插件核心依赖保留 runtime peer，不以 SemVer 上限拒绝未来版本（包括 RC）。开发依赖仍固定以保证可复现；官方 API 实质变化仍需重新验收和适配。
 
-首次欢迎衔接使用父子私有 CDP pipe，通过能力检测调用官方 skip 方法；接口不存在时保留官方欢迎窗口。生产启动不开放 TCP 调试端口，不修改官方签名资源。测试时使用过仅隔离环境启用的 pipe relay，它不包含在分发包内。
+首次欢迎仍由官方桌面处理；OPL 插件在官方 profile 加载后提供 Gateway 和组合设置。生产启动不开放 TCP 调试端口，不修改官方签名资源。旧兼容入口只负责增强更新和启动官方程序，不替换官方应用。
 
 ## 旧数据
 

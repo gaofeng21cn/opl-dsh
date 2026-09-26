@@ -40,6 +40,19 @@ export const inject = ['slots', 'locale', 'remote', 'remote.oplGatewayAccount']
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-opl-gateway: dictionaries')
 
+  // The OpenAI route is an internal failover of the same OPL Gateway
+  // connection. The official model-selection package has no provider-group
+  // filtering slot, so keep that route routable while removing only its
+  // duplicate group from the composer's public picker. The selector's group
+  // id is part of its stable aria-labelledby contract for this desktop line.
+  ctx.effect(() => {
+    const style = document.createElement('style')
+    style.dataset.oplGatewayPresentation = 'internal-route'
+    style.textContent = 'section[aria-labelledby$="-opl-gateway-openai"]{display:none!important}'
+    document.head.append(style)
+    return () => style.remove()
+  }, 'ui-settings-opl-gateway: hide internal failover route')
+
   const t = ctx.locale.bind(NS)
   const unwrap = <T,>(result: { ok: true; value: T } | { ok: false; error: { code: string; message: string } }): T => {
     // The code is a support handle, not copy: the page shows the sentence.

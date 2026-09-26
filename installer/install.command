@@ -1,5 +1,5 @@
 #!/bin/bash
-# Download the current official desktop; keep OPL code outside its signed bundle.
+# Download the current official desktop and install OPL into its default ~/.dsh profile.
 set -euo pipefail
 umask 077
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -39,10 +39,17 @@ SHA512="$(printf '%s\n' "$FIELDS" | sed -n '3p')"
 [[ "$URL" == "https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-$OFFICIAL_VERSION-mac-arm64.zip" ]] || { echo '官方更新地址无效。'; exit 1; }
 [[ "$SHA512" =~ ^[A-Za-z0-9+/]{86}==$ ]] || { echo '官方校验信息无效。'; exit 1; }
 NEED_INSTALL=1
-if [[ -d "$APP" ]]; then
-  codesign --verify --deep --strict "$APP"
-  codesign -v -R='anchor apple generic and certificate leaf[subject.OU] = "NAN929V4UM" and identifier "com.deepseek.dsh"' "$APP"
-  INSTALLED="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+CHECK_APP="$APP"
+OLD_RUNTIME="$ROOT/runtime/DeepSeek Harness.app"
+if [[ -f "$APP/Contents/Resources/opl-launcher-owner.txt" && -d "$OLD_RUNTIME" ]]; then
+  mv "$APP" "$ROOT/runtime/OPL DSH.app.backup.$(date +%s)"
+  mv "$OLD_RUNTIME" "$APP"
+  CHECK_APP="$APP"
+fi
+if [[ -d "$CHECK_APP" ]]; then
+  codesign --verify --deep --strict "$CHECK_APP"
+  codesign -v -R='anchor apple generic and certificate leaf[subject.OU] = "NAN929V4UM" and identifier "com.deepseek.dsh"' "$CHECK_APP"
+  INSTALLED="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$CHECK_APP/Contents/Info.plist")"
   # The official runtime provides semver; don't downgrade a newer installation.
   if ELECTRON_RUN_AS_NODE=1 "$APP/Contents/MacOS/DeepSeek Harness" "$HERE/compare.cjs" "$APP" "$INSTALLED" "$OFFICIAL_VERSION"; then NEED_INSTALL=0; fi
 fi
@@ -61,7 +68,8 @@ if [[ "$NEED_INSTALL" == 1 ]]; then
   codesign -v -R='anchor apple generic and certificate leaf[subject.OU] = "NAN929V4UM" and identifier "com.deepseek.dsh"' "$STAGE/DeepSeek Harness.app"
   spctl --assess --type execute "$STAGE/DeepSeek Harness.app"
   [[ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$STAGE/DeepSeek Harness.app/Contents/Info.plist")" == "$OFFICIAL_VERSION" ]] || { echo '官方版本与清单不符。'; exit 1; }
-  if [[ -d "$APP" ]]; then mv "$APP" "$APPS/DeepSeek Harness.backup.$(date +%s).app"; fi
+  if [[ -d "$APP" ]]; then mv "$APP" "$ROOT/runtime/DeepSeek Harness.backup.$(date +%s).app"; fi
+  mkdir -p "$(dirname "$APP")"
   mv "$STAGE/DeepSeek Harness.app" "$APP"
 fi
 export NODE_USE_SYSTEM_CA=1

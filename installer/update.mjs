@@ -61,7 +61,8 @@ export async function refreshEnhancements(root, application) {
     const exe=process.platform==='win32'?join(application,'DeepSeek Harness.exe'):join(application,'Contents/MacOS/DeepSeek Harness')
     // The existing installer verifies again, uses the official plugin manager,
     // and preserves credentials, sessions, custom Skill edits and the old payload.
-    const install=spawnSync(exe,[join(payload,'install.mjs'),application,root,payload,'--no-launch'],{env:{...process.env,ELECTRON_RUN_AS_NODE:'1',NODE_USE_SYSTEM_CA:'1',OPL_CODEX_HOME:dirname(dirname(current.skillDir))},stdio:'ignore',windowsHide:true,timeout:180000})
+    const installArgs=[join(payload,'install.mjs'),application,root,payload,'--no-launch']
+    const install=spawnSync(exe,installArgs,{env:{...process.env,ELECTRON_RUN_AS_NODE:'1',NODE_USE_SYSTEM_CA:'1',OPL_CODEX_HOME:dirname(dirname(current.skillDir))},stdio:'ignore',windowsHide:true,timeout:180000})
     if(install.status!==0){
       spawnSync(exe,[join(current.release,'install.mjs'),application,root,current.release,'--no-launch'],{env:{...process.env,ELECTRON_RUN_AS_NODE:'1',NODE_USE_SYSTEM_CA:'1',OPL_CODEX_HOME:dirname(dirname(current.skillDir))},stdio:'ignore',windowsHide:true,timeout:180000})
       throw Error('installation failed')

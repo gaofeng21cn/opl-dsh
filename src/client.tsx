@@ -1,6 +1,5 @@
 import { HarnessPanel } from './client/HarnessPanel.tsx'
 import { ExecutionCatalogSection } from './client/ExecutionCatalogSection.tsx'
-import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { useEffect } from 'react'
 import { CoordinationSection } from './client/CoordinationSection.tsx'
 /** Install the suite's own Remote namespaces before mounting its settings. */
@@ -34,7 +33,7 @@ export async function apply(ctx: Context): Promise<void> {
       const coordination = (action: string, value?: unknown) => setup(action,value)
       const harnessCall = <T,>(method:string,input:unknown={}) => setup<T>('harness',{method,input})
       ctx.slots.inject('main', () => ctx.slots.register({name:'main',key:'opl-harness',inject:()=>({call:harnessCall,close:()=>ctx.layout.selectPanel(null)})}, HarnessPanel))
-      ctx.slots.inject('settings.section', () => ctx.slots.register({name:'settings.section',id:'opl-execution',order:33,label:()=> '执行组合',inject:()=>({call:harnessCall})}, ExecutionCatalogSection))
+      ctx.slots.inject('settings.section', () => ctx.slots.register({name:'settings.section',id:'opl-execution',order:33,label:()=> '模型与组合',inject:()=>({call:harnessCall})}, ExecutionCatalogSection))
       ctx.slots.inject('settings.section', () => ctx.slots.register({name:'settings.section',id:'opl-codex',order:32,label:()=> 'Codex 协作',inject:()=>({call:coordination})}, CoordinationSection))
       const accountActions = {
           readSetup: () => setup<SetupStatus>('status'),
@@ -59,7 +58,7 @@ export async function apply(ctx: Context): Promise<void> {
         : <SkipAccountStep complete={props.complete} />))
       ctx.slots.inject('settings.launcher', () => ctx.slots.register({
         name: 'settings.launcher', priority: -10, locale: 'settings.oplGateway',
-        inject: () => ({ readSetup: accountActions.readSetup, openHarness: () => ctx.layout.selectPanel('opl-harness' as MainPanelId) }),
+        inject: () => ({ readSetup: accountActions.readSetup }),
       }, AccountLauncher))
     }
   })

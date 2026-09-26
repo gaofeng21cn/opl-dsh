@@ -1,5 +1,5 @@
 cask "opl-dsh" do
-  version "0.1.7-rc.2,3"
+  version "0.1.7-rc.2,4"
   sha256 "119a2cc7991b014629515e3c85ef25ccdfe5745dab5c9b2d0d456abc6321f7db"
 
   url "https://github.com/gaofeng21cn/opl-dsh/releases/download/dsh-v#{version.csv.first}-opl.#{version.csv.second}/OPL-DSH-Enhancements.zip"
@@ -29,11 +29,6 @@ cask "opl-dsh" do
     executable: "/bin/bash",
     args:       ["-c", <<~EOS],
       root="$HOME/Library/Application Support/OPL DSH Suite"
-      app="$HOME/Applications/OPL DSH.app"
-      marker="$app/Contents/Resources/opl-launcher-owner.txt"
-      if [[ -f "$marker" && "$(cat "$marker")" == "$root" ]]; then
-        rm -rf "$app"
-      fi
       shortcut="$HOME/Applications/OPL DSH.command"
       if [[ -f "$shortcut" ]] && /usr/bin/grep -Fq "$root/launch.command" "$shortcut"; then
         rm -f "$shortcut"
@@ -43,7 +38,8 @@ cask "opl-dsh" do
   }
 
   caveats <<~EOS
-    打开 ~/Applications/OPL DSH.app，即可使用官方桌面与 OPL 增强。
+    直接打开 ~/Applications/DeepSeek Harness.app，即可使用官方桌面与 OPL 增强。
+    OPL DSH 兼容入口仅用于维护和增强更新。
     安装时获取最新官方桌面，并自动配置 Codex Skill。
     官方桌面和增强分别更新；Cask 版本仅标识安装器版本。
     卸载仅移除 OPL 快捷入口，保留官方桌面、数据及 Codex Skill。

@@ -5,8 +5,8 @@ import type { SetupStatus } from '../setup-types.ts'
 import css from './AccountLauncher.module.css'
 
 /** The official settings shell owns navigation; this launcher chooses the account. */
-export function AccountLauncher({ wide, settingsOpen, settingsShortcut, openSettings, openOnboarding, readSetup, openHarness, t }:
-  PropsRuntime<'settings.launcher'> & PropsLocale<'settings.oplGateway'> & { readSetup: () => Promise<SetupStatus>; openHarness: () => void }) {
+export function AccountLauncher({ wide, settingsOpen, settingsShortcut, openSettings, openOnboarding, readSetup, t }:
+  PropsRuntime<'settings.launcher'> & PropsLocale<'settings.oplGateway'> & { readSetup: () => Promise<SetupStatus> }) {
   const [open, setOpen] = useState(false)
   const [connected, setConnected] = useState(false)
   useEffect(() => {
@@ -21,9 +21,8 @@ export function AccountLauncher({ wide, settingsOpen, settingsShortcut, openSett
     </button>}
     items={[
       { id: 'settings', label: t('accountSettings'), icon: <IconSettingsOutlineMedium size={16} />, ...(settingsShortcut ? { shortcut: settingsShortcut } : {}) },
-      { id: 'harness', label: '执行组合', icon: <IconUserOutlineMedium size={16} /> },
       { id: 'account', label: t(connected ? 'accountTitle' : 'signIn'), icon: <IconUserOutlineMedium size={16} /> },
     ]}
     onClose={() => setOpen(false)}
-    onSelect={id => { setOpen(false); if (id === 'settings') openSettings(); else if(id === 'harness') openHarness(); else openOnboarding('opl-account') }} />
+    onSelect={id => { setOpen(false); if (id === 'settings') openSettings(); else openOnboarding('opl-account') }} />
 }

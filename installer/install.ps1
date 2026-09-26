@@ -23,12 +23,15 @@ try {
   $sha512 = Feed-Scalar $feed 'sha512'
   if ($officialVersion -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$' -or $sha512 -notmatch '^[A-Za-z0-9+/]{86}==$') { throw '官方版本或校验信息无效。' }
   if ($url -cne ('https://download.deepseek.com/dsh-desk/bin/win-x64/deepseek-harness-' + $officialVersion + '-win-x64.exe')) { throw '官方更新地址无效。' }
-  $app = Join-Path $Root 'runtime\DeepSeek Harness'
+  $app = $null
   $needsInstall = $true
   $previous = Join-Path $Root 'installation.json'
   if (Test-Path -LiteralPath $previous) {
     $installed = Get-Content -LiteralPath $previous -Raw -Encoding UTF8 | ConvertFrom-Json
     $app = $installed.app
+    if (-not (Test-Path -LiteralPath (Join-Path $app 'DeepSeek Harness.exe'))) {
+      $app = Join-Path $Root 'runtime\DeepSeek Harness'
+    }
   } else {
     # Reuse the vendor's registered per-user desktop. Avoid a second installation
     # and preserve its official updater's directory and uninstall registration.
@@ -38,6 +41,7 @@ try {
     $registered = $registrations | Select-Object -First 1
     if ($registered) { $app = $registered.InstallLocation.TrimEnd('\') }
   }
+  if (-not $app) { $app = Join-Path ${env:LOCALAPPDATA} 'Programs\DeepSeek Harness' }
   $oldExe = Join-Path $app 'DeepSeek Harness.exe'
   if (Test-Path -LiteralPath $oldExe) {
     Assert-OfficialSignature $oldExe

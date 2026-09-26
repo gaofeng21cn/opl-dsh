@@ -86,6 +86,11 @@ class OplGatewayAdapter extends DeepSeekAdapter<ResolvedDeepSeekOptions> {
   override providerInfo(provider: string): LlmProviderInfo {
     return { id: provider, name: DISPLAY_NAME }
   }
+
+  override async listModels(provider: string) {
+    const models = await super.listModels(provider)
+    return models.map(model => ({ ...model, name: `${model.name} + DSH` }))
+  }
 }
 
 export function apply(ctx: Context, config: Config): void {
