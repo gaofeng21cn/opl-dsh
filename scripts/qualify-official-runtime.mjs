@@ -98,6 +98,12 @@ const environment = {
   NODE_USE_SYSTEM_CA: '1',
 }
 delete environment.OPL_OFFICIAL_ARCHIVE
+// The hosted Windows runner enters this script from PowerShell 7. Its PSModulePath
+// points at Core-only modules, and an inherited value makes the Windows PowerShell
+// 5.1 child resolve Microsoft.PowerShell.Security from there and fail to load the
+// cmdlet. Drop the inherited variable in any casing so 5.1 derives its own path.
+for (const key of Object.keys(environment))
+  if (key.toLowerCase() === 'psmodulepath') delete environment[key]
 // An inherited proxy credential or provider key is not needed by fixture qualification.
 for (const key of Object.keys(environment))
   if (/API_KEY|API_TOKEN|AUTH_TOKEN|ACCESS_TOKEN|SECRET|PASSWORD/i.test(key))
@@ -374,7 +380,23 @@ try {
   }
   evidence.finishedAt = new Date().toISOString()
   if (args.includes('--keep-profile')) evidence.isolatedProfile = root
-  else if (!desktop) await rm(root, { recursive: true, force: true })
+  else if (!desktop) {
+    // Windows can hold a handle on the disposable Electron profile (leveldb) briefly
+    // after the process exits. Scratch cleanup must never discard the evidence file,
+    // so retry and record a residual failure instead of throwing out of `finally`.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await rm(root, { recursive: true, force: true })
+        break
+      } catch (error) {
+        if (attempt >= 4) {
+          evidence.scratchCleanupFailure = String(error.message)
+          break
+        }
+        await delay(500)
+      }
+    }
+  }
   await mkdir(resolve(evidenceFile, '..'), { recursive: true })
   await writeFile(evidenceFile, JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600 })
   console.log(

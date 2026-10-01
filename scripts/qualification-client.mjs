@@ -76,6 +76,7 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
     settingsSlots: [],
     runtimeExceptions: null,
     screenshots: [],
+    screenshotFailures: [],
   }
   progress(result)
   await Promise.all(
@@ -117,6 +118,25 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
     pipe.events.filter(
       (event) => event.sessionId === session && event.method === 'Runtime.exceptionThrown',
     )
+  // The DOM assertions are the qualification signal; screenshots are retained
+  // evidence. The hosted Windows runner can stall Page.captureScreenshot (no
+  // compositor frame is produced), so capture is best-effort: every miss is
+  // recorded in the result instead of discarding an otherwise valid outcome, and
+  // a diagnostic capture never replaces the failure that triggered it.
+  async function captureScreenshot(name) {
+    for (const params of [{ format: 'png' }, { format: 'png', fromSurface: false }]) {
+      try {
+        const screenshot = await pipe.command('Page.captureScreenshot', params, session)
+        const file = screenshotPrefix + '-' + name + '.png'
+        await writeFile(file, Buffer.from(screenshot.data, 'base64'))
+        return file
+      } catch {}
+    }
+    return null
+  }
+  async function captureFailureScreenshot() {
+    await captureScreenshot('failure')
+  }
   async function waitFor(expression, description) {
     for (let attempt = 0; attempt < 80; attempt++) {
       if (await pipe.evaluate(session, expression)) return
@@ -126,8 +146,7 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
       session,
       "Array.from(document.querySelectorAll('button,[role=menuitem]')).filter(x=>x.getClientRects().length).map(x=>x.getAttribute('aria-label')||x.textContent?.trim()).filter(Boolean)",
     )
-    const screenshot = await pipe.command('Page.captureScreenshot', { format: 'png' }, session)
-    await writeFile(screenshotPrefix + '-failure.png', Buffer.from(screenshot.data, 'base64'))
+    await captureFailureScreenshot()
     throw new Error(description + '；当前入口：' + JSON.stringify(buttons))
   }
   const clickLabel = (labels) =>
@@ -171,21 +190,12 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
       `Array.from(document.querySelectorAll('[data-opl-panel="${panel.marker}"] [role=alert]')).filter(x=>x.getClientRects().length).map(x=>x.textContent?.trim()).filter(Boolean)`,
     )
     if (alerts.length) {
-      const failureScreenshot = await pipe.command(
-        'Page.captureScreenshot',
-        { format: 'png' },
-        session,
-      )
-      await writeFile(
-        screenshotPrefix + '-failure.png',
-        Buffer.from(failureScreenshot.data, 'base64'),
-      )
+      await captureFailureScreenshot()
       throw new Error(panel.label[0] + ' 报错：' + alerts.join('; '))
     }
-    const screenshot = await pipe.command('Page.captureScreenshot', { format: 'png' }, session)
-    const file = screenshotPrefix + '-' + panel.marker + '.png'
-    await writeFile(file, Buffer.from(screenshot.data, 'base64'))
-    screenshots.push(file)
+    const file = await captureScreenshot(panel.marker)
+    if (file) screenshots.push(file)
+    else result.screenshotFailures.push(panel.marker)
     result.settingsSlots.push(panel.marker)
   }
   result.runtimeExceptions = errors().length
