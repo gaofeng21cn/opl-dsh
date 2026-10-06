@@ -1,0 +1,334 @@
+# OPL DSH 稳定发布 SOP
+
+本手册是 OPL DSH 稳定发布的执行入口。它适用于官方 DeepSeek Harness 与 OPL 增强包的联合稳定 Release；不适用于只构建、不公开的本地验证，也不适用于 nightly 或临时预览版。
+
+发布合同、命名和资产要求见[发布约定](release-policy.md)。兼容性检查的覆盖范围和证据字段见[官方桌面兼容验证](compatibility.md)。本手册描述顺序、完成条件和恢复方法；命令必须以当前仓库脚本和 GitHub CLI 的实际帮助为准。
+
+## 1. 完成标准
+
+一次发布只有在以下事实都成立时才算完成：
+
+1. 主线候选已冻结，工作区和源提交可追溯。
+2. macOS 与 Windows 官方 feed 返回同一个官方 DSH 版本；该版本与构建产物、联合清单和验收证据一致。
+3. Host/Client、RPC、模块边界、格式、构建和测试全部通过。
+4. 未修改的官方桌面在隔离 profile 中完成安装、Client/RPC、模型流、官方工具、重启恢复和官方文件未改变的验收。
+5. GitHub Release、tag、五类交付资产、SHA-256 清单和验收记录已公开，且公开下载摘要与本地摘要一致。
+6. `releases/latest` 指向本次 Release；安装器和更新器能从该 Release 读取稳定清单。
+7. Homebrew Cask（如果本次维护）已指向公开增强包摘要并完成回读。
+8. 旧稳定 Release 和旧稳定 tag 已按策略清理；已安装 profile 的本地不可变 release 目录仍保留。
+
+构建成功、测试通过、tag 已推送、Release 已创建或资产已上传，都只证明对应的一层，不单独构成发布完成。
+
+## 2. 版本与权威来源
+
+### 2.1 官方 DSH 版本
+
+官方桌面的当前版本以两个更新 feed 为准，不以 npm `latest`、网页文案、已安装应用显示或第三方镜像为准：
+
+| 平台        | Feed                                                                     |
+| ----------- | ------------------------------------------------------------------------ |
+| macOS arm64 | `https://download.deepseek.com/dsh-desk/feeds/mac-arm64/nightly-mac.yml` |
+| Windows x64 | `https://download.deepseek.com/dsh-desk/feeds/win-x64/nightly.yml`       |
+
+两份 feed 的 `version`、下载路径和摘要必须都可解析，并且版本完全相同。官方 GitHub 仓库的 tag/release 用于核对上游阶段；它可以是 RC，而 OPL Release 仍可使用稳定的 OPL 版本号，但 Release Note 必须明确写出官方版本及其候选状态。不能把 `0.2.0-rc.2` 改写成 `0.2.0`。
+
+使用下面的只读检查确认当前事实；不要把检查结果手写进源码：
+
+```sh
+node - <<'NODE'
+const feeds = {
+  mac: 'https://download.deepseek.com/dsh-desk/feeds/mac-arm64/nightly-mac.yml',
+  win: 'https://download.deepseek.com/dsh-desk/feeds/win-x64/nightly.yml',
+}
+for (const [platform, url] of Object.entries(feeds)) {
+  const text = await (await fetch(url)).text()
+  const version = text.match(/^version:\s*(.+)$/m)?.[1]?.trim()
+  const path = text.match(/^path:\s*>-\s*\n\s+(.+)$/m)?.[1]?.trim()
+  const sha512 = text.match(/^sha512:\s*>-\s*\n\s+(.+)$/m)?.[1]?.trim()
+  console.log(JSON.stringify({ platform, version, path, sha512 }))
+}
+NODE
+gh api 'repos/deepseek-ai/deepseek-harness/releases?per_page=3' \
+  --jq '.[] | [.tag_name, .prerelease, .draft, .published_at] | @tsv'
+```
+
+### 2.2 OPL 版本
+
+- 稳定版本使用三段式 SemVer，例如 `0.2.19`；不使用 `-rc`、`-beta` 或 nightly 作为 OPL 稳定版本。
+- 版本只递增，不复用，不因为官方 DSH 版本号相同而重复发布相同 OPL 字节。
+- `package.json`、`package-lock.json`、Homebrew Cask、Release Note 和联合清单中的 OPL 版本必须一致。
+- 官方 DSH 版本与 OPL 增强版本是两个字段，不能把官方版本直接当作 OPL 版本。
+
+### 2.3 联合清单
+
+`dist/release-manifest.json` 是联合版本配对的唯一机器可读权威。它必须绑定：
+
+- `channel=stable`；
+- `releaseVersion`、`enhancement.version` 和 `tagName`；
+- 两个平台官方 feed 的实际版本、路径和 SHA-512；
+- 增强包名称、大小和 SHA-256；
+- 构建源提交、源树摘要和验收证据文件名。
+
+`scripts/create-release-manifest.mjs` 会重新读取两个官方 feed；只要平台版本不一致、feed 字段无效或构建基线不同，就必须停止发布。
+
+## 3. 发布前准备
+
+### 3.1 收敛主线
+
+发布操作只从 `main` 的干净工作区开始：
+
+```sh
+git fetch origin --prune --tags
+git switch main
+git pull --ff-only origin main
+git status --short --branch
+```
+
+若存在其他任务留下的改动，不要覆盖、清理或把它们混入候选。先确认当前发布的源提交、官方版本和 OPL 版本，再决定是否继续。
+
+### 3.2 更新官方依赖
+
+当官方 feed 产生新版本时，先把所有 `@deepseek-ai/dsh-*` 开发依赖更新到同一官方版本，再重新生成 lockfile。不要只更新顶层 `dsh-agent`，也不要保留依赖树中一部分旧 RC。
+
+更新后检查：
+
+```sh
+rg -n '"@deepseek-ai/dsh-|0\.2\.0' package.json package-lock.json
+npm ci --ignore-scripts
+```
+
+如果官方版本没有变化，只能因为 OPL 代码确有用户可见变更而递增 OPL 版本；不要为“重新发布”制造重复版本。
+
+### 3.3 先完成文档和源代码，再冻结
+
+README、兼容说明、Release Note 草稿、安装器、测试和 Homebrew 以外的源代码都必须在构建前完成。`build.mjs` 会把源提交、源树摘要和每个发布文件摘要写入 `artifact.json`；构建后修改这些文件会使候选与当前主线脱节，必须重新构建。
+
+`Casks/opl-dsh.rb` 的公开摘要依赖最终 Release 资产，因此允许在公开 Release 回读后单独更新；它被排除在源树摘要之外，不能反过来作为修改产品字节的理由。
+
+## 4. 构建与资格验收
+
+### 4.1 源码门禁
+
+按以下顺序执行，构建先于 artifact 测试：
+
+```sh
+npm run generate:rpc
+npm run check:rpc
+npm run typecheck
+npm run check:boundaries
+npm run format:check
+npm run package
+npm test
+npm run release:manifest
+```
+
+`npm run package` 会生成：
+
+- `dist/OPL-DSH-Enhancements.zip`
+- `dist/OPL-DSH-Installer-mac-arm64.dmg`
+- `dist/OPL-DSH-Installer-windows-x64.exe`
+- `dist/OPL DSH 一键安装/artifact.json`
+
+`npm run release:manifest` 必须在 `npm run package` 之后执行。检查联合清单中的版本、tag、源提交和官方版本配对，不接受未提交源构建。
+
+### 4.2 官方桌面隔离验收
+
+本机 macOS 使用已安装的未修改官方应用和一次性隔离 profile：
+
+```sh
+node scripts/qualify-official-runtime.mjs \
+  --app "$HOME/Applications/DeepSeek Harness.app" \
+  --payload "dist/OPL DSH 一键安装" \
+  --evidence "dist/official-qualification.json"
+```
+
+隔离根目录必须由脚本使用 Node 的真实 `os.tmpdir()` 创建，并以 `opl-dsh-accept-` 开头；macOS 的 `/tmp` 可能解析到 `/private/var/...`，不能手写一个路径绕过 runner 的隔离检查。
+
+Windows 的 `--download` 会安装官方程序并写入系统注册信息，只能在临时 GitHub Actions runner 使用；开发机使用 `--app`。发布工作流的 `--download` 会同时验证官方安装包 SHA-512、签名和实际版本。
+
+验收 JSON 必须满足：
+
+- `status=passed`；
+- `officialVersion` 与两个 feed、`artifact.json` 和联合清单一致；
+- `sourceDirty=false`；
+- `isolatedInstallation`、Client、runtime、restart 和 `officialUnmodified` 均通过；
+- 官方 Bundle ID、Developer ID/Windows 发布者签名和 `app.asar` 摘要未改变。
+
+本地模拟模型只证明协议、工具和持久化链路，不证明真实 Gateway、凭据、外部模型质量或所有 Harness 组合。API/RPC 通过不能代替 Client 页面可见性和交互验收；两者必须分别记录。macOS 通过不能替代 Windows 结果；Windows 未进入桌面运行验收时，Release Note 必须明确记录。
+
+## 5. 组装发布资产
+
+验收完成后，把证据复制为清单约定的稳定文件名，并从同一 `dist` 目录生成摘要：
+
+```sh
+cp dist/official-qualification.json \
+  dist/official-qualification-<OPL_VERSION>.json
+cd dist
+shasum -a 256 \
+  OPL-DSH-Enhancements.zip \
+  OPL-DSH-Installer-mac-arm64.dmg \
+  OPL-DSH-Installer-windows-x64.exe \
+  release-manifest.json \
+  official-qualification-<OPL_VERSION>.json \
+  > SHA256SUMS
+cd ..
+```
+
+发布目录只能包含五类交付资产和一份摘要清单：
+
+| 文件                                        | 用途                       |
+| ------------------------------------------- | -------------------------- |
+| `OPL-DSH-Enhancements.zip`                  | OPL 增强包和安装器 payload |
+| `OPL-DSH-Installer-mac-arm64.dmg`           | macOS 一键安装器           |
+| `OPL-DSH-Installer-windows-x64.exe`         | Windows 一键安装器         |
+| `release-manifest.json`                     | DSH 与 OPL 的联合版本清单  |
+| `official-qualification-<OPL_VERSION>.json` | 官方桌面隔离验收证据       |
+| `SHA256SUMS`                                | 上述文件的摘要清单         |
+
+`SHA256SUMS` 只记录最终上传的文件名和摘要。不要上传临时 tarball、旧版本 artifact、含凭据的 profile 或完整隔离目录；截图只有在能解释验收结论时才作为额外资产上传。
+
+## 6. 创建并公开 Release
+
+### 6.1 先固定 tag 和正文
+
+Release tag、名称和正文必须完全遵守[Release Note 模板](release-notes-template.md)。以下命令中的尖括号是占位符，执行前必须替换为本次候选的实际值：
+
+```sh
+VERSION=<OPL_VERSION>
+TAG="opl-dsh-v$VERSION"
+git tag -a "$TAG" -m "OPL DSH v$VERSION"
+git push origin main "$TAG"
+```
+
+发布正文写入临时文件后回读，确认官方版本、OPL 版本、验证结果和限制没有套用上一版。不要使用自动生成的 GitHub Release Notes 代替联合说明。
+
+### 6.2 创建稳定 Release
+
+必须显式设置稳定和 Latest 标志，并使用已存在的 tag：
+
+```sh
+gh release create "$TAG" \
+  dist/OPL-DSH-Enhancements.zip \
+  dist/OPL-DSH-Installer-mac-arm64.dmg \
+  dist/OPL-DSH-Installer-windows-x64.exe \
+  dist/release-manifest.json \
+  dist/official-qualification-"$VERSION".json \
+  dist/SHA256SUMS \
+  --verify-tag \
+  --title "OPL DSH v$VERSION" \
+  --notes-file <release-notes.md> \
+  --latest
+```
+
+上传或发布结果未知时，先只读读取 Release、tag 和资产列表；确认没有创建成功前不得重新执行创建命令。若已创建 draft，沿用同一个 tag 补齐资产并发布，不新建第二个 tag。
+
+## 7. 公开回读与跟随渠道
+
+### 7.1 Release 回读
+
+公开后必须从 GitHub 下载每个资产，而不是只检查本地文件：
+
+```sh
+gh release view "$TAG" --json tagName,name,isDraft,isPrerelease,publishedAt,assets
+curl -fsSL "https://github.com/gaofeng21cn/opl-dsh/releases/latest" \
+  -o /dev/null -w '%{url_effective}\n'
+mkdir -p /tmp/opl-dsh-release-"$VERSION"
+cd /tmp/opl-dsh-release-"$VERSION"
+for file in SHA256SUMS release-manifest.json \
+  OPL-DSH-Enhancements.zip \
+  OPL-DSH-Installer-mac-arm64.dmg \
+  OPL-DSH-Installer-windows-x64.exe \
+  official-qualification-"$VERSION".json; do
+  curl -fsSLO "https://github.com/gaofeng21cn/opl-dsh/releases/download/$TAG/$file"
+done
+shasum -a 256 -c SHA256SUMS
+```
+
+回读必须确认：`isDraft=false`、`isPrerelease=false`、tag 是 canonical tag、`latest` URL 指向本次 tag、所有资产名称/大小/摘要与清单一致。联合清单的 `tagName`、`releaseVersion`、官方 feed 和增强包摘要还要重新解析。
+
+### 7.2 Homebrew Cask
+
+公开 Release 的增强包摘要回读后，才更新 `Casks/opl-dsh.rb` 的 `version` 和 `sha256`。Cask 只能指向已公开的 `OPL-DSH-Enhancements.zip`，提交并推送后执行本地语法和 URL/摘要检查：
+
+```sh
+ruby -c Casks/opl-dsh.rb
+curl -fsSL "https://github.com/gaofeng21cn/opl-dsh/releases/download/opl-dsh-v<VERSION>/OPL-DSH-Enhancements.zip" \
+  | shasum -a 256
+```
+
+Cask 失败不回滚已经公开的 Release；修复 Cask 后重新回读即可。
+
+### 7.3 安装器和自动更新
+
+稳定发布必须实际验证两个用户入口：
+
+- 首次安装：`install.sh`/DMG/EXE 能读取 `releases/latest`，校验 `SHA256SUMS`、联合清单、canonical tag 和 payload 文件后再安装。
+- 已安装用户：维护入口或已启用自动启动的 Codex Skill 读取 GitHub latest；每小时最多检查一次；profile 正在运行、网络失败、版本未变或摘要不匹配时保留当前安装并写入状态，不替换正在使用的 profile。
+
+直接打开官方 DeepSeek Harness 不会加载外部 OPL 更新器。官方桌面继续由 DeepSeek feed、SHA-512、签名和版本检查负责升级；这两个更新责任必须在 Release Note 和用户文档中分开说明。
+
+## 8. 清理历史版本
+
+新 Release 完成公开回读后，先列出当前公开版本：
+
+```sh
+gh release list --limit 20
+git ls-remote --tags origin
+```
+
+确认新 Release 是唯一稳定版本后，再删除旧稳定 Release 和关联 tag：
+
+```sh
+gh release delete opl-dsh-v<OLD_VERSION> --cleanup-tag --yes
+```
+
+删除前保存必要的 Release/tag 元数据和资产摘要到临时目录，供本次操作恢复和审计；不把临时目录上传为新的公开历史。不要删除当前 tag、源码提交、已安装 Suite 的本地 `releases/<suiteSha256>`，也不要为了清理旧版本删除用户 profile、凭据、会话或自定义 Skill。
+
+## 9. 失败恢复
+
+| 断点                                      | 处理方式                                                                                                                    |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 官方两个 feed 版本不一致                  | 停止发布，记录两端版本和路径；等待官方 feed 收敛或明确选择可验收的共同版本，不能手填清单。                                  |
+| `npm ci`、类型、RPC、边界、格式或测试失败 | 修复源代码/依赖后重新从源码门禁开始；不要复用旧 artifact。                                                                  |
+| package 后发现源代码或文档改变            | 重新构建、重新生成清单、重新验收；不能只替换 `artifact.json`。                                                              |
+| 官方隔离验收失败                          | 定位最深失败检查；macOS/Windows 分开记录。未通过的平台不能写成通过。                                                        |
+| 上传/发布结果未知                         | 只读回查 Release、tag、资产和 latest 指针；明确已有对象前不重试公开 mutation。                                              |
+| 资产摘要不一致                            | 保留当前公开 Release，先确认是否下载损坏、资产混入旧候选或清单错配；修复候选后按同 tag 修复流程处理。                       |
+| Homebrew 摘要更新失败                     | Release 仍可保持已公开状态；只恢复 Cask，回读公开资产后再提交。                                                             |
+| 用户更新失败                              | 保留当前本地 release 和 profile，读取 `enhancement-update.json`；网络、运行中 profile、版本未变和校验失败不能触发强制覆盖。 |
+| 清理旧 Release 结果未知                   | 先查询旧 tag、Release 和 latest；确认删除状态后再继续，不能盲目重复删除或创建新 Release。                                   |
+
+## 10. 发布记录
+
+每次发布在最终回复或关联记录中保留以下最小事实：
+
+- OPL 版本、官方 DSH 版本、canonical tag、源提交；
+- 源码门禁和官方资格证据文件名；
+- Release URL、Latest 回读结果、资产摘要校验结果；
+- macOS/Windows 各自的验收状态和明确缺口；
+- Homebrew 状态；
+- 旧版本清理结果；
+- 未完成项、解除条件和是否需要下一次发布恢复。
+
+不要用“已构建”“CI 通过”“已上传”“已排队”代替公开可用；也不要把本机模拟模型、单个平台通过或 GitHub 页面可见误写成全平台稳定验收。
+
+## 11. 发布前后快速清单
+
+### 发布前
+
+- [ ] 官方两个 feed 版本一致，官方阶段已核对。
+- [ ] OPL 版本递增，`package.json` 与 lockfile 一致。
+- [ ] 主线干净，文档和源代码已冻结。
+- [ ] RPC、类型、边界、格式、构建和测试通过。
+- [ ] package、联合清单和官方隔离验收通过。
+- [ ] 五类交付资产、验收记录和 `SHA256SUMS` 已由同一候选生成。
+
+### 发布后
+
+- [ ] tag、Release 名称、正文和清单一致。
+- [ ] Release 非 draft、非 prerelease，Latest 指向正确。
+- [ ] 公开下载资产逐一通过 `SHA256SUMS`。
+- [ ] 安装器和已安装更新路径的校验边界保持不变。
+- [ ] Homebrew Cask 已跟随公开摘要，或明确记录未完成。
+- [ ] 旧稳定 Release/tag 已清理，必要元数据已临时保存。
+- [ ] 最终记录包含各平台证据、限制和真实缺口。
