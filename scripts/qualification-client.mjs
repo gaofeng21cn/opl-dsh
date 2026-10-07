@@ -77,6 +77,7 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
     runtimeExceptions: null,
     screenshots: [],
     screenshotFailures: [],
+    settingsReopens: 0,
   }
   progress(result)
   await Promise.all(
@@ -137,9 +138,10 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
   async function captureFailureScreenshot() {
     await captureScreenshot('failure')
   }
-  async function waitFor(expression, description) {
+  async function waitFor(expression, description, recover) {
     for (let attempt = 0; attempt < 80; attempt++) {
       if (await pipe.evaluate(session, expression)) return
+      if (recover) await recover()
       await delay(250)
     }
     const buttons = await pipe.evaluate(
@@ -149,29 +151,37 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
     await captureFailureScreenshot()
     throw new Error(description + '；当前入口：' + JSON.stringify(buttons))
   }
-  const clickLabel = (labels) =>
-    `(() => { const labels=${JSON.stringify(labels)}; const node=Array.from(document.querySelectorAll('button,[role=menuitem]')).find(x=>x.getClientRects().length && !x.disabled && (labels.includes((x.getAttribute('aria-label')||x.textContent||'').trim()) || x.matches('[role=menuitem]') && labels.some(label => (x.textContent||'').trim().startsWith(label)))); if(!node)return false; node.click(); return true })()`
+  const clickLabel = (labels, scope = 'document') =>
+    `(() => { const labels=${JSON.stringify(labels)}; const root=${scope}; if(!root)return false; const node=Array.from(root.querySelectorAll('button,[role=menuitem]')).find(x=>x.getClientRects().length && !x.disabled && (labels.includes((x.getAttribute('aria-label')||x.textContent||'').trim()) || x.matches('[role=menuitem]') && labels.some(label => (x.textContent||'').trim().startsWith(label)))); if(!node)return false; node.click(); return true })()`
   await waitFor("document.body.innerText.includes('OPL')", 'OPL Client 未挂载')
   result.clientMounted = true
   // Fresh profile onboarding uses its real button and real setup RPC.
   await pipe.evaluate(session, clickLabel(['稍后登录', 'Sign in later']))
   await waitFor(
-    clickLabel([
-      '账户菜单',
-      'Account menu',
-      '账户与设置',
-      'Account and settings',
-      '更多',
-      'More',
-      '设置',
-      'Settings',
-    ]),
-    '账户或设置入口未挂载',
+    "!Array.from(document.querySelectorAll('[data-opl-panel=setup]')).some(x=>x.getClientRects().length)",
+    '首次设置尚未关闭',
   )
-  if (!(await pipe.evaluate(session, "Boolean(document.querySelector('[role=dialog] nav'))"))) {
-    await waitFor(clickLabel(['设置', 'Settings']), '设置菜单不可见')
+  const settingsNav = "document.querySelector('[role=dialog] nav')"
+  async function openSettings() {
+    if (await pipe.evaluate(session, `Boolean(${settingsNav})`)) return
+    await waitFor(
+      clickLabel([
+        '账户菜单',
+        'Account menu',
+        '账户与设置',
+        'Account and settings',
+        '更多',
+        'More',
+        '设置',
+        'Settings',
+      ]),
+      '账户或设置入口未挂载',
+    )
+    if (!(await pipe.evaluate(session, `Boolean(${settingsNav})`)))
+      await waitFor(clickLabel(['设置', 'Settings']), '设置菜单不可见')
+    await waitFor(`Boolean(${settingsNav})`, '官方设置容器未打开')
   }
-  await waitFor("Boolean(document.querySelector('[role=dialog] nav'))", '官方设置容器未打开')
+  await openSettings()
   const panels = [
     { label: ['Harness'], marker: 'execution-settings' },
     { label: ['运行配置'], marker: 'catalog' },
@@ -180,10 +190,22 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
   ]
   const screenshots = result.screenshots
   for (const panel of panels) {
-    await waitFor(clickLabel(panel.label), panel.label[0] + ' 插槽未注册')
+    const selectPanel = () =>
+      waitFor(clickLabel(panel.label, settingsNav), panel.label[0] + ' 插槽未注册')
+    await selectPanel()
     await waitFor(
       `(() => {const node=document.querySelector('[data-opl-panel="${panel.marker}"]'); return Boolean(node && node.getClientRects().length && node.innerText.trim() && node.getAttribute('aria-busy') !== 'true' && !node.querySelector('[aria-busy="true"]'))})()`,
       panel.label[0] + ' 未加载',
+      async () => {
+        // First-run onboarding can close the settings dialog after navigation.
+        // Recover that observed disappearance once; a present but broken panel
+        // still fails its original DOM and error assertions.
+        if (result.settingsReopens || (await pipe.evaluate(session, `Boolean(${settingsNav})`)))
+          return
+        result.settingsReopens++
+        await openSettings()
+        await selectPanel()
+      },
     )
     const alerts = await pipe.evaluate(
       session,
