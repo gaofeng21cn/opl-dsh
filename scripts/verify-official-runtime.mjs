@@ -86,6 +86,7 @@ assert.equal(
   'read-only',
 )
 const requests = []
+let gitBashProbe = false
 const server = createServer(async (req, res) => {
   try {
     let bytes = ''
@@ -97,7 +98,14 @@ const server = createServer(async (req, res) => {
         m.role === 'tool' ||
         (Array.isArray(m.content) && m.content.some((b) => b.type === 'tool_result')),
     )
-    const toolName = 'list_harness_combinations'
+    const toolName = gitBashProbe ? 'bash' : 'list_harness_combinations'
+    const toolInput = gitBashProbe
+      ? {
+          command: 'git --version && printf OPL_GIT_BASH_OK > opl-git-bash-smoke.txt',
+          description: 'Verify Git Bash in the isolated workspace',
+          timeoutMs: 10000,
+        }
+      : {}
     const hasTool = body.tools?.some((t) => (t.name ?? t.function?.name) === toolName)
     requests.push({
       path: req.url,
@@ -129,7 +137,7 @@ const server = createServer(async (req, res) => {
         send({
           type: 'content_block_delta',
           index: 0,
-          delta: { type: 'input_json_delta', partial_json: '{}' },
+          delta: { type: 'input_json_delta', partial_json: JSON.stringify(toolInput) },
         })
       } else {
         send({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })
@@ -167,7 +175,7 @@ const server = createServer(async (req, res) => {
               index: 0,
               id: 'call_fixture',
               type: 'function',
-              function: { name: toolName, arguments: '{}' },
+              function: { name: toolName, arguments: JSON.stringify(toolInput) },
             },
           ],
         })
@@ -284,12 +292,41 @@ try {
     ),
   )
   assert(requests.filter((r) => r.usedTool).length >= 2, 'official tool execution missing')
+  if (process.platform === 'win32') {
+    // MSYS2 external programs need full access with the official rc.2 backend.
+    // Only this disposable Session receives that explicit preset.
+    gitBashProbe = true
+    const shellSession = await rpc('session', 'create', {
+      request: { cwd: project, permissionPreset: 'danger-full-access' },
+    })
+    assert.equal(shellSession.permissions.preset, 'danger-full-access')
+    await rpc('session', 'selectModel', {
+      request: {
+        sessionId: shellSession.sessionId,
+        provider: 'opl-gateway',
+        model: 'deepseek-flash',
+      },
+    })
+    const receipt = await rpc('session', 'prompt', {
+      request: {
+        sessionId: shellSession.sessionId,
+        requestId: crypto.randomUUID(),
+        mode: 'queue',
+        content: [{ type: 'text', text: 'Run the isolated Git Bash smoke once.' }],
+      },
+    })
+    assert.equal(receipt.accepted, true)
+    const result = await rpc('session', 'wait', { sessionId: shellSession.sessionId })
+    assert.equal(result.outcome.kind, 'completed')
+    assert.equal(await readFile(join(project, 'opl-git-bash-smoke.txt'), 'utf8'), 'OPL_GIT_BASH_OK')
+  }
   console.log(
     JSON.stringify(
       {
         nativeSettingsReadback: true,
         controlPermissions: true,
         controlProjectAttribution: true,
+        ...(gitBashProbe ? { gitBashExecution: true } : {}),
         groupedModels: models.map((m) => m.id),
         officialTools: true,
         requests: requests.map(({ key, ...rest }) => rest),
