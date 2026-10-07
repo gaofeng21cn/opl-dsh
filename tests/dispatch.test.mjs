@@ -44,7 +44,10 @@ test('a retry sends one prompt; changed content under the same operation is refu
     }),
   )
   await cp(new URL('../installer/skill/control.mjs', import.meta.url), join(root, 'control.mjs'))
-  await cp(new URL('../installer/skill/windows-acl.mjs', import.meta.url), join(root, 'windows-acl.mjs'))
+  await cp(
+    new URL('../installer/skill/windows-acl.mjs', import.meta.url),
+    join(root, 'windows-acl.mjs'),
+  )
   await writeFile(
     join(root, 'config.json'),
     JSON.stringify({ home: root, ledger: join(root, 'ledger'), launcher: '/must-not-launch' }),
@@ -116,7 +119,10 @@ test('delegate-wait returns the persisted snapshot when the control deadline exp
     }),
   )
   await cp(new URL('../installer/skill/control.mjs', import.meta.url), join(root, 'control.mjs'))
-  await cp(new URL('../installer/skill/windows-acl.mjs', import.meta.url), join(root, 'windows-acl.mjs'))
+  await cp(
+    new URL('../installer/skill/windows-acl.mjs', import.meta.url),
+    join(root, 'windows-acl.mjs'),
+  )
   await writeFile(join(root, 'config.json'), JSON.stringify({ home: root, autoStart: false }))
   const result = await new Promise((resolve) => {
     const child = spawn(process.execPath, [

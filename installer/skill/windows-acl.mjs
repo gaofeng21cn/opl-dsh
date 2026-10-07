@@ -1,10 +1,10 @@
 import { statSync } from 'node:fs'
-import { isAbsolute } from 'node:path'
+import { win32 } from 'node:path'
 
 /** Validate the directory whose ACL will be repaired. */
 export function assertRepairTarget(cwd, { platform = process.platform, stat = statSync } = {}) {
   if (platform !== 'win32') throw new Error('Windows ACL repair is available only on Windows')
-  if (typeof cwd !== 'string' || !isAbsolute(cwd)) throw new Error('--cwd 必须为绝对路径')
+  if (typeof cwd !== 'string' || !win32.isAbsolute(cwd)) throw new Error('--cwd 必须为绝对路径')
   let info
   try {
     info = stat(cwd)
