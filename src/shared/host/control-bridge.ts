@@ -22,7 +22,9 @@ const allowed: Readonly<Record<string, readonly string[]>> = {
     'controlSnapshot',
     'wait',
   ],
-  workspace: ['follow', 'moveSession'],
+  // Official DSH derives Session membership from the workspace supplied to
+  // session.create; it does not export a workspace.moveSession Remote method.
+  workspace: ['follow'],
   oplSuite: ['setupUrl', 'setupStatus', 'finishSetup'],
   oplGatewayAccount: ['status', 'refresh'],
   taskFeedback: [

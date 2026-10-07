@@ -1,3 +1,4 @@
+import { sessionPermissions } from '../../compat/host/session-permissions.ts'
 /** Optional external Codex transport; shares the internal collaboration owner. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
@@ -30,8 +31,46 @@ export function installExternalCodex(ctx: Context, harness: HarnessService) {
       }
       if (!harness.cooperationSettings().externalCodex)
         throw Error('外部 Codex 接入已关闭；内部协作不受影响')
+      if (
+        request.namespace === 'session' &&
+        ['permissions', 'selectPermissions'].includes(request.method)
+      )
+        return sessionPermissions(
+          ctx,
+          request.args?.request,
+          request.method === 'selectPermissions',
+        )
+      if (request.namespace === 'session' && request.method === 'create') {
+        const input = request.args?.request
+        if (typeof input !== 'object' || input === null || Array.isArray(input))
+          throw Error('session.create requires request')
+        const { permissionPreset, ...nativeRequest } = input as Record<string, unknown>
+        if (permissionPreset !== undefined) {
+          if (typeof permissionPreset !== 'string') throw Error('permissionPreset must be a string')
+          ctx.permissionPresets.resolve(permissionPreset)
+        }
+        if (typeof nativeRequest.cwd === 'string' && nativeRequest.workspaceId === undefined) {
+          const workspace = await ctx.workspaceRegistry.create(nativeRequest.cwd)
+          nativeRequest.workspaceId = workspace.id
+          delete nativeRequest.cwd
+        }
+        const created = await gateway.invoke({ ...request, args: { request: nativeRequest } })
+        if (permissionPreset === undefined) return created
+        if (typeof created !== 'object' || created === null || !('sessionId' in created))
+          throw Error('Official session.create did not return sessionId')
+        const value = await sessionPermissions(
+          ctx,
+          { sessionId: created.sessionId, preset: permissionPreset },
+          true,
+        )
+        return { ...created, ...value }
+      }
       if (request.namespace === 'session' && request.method === 'wait') {
-        const input = request.args
+        const envelope = request.args
+        const rawInput = envelope?.request ?? envelope
+        if (typeof rawInput !== 'object' || rawInput === null || Array.isArray(rawInput))
+          throw new Error('session.wait requires request object')
+        const input = rawInput as Record<string, unknown>
         if (typeof input?.sessionId !== 'string' || input.sessionId.length === 0)
           throw new Error('session.wait requires sessionId')
         if (

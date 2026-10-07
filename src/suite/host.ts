@@ -6,6 +6,7 @@ import TaskFeedbackService from '../collaboration/host/feedback/index.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import * as gateway from '../gateway/host/index.ts'
 import * as control from './execution.ts'
+import * as gitBash from '../shell/host/git-bash.ts'
 import { Config } from './config.ts'
 export { Config } from './config.ts'
 
@@ -16,6 +17,7 @@ export const inject: string[] = []
  * @param ctx - Official Host context.
  */
 export function apply(ctx: Context, config: Config): void {
+  if (process.platform === 'win32') ctx.plugin(gitBash, {})
   ctx.plugin(gateway, structuredClone(config.gateway.get()) as gateway.OplGatewayConfig)
   ctx.plugin(control, {})
   ctx.plugin(GatewayModelsService)

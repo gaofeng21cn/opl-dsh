@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -40,6 +40,30 @@ describe('Harness executable discovery', () => {
       maintenanceAction: 'update',
     })
   })
+
+  it.runIf(process.platform === 'win32')(
+    'probes a cmd shim whose absolute path contains spaces',
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'opl-harness-registry-'))
+      roots.push(root)
+      const install = join(root, 'Program Files Extra', 'Codex CLI')
+      await mkdir(install, { recursive: true })
+      const command = join(install, 'codex.cmd')
+      await writeFile(command, '@echo off\r\necho codex-cli 9.9.9 1>&2\r\n')
+      const item = await inspectHarness(
+        { id: 'codex', name: 'Codex CLI', kind: 'acp', command },
+        root,
+      )
+      expect(item).toMatchObject({
+        installed: true,
+        runnable: true,
+        path: command,
+        detectedBy: 'configured-path',
+        version: 'codex-cli 9.9.9',
+        maintenanceAction: 'update',
+      })
+    },
+  )
 
   it('offers install when a built-in CLI is absent', async () => {
     vi.stubEnv('PATH', '')

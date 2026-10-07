@@ -1,10 +1,19 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
+
+// install.sh/install.command are the POSIX shell installers, and these fixtures stub them as
+// macOS (`uname -s` -> Darwin, `ditto`); they must run under a real /bin/bash and its POSIX
+// PATH/TMPDIR semantics. Windows has no /bin/bash, so there the whole shell fixture is the
+// boundary: it is skipped with this reason instead of weakening any assertion.
+const posixShellMissing = existsSync('/bin/bash')
+  ? false
+  : 'POSIX shell 安装器 fixture 需要 /bin/bash（Windows 无此路径，Git Bash 的 bash.exe 不可替代）'
 
 function bootstrap(mode) {
   const root = mkdtempSync(join(tmpdir(), 'opl-bootstrap-test-'))
@@ -38,7 +47,7 @@ printf '%s\\n' '#!/bin/bash' 'echo "INSTALLER_CALLED:$*"' > "$4/install.command"
   try {
     return spawnSync(
       '/bin/bash',
-      [new URL('../install.sh', import.meta.url).pathname, '--no-launch'],
+      [fileURLToPath(new URL('../install.sh', import.meta.url)), '--no-launch'],
       {
         encoding: 'utf8',
         env: { ...process.env, TMPDIR: root, PATH: bin + ':' + process.env.PATH },
@@ -48,35 +57,46 @@ printf '%s\\n' '#!/bin/bash' 'echo "INSTALLER_CALLED:$*"' > "$4/install.command"
     rmSync(root, { recursive: true, force: true })
   }
 }
-test('bootstrap pins both downloads to one release and forwards installer flags', () => {
-  const result = bootstrap('valid')
-  assert.equal(result.status, 0, result.stderr)
-  assert.match(result.stdout, /INSTALLER_CALLED:--no-launch/)
-})
-test('bootstrap rejects corrupt downloads before extraction or execution', () => {
-  const result = bootstrap('corrupt')
-  assert.notEqual(result.status, 0)
-  assert.match(result.stderr, /增强包校验失败/)
-  assert.doesNotMatch(result.stdout, /INSTALLER_CALLED/)
-})
-test('bootstrap rejects unexpected release redirects', () => {
+test(
+  'bootstrap pins both downloads to one release and forwards installer flags',
+  { skip: posixShellMissing },
+  () => {
+    const result = bootstrap('valid')
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /INSTALLER_CALLED:--no-launch/)
+  },
+)
+test(
+  'bootstrap rejects corrupt downloads before extraction or execution',
+  { skip: posixShellMissing },
+  () => {
+    const result = bootstrap('corrupt')
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /增强包校验失败/)
+    assert.doesNotMatch(result.stdout, /INSTALLER_CALLED/)
+  },
+)
+test('bootstrap rejects unexpected release redirects', { skip: posixShellMissing }, () => {
   const result = bootstrap('bad-tag')
   assert.notEqual(result.status, 0)
   assert.match(result.stderr, /无法读取 OPL DSH 稳定发布版本/)
 })
 
-test('Mac installer reaches the download branch in a UTF-8 locale and propagates failure', () => {
-  const root = mkdtempSync(join(tmpdir(), 'opl-download-test-'))
-  const bin = join(root, 'bin')
-  mkdirSync(bin)
-  writeFileSync(
-    join(bin, 'uname'),
-    '#!/bin/bash\nif [[ "$1" == -s ]]; then echo Darwin; else echo arm64; fi\n',
-    { mode: 0o700 },
-  )
-  writeFileSync(
-    join(bin, 'curl'),
-    `#!/bin/bash
+test(
+  'Mac installer reaches the download branch in a UTF-8 locale and propagates failure',
+  { skip: posixShellMissing },
+  () => {
+    const root = mkdtempSync(join(tmpdir(), 'opl-download-test-'))
+    const bin = join(root, 'bin')
+    mkdirSync(bin)
+    writeFileSync(
+      join(bin, 'uname'),
+      '#!/bin/bash\nif [[ "$1" == -s ]]; then echo Darwin; else echo arm64; fi\n',
+      { mode: 0o700 },
+    )
+    writeFileSync(
+      join(bin, 'curl'),
+      `#!/bin/bash
 if [[ "$*" == *nightly-mac.yml* ]]; then
   echo 'version: 0.1.7-rc.2'
   echo 'path: https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-0.1.7-rc.2-mac-arm64.zip'
@@ -86,28 +106,29 @@ else
   exit 23
 fi
 `,
-    { mode: 0o700 },
-  )
-  try {
-    const result = spawnSync(
-      '/bin/bash',
-      [new URL('../installer/install.command', import.meta.url).pathname],
-      {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          LC_ALL: 'en_US.UTF-8',
-          PATH: bin + ':' + process.env.PATH,
-          OPL_SUITE_ROOT: join(root, 'suite'),
-          OPL_APPLICATIONS_DIR: join(root, 'apps'),
-        },
-      },
+      { mode: 0o700 },
     )
-    assert.notEqual(result.status, 0)
-    assert.match(result.stdout, /正在下载官方 DeepSeek Harness 0.1.7-rc.2…/)
-    assert.match(result.stderr, /EXPECTED_DOWNLOAD_FAILURE/)
-    assert.doesNotMatch(result.stderr, /unbound variable/)
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
-})
+    try {
+      const result = spawnSync(
+        '/bin/bash',
+        [fileURLToPath(new URL('../installer/install.command', import.meta.url))],
+        {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            LC_ALL: 'en_US.UTF-8',
+            PATH: bin + ':' + process.env.PATH,
+            OPL_SUITE_ROOT: join(root, 'suite'),
+            OPL_APPLICATIONS_DIR: join(root, 'apps'),
+          },
+        },
+      )
+      assert.notEqual(result.status, 0)
+      assert.match(result.stdout, /正在下载官方 DeepSeek Harness 0.1.7-rc.2…/)
+      assert.match(result.stderr, /EXPECTED_DOWNLOAD_FAILURE/)
+      assert.doesNotMatch(result.stderr, /unbound variable/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  },
+)

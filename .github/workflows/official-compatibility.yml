@@ -37,7 +37,6 @@ jobs:
         # The official macOS distribution is arm64-only. Do not substitute Intel.
         os: [macos-15, windows-latest]
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +48,11 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: node --test tests/qualification.test.mjs
+      - name: Verify Windows native launcher and ACL regressions
+        if: matrix.os == 'windows-latest'
+        run: |
+          node node_modules/vitest/vitest.mjs run tests/execution/harness-registry.spec.ts -t "probes a cmd shim"
+          node --test tests/native-bridge.test.mjs tests/windows-acl.test.mjs
       - name: Download verified official desktop and run isolated qualification
         run: node scripts/qualify-official-runtime.mjs --download --evidence dist/official-qualification.json
       - uses: actions/upload-artifact@v4

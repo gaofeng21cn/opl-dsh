@@ -448,7 +448,18 @@ describe('external Harness production transport', () => {
       'session/new',
       'session/load',
     ])
-    expect((await readFile(join(root, 'calls.txt'), 'utf8')).trim().split('\n')).toEqual(['wait'])
+    // prompt() resolves once the turn is admitted and the request has been written to the
+    // child's stdin; the child appends to calls.txt only after it handles session/prompt.
+    // Wait for that child-side evidence, never for admission alone, and give the wait a
+    // real bound instead of a fixed sleep.
+    await vi.waitFor(
+      async () =>
+        expect((await readFile(join(root, 'calls.txt'), 'utf8')).trim().split('\n')).toEqual([
+          'wait',
+        ]),
+      { timeout: 5000 },
+    )
+    expect((await resumed.snapshot({ sessionId: a.id })).turns).toHaveLength(1)
     expect((await resumed.cancel({ sessionId: a.id })).state).toBe('cancelled')
   })
   it('inherits project permissions and cancels child work with its parent', async () => {

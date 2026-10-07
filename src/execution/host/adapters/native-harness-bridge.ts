@@ -64,13 +64,18 @@ async function openCodex() {
   child = spawn(
     windowsScript ? (process.env.ComSpec ?? 'cmd.exe') : command,
     windowsScript
-      ? ['/d', '/s', '/c', `"${command.replaceAll('"', '""')}" app-server --stdio`]
+      ? ['/d', '/s', '/c', `""${command}" app-server --stdio"`]
       : ['app-server', '--stdio'],
     {
       cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
+      // cmd.exe with /S strips only the outermost quote pair, so the script path must
+      // stay quoted inside a second pair, and the arguments must reach cmd verbatim:
+      // Node's own Windows escaping would turn those inner quotes into \" which cmd
+      // reads as literal backslashes and never resolves the script.
+      ...(windowsScript ? { windowsVerbatimArguments: true } : {}),
     },
   )
   child.stderr!.resume()

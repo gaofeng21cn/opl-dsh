@@ -93,7 +93,9 @@ if (!process.env.OPL_DESKTOP_LAUNCHER) {
   if (process.platform === 'win32') {
     const quoteVbs = (value) => '"' + value.replaceAll('"', '""') + '"'
     const command =
+      '"' +
       executable +
+      '"' +
       ' "' +
       join(release, 'setup.mjs') +
       '" "' +
@@ -134,16 +136,16 @@ if (!process.env.OPL_DESKTOP_LAUNCHER) {
   }
 }
 const skillDir = installSkill({ executable, home, launcher, root, release, codexHome })
-const officialVersion = JSON.parse(
-  readFileSync(
-    join(
-      app,
-      process.platform === 'win32' ? 'resources' : 'Contents/Resources',
-      'app.asar/package.json',
-    ),
-    'utf8',
-  ),
-).version
+const resources = join(app, process.platform === 'win32' ? 'resources' : 'Contents/Resources')
+const manifestPath = join(resources, 'app.asar/package.json')
+const manifest = spawnSync(
+  executable,
+  ['-e', `process.stdout.write(require(${JSON.stringify(manifestPath)}).version)`],
+  { encoding: 'utf8', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } },
+)
+if (manifest.error || manifest.status !== 0 || !manifest.stdout.trim())
+  throw manifest.error ?? new Error('无法读取官方桌面版本')
+const officialVersion = manifest.stdout.trim()
 const ledgerDir = JSON.parse(readFileSync(join(skillDir, 'config.json'), 'utf8')).ledger
 const installation = {
   version: 3,

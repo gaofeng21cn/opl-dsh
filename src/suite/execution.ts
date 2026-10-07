@@ -25,6 +25,10 @@ export const inject = [
   'credentials',
   'agentDefaultModel',
   'workspaceRegistry',
+  'permissionPresets',
+  'sessionController',
+  'sandboxPolicy',
+  'approval',
 ]
 /** Keep admission, model selection, tools and permissions in the official Host.
  * @param ctx - Official Host context.

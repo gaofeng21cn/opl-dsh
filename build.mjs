@@ -139,6 +139,7 @@ for (const file of [
   'installation-paths.mjs',
   'skill/SKILL.md',
   'skill/control.mjs',
+  'skill/windows-acl.mjs',
   'skill/harness-mcp.mjs',
   name,
 ]) {

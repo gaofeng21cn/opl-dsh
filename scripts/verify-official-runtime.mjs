@@ -46,15 +46,52 @@ if (process.argv.includes('--readback-selections')) {
     await readFile(join(root, 'profiles/desktop/combination-selection.json'), 'utf8'),
   )
   if (!Object.keys(selections).length) throw Error('没有可验收的组合选择记录')
-  for (const [sessionId, combination] of Object.entries(selections))
+  for (const [sessionId, combination] of Object.entries(selections)) {
+    // A restarted Host has not loaded these persisted Sessions yet. Resume
+    // their exact identity through the official owner before reading the
+    // Session projection; otherwise modelSelection can only see the default.
+    await rpc('session', 'create', { request: { sessionId, cwd: join(root, 'test-project') } })
     assert.equal((await harness('model-selection', { sessionId })).combination, combination)
+  }
   console.log(JSON.stringify({ selectionRestore: true, sessions: Object.keys(selections).length }))
   process.exit(0)
 }
 const project = join(root, 'test-project')
 await mkdir(project, { recursive: true })
 import assert from 'node:assert/strict'
+// Exercise the OPL control adapter against the official permission and Workspace owners.
+const permissionSession = await rpc('session', 'create', {
+  request: { cwd: project, permissionPreset: 'danger-full-access' },
+})
+assert.equal(permissionSession.permissions.preset, 'danger-full-access')
+assert.equal(permissionSession.permissions.sandbox, 'danger-full-access')
+assert.equal(permissionSession.permissions.approval, 'never')
+const permissionRead = await rpc('session', 'permissions', {
+  request: { sessionId: permissionSession.sessionId },
+})
+assert.equal(permissionRead.preset, 'danger-full-access')
+assert.equal(permissionRead.running, false)
+const placement = await rpc('workspace', 'follow')
+assert(
+  placement.value.items.some(
+    (item) => item.path === project && item.sessionIds.includes(permissionSession.sessionId),
+  ),
+  'control-created Session is missing from its exact Workspace',
+)
+const switched = await rpc('session', 'selectPermissions', {
+  request: { sessionId: permissionSession.sessionId, preset: 'read-only' },
+})
+assert.equal(switched.permissions.sandbox, 'read-only')
+assert.equal(
+  (
+    await rpc('session', 'permissions', {
+      request: { sessionId: permissionSession.sessionId },
+    })
+  ).preset,
+  'read-only',
+)
 const requests = []
+let gitBashProbe = false
 const server = createServer(async (req, res) => {
   try {
     let bytes = ''
@@ -66,7 +103,14 @@ const server = createServer(async (req, res) => {
         m.role === 'tool' ||
         (Array.isArray(m.content) && m.content.some((b) => b.type === 'tool_result')),
     )
-    const toolName = 'list_harness_combinations'
+    const toolName = gitBashProbe ? 'bash' : 'list_harness_combinations'
+    const toolInput = gitBashProbe
+      ? {
+          command: 'git --version && printf OPL_GIT_BASH_OK > opl-git-bash-smoke.txt',
+          description: 'Verify Git Bash in the isolated workspace',
+          timeoutMs: 10000,
+        }
+      : {}
     const hasTool = body.tools?.some((t) => (t.name ?? t.function?.name) === toolName)
     requests.push({
       path: req.url,
@@ -98,7 +142,7 @@ const server = createServer(async (req, res) => {
         send({
           type: 'content_block_delta',
           index: 0,
-          delta: { type: 'input_json_delta', partial_json: '{}' },
+          delta: { type: 'input_json_delta', partial_json: JSON.stringify(toolInput) },
         })
       } else {
         send({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })
@@ -136,7 +180,7 @@ const server = createServer(async (req, res) => {
               index: 0,
               id: 'call_fixture',
               type: 'function',
-              function: { name: toolName, arguments: '{}' },
+              function: { name: toolName, arguments: JSON.stringify(toolInput) },
             },
           ],
         })
@@ -253,10 +297,41 @@ try {
     ),
   )
   assert(requests.filter((r) => r.usedTool).length >= 2, 'official tool execution missing')
+  if (process.platform === 'win32') {
+    // MSYS2 external programs need full access with the official rc.2 backend.
+    // Only this disposable Session receives that explicit preset.
+    gitBashProbe = true
+    const shellSession = await rpc('session', 'create', {
+      request: { cwd: project, permissionPreset: 'danger-full-access' },
+    })
+    assert.equal(shellSession.permissions.preset, 'danger-full-access')
+    await rpc('session', 'selectModel', {
+      request: {
+        sessionId: shellSession.sessionId,
+        provider: 'opl-gateway',
+        model: 'deepseek-flash',
+      },
+    })
+    const receipt = await rpc('session', 'prompt', {
+      request: {
+        sessionId: shellSession.sessionId,
+        requestId: crypto.randomUUID(),
+        mode: 'queue',
+        content: [{ type: 'text', text: 'Run the isolated Git Bash smoke once.' }],
+      },
+    })
+    assert.equal(receipt.accepted, true)
+    const result = await rpc('session', 'wait', { sessionId: shellSession.sessionId })
+    assert.equal(result.outcome.kind, 'completed')
+    assert.equal(await readFile(join(project, 'opl-git-bash-smoke.txt'), 'utf8'), 'OPL_GIT_BASH_OK')
+  }
   console.log(
     JSON.stringify(
       {
         nativeSettingsReadback: true,
+        controlPermissions: true,
+        controlProjectAttribution: true,
+        ...(gitBashProbe ? { gitBashExecution: true } : {}),
         groupedModels: models.map((m) => m.id),
         officialTools: true,
         requests: requests.map(({ key, ...rest }) => rest),

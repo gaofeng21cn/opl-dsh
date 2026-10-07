@@ -4,13 +4,16 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 const output = new URL('../dist/', import.meta.url)
 test('tarball checksum and contents bind the installer to an external plugin', async () => {
   const manifest = JSON.parse(await readFile(new URL('artifact.json', output), 'utf8'))
   const bytes = await readFile(new URL(manifest.name, output))
   assert.equal(createHash('sha256').update(bytes).digest('hex'), manifest.sha256)
-  const files = execFileSync('tar', ['-tzf', new URL(manifest.name, output).pathname], {
+  // A Windows drive path is read by tar as a remote `host:path`, so list the bare asset name
+  // from the dist directory instead of handing over an absolute path.
+  const files = execFileSync('tar', ['-tzf', manifest.name], {
+    cwd: fileURLToPath(output),
     encoding: 'utf8',
   })
   assert.doesNotMatch(files, /node_modules|app\.asar|credentials|\/\.env/)
