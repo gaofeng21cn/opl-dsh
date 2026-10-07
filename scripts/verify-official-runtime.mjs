@@ -46,8 +46,13 @@ if (process.argv.includes('--readback-selections')) {
     await readFile(join(root, 'profiles/desktop/combination-selection.json'), 'utf8'),
   )
   if (!Object.keys(selections).length) throw Error('没有可验收的组合选择记录')
-  for (const [sessionId, combination] of Object.entries(selections))
+  for (const [sessionId, combination] of Object.entries(selections)) {
+    // A restarted Host has not loaded these persisted Sessions yet. Resume
+    // their exact identity through the official owner before reading the
+    // Session projection; otherwise modelSelection can only see the default.
+    await rpc('session', 'create', { request: { sessionId, cwd: join(root, 'test-project') } })
     assert.equal((await harness('model-selection', { sessionId })).combination, combination)
+  }
   console.log(JSON.stringify({ selectionRestore: true, sessions: Object.keys(selections).length }))
   process.exit(0)
 }
