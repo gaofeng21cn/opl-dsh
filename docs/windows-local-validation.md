@@ -8,7 +8,7 @@ Windows 启动器为 EXE 路径加引号。构建使用相对归档名避免 Git
 
 主审已在官方 Desktop 上验证权限读取、创建时 danger-full-access、Skill 自动启动及 OpenAI 协议 DeepSeek 模型实际执行 git rev-parse。默认 DeepSeek 分组的旧迁移 Key 被服务端拒绝且触发手动凭据保护，已在停机并备份凭据文件后移除该失效引用，账号刷新后默认 DeepSeek 通道已实测执行只读 Git 命令并返回完成反馈。
 
-Host/Client 类型检查、构建、权限与 bridge 聚焦测试、RPC 生成测试通过。仓库全部测试仍有 Windows 路径、POSIX fixture、缺少 yaml 测试依赖和外部 Harness 并发测试失败，未声明发布质量门禁通过。无需覆盖官方应用资源或迁移 Session 格式即可安装此增强补丁。
+Host/Client 类型检查、构建、权限与 bridge 聚焦测试、RPC 生成测试通过。ACL 校验按 Windows 路径规则处理，macOS/Linux 可运行同一校验 fixture；POSIX 安装器 fixture 仅在具有 `/bin/bash` 的宿主执行。Windows CI 执行含空格路径的 `.cmd/.bat` 原生 Harness 回归及 ACL 测试，官方 Windows 资格验证失败会直接使工作流失败。无需覆盖官方应用资源或迁移 Session 格式即可安装此增强补丁；CI 和隔离资格验证不等于发布或用户实际安装完成。
 
 安装器将 Skill 备份保存在 Codex home 的 `skill-backups`，避免把旧备份当成同名活动 Skill；更新保留当前 ledger 与配置。官方 Skill 区分原生 dispatch 的同 task、新 operation 续作和旧 fork helper 的 continue，并规定反馈领取、独立验收、人工等待和 heartbeat 停止条件。
 
