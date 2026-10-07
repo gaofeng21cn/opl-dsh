@@ -271,13 +271,26 @@ async function stopDesktop() {
     return
   }
   const owned = desktop
-  if (process.platform === 'win32')
-    await run('taskkill.exe', ['/PID', String(owned.pid), '/T', '/F'])
-  else {
-    try {
-      process.kill(-owned.pid, 'SIGTERM')
-    } catch (error) {
-      if (error.code !== 'ESRCH') throw error
+  try {
+    await desktopPipe.command('Browser.close')
+  } catch {
+    // Closing the browser disconnects the CDP pipe before it can return a response.
+  }
+  for (
+    let attempt = 0;
+    owned.exitCode === null && owned.signalCode === null && attempt < 40;
+    attempt++
+  )
+    await delay(100)
+  if (owned.exitCode === null && owned.signalCode === null) {
+    if (process.platform === 'win32') owned.kill()
+    else {
+      // Only the process group created by this runner is eligible for cleanup.
+      try {
+        process.kill(-owned.pid, 'SIGKILL')
+      } catch (error) {
+        if (error.code !== 'ESRCH') throw error
+      }
     }
     for (
       let attempt = 0;
@@ -285,12 +298,8 @@ async function stopDesktop() {
       attempt++
     )
       await delay(100)
-    // Only the process group created by this runner is eligible for cleanup.
-    try {
-      process.kill(-owned.pid, 'SIGKILL')
-    } catch (error) {
-      if (error.code !== 'ESRCH') throw error
-    }
+    if (owned.exitCode === null && owned.signalCode === null)
+      throw new Error('隔离 Desktop 未能在受控退出后停止')
   }
   desktop = undefined
 }

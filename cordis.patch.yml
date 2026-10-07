@@ -4,6 +4,22 @@
       config:
         gateway:
           apiKeyEnv: OPL_GATEWAY_DEEPSEEK_API_KEY
+- id: bash-sandbox
+  name: '@deepseek-ai/dsh-bash-sandbox'
+  config:
+    timeoutMs: 60000
+  disabled: !!js process.platform === 'win32'
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js false
+- id: pwsh-sandbox
+  name: '@deepseek-ai/dsh-pwsh-sandbox'
+  config:
+    timeoutMs: 60000
+  disabled: !!js true
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js true
 - id: agent-default-model
   config:
     provider: opl-gateway

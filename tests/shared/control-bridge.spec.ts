@@ -156,7 +156,7 @@ it('allows the permission read and switch and carries a refusal code back to the
   }
 })
 
-it('allows only the project list and move, reports a refused move, and keeps the rest of the namespace closed', async () => {
+it('allows only the project list and rejects unsupported moves', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'opl-control-workspace-'))
   const file = join(dir, 'control.json')
   const baseline = {
@@ -168,17 +168,7 @@ it('allows only the project list and move, reports a refused move, and keeps the
       yield baseline
     })(),
   )
-  const invoke = vi.fn(async ({ method }: { method: string }) => {
-    if (method === 'moveSession') {
-      // The business refusal a move to an unknown project produces.
-      throw Object.assign(new Error("cannot reorder unknown workspace 'w-missing'"), {
-        isDSHRemoteError: true,
-        code: 'workspace/move-invalid',
-        details: { workspaceId: 'w-missing' },
-      })
-    }
-    return { moved: true }
-  })
+  const invoke = vi.fn(async () => ({ moved: true }))
   const stop = await startControlBridge({ invoke, stream } as unknown as TypertGateway, file)
   const binding = readBinding(file)
   try {
@@ -190,32 +180,21 @@ it('allows only the project list and move, reports a refused move, and keeps the
     )
     expect(invoke).not.toHaveBeenCalled()
 
-    const moved = await rpc(binding, {
+    const unsupported = await rpc(binding, {
       namespace: 'workspace',
       method: 'moveSession',
       args: { request: { sessionId: 's1', workspaceId: 'w-missing' } },
     })
-    expect(moved.status).toBe(400)
-    expect(moved.json).toMatchObject({
-      ok: false,
-      code: 'workspace/move-invalid',
-      details: { workspaceId: 'w-missing' },
-    })
-    expect(invoke).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        namespace: 'workspace',
-        method: 'moveSession',
-        args: { request: { sessionId: 's1', workspaceId: 'w-missing' } },
-      }),
-    )
+    expect(unsupported).toEqual({ status: 403, json: { error: 'method not allowed' } })
+    expect(invoke).not.toHaveBeenCalled()
 
-    // The allowlist names two methods, not the namespace: the remaining
+    // The allowlist names one method, not the namespace: the remaining
     // Workspace commands never reach the gateway.
     for (const method of ['create', 'delete', 'rename', 'insertBefore', 'archiveSession']) {
       const refused = await rpc(binding, { namespace: 'workspace', method, args: { request: {} } })
       expect(refused).toEqual({ status: 403, json: { error: 'method not allowed' } })
     }
-    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(invoke).not.toHaveBeenCalled()
     expect(stream).toHaveBeenCalledTimes(1)
   } finally {
     await stop()

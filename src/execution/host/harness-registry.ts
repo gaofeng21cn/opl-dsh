@@ -218,16 +218,14 @@ export async function inspectHarness(
   try {
     const script = process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(path)
     const { stdout, stderr } = await exec(
-      script ? 'powershell.exe' : path,
-      script
-        ? [
-            '-NoProfile',
-            '-NonInteractive',
-            '-Command',
-            '& $env:OPL_HARNESS_EXECUTABLE --version; exit $LASTEXITCODE',
-          ]
-        : ['--version'],
+      script ? 'cmd.exe' : path,
+      script ? ['/d', '/s', '/c', `""${path}" --version"`] : ['--version'],
       {
+        // cmd.exe with /S strips only the outermost quote pair, so the script path must
+        // stay quoted inside a second pair, and the arguments must reach cmd verbatim:
+        // Node's own Windows escaping would turn those inner quotes into \" which cmd
+        // reads as literal backslashes and never resolves the script.
+        ...(script ? { windowsVerbatimArguments: true } : {}),
         timeout: 5000,
         maxBuffer: 4096,
         env: {
@@ -247,7 +245,6 @@ export async function inspectHarness(
               'CODEX_HOME',
             ].flatMap((key) => (process.env[key] ? [[key, process.env[key]]] : [])),
           ),
-          ...(script ? { OPL_HARNESS_EXECUTABLE: path } : {}),
         },
       },
     )

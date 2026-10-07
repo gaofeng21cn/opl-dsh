@@ -2,11 +2,22 @@
 import { readFile, mkdir, open, rename, unlink } from 'node:fs/promises'
 import { join, isAbsolute } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import { spawn } from 'node:child_process'
+import { spawn, execFile as execFileCallback } from 'node:child_process'
+import { promisify } from 'node:util'
+const execFile=promisify(execFileCallback)
 const config=JSON.parse(await readFile(new URL('./config.json',import.meta.url),'utf8'))
 const [command,...argv]=process.argv.slice(2)
 const args={}
 for(let i=0;i<argv.length;i+=2){if(!argv[i].startsWith('--')||argv[i+1]===undefined)throw new Error('参数必须为 --name value');args[argv[i].slice(2)]=argv[i+1]}
+if(command==='repair-acl'){
+ const { assertRepairTarget, buildRepairArgs }=await import('./windows-acl.mjs')
+ if(!args.cwd||args.confirm!=='yes')throw new Error('ACL 修复需要 --cwd <目录> --confirm yes')
+ const cwd=assertRepairTarget(args.cwd)
+ const identity=(await execFile('whoami.exe',[],{encoding:'utf8',windowsHide:true})).stdout.trim()
+ const result=await execFile('icacls.exe',buildRepairArgs(cwd,identity),{encoding:'utf8',windowsHide:true,maxBuffer:16*1024*1024})
+ console.log(JSON.stringify({cwd,identity,stdout:result.stdout,stderr:result.stderr}))
+ process.exit(0)
+}
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex')
 let binding
 async function connected(){try{const b=JSON.parse(await readFile(join(config.home,'profiles/desktop/control.json'),'utf8'));process.kill(b.pid,0);binding=b;return true}catch{return false}}
@@ -71,7 +82,8 @@ if(['delegate-review','delegate-tasks','delegate','delegate-start','delegate-pro
  const prompt=await readFile(args['prompt-file'],'utf8');if(!prompt.trim())throw new Error('提示词不能为空')
  const provider=args.provider??'opl-gateway'
  if(!['opl-gateway','opl-gateway-openai'].includes(provider))throw new Error('未知 Gateway 通道')
- const fingerprint=hash({sessionId,prompt,provider})
+ const preset=args.preset
+ const fingerprint=hash({sessionId,prompt,provider,...(preset?{preset}:{})})
  await mkdir(config.ledger,{recursive:true,mode:0o700})
  const file=join(config.ledger,requestId+'.json'),lock=file+'.lock'
  const fd=await open(lock,'wx',0o600)
@@ -84,7 +96,11 @@ if(['delegate-review','delegate-tasks','delegate','delegate-start','delegate-pro
    const record={sessionId,requestId,taskId,fingerprint,accepted:false}
    async function save(value){const temp=file+'.'+randomUUID();const out=await open(temp,'wx',0o600);try{await out.writeFile(JSON.stringify(value)+'\n');await out.sync()}finally{await out.close()}await rename(temp,file)}
    await save(record)
-   await rpc('create',{sessionId,cwd:args.cwd})
+   const created=await rpc('create',{sessionId,cwd:args.cwd,...(preset?{permissionPreset:preset}:{})})
+   if(preset){
+    const permissions=created.permissions??await rpc('permissions',{sessionId})
+    if(permissions.preset!==preset)throw Error('权限校验失败，未发送 prompt')
+   }
    await rpc('selectModel',{sessionId,provider,model:'deepseek-flash'})
    const registered=await rpc('register',{taskId,sessionId,target:{kind:'codex-thread',threadId:thread},acceptance:args.acceptance??'读取结果并独立检查产物'},150000,'taskFeedback')
    if(registered.task?.taskId!==taskId)throw new Error('任务反馈登记未确认，未发送提示词')

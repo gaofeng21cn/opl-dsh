@@ -54,6 +54,37 @@ if (process.argv.includes('--readback-selections')) {
 const project = join(root, 'test-project')
 await mkdir(project, { recursive: true })
 import assert from 'node:assert/strict'
+// Exercise the OPL control adapter against the official permission and Workspace owners.
+const permissionSession = await rpc('session', 'create', {
+  request: { cwd: project, permissionPreset: 'danger-full-access' },
+})
+assert.equal(permissionSession.permissions.preset, 'danger-full-access')
+assert.equal(permissionSession.permissions.sandbox, 'danger-full-access')
+assert.equal(permissionSession.permissions.approval, 'never')
+const permissionRead = await rpc('session', 'permissions', {
+  request: { sessionId: permissionSession.sessionId },
+})
+assert.equal(permissionRead.preset, 'danger-full-access')
+assert.equal(permissionRead.running, false)
+const placement = await rpc('workspace', 'follow')
+assert(
+  placement.value.items.some(
+    (item) => item.path === project && item.sessionIds.includes(permissionSession.sessionId),
+  ),
+  'control-created Session is missing from its exact Workspace',
+)
+const switched = await rpc('session', 'selectPermissions', {
+  request: { sessionId: permissionSession.sessionId, preset: 'read-only' },
+})
+assert.equal(switched.permissions.sandbox, 'read-only')
+assert.equal(
+  (
+    await rpc('session', 'permissions', {
+      request: { sessionId: permissionSession.sessionId },
+    })
+  ).preset,
+  'read-only',
+)
 const requests = []
 const server = createServer(async (req, res) => {
   try {
@@ -257,6 +288,8 @@ try {
     JSON.stringify(
       {
         nativeSettingsReadback: true,
+        controlPermissions: true,
+        controlProjectAttribution: true,
         groupedModels: models.map((m) => m.id),
         officialTools: true,
         requests: requests.map(({ key, ...rest }) => rest),

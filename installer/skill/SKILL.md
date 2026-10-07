@@ -65,3 +65,25 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' del
 ```
 
 要求修改时使用 `changes_requested`，随后以原 session、原 task、新 operation 继续 `delegate`。失败、中断或不确定结果先查询，不自动重派。内部交付会在发起对话空闲时回传；外部 Codex Skill 使用等待与读取，不承诺主动唤醒 Codex 桌面。原 `dispatch` 和旧反馈记录继续兼容。关闭外部 Codex 接入不会关闭内部 Codex CLI 协作。
+
+## Windows 本地验证补丁
+
+原生 `dispatch` 支持显式 `--preset danger-full-access`；只有用户已授权该权限时才能使用。创建响应须包含有效权限，helper 在登记反馈和发送 prompt 前核对。官方 rc.2 的权限读写由 OPL 控制桥调用官方 `permissionPresets` 服务，运行中的 Session 拒绝切换。`--cwd` 先在官方 Workspace registry 中创建或复用项目，再用 Workspace id 创建 Session；不要在创建后调用 `workspace.moveSession`，官方 Desktop 没有这个 Remote 方法。需要把独立 worktree 归入另一个项目时，当前官方 API 无法表达该关系，应停止派发并改用同一工作目录或显式项目外模式。旧 helper 的 `session/permissions` 和 `session.create.permissionPreset` 也经过同一适配。
+
+Windows 增强包将 `ctx.shell` 切换到 Git for Windows 的 `bash.exe`，并保留官方 sandbox 与 subprocess 生命周期；Git Bash 不存在时启动失败并给出安装或 `OPL_GIT_BASH_PATH` 指引。工作目录使用 `workspace-write` 前，如果官方 Windows ACL 后端报告 Win32 5，可在管理员 PowerShell 中显式运行：
+
+```sh
+ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' repair-acl --cwd 'C:/absolute/project' --confirm yes
+```
+
+该命令只修复指定目录，并设置对子项的继承权限，授予当前 Windows 身份 Full Control；必须由用户明确执行，不能由 dispatch 自动调用。修复后重启新的 DSH Session，再用 `--preset workspace-write` 验证。官方 rc.2 的 Windows ACL 后端还会把受限子进程降到 Low integrity；MSYS2/Git Bash 的外部程序需要在 `\\BaseNamedObjects` 创建共享目录，因此在 `workspace-write` 下仍可能报告 `NtCreateDirectoryObject ... 0xC0000022`。这是官方后端的完整性级别限制，ACL 修复命令不能消除；需要 Git Bash 外部程序时使用用户已授权的 `--preset danger-full-access`，或等待官方 Windows ACL 后端提供可配置的 integrity level。401 `INVALID_API_KEY` 属于渠道凭据失败；先检查 Gateway 刷新结果，遇到手动凭据冲突须保留备份并由用户授权修复，不能自动换渠道或放宽权限。`accepted=true` 仅说明 prompt 已接收，必须核对实际工具结果、终态和反馈目标后才能宣称可用。
+
+## 当前会话、续作与验收
+
+派发前确认 `CODEX_THREAD_ID` 是当前主审会话；未取得真实会话 id 时停止原生派发，不使用 `manual` 作为反馈目标。配置的 home 必须属于运行中的官方 Desktop，不能用旧 fork 的 Session id 或 ledger 映射新状态。`dispatch` 的 Session 身份包含当前会话、task 和 cwd：同一任务的新指令保留三者，换新的 operation；重试原指令保留原 operation。原生 dispatch 不使用旧 workflow helper 的 `--continues` 参数。
+
+保存返回的 taskId、Session id、operation、cwd、反馈目标和稳定 consumerId。通知到达时先 `receive --request-file`，JSON 为 `{"taskId":"返回的 taskId","deliveryId":"通知的 deliveryId","consumerId":"当前主审的稳定 id"}`。`review`/`resume` 才开始或继续审查；`busy` 不接管；`skip` 不重复审查。独立检查 Session 的工具输出、产物与必要测试，接受后再 `consume --request-file`，传相同 taskId、deliveryId、consumerId 和领取返回的 claimEpoch。失败或等待授权不等于完成；不得替用户批准操作。
+
+用户要求并行时，按不相交的源码与测试文件派发；共享构建、安装及生成物串行。不得更新正在托管任务的 Desktop。失败后先读原 Session，一次有界续作仍失败就记录阻塞，不能循环重派。
+
+用户配置周期审计时，每轮只核对一次本会话 ledger、tasks、outbox/receipts、未验收结果及人工等待；无变化保持安静，不用快速轮询替代通知。空闲但有已授权且可行动的后续工作时补派；所有 DSH 任务验收完毕，或仅剩无可行动步骤的人工/外部依赖时暂停审计，记录恢复条件。Skill 本身不创建 heartbeat；只有自动化工具确认配置成功才报告已启用。

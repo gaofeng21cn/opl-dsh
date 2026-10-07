@@ -53,7 +53,7 @@ export function installSkill({
     { mode: 0o600 },
   )
   const files = Object.fromEntries(
-    ['SKILL.md', 'control.mjs', 'harness-mcp.mjs', 'config.json'].map((file) => [
+    ['SKILL.md', 'control.mjs', 'harness-mcp.mjs', 'windows-acl.mjs', 'config.json'].map((file) => [
       file,
       digest(readFileSync(join(skillStage, file))),
     ]),
@@ -71,7 +71,12 @@ export function installSkill({
   ) {
     rmSync(skillStage, { recursive: true })
   } else {
-    if (existsSync(skillDir)) renameSync(skillDir, skillDir + '.backup-' + Date.now())
+    if (existsSync(skillDir)) {
+      // Backups outside skills must not be discovered as additional active Skills.
+      const backups = join(codexHome, 'skill-backups')
+      mkdirSync(backups, { recursive: true, mode: 0o700 })
+      renameSync(skillDir, join(backups, 'opl-dsh-official-' + Date.now() + '-' + process.pid))
+    }
     renameSync(skillStage, skillDir)
   }
   return skillDir
