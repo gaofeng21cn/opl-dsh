@@ -6,6 +6,18 @@
 
 ## 1. 完成标准
 
+### GitHub Actions 发布环境
+
+`.github/workflows/stable-release.yml` 为稳定发布提供临时 macOS arm64 打包环境（Node 24、Python、Apple 工具及 NSIS）、临时 Windows 桌面验收环境和 Ubuntu 公开发布环境。发布 job 使用 GitHub 为本仓库签发的临时 `GITHUB_TOKEN`，仅该 job 具有 `contents: write`；不需要把个人访问令牌写入仓库或云环境。
+
+先在 `main` 完成源码、版本与 `docs/release-notes-<版本>.md`，再推送 canonical tag 即可启动流程。Release Note 中的 `{{VERSION}}`、`{{OFFICIAL_VERSION}}`、`{{SOURCE_COMMIT}}` 由已核验清单替换。手动重试必须选择同一个 canonical tag，不能选择 `main`。
+
+打包 job 执行源码门禁，生成 macOS DMG、Windows EXE、增强 ZIP 和联合清单；两个验收 job 解压同一 ZIP，用其实际 payload 验收官方桌面，不用各自重建的字节代替。发布 job 检查清洁源码、清单与两平台证据的源提交、套件摘要和官方版本，重新读取官方 feed，然后生成联合资格 JSON 和 `SHA256SUMS`。只有全部通过才创建并公开稳定 Release。
+
+公开后逐一下载核验资产、确认 Latest，再更新 Homebrew Cask。主线若已移动，Cask 跟随停止并报告，不覆盖新提交；已经公开的 Release 保留。旧稳定 Release/tag 只在公开回读和 Cask 跟随通过后清理，旧元数据及操作记录保存为 `release-audit` 工作流 artifact。失败后先读取对应 job、证据和 audit，再按本文恢复；已公开版本的资产不被重建字节覆盖。
+
+以下步骤同时是手动发布和故障恢复的事实检查合同。
+
 一次发布只有在以下事实都成立时才算完成：
 
 1. 主线候选已冻结，工作区和源提交可追溯。

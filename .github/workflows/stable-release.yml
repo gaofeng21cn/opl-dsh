@@ -1,0 +1,138 @@
+name: Stable release
+
+on:
+  push:
+    tags: ['opl-dsh-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opl-dsh-stable-release
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Require a frozen canonical tag and native arm64 packaging
+        run: |
+          node --input-type=module - <<'NODE'
+          import { readFileSync } from 'node:fs'
+          import { execFileSync } from 'node:child_process'
+          const { version } = JSON.parse(readFileSync('package.json'))
+          if (process.arch !== 'arm64') throw Error('Official macOS packaging requires arm64')
+          if (process.env.GITHUB_REF !== `refs/tags/opl-dsh-v${version}`) throw Error('Select the canonical release tag when rerunning this workflow')
+          if (execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim()) throw Error('Dirty source candidate')
+          NODE
+      - name: Install Windows installer compiler
+        run: brew install nsis
+      - run: npm ci --ignore-scripts
+      - run: npm run generate:rpc
+      - run: git diff --exit-code
+      - run: npm run check:rpc
+      - run: npm run typecheck
+      - run: npm run check:boundaries
+      - run: npm run format:check
+      - run: npm run package
+      - run: npm test
+      - name: Pair both live official feeds with the built candidate
+        run: npm run release:manifest
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate
+          path: |
+            dist/OPL-DSH-Enhancements.zip
+            dist/OPL-DSH-Installer-mac-arm64.dmg
+            dist/OPL-DSH-Installer-windows-x64.exe
+            dist/release-manifest.json
+          if-no-files-found: error
+
+  qualify:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Verify Windows launcher and ACL regressions
+        if: runner.os == 'Windows'
+        run: |
+          npm run build
+          node node_modules/vitest/vitest.mjs run tests/execution/harness-registry.spec.ts -t "probes a cmd shim"
+          node --test tests/native-bridge.test.mjs tests/windows-acl.test.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+          path: dist
+      - name: Extract the exact shipped payload on macOS
+        if: runner.os == 'macOS'
+        run: unzip -q dist/OPL-DSH-Enhancements.zip -d 'dist/OPL DSH 一键安装'
+      - name: Extract the exact shipped payload on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Remove-Item -LiteralPath 'dist/OPL DSH 一键安装' -Recurse -Force
+          Expand-Archive -LiteralPath 'dist/OPL-DSH-Enhancements.zip' -DestinationPath 'dist/OPL DSH 一键安装'
+      - name: Qualify unmodified official Desktop against the shipped bytes
+        run: node scripts/qualify-official-runtime.mjs --download --evidence dist/official-qualification.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-qualification-${{ matrix.os }}
+          path: |
+            dist/official-qualification.json
+            dist/official-qualification-client-*.png
+          if-no-files-found: error
+
+  publish:
+    needs: [package, qualify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-qualification-macos-15
+          path: dist/evidence/macos-15
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-qualification-windows-latest
+          path: dist/evidence/windows-latest
+      - name: Verify provenance, publish, and read back all public assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/publish-stable-release.mjs
+      - name: Retain publication and previous-release audit records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-audit
+          path: dist/release-audit/
+          if-no-files-found: warn
