@@ -1,5 +1,3 @@
-## OPL DSH v{{VERSION}}
-
 官方 DeepSeek Harness：`{{OFFICIAL_VERSION}}`  ·  OPL 增强：`{{VERSION}}`
 
 本版将官方 DSH 与 OPL 增强作为一套联合稳定版本发布。`release-manifest.json` 是版本配对清单；tag、官方两个平台 feed、增强包摘要和构建产物必须一致。

@@ -14,7 +14,7 @@
 
 打包 job 执行源码门禁，生成 macOS DMG、Windows EXE、增强 ZIP 和联合清单；两个验收 job 解压同一 ZIP，用其实际 payload 验收官方桌面，不用各自重建的字节代替。发布 job 检查清洁源码、清单与两平台证据的源提交、套件摘要和官方版本，重新读取官方 feed，然后生成联合资格 JSON 和 `SHA256SUMS`。只有全部通过才创建并公开稳定 Release。
 
-公开后逐一下载核验资产、确认 Latest，再更新 Homebrew Cask。主线若已移动，Cask 跟随停止并报告，不覆盖新提交；已经公开的 Release 保留。旧稳定 Release/tag 只在公开回读和 Cask 跟随通过后清理，旧元数据及操作记录保存为 `release-audit` 工作流 artifact。失败后先读取对应 job、证据和 audit，再按本文恢复；已公开版本的资产不被重建字节覆盖。
+公开后逐一下载核验资产、确认 Latest，再更新 Homebrew Cask。主线若已移动，Cask 跟随停止并报告，不覆盖新提交；已经公开的 Release 保留。历史 Release/tag 默认保留，发布流程不自动删除；元数据及操作记录保存为 `release-audit` 工作流 artifact。失败后先读取对应 job、证据和 audit，再按本文恢复；已公开版本的资产不被重建字节覆盖。
 
 以下步骤同时是手动发布和故障恢复的事实检查合同。
 
@@ -27,7 +27,7 @@
 5. GitHub Release、tag、五类交付资产、SHA-256 清单和验收记录已公开，且公开下载摘要与本地摘要一致。
 6. `releases/latest` 指向本次 Release；安装器和更新器能从该 Release 读取稳定清单。
 7. Homebrew Cask（如果本次维护）已指向公开增强包摘要并完成回读。
-8. 旧稳定 Release 和旧稳定 tag 已按策略清理；已安装 profile 的本地不可变 release 目录仍保留。
+8. 历史 Release/tag 默认保留；若另行执行用户要求的清理，已记录范围与结果。已安装 profile 的本地不可变 release 目录仍保留。
 
 构建成功、测试通过、tag 已推送、Release 已创建或资产已上传，都只证明对应的一层，不单独构成发布完成。
 
@@ -212,7 +212,9 @@ git tag -a "$TAG" -m "OPL DSH v$VERSION"
 git push origin main "$TAG"
 ```
 
-发布正文写入临时文件后回读，确认官方版本、OPL 版本、验证结果和限制没有套用上一版。不要使用自动生成的 GitHub Release Notes 代替联合说明。
+发布正文写入临时文件后回读，确认官方版本、OPL 版本、验证结果和限制没有套用上一版。GitHub 页面已展示 Release 名称，正文从联合版本说明开始，不重复 Release 标题。不要使用自动生成的 GitHub Release Notes 代替联合说明。
+
+已发布正文的重复标题可用 `Normalize release notes` 工作流修正。它只删除 Latest 正文开头与 Release 名称相同的标题，保存修改前后的审计记录，并回读确认 tag、Latest 和资产标识及摘要未改变；不会重新打包或发布新版本。
 
 ### 6.2 创建稳定 Release
 
@@ -279,16 +281,16 @@ Cask 失败不回滚已经公开的 Release；修复 Cask 后重新回读即可�
 
 直接打开官方 DeepSeek Harness 不会加载外部 OPL 更新器。官方桌面继续由 DeepSeek feed、SHA-512、签名和版本检查负责升级；这两个更新责任必须在 Release Note 和用户文档中分开说明。
 
-## 8. 清理历史版本
+## 8. 可选的历史版本清理
 
-新 Release 完成公开回读后，先列出当前公开版本：
+历史 Release 与 tag 默认保留，本节不是发布门禁。仅在用户明确要求清理并指定范围时，先确认新 Release 已完成公开回读，再列出当前公开版本：
 
 ```sh
 gh release list --limit 20
 git ls-remote --tags origin
 ```
 
-确认新 Release 是唯一稳定版本后，再删除旧稳定 Release 和关联 tag：
+确认 Latest 指向新 Release 且待删版本属于用户指定的范围后，再删除对应旧 Release 和关联 tag：
 
 ```sh
 gh release delete opl-dsh-v<OLD_VERSION> --cleanup-tag --yes
@@ -319,7 +321,7 @@ gh release delete opl-dsh-v<OLD_VERSION> --cleanup-tag --yes
 - Release URL、Latest 回读结果、资产摘要校验结果；
 - macOS/Windows 各自的验收状态和明确缺口；
 - Homebrew 状态；
-- 旧版本清理结果；
+- 历史版本保留状态；如用户另行要求清理，记录范围与结果；
 - 未完成项、解除条件和是否需要下一次发布恢复。
 
 不要用“已构建”“CI 通过”“已上传”“已排队”代替公开可用；也不要把本机模拟模型、单个平台通过或 GitHub 页面可见误写成全平台稳定验收。
@@ -342,5 +344,5 @@ gh release delete opl-dsh-v<OLD_VERSION> --cleanup-tag --yes
 - [ ] 公开下载资产逐一通过 `SHA256SUMS`。
 - [ ] 安装器和已安装更新路径的校验边界保持不变。
 - [ ] Homebrew Cask 已跟随公开摘要，或明确记录未完成。
-- [ ] 旧稳定 Release/tag 已清理，必要元数据已临时保存。
+- [ ] 历史 Release/tag 已保留；如另行执行用户要求的清理，范围与审计记录齐全。
 - [ ] 最终记录包含各平台证据、限制和真实缺口。

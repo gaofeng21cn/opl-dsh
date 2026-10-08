@@ -1,5 +1,3 @@
-## OPL DSH vX.Y.Z
-
 发布前按[稳定发布 SOP](release-sop.md)完成联合清单、官方桌面隔离验收和公开资产回读；正文只写已经验证的事实。
 
 官方 DeepSeek Harness：`A.B.C` · OPL 增强：`X.Y.Z`

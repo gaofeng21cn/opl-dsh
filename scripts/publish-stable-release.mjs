@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validateReleaseManifest } from '../installer/release-manifest.mjs'
 import { verifyPayload } from './qualification-support.mjs'
+import { renderReleaseNotes } from './release-notes.mjs'
 
 const repository = 'gaofeng21cn/opl-dsh'
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex')
@@ -143,15 +144,10 @@ export async function publishStableRelease(root) {
   files.push('SHA256SUMS')
   sums.SHA256SUMS = hash(await readFile(join(dist, 'SHA256SUMS')))
   const notesFile = join(dist, 'release-notes.md')
-  let notes = await readFile(join(root, 'docs', `release-notes-${version}.md`), 'utf8')
-  for (const [key, value] of Object.entries({
-    VERSION: version,
-    OFFICIAL_VERSION: manifest.official.version,
-    SOURCE_COMMIT: sourceCommit,
-  }))
-    notes = notes.replaceAll(`{{${key}}}`, value)
-  if (notes.includes('{{') || !notes.startsWith(`## OPL DSH v${version}\n`))
-    throw Error('Release notes contain unresolved fields or a noncanonical heading')
+  const notes = renderReleaseNotes(
+    await readFile(join(root, 'docs', `release-notes-${version}.md`), 'utf8'),
+    { version, officialVersion: manifest.official.version, sourceCommit },
+  )
   await writeFile(notesFile, notes)
   const previous = JSON.parse(
     command('gh', ['api', '--paginate', '--slurp', `repos/${repository}/releases?per_page=100`]),
@@ -270,30 +266,7 @@ export async function publishStableRelease(root) {
     throw Error('Public Cask metadata differs from the release ZIP checksum')
   result.homebrew = 'passed'
   await save()
-  result.deletedPreviousTags = []
-  const currentVersion = version.split('.').map(Number)
-  for (const old of previous) {
-    const match = /^opl-dsh-v(\d+)\.(\d+)\.(\d+)$/.exec(old.tag_name)
-    if (old.draft || old.prerelease || !match || old.tag_name === tag) continue
-    const oldVersion = match.slice(1).map(Number)
-    const difference = oldVersion
-      .map((number, index) => number - currentVersion[index])
-      .find((number) => number !== 0)
-    if (!(difference < 0)) throw Error('Refusing to delete a newer or reused stable version')
-    if (api(`repos/${repository}/releases/latest`).tag_name !== tag)
-      throw Error('Latest changed before history cleanup')
-    command('gh', [
-      'release',
-      'delete',
-      old.tag_name,
-      '--repo',
-      repository,
-      '--cleanup-tag',
-      '--yes',
-    ])
-    result.deletedPreviousTags.push(old.tag_name)
-    await save()
-  }
+  result.historyRetention = 'preserved'
   result.status = 'complete'
   await save()
   console.log(JSON.stringify(result, null, 2))
