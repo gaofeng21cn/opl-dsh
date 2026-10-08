@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import { build } from 'esbuild'
 import { execFileSync } from 'node:child_process'
 import { generateRpc } from './scripts/generate-rpc.mjs'
+import { buildNativeBridge } from './scripts/build-native-bridge.mjs'
 const root = import.meta.dirname
 const output = join(root, 'dist')
 const project = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
@@ -24,17 +25,7 @@ const hostBuild = await build({
   tsconfig: join(root, 'tsconfig.host.json'),
   outfile: join(output, 'package/lib/index.js'),
 })
-await build({
-  entryPoints: [join(root, 'src/execution/host/adapters/native-harness-bridge.ts')],
-  bundle: true,
-  platform: 'node',
-  format: 'esm',
-  target: 'node24',
-  outfile: join(output, 'package/lib/native-harness-bridge.mjs'),
-  banner: {
-    js: "import { createRequire as oplCreateRequire } from 'node:module'; const require = oplCreateRequire(import.meta.url);",
-  },
-})
+await buildNativeBridge(root)
 const clientBuild = await build({
   metafile: true,
   entryPoints: [join(root, 'src/suite/client.tsx')],

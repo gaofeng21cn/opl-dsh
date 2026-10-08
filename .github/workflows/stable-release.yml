@@ -73,7 +73,7 @@ jobs:
       - name: Verify Windows launcher and ACL regressions
         if: runner.os == 'Windows'
         run: |
-          npm run build
+          npm run build:bridge
           node node_modules/vitest/vitest.mjs run tests/execution/harness-registry.spec.ts -t "probes a cmd shim"
           node --test tests/native-bridge.test.mjs tests/windows-acl.test.mjs
       - uses: actions/download-artifact@v4
@@ -87,8 +87,19 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Remove-Item -LiteralPath 'dist/OPL DSH 一键安装' -Recurse -Force
+          if (Test-Path -LiteralPath 'dist/OPL DSH 一键安装') {
+            Remove-Item -LiteralPath 'dist/OPL DSH 一键安装' -Recurse -Force
+          }
           Expand-Archive -LiteralPath 'dist/OPL-DSH-Enhancements.zip' -DestinationPath 'dist/OPL DSH 一键安装'
+      - name: Require clean qualification source
+        shell: bash
+        run: |
+          git diff --exit-code
+          node --input-type=module - <<'NODE'
+          import { execFileSync } from 'node:child_process'
+          const status = execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim()
+          if (status) throw Error('Qualification source is dirty: ' + status)
+          NODE
       - name: Qualify unmodified official Desktop against the shipped bytes
         run: node scripts/qualify-official-runtime.mjs --download --evidence dist/official-qualification.json
       - uses: actions/upload-artifact@v4
