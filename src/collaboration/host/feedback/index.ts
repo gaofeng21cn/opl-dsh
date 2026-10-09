@@ -44,7 +44,7 @@
 
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { Session, SessionEvent, TurnEndReason } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionId, TurnEndReason } from '@deepseek-ai/dsh-session'
 import type { DomainGlobal, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only bindings: each of these modules publishes the session-event or
@@ -85,11 +85,19 @@ import {
   decideTransition,
   deliveryIdOf,
   projectReceipt,
+  harnessTaskIdOf,
+  harnessTaskStateOf,
+  sameHarnessExecution,
   type TurnSettlement,
 } from './state.ts'
 import type {
   DeliveryRecord,
   DeliveryStage,
+  HarnessExecution,
+  HarnessPauseReport,
+  HarnessStateReport,
+  HarnessStateReportValue,
+  HarnessTaskRegistration,
   TaskAckRequest,
   TaskAckValue,
   TaskConsumeRequest,
@@ -110,6 +118,7 @@ import type {
   WakeAdapter,
   WakeStatus,
 } from './types.ts'
+import { NO_SESSION_TARGET_THREAD_ID } from './types.ts'
 const sessionRequestId = <T extends string>(value: string) => value as T
 const STAGE_ORDER: readonly DeliveryStage[] = [
   'enqueued',
@@ -461,6 +470,7 @@ export default class TaskFeedbackService extends TypertRemoteService {
     const record: TaskRecordState = {
       taskId: request.taskId,
       sessionId: request.sessionId,
+      execution: { kind: 'dsh-session' },
       turn,
       target: request.target,
       acceptance: request.acceptance,
@@ -501,6 +511,214 @@ export default class TaskFeedbackService extends TypertRemoteService {
     await this.requireTasks().put(record.taskId, record)
     this.live.set(record.taskId, record)
     return { task: this.project(record) }
+  }
+
+  /**
+   * Register one combination operation before its prompt is sent.
+   *
+   * This is the external-Harness entry point, and it is deliberately in-process
+   * rather than a Remote: the execution service that owns the ACP child calls it
+   * directly, and it must read back whether the registration landed before it
+   * sends the prompt. The task's identity is derived from the execution
+   * reference, so a retry of one operation is idempotent while a new instruction
+   * registers a new task and its own deliveries. Nothing here fabricates a DSH
+   * Session: a combination record stores `sessionId: null` and names the
+   * combination session, its combination, task, and operation instead.
+   * @param request - the combination execution, the reviewer to wake, and the acceptance bar.
+   * @returns the stored task and its derived identity.
+   * @throws RemoteError when the request cannot describe a watchable combination task.
+   */
+  async registerHarnessOperation(request: HarnessTaskRegistration): Promise<TaskRegistrationValue> {
+    const execution = this.requireHarnessRegistration(request)
+    const taskId = harnessTaskIdOf(execution)
+    const existing = this.requireTasks().get(taskId)
+    if (existing !== undefined) {
+      if (
+        !sameHarnessExecution(existing.execution, execution) ||
+        existing.target.threadId !== request.target.threadId
+      ) {
+        throw new RemoteError(
+          'gateway/bad-request',
+          `task-feedback: task ${JSON.stringify(taskId)} already names another execution or reviewer`,
+          {},
+        )
+      }
+      return { task: this.project(existing) }
+    }
+    const timestamp = this.now()
+    const record: TaskRecordState = {
+      taskId,
+      sessionId: null,
+      execution,
+      turn: null,
+      target: request.target,
+      acceptance: request.acceptance,
+      fromSeq: 0,
+      state: 'accepted',
+      summary: 'registered; waiting for the combination turn to start',
+      evidence: { sessionId: null, turn: null, seq: null, eventSeqs: [] },
+      waitKey: null,
+      needsInput: null,
+      lastEndTurnAtRegistration: null,
+      parentTaskId: null,
+      rootTaskId: taskId,
+      attempt: 1,
+      // A combination execution has no DSH Session to submit an automatic resume
+      // into, so its budget is zero by construction and `resumeFailed` refuses it.
+      autoResumeCount: 0,
+      autoResumeLimit: 0,
+      resumeEligible: false,
+      leakedToolSyntax: null,
+      resumeRequestId: null,
+      resumeInstructionSeq: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+    await this.requireTasks().put(record.taskId, record)
+    this.live.set(record.taskId, record)
+    return { task: this.project(record) }
+  }
+
+  /**
+   * Fold one observed combination state into its registered task.
+   *
+   * The execution service calls this at the moment it observes the state — a
+   * turn end, a paused approval, a question — so the notification is enqueued
+   * from the observation itself and never from a poll. A terminal state is
+   * written once, a waiting state keeps its own pause identity, and a replay of
+   * the same observation changes nothing, so a duplicate report cannot produce a
+   * second delivery for one outcome.
+   * @param request - task identity, the observed state, its one-line summary, and any pause.
+   * @returns the task and the delivery this state owes, when the state notifies.
+   * @throws RemoteError when the task is unknown, is not a combination task, or a waiting state carries no pause identity.
+   */
+  async reportHarnessState(request: HarnessStateReport): Promise<HarnessStateReportValue> {
+    const record = this.requireTask(request.taskId)
+    if (record.execution.kind !== 'harness-session') {
+      throw new RemoteError(
+        'gateway/bad-request',
+        `task-feedback: task ${JSON.stringify(request.taskId)} is not a combination execution`,
+        {},
+      )
+    }
+    const summary = boundedLine(request.summary, this.config.summaryMaxChars)
+    const next = this.harnessTransition(record, request, summary)
+    if (next !== undefined) {
+      // The live view moves first, so two reports of one tick cannot both read
+      // the state before the previous write landed.
+      this.live.set(next.taskId, next)
+      await this.commit(async () => {
+        await this.requireTasks().put(next.taskId, next)
+        await this.enqueue(next)
+      })
+    }
+    const latest = this.live.get(record.taskId) ?? record
+    return { task: this.project(latest), delivery: this.deliveryOf(latest) }
+  }
+
+  /**
+   * The record one combination report decides, or undefined when it changes nothing.
+   *
+   * A waiting state must carry the pause identity the execution side observed:
+   * without it there is no stable delivery id, and two distinct pauses would
+   * collapse into one notification.
+   * @param record - the stored combination task.
+   * @param request - the report as the execution service sent it.
+   * @param summary - the already bounded one-line summary.
+   * @returns the record to publish, or undefined when the observation changes nothing.
+   */
+  private harnessTransition(
+    record: TaskRecordState,
+    request: HarnessStateReport,
+    summary: string,
+  ): TaskRecordState | undefined {
+    const waiting = request.state === 'waiting_approval' || request.state === 'waiting_input'
+    if (!waiting) {
+      return decideTransition(record, this.now(), request.state, summary, undefined)
+    }
+    const pause = request.pause
+    if (pause === undefined || pause.pauseId.trim() === '') {
+      throw new RemoteError(
+        'gateway/bad-request',
+        `task-feedback: the ${request.state} report for ${JSON.stringify(record.taskId)} carries no pause identity`,
+        {},
+      )
+    }
+    const notice = this.harnessNotice(pause)
+    // A pause's notice belongs to that pause alone, so it is written with the
+    // waiting state and dropped by the transition that leaves it.
+    return decideTransition(
+      { ...record, needsInput: notice },
+      this.now(),
+      request.state,
+      summary,
+      undefined,
+      notice.pauseId,
+    )
+  }
+
+  /** The bounded pause notice of one combination pause, with no borrowed DSH Session. */
+  private harnessNotice(pause: HarnessPauseReport): NeedsInputNoticeState {
+    return {
+      kind: pause.kind,
+      sessionId: null,
+      turn: null,
+      seq: null,
+      pauseId: pause.pauseId,
+      questions: boundedQuestions(
+        pause.kind === 'question' ? (pause.questions ?? []) : [],
+        this.config.needsInputMaxQuestions,
+        this.config.needsInputMaxOptions,
+        this.config.needsInputMaxChars,
+      ),
+      approval:
+        pause.kind === 'approval' && pause.approval
+          ? {
+              approvalId: pause.approval.approvalId,
+              toolName: boundedLine(pause.approval.toolName, this.config.needsInputMaxChars),
+            }
+          : null,
+    }
+  }
+
+  /** The delivery one stored task's current state owes, or null when it owes none. */
+  private deliveryOf(record: TaskRecordState): DeliveryRecord | null {
+    return this.requireOutbox().get(deliveryIdOf(record)) ?? null
+  }
+
+  /** Validate one combination registration before anything durable is written. */
+  private requireHarnessRegistration(request: HarnessTaskRegistration): HarnessExecution {
+    const bad = (message: string): never => {
+      throw new RemoteError('gateway/bad-request', message, {})
+    }
+    const execution = request.execution
+    if (execution?.kind !== 'harness-session')
+      bad('task-feedback: a combination registration must name a harness execution')
+    for (const [label, value] of [
+      ['harnessSessionId', execution.harnessSessionId],
+      ['harnessRef', execution.harnessRef],
+      ['combination', execution.combination],
+      ['taskId', execution.taskId],
+      ['operationId', execution.operationId],
+    ] as const) {
+      if (typeof value !== 'string' || value.trim() === '' || value.length > 4096)
+        bad(`task-feedback: execution.${label} must be a non-empty bounded string`)
+    }
+    if (request.target?.kind !== 'codex-thread')
+      bad('task-feedback: only a Codex thread is addressable as a notification target')
+    const threadId = request.target.threadId.trim()
+    if (threadId === '')
+      bad(
+        'task-feedback: the target thread id must be supplied by the caller, never inferred from recent sessions',
+      )
+    if (threadId === NO_SESSION_TARGET_THREAD_ID)
+      bad(
+        `task-feedback: ${JSON.stringify(NO_SESSION_TARGET_THREAD_ID)} is not a Codex Session id; ` +
+          'register the combination task from the Session that dispatched it',
+      )
+    if (request.acceptance.trim() === '')
+      bad('task-feedback: acceptance criteria are required so the review has a stated bar')
+    return execution
   }
 
   /**
@@ -842,7 +1060,7 @@ export default class TaskFeedbackService extends TypertRemoteService {
     // The observation point is captured before the instruction is submitted and
     // persisted with the admission, so a delayed registration observes the
     // resumed turn from here instead of from whatever cursor recovery runs at.
-    const session = this.ctx.sessions.get(task.sessionId)
+    const session = this.boundSession(task)
     const admittedReceipt: ReceiptRecordState = {
       ...receipt,
       resumeAttempt: resumeIndex,
@@ -921,10 +1139,26 @@ export default class TaskFeedbackService extends TypertRemoteService {
     )
   }
 
+  /**
+   * The DSH Session one native task is bound to, when this Host has it attached.
+   *
+   * A combination task has no DSH Session at all, so this answers undefined for
+   * it instead of looking up an id it never had. Every caller that follows a
+   * Session log goes through here, which is what keeps the two execution kinds
+   * from being conflated at the one place it would matter.
+   * @param record - the stored task.
+   * @returns the attached Session, or undefined for a combination task or an unattached Session.
+   */
+  private boundSession(record: TaskRecordState): Session | undefined {
+    return record.execution.kind === 'dsh-session' && record.sessionId !== null
+      ? this.ctx.sessions.get(record.sessionId)
+      : undefined
+  }
+
   /** The Session one admitted receipt's instruction targets, when it is attached. */
   private resumeSession(receipt: ReceiptRecordState): Session | undefined {
     const task = this.requireTasks().get(receipt.taskId)
-    return task === undefined ? undefined : this.ctx.sessions.get(task.sessionId)
+    return task === undefined ? undefined : this.boundSession(task)
   }
 
   /** Whether one submitted instruction is still queued in the Session's live Inbox. */
@@ -1015,7 +1249,7 @@ export default class TaskFeedbackService extends TypertRemoteService {
     receipt: ReceiptRecordState,
   ): Promise<TaskResumeAttempt> {
     const attempt = this.attemptOf(receipt)
-    const session = this.ctx.sessions.get(source.sessionId)
+    const session = this.boundSession(source)
     const observation = {
       fromSeq: receipt.resumeFromSeq ?? (session === undefined ? 0 : Number(session.seq)),
       lastEndTurnAtRegistration:
@@ -1031,7 +1265,10 @@ export default class TaskFeedbackService extends TypertRemoteService {
           { taskId: source.taskId },
         )
       }
-      if (session === undefined) {
+      // A combination task never reaches this point: `refuseResume` answers
+      // `not-applicable` for it, because an automatic resume submits a real user
+      // instruction into a DSH Session and a combination execution has none.
+      if (session === undefined || source.sessionId === null) {
         throw new RemoteError(
           'task-feedback/resume-unavailable',
           `the bound Session ${JSON.stringify(source.sessionId)} is not attached to this Host`,
@@ -1094,7 +1331,7 @@ export default class TaskFeedbackService extends TypertRemoteService {
   ): Promise<void> {
     // oxlint-disable-next-line typescript/no-non-null-assertion -- called only for a receipt admission already wrote.
     const attemptTaskId = receipt.resumeTaskId!
-    const session = this.ctx.sessions.get(source.sessionId)
+    const session = this.boundSession(source)
     const existing = this.requireTasks().get(attemptTaskId)
     if (existing !== undefined) {
       // The task was registered without its turn binding, then the instruction
@@ -1112,6 +1349,7 @@ export default class TaskFeedbackService extends TypertRemoteService {
     const accepted: TaskRecordState = {
       taskId: attemptTaskId,
       sessionId: source.sessionId,
+      execution: { kind: 'dsh-session' },
       turn: null,
       target: source.target,
       acceptance: source.acceptance,
@@ -1240,6 +1478,16 @@ export default class TaskFeedbackService extends TypertRemoteService {
     task: TaskRecordState,
     delivery: DeliveryRecordState,
   ): { decision: TaskResumeDecision; reason: string } | null {
+    if (task.execution.kind === 'harness-session') {
+      // The bounded automatic resume submits one persisted user instruction into
+      // a DSH Session. A combination execution has none, and its own CLI owns
+      // whether a failure may be retried, so this is not-applicable rather than
+      // an attempt to drive another agent loop from here.
+      return {
+        decision: 'not-applicable',
+        reason: 'a combination execution has no DSH Session to resume automatically',
+      }
+    }
     if (delivery.payload.state !== 'failed' || task.state !== 'failed') {
       return { decision: 'not-applicable', reason: 'the delivery is not a recorded task failure' }
     }
@@ -1255,14 +1503,14 @@ export default class TaskFeedbackService extends TypertRemoteService {
         reason: 'the notification target no longer matches the task target',
       }
     }
-    const session = this.ctx.sessions.get(task.sessionId)
+    const session = this.boundSession(task)
     if (session === undefined) {
       return { decision: 'superseded', reason: 'the bound Session is not attached to this Host' }
     }
     if (this.openTurnOf(session) !== null) {
       return { decision: 'running', reason: 'the Session already has an open turn' }
     }
-    if (this.hasPendingInput(task.sessionId)) {
+    if (this.hasPendingInput(session.id)) {
       return {
         decision: 'superseded',
         reason: 'a newer user message is already queued for the Session',
@@ -1286,7 +1534,7 @@ export default class TaskFeedbackService extends TypertRemoteService {
   }
 
   /** Whether the Session's live agent already holds queued input. */
-  private hasPendingInput(sessionId: TaskRecordState['sessionId']): boolean {
+  private hasPendingInput(sessionId: SessionId): boolean {
     const agent = this.ctx.get('agents')?.get(sessionId)
     if (agent === undefined) return false
     return agent.inbox.nextTurn.length > 0 || agent.inbox.nextStep.length > 0
@@ -1856,7 +2104,8 @@ export default class TaskFeedbackService extends TypertRemoteService {
     const payload: DeliveryRecordState['payload'] = {
       taskId: record.taskId,
       state: record.state,
-      sessionId: record.sessionId,
+      sessionId: record.execution.kind === 'dsh-session' ? record.sessionId : null,
+      execution: { ...record.execution },
       turn: record.turn,
       summary: record.summary,
       evidence: { ...record.evidence, eventSeqs: [...record.evidence.eventSeqs] },
@@ -1905,14 +2154,26 @@ export default class TaskFeedbackService extends TypertRemoteService {
    * Host was down settles from the recorded end, so a completion is not lost.
    * A task whose Session is not attached becomes `disconnected` and keeps its
    * place: this Host neither cancels nor re-dispatches it, and the notification
-   * says which of those happened. The repair pass afterwards re-enqueues a
-   * notifying state whose delivery never landed, which is the crash between the
-   * task write and the outbox write.
+   * says which of those happened. A combination task has no DSH Session to
+   * attach: its operation was in flight in another process, so the restart is
+   * reported as `disconnected` — observed, never notified, and never resent as a
+   * model prompt. The repair pass afterwards re-enqueues a notifying state whose
+   * delivery never landed, which is the crash between the task write and the
+   * outbox write, and that is what restores a pending notification.
    */
   private async recover(): Promise<void> {
     for (const record of [...this.live.values()]) {
       if (!OPEN_STATES.includes(record.state)) continue
-      const session = this.ctx.sessions.get(record.sessionId)
+      if (record.execution.kind === 'harness-session') {
+        this.transition(
+          record,
+          harnessTaskStateOf('interrupted'),
+          'the Host restarted while this combination operation was in flight; the combination record keeps its place and the instruction is not sent again',
+          undefined,
+        )
+        continue
+      }
+      const session = this.boundSession(record)
       if (session === undefined) {
         this.transition(
           record,
@@ -2052,7 +2313,8 @@ export default class TaskFeedbackService extends TypertRemoteService {
   private project(record: TaskRecordState): TaskRecord {
     return {
       taskId: record.taskId,
-      sessionId: record.sessionId,
+      sessionId: record.execution.kind === 'dsh-session' ? record.sessionId : null,
+      execution: { ...record.execution },
       turn: record.turn,
       target: record.target,
       acceptance: record.acceptance,

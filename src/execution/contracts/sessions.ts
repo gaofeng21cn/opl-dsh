@@ -16,6 +16,8 @@ export type HarnessOrigin = { kind: 'codex' | 'dsh' | 'harness' | 'desktop'; ses
 export interface HarnessApproval {
   id: string
   title: string
+  /** Shell command supplied by the CLI for this pending human decision. */
+  command?: string
   options: { optionId: string; name: string; kind: string }[]
 }
 export interface HarnessTurn {
@@ -23,27 +25,54 @@ export interface HarnessTurn {
   fingerprint: string
   prompt: string
   reasoningEffort?: string
+  /** Canonical declared write paths for scheduling, not a sandbox restriction. */
+  writeScope?: string[]
   text: string
+  /** Provider-supplied text and reasoning in arrival order; absent on older records. */
+  content?: { type: 'text' | 'reasoning'; text: string }[]
   state: HarnessState
   stopReason?: string
   error?: string
   report?: CollaborationReport
   review?: CollaborationReview
   delivery?: CollaborationDelivery
-  tools: { id: string; title: string; status: string; kind: string }[]
+  tools: HarnessTool[]
+}
+/** ACP tool data retained for transcript rendering, never for tool execution. */
+export interface HarnessTool {
+  id: string
+  title: string
+  status: string
+  kind: string
+  /** Verbatim ACP JSON; arbitrary CLI payloads stay outside the Remote type graph. */
+  inputJson?: string
+  outputJson?: string
+  contentJson?: string
+  locationsJson?: string
 }
 export interface HarnessSession {
   id: string
   combination: string
   harnessRef: string
   modelRef: import('./catalog.ts').ModelRef
+  /**
+   * Explicit reasoning setting for this combination, carried verbatim to the Harness.
+   * An adapter decides what it means: an effort id, or a switch such as `on`/`off`.
+   * Absent means the caller expressed no choice, and the Harness default applies. An
+   * explicit value is never rewritten onto that default, including on reload.
+   */
+  reasoningEffort?: string
   cwd: string
   acpSessionId: string
+  /** Ordinary official DSH conversation; distinct from the CLI's ACP session. */
+  nativeSessionId?: string
   autoWakePaused?: boolean
   assignment?: CollaborationAssignment
   origin: HarnessOrigin
   title: string
-  sandbox: 'read-only' | 'workspace'
+  /** True when the official Harness supplied the title rather than the prompt fallback. */
+  titleFromHarness?: boolean
+  sandbox: 'read-only' | 'workspace' | 'full-access'
   createdAt: string
   updatedAt: string
   turns: HarnessTurn[]

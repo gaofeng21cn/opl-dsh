@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { HarnessService } from './harness.ts'
+import type { HarnessProxy } from '../contracts/catalog.ts'
 import type {
   HarnessSessionsRequest,
   HarnessSessionsPage,
@@ -43,6 +44,11 @@ export class ExecutionService extends TypertRemoteService {
   @Remote('save-catalog')
   saveCatalog(request: { catalog: ExecutionCatalog }): Promise<ExecutionCatalog> {
     return this.execution.saveExecutionCatalog(request.catalog)
+  }
+  /** Merge only the named Harness's proxy against the latest persisted catalog. */
+  @Remote('save-harness-proxy')
+  saveHarnessProxy(request: { harnessId: string; proxy: HarnessProxy }): Promise<ExecutionCatalog> {
+    return this.execution.saveHarnessProxy(request.harnessId, request.proxy)
   }
   @Remote('list')
   list(): Promise<HarnessCatalog> {

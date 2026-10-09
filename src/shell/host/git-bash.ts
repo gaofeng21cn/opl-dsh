@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs'
-import { delimiter, join } from 'node:path'
+import { statSync } from 'node:fs'
+import { win32 } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { SandboxBashExecutor, type Config as LocalBashConfig } from '@deepseek-ai/dsh-bash-sandbox'
 import type { ShellExecSpec, ShellExecution } from '@deepseek-ai/dsh-shell'
@@ -21,8 +21,8 @@ export function gitBashCandidates(env: NodeJS.ProcessEnv = process.env): string[
   )
   return [
     ...roots.flatMap((root) => [
-      join(root, 'Git', 'bin', 'bash.exe'),
-      join(root, 'Git', 'usr', 'bin', 'bash.exe'),
+      win32.join(root, 'Git', 'bin', 'bash.exe'),
+      win32.join(root, 'Git', 'usr', 'bin', 'bash.exe'),
     ]),
     ...(env.OPL_GIT_BASH_PATH ? [env.OPL_GIT_BASH_PATH] : []),
   ]
@@ -38,14 +38,30 @@ export function resolveGitBashPath(options: GitBashPathOptions = {}): string {
   const platform = options.platform ?? process.platform
   if (platform !== 'win32') return 'bash'
   const env = options.env ?? process.env
-  const exists = options.exists ?? existsSync
+  const exists =
+    options.exists ??
+    ((path: string) => {
+      try {
+        return statSync(path).isFile()
+      } catch {
+        return false
+      }
+    })
+  if (env.OPL_GIT_BASH_PATH !== undefined) {
+    const explicit = env.OPL_GIT_BASH_PATH
+    if (!win32.isAbsolute(explicit) || !exists(explicit))
+      throw new Error(
+        'OPL_GIT_BASH_PATH must name an existing absolute bash.exe; no fallback was used.',
+      )
+    return explicit
+  }
   const candidates = [
     ...(env.OPL_GIT_BASH_PATH ? [env.OPL_GIT_BASH_PATH] : []),
     ...gitBashCandidates(env),
     ...(env.PATH ?? '')
-      .split(delimiter)
+      .split(win32.delimiter)
       .filter(Boolean)
-      .map((directory) => join(directory, 'bash.exe')),
+      .map((directory) => win32.join(directory, 'bash.exe')),
   ]
   const path = [...new Set(candidates)].find((candidate) => exists(candidate))
   if (path) return path

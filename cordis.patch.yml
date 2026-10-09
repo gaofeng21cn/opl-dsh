@@ -24,6 +24,7 @@
   config:
     provider: opl-gateway
     model: deepseek-flash
+    reasoningEffort: max
 - id: web
   config:
     searchProvider: opl-gateway
@@ -48,10 +49,16 @@
               max: xhigh
           - id: gpt-6-astra
             name: GPT-6 Astra
+            reasoningEfforts: { low: low, medium: medium, high: high, xhigh: xhigh, max: max }
+          - id: gpt-6.1-sol
+            name: GPT-6.1 Sol
+            reasoningEfforts: { low: low, medium: medium, high: high, xhigh: xhigh, max: max }
           - id: gpt-6-sol
             name: GPT-6 Sol
+            reasoningEfforts: { low: low, medium: medium, high: high, xhigh: xhigh, max: max }
           - id: gpt-6-luna
             name: GPT-6 Luna
+            reasoningEfforts: { low: low, medium: medium, high: high, xhigh: xhigh, max: max }
       opl-gateway-aws:
         displayName: OPL Gateway · AWS
         api: anthropic-messages
@@ -60,6 +67,7 @@
         models:
           - id: claude-opus-5-5
             name: Claude Opus 5.5
+            reasoningEfforts: { low: low, medium: medium, high: high, xhigh: xhigh, max: max }
       opl-gateway-kiro:
         displayName: OPL Gateway · Kiro
         api: anthropic-messages
@@ -68,6 +76,7 @@
         models:
           - id: claude-opus-5-5
             name: Claude Opus 5.5
+            reasoningEfforts: { low: low, medium: medium, high: high, xhigh: xhigh, max: max }
       opl-gateway-grok:
         displayName: OPL Gateway · Grok
         api: openai-responses
@@ -77,6 +86,7 @@
           - id: grok-4.7
             name: Grok 4.7
             contextWindow: 500000
+            reasoningEfforts: { low: low, medium: medium, high: high, xhigh: xhigh }
 - id: ui-settings-general
   config:
     welcomeNoticeVersion: '2026-08-13.1'

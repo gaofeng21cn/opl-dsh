@@ -12,9 +12,22 @@
  */
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
 
 /** Stable identity of one dispatched task, minted by the dispatching caller. */
 export type TaskId = string & { readonly __taskId?: unique symbol }
+
+/**
+ * Target thread the dispatcher substitutes when it has no real Codex Session id.
+ *
+ * It names no Session at all, so a delivery addressed to it can never wake a
+ * reviewer. A new external dispatch that carries it is refused at the execution
+ * entry before any prompt is sent, a combination registration that carries it is
+ * refused instead of being queued as if it were deliverable, and a record an
+ * earlier build already wrote with it stays readable: its card reports the
+ * missing reviewer instead of claiming a handoff.
+ */
+export const NO_SESSION_TARGET_THREAD_ID = 'manual'
 
 /**
  * Where one dispatched task stands.
@@ -205,6 +218,36 @@ export interface TaskTarget {
   readonly threadId: string
 }
 
+/**
+ * What performs one dispatched task.
+ *
+ * The two kinds are separate because their identities are: a native task is
+ * observed through one DSH Session's durable event feed, while a combination
+ * task runs in an execution Harness session whose ACP identity is not a DSH
+ * Session id at all. Naming the kind is what keeps a reader from addressing a
+ * combination through a DSH Session id, or a native task through a combination
+ * session id, and it is why a record carries `sessionId: null` for the second
+ * kind instead of a borrowed id.
+ */
+export type TaskExecution =
+  | { readonly kind: 'dsh-session' }
+  | {
+      readonly kind: 'harness-session'
+      /** Execution Harness session identity (`harness-…`); never a DSH Session id. */
+      readonly harnessSessionId: string
+      /** Official Harness that owns the agent loop: `codex`, `claude`, `grok-build`, `minimax-code`, `dsh`. */
+      readonly harnessRef: string
+      /** Exact model + Harness combination the operation ran under. */
+      readonly combination: string
+      /** Dispatcher task identity shared by every operation of one assignment. */
+      readonly taskId: string
+      /** Operation (one combination turn) this task tracks; a new instruction uses a new one. */
+      readonly operationId: string
+    }
+
+/** The combination execution reference alone, when a caller already knows the kind. */
+export type HarnessExecution = Extract<TaskExecution, { readonly kind: 'harness-session' }>
+
 /** One dispatch registration, exactly as the caller supplied it. */
 export interface TaskRegistration {
   /** Stable caller-minted identity; re-registering the same id is idempotent. */
@@ -229,9 +272,87 @@ export interface TaskRegistration {
   readonly rootTaskId?: string
 }
 
+/**
+ * One combination operation the execution service registers before its prompt.
+ *
+ * Registration is durable and idempotent, and it happens before the prompt is
+ * sent: a turn that completes or pauses immediately afterwards must still find
+ * its registration waiting, which is the only way a fast outcome cannot be lost.
+ * The task identity is derived from the execution reference, so a retry of one
+ * operation lands on the same task while a new instruction — a new operation —
+ * gets its own, and an old `completed` can never stand in for a newer turn.
+ */
+export interface HarnessTaskRegistration {
+  /** The combination execution that performs the work. */
+  readonly execution: HarnessExecution
+  /** Reviewer that must be told the outcome; never the no-session placeholder. */
+  readonly target: TaskTarget
+  /** What the reviewer will check when it verifies the result. */
+  readonly acceptance: string
+}
+
+/**
+ * The states a combination execution reports.
+ *
+ * `interrupted` is not one of them: the execution service reports the task
+ * state it can justify, and a Host restart that left an operation unfinished
+ * maps onto `disconnected`, which this policy never notifies because no outcome
+ * was observed.
+ */
+export type HarnessReportState = Extract<
+  TaskState,
+  | 'accepted'
+  | 'running'
+  | 'waiting_approval'
+  | 'waiting_input'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'disconnected'
+>
+
+/**
+ * The bounded pause one waiting state reports.
+ *
+ * The pause identity is the caller's, because only the execution side knows
+ * which approval or which question it is looking at: one pause stays one
+ * delivery while a replay carries the same id, and a second pause of the same
+ * kind is a second delivery.
+ */
+export interface HarnessPauseReport {
+  /** Which interactive seam paused: a structured question or a tool approval. */
+  readonly kind: 'question' | 'approval'
+  /** Stable identity of this pause within the operation. */
+  readonly pauseId: string
+  /** The questions asked, exactly as the execution side observed them; bounded here. */
+  readonly questions?: readonly AskUserQuestionItem[]
+  /** Approval identity and tool name, for an approval pause. */
+  readonly approval?: { readonly approvalId: string; readonly toolName: string } | null
+}
+
+/** One observed combination state, exactly as the execution service saw it. */
+export interface HarnessStateReport {
+  /** Feedback task identity returned by {@link HarnessTaskRegistration}. */
+  readonly taskId: string
+  /** State as observed, never a state the caller wishes for. */
+  readonly state: HarnessReportState
+  /** One line describing what was observed; the reviewer reads the session for detail. */
+  readonly summary: string
+  /** The pause a waiting state is in; required for a waiting state, absent otherwise. */
+  readonly pause?: HarnessPauseReport
+}
+
+/** The state a report settled, plus the delivery it owes when the state notifies. */
+export interface HarnessStateReportValue {
+  readonly task: TaskRecord
+  /** The delivery this state owes, or null when the state does not notify. */
+  readonly delivery: DeliveryRecord | null
+}
+
 /** Local evidence a reviewer can read back, instead of a copied transcript. */
 export interface TaskEvidence {
-  readonly sessionId: SessionId
+  /** Session log the evidence belongs to; null for a combination execution, which has no DSH Session. */
+  readonly sessionId: SessionId | null
   /** Turn the task settled on, once one was observed. */
   readonly turn: number | null
   /** Session log sequence the task settled at. */
@@ -243,7 +364,10 @@ export interface TaskEvidence {
 /** One dispatched task as this Host reports it. */
 export interface TaskRecord {
   readonly taskId: string
-  readonly sessionId: SessionId
+  /** The DSH Session performing the task, or null when a combination execution performs it. */
+  readonly sessionId: SessionId | null
+  /** Which execution performs this task, so no reader has to guess from the fields above. */
+  readonly execution: TaskExecution
   readonly turn: number | null
   readonly target: TaskTarget
   readonly acceptance: string
@@ -353,9 +477,11 @@ export interface NeedsInputNotice {
   /**
    * DSH Session holding the pause. This is the return location: the answer is
    * given there by a human, and a dispatcher hands the question back to its
-   * operator instead of submitting one itself.
+   * operator instead of submitting one itself. Null when a combination
+   * execution holds the pause, which has no DSH Session: the delivery's
+   * {@link DeliveryPayload.execution} names the combination session instead.
    */
-  readonly sessionId: SessionId
+  readonly sessionId: SessionId | null
   /** Turn the pause belongs to, or null when the Session had none open. */
   readonly turn: number | null
   /** Session-log cursor the pause was observed at, or null when unknown. */
@@ -377,7 +503,10 @@ export interface NeedsInputNotice {
 export interface DeliveryPayload {
   readonly taskId: string
   readonly state: TaskState
-  readonly sessionId: SessionId
+  /** The DSH Session the task ran in, or null for a combination execution. */
+  readonly sessionId: SessionId | null
+  /** Which execution produced this outcome, so the reading instruction is exact. */
+  readonly execution: TaskExecution
   readonly turn: number | null
   /** One short line: the outcome, never the model's transcript. */
   readonly summary: string

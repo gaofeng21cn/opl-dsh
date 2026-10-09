@@ -170,6 +170,14 @@
   font-weight: 500;
   line-height: 18px;
 }
+.unavailableReason {
+  color: var(--dsw-alias-label-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 15px;
+}
 .check {
   color: var(--dsw-alias-label-primary);
   flex: 0 0 14px;
@@ -179,6 +187,30 @@
 .check svg {
   width: 14px;
   height: 14px;
+}
+/* Thinking on/off reads as a switch rather than as one more level in a ladder. */
+.switch {
+  background: var(--dsh-alias-interactive-bg-hover, var(--dsw-alias-interactive-bg-hover));
+  border-radius: 999px;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 16px;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+.switch[data-on='true'] {
+  background: var(--dsh-alias-state-business-primary, var(--dsw-alias-state-business-primary));
+}
+.switchThumb {
+  background: var(--dsw-alias-label-primary);
+  border-radius: 999px;
+  width: 12px;
+  height: 12px;
+  transition: transform 0.12s;
+}
+.switch[data-on='true'] .switchThumb {
+  transform: translateX(10px);
 }
 .selected {
   background: transparent;

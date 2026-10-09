@@ -14,16 +14,24 @@ export const gatewayModelId = (group: GatewayGroupId, id: string) =>
   group === 'deepseek' ? id : `${group}::${id}`
 
 function withReasoning(model: LlmResolvedModelInfo): LlmResolvedModelInfo {
-  if (model.reasoning) return model
-  const efforts = ['gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna'].includes(model.id)
-    ? ['low', 'medium', 'high', 'xhigh']
+  const efforts = ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna'].includes(model.id)
+    ? ['low', 'medium', 'high', 'xhigh', 'max']
     : model.id === 'claude-opus-5-5'
       ? ['low', 'medium', 'high', 'xhigh', 'max']
-      : undefined
+      : model.id === 'grok-4.7'
+        ? ['low', 'medium', 'high', 'xhigh']
+        : undefined
+  if (model.id === 'deepseek-flash' && model.reasoning?.efforts.some((e) => e.id === 'max'))
+    return { ...model, reasoning: { ...model.reasoning, defaultEffort: ReasoningEffortId('max') } }
   if (!efforts) return model
+  const defaultEffort =
+    model.id === 'gpt-6-astra' ? 'low' : model.id === 'grok-4.7' ? 'high' : 'medium'
   return {
     ...model,
-    reasoning: { efforts: efforts.map((id) => ({ id: ReasoningEffortId(id), name: id })) },
+    reasoning: {
+      efforts: efforts.map((id) => ({ id: ReasoningEffortId(id), name: id })),
+      defaultEffort: ReasoningEffortId(defaultEffort),
+    },
   }
 }
 export class GatewayModelAdapter extends LlmAdapter {

@@ -45,6 +45,12 @@ export function installCollaborationTools(ctx: Context, harness: HarnessService)
             sessionId: { type: 'string' },
             acceptance: { type: 'string' },
             wait: { type: 'boolean' },
+            writeScope: {
+              type: 'array',
+              items: { type: 'string' },
+              description:
+                '本轮独占写入的精确文件或目录。不相交范围可并行；省略则独占项目。范围只用于调度，不是沙箱，构建与安装使用项目根目录。',
+            },
           },
           output,
           execute: (args, exec) => json(harness.delegateFrom(origin, args, exec.signal)),

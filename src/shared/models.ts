@@ -41,6 +41,14 @@ export function displayModelName(ref: ModelRef, name?: string): string {
     return ref.model.startsWith('codex::')
       ? 'DeepSeek-V4.1-Flash · OpenAI 协议'
       : 'DeepSeek-V4.1-Flash'
+  // MiniMax models belong to the official CLI account, not to a Gateway channel.
+  // The name stays a bare model name: the Harness is appended once by the model
+  // menu, and the thinking setting lives in the reasoning menu, so neither may be
+  // baked into this label.
+  if (ref.provider === 'minimax-official') {
+    if (id === 'MiniMax-M3.1-Flash-Preview') return 'MiniMax-M3.1-Flash-Preview'
+    if (id === 'MiniMax-M3') return 'MiniMax-M3'
+  }
   const route = ref.provider === 'opl-gateway' ? ref.model.split('::')[0] : ''
   const suffix = route === 'aws' ? 'AWS' : route === 'kiro' ? 'Kiro' : ''
   const label = id === 'claude-opus-5-5' ? 'Claude Opus 5.5' : name?.trim() || id
@@ -49,6 +57,8 @@ export function displayModelName(ref: ModelRef, name?: string): string {
 
 export function displayModelSource(ref: ModelRef, source?: string): string {
   if (ref.provider === 'opl-gateway') return 'OPL Gateway'
+  if (ref.provider === 'minimax-official') return 'MiniMax 官方账号（mcode）'
+  if (ref.provider === 'huawei-maas') return '华为云 MaaS'
   if (ref.provider === 'deepseek-account' || ref.provider === 'deepseek-official')
     return 'DeepSeek 官方'
   return source?.trim() || ref.provider

@@ -32,6 +32,29 @@ const info: Record<
     website: 'https://antigravity.google/docs',
     instructions: '使用 agy update 检查并更新 Antigravity CLI。',
   },
+  'minimax-code': {
+    command: process.platform === 'win32' ? 'mcode.cmd' : 'mcode',
+    website: 'https://github.com/MiniMax-AI/minimax-code',
+    instructions:
+      '使用 MiniMax Code 官方安装器安装 mcode；登录请在终端运行 mcode login，凭据由官方 CLI 自行保存与刷新。',
+  },
+  zcode: {
+    command: 'zcode',
+    website: 'https://github.com/zai-org/ZCode/releases',
+    instructions:
+      '使用官方 ZCode CLI 的 app-server 入口；华为云 Key 在设置中保存到 Windows 凭据管理器。',
+  },
+}
+/**
+ * Directories the official MiniMax Code installer writes its launcher into. The
+ * Windows launcher is `mcode.cmd`, which no Execute permission or extensionless
+ * lookup can find, so the exact names are checked explicitly.
+ */
+export function minimaxCodeRoots(env: NodeJS.ProcessEnv = process.env): string[] {
+  const home = env.USERPROFILE || env.HOME || homedir()
+  return [env.MINIMAX_CODE_HOME, join(home, '.minimax-code')].filter(
+    (value): value is string => !!value,
+  )
 }
 const knownRoots = (id: string): string[] => {
   const home = homedir()
@@ -60,6 +83,7 @@ const knownRoots = (id: string): string[] => {
     )
   if (id === 'claude' && process.env.LOCALAPPDATA)
     roots.push(join(process.env.LOCALAPPDATA, 'Programs/Claude Code'))
+  if (id === 'minimax-code') roots.push(...minimaxCodeRoots())
   return [...new Set(roots.filter(Boolean))]
 }
 function candidatePaths(
@@ -92,7 +116,7 @@ function candidatePaths(
 }
 async function shellResolved(command: string, id: string): Promise<string | undefined> {
   if (
-    !['codex', 'claude'].includes(id) ||
+    !['codex', 'claude', 'minimax-code', 'zcode'].includes(id) ||
     isAbsolute(command) ||
     !/^[A-Za-z0-9_.-]+$/.test(command)
   )
@@ -116,14 +140,56 @@ async function shellResolved(command: string, id: string): Promise<string | unde
 export function harnessSearchPath(): string {
   return [
     ...new Set(
-      [process.env.PATH ?? '', ...knownRoots('codex'), ...knownRoots('claude')].filter(Boolean),
+      [
+        process.env.PATH ?? '',
+        ...knownRoots('codex'),
+        ...knownRoots('claude'),
+        ...knownRoots('minimax-code'),
+      ].filter(Boolean),
     ),
   ].join(delimiter)
 }
-export async function executablePath(command: string): Promise<string | undefined> {
+export interface CommandLaunch {
+  command: string
+  args: string[]
+  windowsVerbatimArguments?: boolean
+}
+/**
+ * Resolve how to start a discovered CLI entry point.
+ *
+ * A Windows `.cmd`/`.bat` shim is not an executable image, so it must run through
+ * `cmd.exe`. `cmd /S` strips only the outermost quote pair, which is why the script
+ * path stays inside a second pair and the whole vector must reach cmd verbatim:
+ * Node's default Windows escaping would turn those inner quotes into `\"`, which cmd
+ * reads as literal backslashes and then fails to resolve the script at all. Paths
+ * containing spaces (the normal case under `Program Files`) depend on this.
+ *
+ * @param path - discovered executable or script path.
+ * @param args - arguments appended to the script.
+ * @returns the command, argument vector, and the verbatim flag when cmd is involved.
+ * @throws when an argument cannot be passed through cmd.exe without being reinterpreted.
+ */
+export function commandLaunch(path: string, args: readonly string[] = []): CommandLaunch {
+  if (process.platform !== 'win32' || !/\.(?:cmd|bat)$/i.test(path))
+    return { command: path, args: [...args] }
+  for (const argument of args)
+    if (/["%^&|<>()\r\n]/.test(argument))
+      throw Error(`无法安全地通过 cmd.exe 传递参数：${argument}`)
+  const line = [`"${path}"`, ...args.map(quoteForCmd)].join(' ')
+  return {
+    command: 'cmd.exe',
+    args: ['/d', '/s', '/c', `"${line}"`],
+    windowsVerbatimArguments: true,
+  }
+}
+/** cmd.exe splits on whitespace, so an argument containing any must be quoted. */
+function quoteForCmd(argument: string): string {
+  return /\s/.test(argument) ? `"${argument}"` : argument
+}
+export async function executablePath(command: string, id?: string): Promise<string | undefined> {
   for (const { path } of candidatePaths(
     command,
-    ['codex', 'claude'].includes(command) ? command : undefined,
+    id ?? (['codex', 'claude'].includes(command) ? command : undefined),
   ))
     if (
       await access(path, process.platform === 'win32' ? constants.F_OK : constants.X_OK).then(
@@ -132,7 +198,7 @@ export async function executablePath(command: string): Promise<string | undefine
       )
     )
       return path
-  const resolved = await shellResolved(command, command)
+  const resolved = await shellResolved(command, id ?? command)
   if (
     resolved &&
     (await access(resolved, process.platform === 'win32' ? constants.F_OK : constants.X_OK).then(
@@ -208,7 +274,11 @@ export async function inspectHarness(
     installed: !!path,
     runnable:
       !!path &&
-      (harness.kind === 'grok-build' || harness.id === 'codex' || harness.id === 'claude'),
+      (harness.kind === 'grok-build' ||
+        harness.id === 'codex' ||
+        harness.id === 'claude' ||
+        harness.id === 'minimax-code' ||
+        harness.id === 'zcode'),
     instructions: entry?.instructions ?? '使用此 Harness 的官方安装与更新方式。',
     website: entry?.website ?? '',
     ...(entry?.installable ? { installable: true } : {}),
@@ -216,38 +286,32 @@ export async function inspectHarness(
   }
   if (!path) return { ...base, error: '未找到可执行文件；可使用一键安装或查看官方入口' }
   try {
-    const script = process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(path)
-    const { stdout, stderr } = await exec(
-      script ? 'cmd.exe' : path,
-      script ? ['/d', '/s', '/c', `""${path}" --version"`] : ['--version'],
-      {
-        // cmd.exe with /S strips only the outermost quote pair, so the script path must
-        // stay quoted inside a second pair, and the arguments must reach cmd verbatim:
-        // Node's own Windows escaping would turn those inner quotes into \" which cmd
-        // reads as literal backslashes and never resolves the script.
-        ...(script ? { windowsVerbatimArguments: true } : {}),
-        timeout: 5000,
-        maxBuffer: 4096,
-        env: {
-          ...Object.fromEntries(
-            [
-              'PATH',
-              'HOME',
-              'USERPROFILE',
-              'APPDATA',
-              'LOCALAPPDATA',
-              'SYSTEMROOT',
-              'TEMP',
-              'TMP',
-              'TMPDIR',
-              'LANG',
-              'LC_ALL',
-              'CODEX_HOME',
-            ].flatMap((key) => (process.env[key] ? [[key, process.env[key]]] : [])),
-          ),
-        },
+    const launch = commandLaunch(path, [...(harness.prefix ?? []), '--version'])
+    const { stdout, stderr } = await exec(launch.command, launch.args, {
+      ...(launch.windowsVerbatimArguments
+        ? { windowsVerbatimArguments: launch.windowsVerbatimArguments }
+        : {}),
+      timeout: 5000,
+      maxBuffer: 4096,
+      env: {
+        ...Object.fromEntries(
+          [
+            'PATH',
+            'HOME',
+            'USERPROFILE',
+            'APPDATA',
+            'LOCALAPPDATA',
+            'SYSTEMROOT',
+            'TEMP',
+            'TMP',
+            'TMPDIR',
+            'LANG',
+            'LC_ALL',
+            'CODEX_HOME',
+          ].flatMap((key) => (process.env[key] ? [[key, process.env[key]]] : [])),
+        ),
       },
-    )
+    })
     const version = (stdout || stderr).trim().split(/\r?\n/)[0]?.slice(0, 150)
     return { ...base, path, ...(detectedBy ? { detectedBy } : {}), ...(version ? { version } : {}) }
   } catch {

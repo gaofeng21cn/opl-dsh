@@ -1,11 +1,15 @@
 ---
 name: opl-dsh-official
-description: 在同项目关联子对话中，用 DSH、Codex CLI、Claude Code 或 Grok Build 的模型组合执行任务；自动启动 DSH，幂等派发、继续、等待及读取结果。
+description: 在同项目关联子对话中，用 DSH、Codex CLI、Claude Code、Grok Build 或 MiniMax 官方 CLI 的模型组合执行任务；自动启动 DSH，幂等派发、继续、等待及读取结果。
 ---
 
 # OPL DSH 官方桌面协作
 
 配置位于本 Skill 的 `config.json`。运行 `control.mjs` 时使用配置中的 `executable`，并设置 `ELECTRON_RUN_AS_NODE=1`；helper 会在需要时启动官方桌面。不得读取或回显 control.json 中的 token。
+
+Windows 自动启动通过 WMI 的 `Win32_Process.Create` 创建套件启动器，使官方桌面不继承调用方的 Windows Job；安装后自动启动和 Skill 自动启动都使用同一 `launch.vbs → setup.mjs` 入口。该方式无需提权或安装服务，profile 和应用路径由套件启动器显式设置，不传递 Codex 进程的自定义环境变量。启动器按安装配置显式设置 `CODEX_HOME`，使通知 CLI 使用同一 Codex 状态目录；代理配置应保存在各 Harness 的运行配置中。WMI 被系统策略禁用或启动失败时明确报错，改由用户打开 OPL DSH 快捷方式；不回退成共享 Job 的自动启动。Windows 父 PID、不同 PID 或 `detached/unref` 不能代替独立生命周期验收。
+
+新任务未指定模型或 Harness 时，先读取 `config.json` 的 `preferredDelegation`（`harness`、`model`、`reasoningEffort`），按该偏好选择组合入口；用户明确指定时以用户选择为准。先查询 `delegate-list` 确认实际组合 ID、可用状态与固定参数，再使用 `delegate`。偏好为 MiniMax M3.1-Flash-Preview/max 时走官方 mcode 账号和 ACP，未显式选择时默认 max；权限仍须符合下文完整访问授权要求。偏好模型不可用时报告具体原因，不自动回退 DeepSeek 或其他模型。现有 Session 和 operation 的重试保留原模型与身份；此偏好只决定新任务。赞助或免费额度不代替任务权限，也不授权自动向厂商发送仓库、对话或诊断。
 
 派发前，为任务选择绝对工作目录，把提示词保存为 UTF-8 文件。使用稳定的 task 与 operation ID；对同一次失败重试必须沿用原 ID，不得换 ID重复执行。
 
@@ -15,7 +19,9 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' wai
 ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' snapshot --session session-id
 ```
 
-同一 task 的后续指令使用新的 operation ID，helper 保留同一个 DSH Session。需要用户授权或补充信息时报告真实等待状态；不自动扩大权限。任务完成后读取 snapshot，独立检查产物。默认使用 opl-gateway/deepseek-flash；其他模型和渠道通过组合目录选择，OpenAI 协议分组是独立渠道。
+同一 task 的后续指令使用新的 operation ID，helper 保留同一个 DSH Session。需要用户授权或补充信息时报告真实等待状态；不自动扩大权限。任务完成后读取 snapshot，独立检查产物。上述 `dispatch` 命令是原生 DeepSeek 入口，使用 opl-gateway/deepseek-flash；配置外部组合偏好时按前述规则使用 `delegate`。OpenAI 协议分组是独立渠道。
+
+原生 DeepSeek Flash 派发的推理档位可用 `--reasoning-effort max` 显式指定，或在本 Skill 的 `config.json` 设置 `dispatchReasoningEffort` 作为新 operation 的默认值；用户要求固定 `max` 时使用该设置并核对实际选择。helper 在发送 prompt 前确认 Host 返回相同档位，不能默默使用 `high`。同一 operation 的重试保留首次解析的档位，修改默认值只影响新 operation；更改显式档位须使用新 operation。
 
 ## 模型 + Harness 执行组合
 
@@ -29,7 +35,16 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' del
   --prompt-file /absolute/prompt.txt
 ```
 
-返回的组合会话标识是 JSON 的 `id`（不是原生 `acpSessionId`）。`origin` 保存当前 Codex 对话身份，DSH 的“执行组合”按项目显示这些关联对话。Grok 对话由 Grok 管理，DSH 子对话也会出现在官方 DSH 的同项目侧栏；不会在 Codex 原生侧栏中伪造一个 Grok 任务。
+返回的组合会话标识是 JSON 的 `id`（不是原生 `acpSessionId`）。`origin` 保存当前 Codex 对话身份。`delegate` 会把任务绑定到一个真实的官方 DSH 会话：它在任务的项目目录下创建或复用普通 DSH 会话，出现在官方会话列表侧栏，用官方消息流和输入框查看与续作，人工审批也在该会话的审批入口由用户决定。设置中不再有独立的“外部任务”页面。Grok 对话由 Grok 管理；不会在 Codex 原生侧栏中伪造一个 Grok 任务。
+
+四类标识用途不同，不能互换：
+
+- 组合会话 `id`：`delegate` 的返回值，也是 `delegate-prompt`、`delegate-wait`、`delegate-snapshot`、`delegate-cancel`、`delegate-review` 的 `--session` 值。
+- `nativeSessionId`：任务绑定的普通 DSH 会话身份，只表示官方会话列表里的那个会话。需要查看普通 DSH 消息流时，可把它传给官方 `session/snapshot`；它不能替代组合 `id` 调用 `delegate-*` 命令，也不能替代通知中的 `execution.harnessSessionId`。
+- `acpSessionId`：Harness CLI 自己的 ACP 会话，只用于后台连接，不作为用户可见身份。
+- 反馈 `taskId` 与 `deliveryId`：取通知返回的原值。
+
+首次绑定官方会话时，会把已有的已结束轮次幂等导入；后续轮次直接进入该会话。导入只写会话记录，不发送模型 prompt，也不执行历史工具；原记录只保存工具名称和状态，因此导入消息里只有“名称 · 状态”清单，不含原参数、输出或可重放的调用。官方会话仍在运行或项目目录不一致时停止迁移并保留原记录，不会覆盖。
 
 继续同一会话和查看结果：
 
@@ -41,19 +56,21 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' del
 ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' delegate-cancel --session harness-id
 ```
 
-`delegate` 提交后立即返回持久会话 ID；用 `delegate-wait` 等待终态，或用 `delegate-snapshot` 查看进度。`delegate-prompt` 等待至终态或授权等待。超时、断线后先读取原会话，不能换 ID 重派。Host 重启后的未完成轮次标记 `interrupted`，不自动重发；新的指令用新 operation 恢复原生会话。只有结果与实际产物吻合才报告完成。
+`delegate` 提交后立即返回持久会话 ID；可用 `delegate-wait` 等待终态，或用 `delegate-snapshot` 查看进度。有界等待可能返回仍在运行的快照，返回响应不等于完成。`delegate-prompt` 等待至终态或授权等待。超时、断线后先用 `delegate-snapshot` 读取原组合会话，不能换 ID 重派。Host 重启后的未完成轮次标记 `interrupted`，不自动重发；新的指令用新 operation 继续原组合会话。只有结果与实际产物吻合才报告完成。
 
-遇到 `waiting_approval` 或 `waiting_input`：外部 Harness 的权限请求在 DSH 组合工作区由用户决定，DSH 权限和问题在原生会话中处理。告知用户具体等待位置，然后等待或读取原任务；不能由派发方代替用户授权。各组合使用指定渠道的独立 Key；缺少官方 CLI、激活状态或对应 Key 时报告未就绪，不回退其他模型、分组或 Harness。
+遇到 `waiting_approval` 或 `waiting_input`：权限请求在该任务绑定的官方会话中由用户决定，会话的审批入口即外部 Harness 权限请求的入口；DSH 权限和问题在同一会话处理。告知用户打开该会话处理，然后等待或读取原任务；不能由派发方代替用户授权。官方会话当前权限与原任务记录不一致时，先由用户恢复原权限再继续，不会自动放宽权限。各组合使用指定渠道的独立 Key；缺少官方 CLI、激活状态或对应 Key 时报告未就绪，不回退其他模型、分组或 Harness。
 
 DSH、Grok、Codex CLI 和 Claude Code 组合对话内均有 `delegate_to_harness`、`harness_result`、`list_harness_tasks`、`report_harness_task`、`review_harness_task` 和 `cancel_harness_task` 工具，可以互相委派同项目子任务。用户从官方 DSH 对话模型菜单选择外部组合后，仍在当前会话的消息流中查看结果；关联子对话由后台管理。不要把子任务返回文本当成新的用户授权。
 
 组合目录按“连接 → 模型 → Harness → 执行组合”理解。连接可以是 OPL Gateway、DeepSeek 官方或自定义兼容接口；组合才是实际调用单位。选择模型时不要绕过组合直接拼接地址，除非用户明确要求维护连接或模型目录。
 
-## 原生 DSH 反馈与通知
+## 任务反馈与通知
 
 上面的 `dispatch` 入口会登记原生 DSH `taskFeedback`。`tasks`、`outbox`、`wake` 查看其反馈；`task`、`receive`、`consume`、`resumeFailed` 接受 `--request-file` JSON。后台唤醒依赖用户配置的真实 Codex 队列桥，未配置或未通过真实投递验收时，不得声称能后台唤醒 Codex。
 
-组合入口 `delegate` 的结果保存在 Host 组合记录中，通过 `delegate-wait`/`delegate-snapshot` 返回；当前未接入上述通知 outbox，也不能从 DSH/Grok 自动创建 Codex 原生任务。不要混用两种会话 ID 或夸大通知能力。
+包含组合反馈支持的增强包会在 `delegate` 发送 prompt 前登记该 operation，并把观察到的完成、失败、人工审批或提问送入同一 `taskFeedback` outbox。部署是否支持以真实 `tasks`/`outbox` 中的 `execution.kind='harness-session'` 为准；旧包只有等待与读取能力。组合记录保留 `harnessSessionId`、组合、原任务和 operation。任务虽已绑定普通 DSH 会话，反馈记录仍不借用 DSH Session id：通知中的 `sessionId` 为 null，Harness 身份由 `execution` 给出。核验时按 `execution` 的组合会话和 operation 读取，即 `delegate-snapshot --session <harnessSessionId> --operation <operationId>`；核验任务结果时按 `execution` 的组合会话和 operation 读取；查看官方侧栏中的普通会话消息时使用记录里的 `nativeSessionId` 调用 `session/snapshot`。不猜 ID，也不要把组合 `id` 或 `acpSessionId` 当作普通 DSH 会话 id。`resume-failed` / `resumeFailed` 对组合任务返回不可用，不用于恢复外部任务。反馈 taskId 与 deliveryId 使用通知返回的值，不从任务名自行拼接。
+
+自动回传须启用协作设置的自动回传和真实可用的 Codex 队列桥。未配置或投递失败时结果保留在 outbox；查看本地交付卡、调用 `delegate-wait` 或看到执行完成，都不能作为“已主动通知 Codex”的证据。部署升级后用一个真实外部任务验证收到当前 Codex 会话的通知，再声明主动反馈可用。Host 重启打断的轮次记为 `interrupted`/`disconnected`，默认不发完成或失败通知；读取原记录并决定新 operation，不能重放旧指令。
 
 ## 通用任务交付与验收
 
@@ -64,7 +81,51 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' del
 ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' delegate-review --session harness-id --operation operation-id --decision accepted --note-file /absolute/review.txt
 ```
 
-要求修改时使用 `changes_requested`，随后以原 session、原 task、新 operation 继续 `delegate`。失败、中断或不确定结果先查询，不自动重派。内部交付会在发起对话空闲时回传；外部 Codex Skill 使用等待与读取，不承诺主动唤醒 Codex 桌面。原 `dispatch` 和旧反馈记录继续兼容。关闭外部 Codex 接入不会关闭内部 Codex CLI 协作。
+要求修改时使用 `changes_requested`，随后以原 session、原 task、新 operation 继续 `delegate`。收到组合通知时先用其反馈 taskId/deliveryId 执行 `receive`；仅在 `review`/`resume` 时独立读取对应 operation、核验产物，再对已完成交付执行 `delegate-review`，最后按领取的 owner/claimEpoch 执行 `consume`。`delegate-review` 记录任务验收，`consume` 关闭本次通知，两者不能互相替代。失败或人工等待可在检查、记录后消费通知，但不能记成验收通过，也不得代答审批。失败、中断或不确定结果先查询，不自动重派。原 `dispatch` 和旧反馈记录继续兼容。关闭外部 Codex 接入不会关闭内部 Codex CLI 协作。
+
+## MiniMax 官方账号组合
+
+MiniMax 新轮次的思考、正文、工具和官方 CLI 标题更新进入普通 DSH 会话。只显示 CLI 实际发送的思考，不根据工具输出推测或补写思考；旧记录未保存的内容不可凭空恢复。工具展示只读取日志，不执行历史命令。自动标题来自 CLI，CLI 没有发送标题时保留原会话标题或首次提示词摘要。
+
+实时显示验收必须覆盖工具执行后仍在运行的思考片段，以及切换或重连后的恢复；完成后出现思考不能代替实时证据。官方 rc.2 的逐工具正文可能遮蔽同一步的活跃流，OPL 的公开 Conversation 扩展只在这种状态下显示实时内容，结束后交回官方正文；不修改官方应用资源。
+
+MiniMax 只走官方 `mcode` CLI 的官方账号与 ACP 接入。登录由用户在本机完成（中国大陆账号 `mcode login`，Global 账号 `mcode login --region global`）；Skill 不代登录、不读取或输出 token，也不使用 OPL Gateway 的 MiniMax 密钥，不驱动 MiniMax Code GUI。DSH 只为 MiniMax 提供两个模型组合：M3.1-Flash-Preview 可选 `default/low/medium/high/xhigh/max`，未指定时默认 `max`；M3 只有思考开关，未指定时默认开启。官方模型菜单中的显式选择在新建、恢复和每次发送前精确验证，`default` 不改写为 `max`。
+
+mcode 自身工具没有可验证的 DSH read-only/workspace 隔离接口。MiniMax 只支持用户明确授权的完整访问：原生 DSH 会话须选 `danger-full-access`，外部 `delegate`/`delegate-start` 须显式传 `--sandbox full-access`。受限任务在启动前拒绝，旧受限记录不能直接升级；用户授权后另建会话。明确授权的完整访问对齐官方 `danger-full-access`（sandbox 完整访问、approval `never`），并通过 mcode ACP 将 `permissionMode` 设为广告的 `bypassPermissions`（Full access），新建、恢复和每次发送前验证回读。该官方接口会记录 mcode 的权限模式选择；不删除显式拒绝规则，不替用户回答已经挂起的审批。未授权或受限记录不得自动升级。
+
+Windows MiniMax Bash 后端由适配器解析 Git for Windows，并通过 `MCODE_SHELL_PATH` 固定；显式 `OPL_GIT_BASH_PATH` 错误时拒绝，不能换 Shell。ACP 必须回读相同 Bash 路径、type=bash、version=1 和 `[-c]` 参数；新建、跨进程恢复及发送前核对。官方 mcode 0.6.3 尚不支持该接口，本机使用独立的源码候选版；缺少回读时不发送 prompt，不把 `SHELL` 环境变量或模型主动包装 bash.exe 当作后端已配置。候选版不会随官方 mcode 更新自动改变；切回官方启动器前先验证接口和真实工具执行。此 Shell 设置不提供 DSH read-only/workspace 隔离；权限按上述完整访问映射独立确认。
+
+MiniMax 组合 ID 不写死：先运行 `delegate-list` 查询本机实际可用组合，再用返回的精确 ID 调用。`delegate-list` 没有列出 MiniMax 组合时报告未就绪，不回退其他模型、分组或 Harness，也不改用 Gateway 密钥。
+
+```sh
+ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' delegate-list
+ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' delegate \
+  --combination <delegate-list 返回的 MiniMax 组合 ID> --sandbox full-access \
+  --task stable-task-id --operation initial --cwd /absolute/project --prompt-file /absolute/prompt.txt
+ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' delegate-wait --session <返回的 id> --operation initial
+```
+
+同一会话和任务的新指令保留原 Session 与 task、换新 operation，先 `delegate-prompt` 再按需 `delegate-wait`；超时或断线先用 `delegate-snapshot` 读取原组合会话，不换 ID 重发。`waiting_approval` / `waiting_input` 交用户在该任务绑定的官方会话中处理，派发方不代答、不自动放宽权限。认证、登录或额度失败来自官方 mcode：不重发同一 operation、不自动降级模型或切换渠道，先由用户完成官方登录，再沿用原 Session 和 task、使用新 operation 继续。MiniMax 与其他组合共用前述通知机制及部署验收要求；不需要专属轮询。`accepted=true` 只表示提示词已接收，须核对实际工具结果与终态。
+
+## 外部 Harness 独立代理
+
+外部 CLI 的独立代理位于设置 → 运行配置 → Harness 网络代理，按 Harness 保存 `proxy.mode=inherit|direct|custom`；custom 的 `url` 只接受无账号密码的 HTTP/HTTPS 地址。缺省继承 Desktop 环境；直连清除 CLI 子进程的代理环境变量，不能覆盖 CLI 自己的其它网络配置。指定代理自动绕过本地 ACP/MCP。内置 DSH 同进程模型不使用该选项，终端单独执行的登录命令也不读取它。用户授权修改某个 Harness 时保留其它配置、模型和权限，不改 Desktop 全局代理，不读取或输出凭据。
+
+保存不打断当前轮次；下一轮在新 CLI 进程中恢复同一会话并应用当前代理。临时启动器仍连接着的旧进程不能作为代理生效证据。网络失败先读原 operation，修正配置后同 Session/task、新 operation 续作；不重发原 operation。验证代理须包含真实 Harness 请求结果，端口监听、公开网站连通或环境变量回读不足以宣称账号/模型可用。
+
+## Huawei MaaS 与官方 ZCode
+
+Huawei MaaS 的 `glm-5.2` 只通过官方 ZCode Harness 组合执行，端点固定为 `https://api.modelarts-maas.com/openai/v1`。Key 由设置页写入当前 Windows 用户的 Credential Manager（目标 `OPLDSH:HuaweiMaaS:ApiKey`）；配置文件只保存引用和 loopback 转发占位值，不回退到 `.env`、`credentials.yml` 或命令行参数。真实模型调用前必须由用户在本机配置 Key；没有 Key 时只允许运行不联网的协议和配置检查。
+
+ZCode 进程使用独立 loopback 转发按请求读取 Key，并由 Node.js 24.5 或更高版本的 `https.Agent({ proxyEnv })` 继承该 Harness 的代理；不得修改 Desktop 全局代理。GLM-5.2 的默认思考开关为启用，映射到 `chat_template_kwargs.thinking`；模型目录不添加未经华为官方文档确认的推理档位。ZCode 只接受用户明确授权的 full-access，并映射为官方 `yolo` 模式；任何受限权限在启动前拒绝。
+
+## 外部 Harness 的 Windows Bash 派发
+
+Shell 配置按实际 Harness 分别确认：Claude 使用官方 `CLAUDE_CODE_GIT_BASH_PATH`；Grok 使用官方 `GROK_SHELL=bash` 并核对 CLI 首个命中的 Git 安装。Grok 在 Windows 上只接受已授权的显式 `--sandbox full-access`，映射为官方 off/bypassPermissions；受限请求在启动前拒绝，不能自动提权。Claude 的 full-access 同样对齐内置 danger-full-access 与 bypassPermissions，允许工作目录外访问，不宣称受 cwd 约束。
+
+官方 Codex 0.160.1/0.161.0 的实测 Shell 仍为 PowerShell。自用 Git Bash 候选版仅在 `OPL_NATIVE_CODEX_GIT_BASH=1` 且任务显式 full-access 时使用补丁变量；桥接器须通过真实 `thread/shellCommand` 确认 Bash 后再发模型 prompt，不支持或回读不符时拒绝。MiniMax 仍须前述候选版 ACP Shell 回读。不能把 SHELL 环境变量、模型自行调用 bash.exe 或 fixture 通过当作官方后端已切换。
+
+读取 `delegate-snapshot --operation` 后仍须在 turns 中找到完全相同的 operationId；响应可能包含其他轮次，不能用最后一轮替代不存在的目标轮次。验收接口只接受最新已完成轮次；旧通知被后续轮次覆盖时，独立记录旧产物核验与覆盖关系，再关闭通知，不伪造旧轮次的 accepted。
 
 ## Windows 本地验证补丁
 
@@ -80,10 +141,14 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' rep
 
 ## 当前会话、续作与验收
 
-派发前确认 `CODEX_THREAD_ID` 是当前主审会话；未取得真实会话 id 时停止原生派发，不使用 `manual` 作为反馈目标。配置的 home 必须属于运行中的官方 Desktop，不能用旧 fork 的 Session id 或 ledger 映射新状态。`dispatch` 的 Session 身份包含当前会话、task 和 cwd：同一任务的新指令保留三者，换新的 operation；重试原指令保留原 operation。原生 dispatch 不使用旧 workflow helper 的 `--continues` 参数。
+派发前确认 `CODEX_THREAD_ID` 是当前主审会话；未取得真实会话 id 时停止派发，不使用 `manual` 作为反馈目标。CLI 在原生派发及需要 origin 的组合命令执行前拒绝缺失或占位身份。配置的 home 必须属于运行中的官方 Desktop，不能用旧 fork 的 Session id 或 ledger 映射新状态。`dispatch` 的 Session 身份包含当前会话、task 和 cwd：同一任务的新指令保留三者，换新的 operation；重试原指令保留原 operation。原生 dispatch 不使用旧 workflow helper 的 `--continues` 参数。
 
 保存返回的 taskId、Session id、operation、cwd、反馈目标和稳定 consumerId。通知到达时先 `receive --request-file`，JSON 为 `{"taskId":"返回的 taskId","deliveryId":"通知的 deliveryId","consumerId":"当前主审的稳定 id"}`。`review`/`resume` 才开始或继续审查；`busy` 不接管；`skip` 不重复审查。独立检查 Session 的工具输出、产物与必要测试，接受后再 `consume --request-file`，传相同 taskId、deliveryId、consumerId 和领取返回的 claimEpoch。失败或等待授权不等于完成；不得替用户批准操作。
 
-用户要求并行时，按不相交的源码与测试文件派发；共享构建、安装及生成物串行。不得更新正在托管任务的 Desktop。失败后先读原 Session，一次有界续作仍失败就记录阻塞，不能循环重派。
+通知中的位置参数也可直接使用：`receive <taskId> <deliveryId> --consumer <稳定 id>`，审查后执行 `consume <taskId> <deliveryId> --consumer <相同 id> --epoch <领取返回的 claimEpoch>`。协议恢复命令接受 `resume-failed <taskId> <deliveryId> --consumer <相同 id>`，与 `resumeFailed --request-file` 等价；它仅适用于服务确认可恢复的原生 DSH 失败。位置参数与 `--request-file` 不混用，未知反馈参数会报错；不能猜测 claimEpoch 或省略消费方身份来接管他人的审查。
 
-用户配置周期审计时，每轮只核对一次本会话 ledger、tasks、outbox/receipts、未验收结果及人工等待；无变化保持安静，不用快速轮询替代通知。空闲但有已授权且可行动的后续工作时补派；所有 DSH 任务验收完毕，或仅剩无可行动步骤的人工/外部依赖时暂停审计，记录恢复条件。Skill 本身不创建 heartbeat；只有自动化工具确认配置成功才报告已启用。
+用户要求并行时，为每个 operation 写一个 UTF-8 JSON 精确路径数组文件，并通过 `delegate` 或 `delegate-prompt` 的 `--write-scope-file <绝对文件路径>` 传入。范围是本轮独占写入的文件或目录，可相对项目或使用绝对路径；目录包括子项，不支持 glob。Host 规范化真实路径、符号链接与 Windows 大小写后，不相交范围可同时运行；同文件、父子目录或共享输出互斥。未声明范围的旧任务独占整个项目；构建、安装和共享生成物使用项目根目录范围，保持串行。writeScope 仅用于协作调度，不限制完整访问工具，提示词也须说明独占范围；不能承诺沙箱隔离。重试同 operation 保留范围；新范围使用新 operation。会话中已有明确完整访问授权时，后续任务沿用并显式传 `--sandbox full-access`，不重复索取同一授权；Harness 自身的人工审批仍由用户决定。不得更新正在托管任务的 Desktop。需要补充正在运行的指令时先核实 Session 仍有活动轮次；结束后的续作必须用同 task 的新 operation 登记反馈，不能把 steer 当作无副作用的留言。审计须同时核对 Session 最新轮次，不能用旧 task 的 completed 状态代替。失败后先读原 Session，一次有界续作仍失败就记录阻塞，不能循环重派。
+
+用户配置周期审计时，每轮只核对一次本会话 ledger、tasks、outbox/receipts、未验收结果及人工等待；同时主动检查尚未分派的可行动工作、依赖、文件归属和可用并发容量。即使已有活动线程，用户已授权并行且存在文件范围不相交的独立任务时也应补派，不等用户再次提醒；没有独立范围或容量时记录依赖，不制造占位任务。无变化保持安静，不用快速轮询替代通知。空闲但有已授权且可行动的后续工作时补派；所有 DSH 任务验收完毕，或仅剩无可行动步骤的人工/外部依赖时暂停审计，记录恢复条件。Skill 本身不创建 heartbeat；只有自动化工具确认配置成功才报告已启用。
+
+已明确授权的旧完整访问任务若显示 `custom`，先确认对应普通 DSH 会话已空闲，再执行 `permissions --session <nativeSessionId> --preset danger-full-access`；随后读取 `permissions --session <nativeSessionId>`，核对 preset、sandbox、approval 分别为 `danger-full-access`、`danger-full-access`、`never`。该操作不发送模型 prompt，不批准挂起的工具请求，也不改动其他会话。

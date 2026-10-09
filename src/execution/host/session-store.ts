@@ -1,9 +1,10 @@
 /** OPL-owned per-session persistence. The legacy journal is never changed or removed. */
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { isAbsolute, join } from 'node:path'
 import type { HarnessSession } from '../contracts/sessions.ts'
 import { DSH_COMBINATION } from '../contracts/sessions.ts'
+import { harnessAllowsFullAccess } from './permissions.ts'
 
 function parseRecord(raw: unknown): HarnessSession {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw))
@@ -39,8 +40,15 @@ function parseRecord(raw: unknown): HarnessSession {
     throw Error('组合会话 Harness 引用无效，原文件已保留')
   if (item.title !== undefined && typeof item.title !== 'string')
     throw Error('组合会话标题无效，原文件已保留')
-  if (item.sandbox !== undefined && !['read-only', 'workspace'].includes(item.sandbox))
+  if (item.titleFromHarness !== undefined && typeof item.titleFromHarness !== 'boolean')
+    throw Error('组合会话标题来源无效，原文件已保留')
+  if (
+    item.sandbox !== undefined &&
+    !['read-only', 'workspace', 'full-access'].includes(item.sandbox)
+  )
     throw Error('组合会话权限记录无效，原文件已保留')
+  if (item.sandbox === 'full-access' && !harnessAllowsFullAccess(item.harnessRef))
+    throw Error('组合会话权限与 Harness 不一致，原文件已保留')
   if (
     item.origin !== undefined &&
     (!item.origin ||
@@ -60,6 +68,18 @@ function parseRecord(raw: unknown): HarnessSession {
     throw Error('组合会话模型记录无效，原文件已保留')
   if (item.autoWakePaused !== undefined && typeof item.autoWakePaused !== 'boolean')
     throw Error('组合会话自动回传记录无效，原文件已保留')
+  // Absent stays absent: a record written before reasoning was selectable keeps running
+  // on the Harness default instead of being back-filled with a value the user never chose.
+  if (
+    item.reasoningEffort !== undefined &&
+    (typeof item.reasoningEffort !== 'string' || !item.reasoningEffort.trim())
+  )
+    throw Error('组合会话推理设置无效，原文件已保留')
+  if (
+    item.nativeSessionId !== undefined &&
+    (typeof item.nativeSessionId !== 'string' || !item.nativeSessionId.startsWith('session-'))
+  )
+    throw Error('组合会话的官方对话引用无效，原文件已保留')
   if (item.assignment !== undefined) {
     const assignment = item.assignment
     if (
@@ -89,6 +109,24 @@ function parseRecord(raw: unknown): HarnessSession {
   ]
   for (const turn of item.turns ?? []) {
     if (
+      turn.content !== undefined &&
+      (!Array.isArray(turn.content) ||
+        turn.content.some(
+          (block: any) =>
+            !block || !['text', 'reasoning'].includes(block.type) || typeof block.text !== 'string',
+        ))
+    )
+      throw Error('组合会话消息内容无效，原文件已保留')
+    if (
+      turn.writeScope !== undefined &&
+      (!Array.isArray(turn.writeScope) ||
+        !turn.writeScope.length ||
+        turn.writeScope.some(
+          (path: unknown) => typeof path !== 'string' || !path || !isAbsolute(path),
+        ))
+    )
+      throw Error('组合会话写入范围无效，原文件已保留')
+    if (
       !states.includes(turn.state) ||
       typeof turn.prompt !== 'string' ||
       typeof turn.text !== 'string' ||
@@ -98,7 +136,11 @@ function parseRecord(raw: unknown): HarnessSession {
     if (
       turn.tools.some(
         (tool: any) =>
-          !tool || ['id', 'title', 'status', 'kind'].some((key) => typeof tool[key] !== 'string'),
+          !tool ||
+          ['id', 'title', 'status', 'kind'].some((key) => typeof tool[key] !== 'string') ||
+          ['inputJson', 'outputJson', 'contentJson', 'locationsJson'].some(
+            (key) => tool[key] !== undefined && typeof tool[key] !== 'string',
+          ),
       )
     )
       throw Error('组合会话工具记录无效，原文件已保留')

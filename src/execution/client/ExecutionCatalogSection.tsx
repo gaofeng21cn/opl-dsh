@@ -1,4 +1,5 @@
 import { useExecutionCatalog } from './use-execution-catalog.ts'
+import { HarnessProxySection } from './HarnessProxySection.tsx'
 import { Button, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { displayModelSource, selectableModels, modelRefKey } from '../contracts/catalog.ts'
 import css from '../../shared/client/SettingsSection.module.css'
@@ -16,13 +17,19 @@ export function ExecutionCatalogSection({ call }: { call: Call }) {
     setEditing,
     update,
     add,
+    proxyDrafts,
+    proxyErrors,
+    proxyOutcome,
+    editProxy,
+    saveProxy,
+    resetProxy,
   } = useExecutionCatalog(call)
   return (
     <div className={css.section} data-opl-panel="catalog" aria-busy={busy || (!catalog && !notice)}>
       <h2 className={css.title}>运行配置</h2>
       <p className={css.intro}>
         保存模型、渠道、Harness
-        与权限的搭配。已就绪的组合显示在官方会话输入框中；委派任务和交付由后台保存。模型在“模型”页管理，账号与凭据在“OPL
+        与权限的搭配。已启用的组合显示在官方会话输入框中，未就绪项显示原因；委派任务和交付由后台保存。模型在“模型”页管理，账号与凭据在“OPL
         Gateway”中管理。
       </p>
       {!catalog && !notice && (
@@ -157,18 +164,33 @@ export function ExecutionCatalogSection({ call }: { call: Call }) {
                   disabled={busy}
                   onChange={(e) =>
                     update(item.id, {
-                      permissionPolicy: e.target.value as 'workspace' | 'read-only',
+                      permissionPolicy: e.target.value as 'workspace' | 'read-only' | 'full-access',
                     })
                   }
                 >
                   <option value="read-only">只读</option>
                   <option value="workspace">工作区内修改（仍需 Harness 授权）</option>
+                  {item.harnessRef === 'minimax-code' && (
+                    <option value="full-access">完整访问（使用 MiniMax 官方 CLI 授权）</option>
+                  )}
                 </select>
               </label>
             </div>
           </details>
         )
       })}
+      {catalog && (
+        <HarnessProxySection
+          harnesses={catalog.harnesses}
+          drafts={proxyDrafts}
+          errors={proxyErrors}
+          outcome={proxyOutcome}
+          busy={busy}
+          onEdit={editProxy}
+          onSave={saveProxy}
+          onReset={resetProxy}
+        />
+      )}
     </div>
   )
 }

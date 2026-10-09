@@ -6,6 +6,10 @@ import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
 import { assertIsolatedRoot, verifyPayload, safeBinding, sha256 } from './qualification-support.mjs'
 import { DesktopPipe, verifyDesktopClient } from './qualification-client.mjs'
+import {
+  verifyHarnessTranscriptClient,
+  verifyHarnessLiveTranscriptClient,
+} from './qualification-transcript.mjs'
 
 const repo = resolve(import.meta.dirname, '..')
 const args = process.argv.slice(2)
@@ -60,6 +64,7 @@ const evidence = {
 }
 let desktop
 let desktopPipe
+let desktopWindow
 let interrupted
 const children = new Set()
 function terminateOwned(child) {
@@ -231,16 +236,24 @@ async function startDesktop() {
   delete env.ELECTRON_RUN_AS_NODE
   desktop = spawn(
     executable(),
-    ['--user-data-dir=' + join(root, 'electron'), '--remote-debugging-pipe'],
+    [
+      '--user-data-dir=' + join(root, 'electron'),
+      '--remote-debugging-pipe',
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+      '--disable-backgrounding-occluded-windows',
+    ],
     {
       env,
       detached: process.platform !== 'win32',
       stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'],
-      windowsHide: true,
+      // Live UI qualification needs a visible owned window and an active frame clock.
+      windowsHide: false,
     },
   )
   desktopPipe = new DesktopPipe(desktop)
   let spawnError
+  let ready = false
   desktop.once('error', (error) => {
     spawnError = error
   })
@@ -258,11 +271,142 @@ async function startDesktop() {
         body: JSON.stringify({ namespace: 'oplSuite', method: 'setupUrl', args: {} }),
         signal: AbortSignal.timeout(2000),
       })
-      if ((await result.json()).ok) return
+      if ((await result.json()).ok) {
+        ready = true
+        break
+      }
     } catch {}
     await delay(500)
   }
-  throw new Error('隔离桌面未在 90 秒内就绪')
+  if (!ready) throw new Error('隔离桌面未在 90 秒内就绪')
+  // Reported outside the readiness probe so a hidden content window keeps its
+  // own diagnosis instead of collapsing into the readiness timeout.
+  desktopWindow = await openVisibleContentWindow()
+}
+/**
+ * A fresh official profile opens the product's own first-run welcome window and
+ * keeps the real content window hidden until that gate is resolved. A hidden
+ * content window keeps reporting `document.visibilityState === 'hidden'` and its
+ * native `requestAnimationFrame` never produces a frame, so every visible-UI
+ * assertion downstream would measure a window that is on screen nowhere.
+ * The gate is resolved through the official UI itself, entering no credential.
+ */
+async function resolveWelcomeGate() {
+  let welcome
+  let welcomeTarget
+  for (let attempt = 0; attempt < 60 && !welcome; attempt++) {
+    try {
+      const { targetInfos } = await desktopPipe.command('Target.getTargets')
+      for (const target of targetInfos.filter((entry) => entry.type === 'page')) {
+        if (!/welcome\.html?(\?|$)/i.test(target.url)) continue
+        // The window is created while the app is still initialising, so a
+        // target can disappear between listing and attaching. That is a retry,
+        // never a qualification failure.
+        const attached = await desktopPipe
+          .command('Target.attachToTarget', { targetId: target.targetId, flatten: true })
+          .catch(() => null)
+        if (!attached) continue
+        const matched = await desktopPipe
+          .evaluate(
+            attached.sessionId,
+            'Boolean(document.body && document.body.innerText.includes("DeepSeek Harness"))',
+          )
+          .catch(() => false)
+        if (matched) {
+          welcome = attached.sessionId
+          welcomeTarget = target.targetId
+          break
+        }
+        await desktopPipe
+          .command('Target.detachFromTarget', { sessionId: attached.sessionId })
+          .catch(() => {})
+      }
+    } catch {}
+    if (!welcome) await delay(500)
+  }
+  if (!welcome) return 'absent'
+  // The official welcome window offers its own deferred path: open the API key
+  // step and take "configure later". No key is typed and none is read back.
+  const open = await desktopPipe.evaluate(
+    welcome,
+    `(() => {const labels=['添加 API Key','Add API Key'];const node=Array.from(document.querySelectorAll('button')).find(x=>x.getClientRects().length&&labels.includes((x.textContent||'').trim()));if(!node)return false;node.click();return true})()`,
+  )
+  if (!open) throw new Error('官方欢迎窗口缺少 API Key 入口')
+  let deferred = false
+  for (let attempt = 0; attempt < 20 && !deferred; attempt++) {
+    deferred = await desktopPipe
+      .evaluate(
+        welcome,
+        `(() => {const labels=['稍后配置','Set up later','Configure later','Skip for now'];const node=Array.from(document.querySelectorAll('button')).find(x=>x.getClientRects().length&&labels.includes((x.textContent||'').trim()));if(!node)return false;node.click();return true})()`,
+      )
+      .catch(() => false)
+    if (!deferred) {
+      // Closing the native window can destroy its execution context before
+      // Runtime.evaluate returns the click result. Confirm that exact target
+      // disappeared; the caller still requires a visible, painting content page.
+      const { targetInfos } = await desktopPipe.command('Target.getTargets')
+      deferred = !targetInfos.some((target) => target.targetId === welcomeTarget)
+    }
+    if (!deferred) await delay(500)
+  }
+  if (!deferred) {
+    const labels = await desktopPipe.evaluate(
+      welcome,
+      "Array.from(document.querySelectorAll('button')).filter(x=>x.getClientRects().length).map(x=>(x.textContent||'').trim())",
+    )
+    throw new Error('官方欢迎窗口无法在无凭据条件下继续；入口：' + JSON.stringify(labels))
+  }
+  await desktopPipe.command('Target.detachFromTarget', { sessionId: welcome }).catch(() => {})
+  return 'dismissed'
+}
+/** Attach the real content page and prove it is actually visible and painting. */
+async function openVisibleContentWindow() {
+  const welcomeGate = await resolveWelcomeGate()
+  let session
+  for (let attempt = 0; attempt < 120 && !session; attempt++) {
+    try {
+      const { targetInfos } = await desktopPipe.command('Target.getTargets')
+      for (const target of targetInfos.filter((entry) => entry.type === 'page')) {
+        const attached = await desktopPipe
+          .command('Target.attachToTarget', { targetId: target.targetId, flatten: true })
+          .catch(() => null)
+        if (!attached) continue
+        const matched = await desktopPipe
+          .evaluate(attached.sessionId, 'Boolean(document.body && globalThis.__ModuleLoader__)')
+          .catch(() => false)
+        if (matched) {
+          session = attached.sessionId
+          break
+        }
+        await desktopPipe
+          .command('Target.detachFromTarget', { sessionId: attached.sessionId })
+          .catch(() => {})
+      }
+    } catch {}
+    if (!session) await delay(500)
+  }
+  if (!session) throw new Error('未发现官方桌面 Client 页面')
+  let visible = false
+  for (let attempt = 0; attempt < 60 && !visible; attempt++) {
+    visible = await desktopPipe
+      .evaluate(session, `document.visibilityState === 'visible'`)
+      .catch(() => false)
+    if (!visible) await delay(500)
+  }
+  if (!visible) {
+    const state = await desktopPipe
+      .evaluate(session, '({visibility:document.visibilityState,focus:document.hasFocus()})')
+      .catch((error) => ({ evaluateError: String(error.message) }))
+    throw new Error('官方桌面内容窗口未进入可见状态：' + JSON.stringify(state))
+  }
+  // The live assertions need a real native frame, not just a reported state.
+  const frame = desktopPipe
+    .evaluate(session, `new Promise(resolve => requestAnimationFrame(() => resolve('fired')))`)
+    .catch(() => 'no-frame')
+  const nativeFrameClock =
+    (await Promise.race([frame, delay(10000).then(() => 'no-frame')])) === 'fired'
+  if (!nativeFrameClock) throw new Error('官方桌面内容窗口未产生原生动画帧')
+  return { welcomeGate, mainWindowVisible: true, nativeFrameClock: true }
 }
 async function stopDesktop() {
   if (!desktop) return
@@ -348,7 +492,38 @@ try {
       env: { ...environment, ELECTRON_RUN_AS_NODE: '1' },
     })
   evidence.checks.isolatedInstallation = true
+  const historyProject = join(root, 'test-project')
+  await mkdir(historyProject, { recursive: true })
+  await writeFile(
+    join(profile, 'harness-sessions.json'),
+    JSON.stringify([
+      {
+        id: 'harness-qualification-history',
+        combination: 'grok-build/grok-4.7',
+        harnessRef: 'grok-build',
+        modelRef: { provider: 'opl-gateway', model: 'grok::grok-4.7' },
+        cwd: historyProject,
+        origin: { kind: 'desktop', sessionId: 'isolated-acceptance' },
+        acpSessionId: 'test-native',
+        title: '历史外部任务 中文',
+        sandbox: process.platform === 'win32' ? 'full-access' : 'read-only',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        turns: [
+          {
+            operationId: 'history',
+            fingerprint: 'qualification-history',
+            prompt: '历史用户消息 HISTORY_USER',
+            text: '历史模型回答 HISTORY_RESULT',
+            state: 'completed',
+            tools: [],
+          },
+        ],
+      },
+    ]) + '\n',
+  )
   await startDesktop()
+  evidence.checks.desktopWindow = desktopWindow
   await mkdir(resolve(evidenceFile, '..'), { recursive: true })
   evidence.checks.client = await verifyDesktopClient(
     desktopPipe,
@@ -360,8 +535,20 @@ try {
   evidence.checks.runtime = JSON.parse(
     await run(process.execPath, [join(repo, 'scripts/verify-official-runtime.mjs'), root]),
   )
+  if (evidence.checks.runtime.harnessTranscript)
+    evidence.checks.transcriptClient = await verifyHarnessTranscriptClient(
+      desktopPipe,
+      evidenceFile.replace(/\.json$/, '') + '-transcript.png',
+    )
+  if (args.includes('--live-transcript'))
+    evidence.checks.liveTranscriptClient = await verifyHarnessLiveTranscriptClient(
+      desktopPipe,
+      root,
+      evidenceFile.replace(/\.json$/, '') + '-live-transcript.png',
+    )
   await stopDesktop()
   await startDesktop()
+  evidence.checks.restartWindow = desktopWindow
   evidence.checks.restart = JSON.parse(
     await run(process.execPath, [
       join(repo, 'scripts/verify-official-runtime.mjs'),

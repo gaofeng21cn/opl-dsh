@@ -26,6 +26,14 @@ const hostBuild = await build({
   outfile: join(output, 'package/lib/index.js'),
 })
 await buildNativeBridge(root)
+await build({
+  entryPoints: [join(root, 'src/execution/host/adapters/zcode-harness-bridge.ts')],
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node24',
+  outfile: join(output, 'package/lib/zcode-harness-bridge.mjs'),
+})
 const clientBuild = await build({
   metafile: true,
   entryPoints: [join(root, 'src/suite/client.tsx')],
@@ -92,7 +100,12 @@ await cp(
   join(output, 'package/licenses/claude-agent-sdk.md'),
 )
 for (const file of ['LICENSE', 'NOTICE']) await cp(join(root, file), join(output, 'package', file))
-execFileSync('tar', [
+// Windows' bundled bsdtar accepts drive-qualified paths; Git Bash tar treats them as remote archives.
+const tar =
+  process.platform === 'win32'
+    ? join(process.env.SystemRoot ?? 'C:/Windows', 'System32', 'tar.exe')
+    : 'tar'
+execFileSync(tar, [
   '-czf',
   join(output, `opl-dsh-enhancements-${version}.tgz`),
   '-C',
@@ -132,6 +145,7 @@ for (const file of [
   'skill/control.mjs',
   'skill/windows-acl.mjs',
   'skill/harness-mcp.mjs',
+  'windows-lifecycle.mjs',
   name,
 ]) {
   payloadFiles[file] = createHash('sha256')
