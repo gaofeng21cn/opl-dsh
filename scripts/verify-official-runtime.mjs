@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { readFile, mkdir, writeFile, access } from 'node:fs/promises'
+import { readFile, readdir, mkdir, writeFile, access } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { assertIsolatedRoot, safeBinding } from './qualification-support.mjs'
 // Run against an already booted, isolated official Desktop. Never target a user's profile.
@@ -46,11 +46,20 @@ if (process.argv.includes('--readback-selections')) {
     await readFile(join(root, 'profiles/desktop/combination-selection.json'), 'utf8'),
   )
   if (!Object.keys(selections).length) throw Error('没有可验收的组合选择记录')
+  const projects = new Map()
+  const sessionsDirectory = join(root, 'profiles/desktop/harness-sessions')
+  for (const name of await readdir(sessionsDirectory)) {
+    if (!/^[a-f0-9]{64}\.json$/.test(name)) continue
+    const record = JSON.parse(await readFile(join(sessionsDirectory, name), 'utf8'))
+    if (record.nativeSessionId) projects.set(record.nativeSessionId, record.cwd)
+  }
   for (const [sessionId, combination] of Object.entries(selections)) {
     // A restarted Host has not loaded these persisted Sessions yet. Resume
     // their exact identity through the official owner before reading the
     // Session projection; otherwise modelSelection can only see the default.
-    await rpc('session', 'create', { request: { sessionId } })
+    await rpc('session', 'create', {
+      request: { sessionId, cwd: projects.get(sessionId) ?? join(root, 'test-project') },
+    })
     assert.equal((await harness('model-selection', { sessionId })).combination, combination)
   }
   console.log(JSON.stringify({ selectionRestore: true, sessions: Object.keys(selections).length }))
