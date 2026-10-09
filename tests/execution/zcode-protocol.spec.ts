@@ -255,6 +255,15 @@ class Bridge {
     }
   }
 
+  /** stdout replies and stderr lines arrive independently; await the line being asserted. */
+  async untilDiagnostic(text: string): Promise<void> {
+    const deadline = Date.now() + 20000
+    while (!this.diagnostics.some((line) => line.includes(text))) {
+      if (Date.now() > deadline) throw new Error('bridge timeout waiting for diagnostic')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+  }
+
   /** Requests the fake official CLI actually received, read from its trace file. */
   traced(): any[] {
     if (!existsSync(this.traceFile)) return []
@@ -980,6 +989,7 @@ describe('bridge against a fake official app-server', () => {
             prompt: [{ type: 'text', text: 'x' }],
           }),
         ).rejects.toThrow('官方 Harness 调用未完成')
+        await bridge.untilDiagnostic('model rejected the request')
         const diagnostics = bridge.diagnostics.join('\n')
         expect(diagnostics).toContain('model rejected the request')
         expect(diagnostics).not.toContain(API_KEY)
