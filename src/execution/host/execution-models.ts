@@ -90,6 +90,9 @@ export class ExecutionModelResolver {
         } catch {
           configured = false
         }
+        // Account model discovery requires a signed-in connection. Saved model
+        // references remain visible as unavailable below without making that request.
+        if (!configured) continue
       }
       try {
         for (const model of await this.ctx.llm.listModels(provider.id)) {

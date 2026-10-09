@@ -61,7 +61,7 @@ export async function verifyHarnessTranscriptClient(pipe, screenshotFile) {
     'External transcript Tool slot not rendered',
   )
   await until(
-    `(() => {for(const node of document.querySelectorAll('[aria-expanded=false]')){const label=node.textContent?.trim() || node.getAttribute('aria-label') || '';if(node.getClientRects().length && (node.matches('[data-disclosure-row], [data-variant=think] button, [data-opl-harness-tool] [aria-expanded]') || /^(已完成，用时|已调用工具|思考)/.test(label)))node.click()}return document.body.innerText.includes('TRANSCRIPT_OK') && document.body.innerText.includes('Inspecting the repository.')})()`,
+    `(() => {for(const node of document.querySelectorAll('[aria-expanded=false]')){const label=node.textContent?.trim() || node.getAttribute('aria-label') || '';if(node.getClientRects().length && (node.matches('[data-disclosure-row], [data-variant=think] button, [data-opl-harness-tool] [aria-expanded]') || /^(已完成，用时|Completed in|已调用工具|Called tools|思考|Think)/.test(label)))node.click()}return document.body.innerText.includes('TRANSCRIPT_OK') && document.body.innerText.includes('Inspecting the repository.')})()`,
     'Reasoning or terminal output not visible',
   )
   const exceptions = pipe.events

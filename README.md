@@ -63,18 +63,18 @@ Windows · x64，在 PowerShell 中运行：
 
 设置分为 **OPL Gateway、模型、Harness、运行配置、协作与自动化**。Gateway 账号页负责凭据和权限；模型页复用 DSH 原生设置，OPL Gateway 作为一个来源按分组展开。Harness 页检测本机程序、版本与路径，提供官方安装更新入口。运行配置只引用模型、Harness 和权限，不再重复保存连接和协议；协作与自动化管理任务验收、外部接入和 Skill。外部任务不单列设置页，按官方会话在对应项目侧栏查看和处理。
 
-对话输入栏直接使用官方 DSH 的会话 UI，并在模型选择器中显示“模型 · Harness”。所有已就绪组合都可在当前会话选择；官方 DSH 组合直接切换模型，外部 Harness 组合由 Host 在同一官方会话的模型请求阶段转发。切换到外部 Harness 时，已有会话的文本、工具调用和结果会作为上下文交接；历史推理内容不会交接，直接附件暂不支持。未配置官方凭据的 DeepSeek 模型不会作为可用选项。默认 DeepSeek Flash 只走 DeepSeek 分组，不要求 OpenAI 协议权限；用户在模型页显式启用后，才会加入 OpenAI 协议渠道。同名模型的渠道分别保留；Claude Opus 5.5 可选 AWS/Kiro。账号页展示上游返回的分组倍率，组合始终绑定所选渠道。GPT 使用 OpenAI 协议分组。
+对话输入栏直接使用官方 DSH 的会话 UI，并在模型选择器中显示“模型 · Harness”。所有已就绪组合都可在当前会话选择；官方 DSH 组合直接切换模型，外部 Harness 组合由 Host 在同一官方会话的模型请求阶段转发。切换到外部 Harness 时，已有会话的文本、工具调用和结果会作为上下文交接；历史推理内容不会交接，直接附件暂不支持。未配置官方凭据的 DeepSeek 模型不会作为可用选项；未登录 DeepSeek 官方账号时不请求远端模型目录，已保存的组合仍显示为不可用。默认 DeepSeek Flash 只走 DeepSeek 分组，不要求 OpenAI 协议权限；用户在模型页显式启用后，才会加入 OpenAI 协议渠道。同名模型的渠道分别保留；Claude Opus 5.5 可选 AWS/Kiro。账号页展示上游返回的分组倍率，组合始终绑定所选渠道。GPT 使用 OpenAI 协议分组。
 
 Codex 协作保留 DSH 的权限与问题确认。后台主动唤醒 Codex 需要另行配置可用的队列桥；默认通过 Skill 等待或读取结果。
 
 当前可用组合：
 
-| 组合                      | Harness                                                     | 状态                                      |
-| ------------------------- | ----------------------------------------------------------- | ----------------------------------------- |
-| DeepSeek-V4.1-Flash + DSH | 模型：DeepSeek-V4.1-Flash；Harness：官方 DSH                | 默认对话路径                              |
-| GPT + Codex CLI           | 模型：GPT-6.1 Sol、GPT-6 Astra / Sol / Luna；Harness：本机官方 Codex CLI | 同一 DSH 会话输入框与消息流转发           |
-| Claude + Claude Code      | 模型：Claude Opus 5.5；Harness：本机官方 Claude Code        | AWS、Kiro 渠道独立选择，同一 DSH 会话回写 |
-| Grok + Grok Build         | 模型：Grok 4.7；Harness：官方 Grok Build，经 ACP            | 已验证 macOS，同一 DSH 会话回写           |
+| 组合                      | Harness                                                                                                                       | 状态                                              |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| DeepSeek-V4.1-Flash + DSH | 模型：DeepSeek-V4.1-Flash；Harness：官方 DSH                                                                                  | 默认对话路径                                      |
+| GPT + Codex CLI           | 模型：GPT-6.1 Sol、GPT-6 Astra / Sol / Luna；Harness：本机官方 Codex CLI                                                      | 同一 DSH 会话输入框与消息流转发                   |
+| Claude + Claude Code      | 模型：Claude Opus 5.5；Harness：本机官方 Claude Code                                                                          | AWS、Kiro 渠道独立选择，同一 DSH 会话回写         |
+| Grok + Grok Build         | 模型：Grok 4.7；Harness：官方 Grok Build，经 ACP                                                                              | 已验证 macOS，同一 DSH 会话回写                   |
 | MiniMax + mcode           | 模型：MiniMax-M3.1-Flash-Preview（默认 `max`，档位可选）、MiniMax-M3（默认思考开启，可关闭）；Harness：官方 mcode CLI，经 ACP | 使用官方账号登录，组合 ID 以 `delegate-list` 为准 |
 
 MiniMax 组合使用官方 MiniMax 账号，凭据由官方 `mcode` CLI 自己保存和刷新，不由 OPL Gateway 提供密钥，也不驱动 MiniMax Code 图形界面；只提供 M3.1-Flash-Preview 与 M3 两个组合，分别默认 `max` 与开启思考，用户可按官方能力选择设置。当前仅支持用户明确授权的完整访问；mcode 自身工具不能提供 DSH 的只读或工作区隔离，受限请求在启动前拒绝。安装、登录、权限限制与委派用法见[官方 MiniMax 账号与 mcode](docs/minimax-code.md)。

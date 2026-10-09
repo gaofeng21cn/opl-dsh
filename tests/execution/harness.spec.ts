@@ -438,6 +438,28 @@ describe('native conversation combinations', () => {
       catalog.combinations.filter((item) => item.modelRef.provider === 'deepseek-official'),
     ).toEqual([])
   })
+  it.each(['signed-out', 'credential-stored'])(
+    'only discovers account models after login: %s',
+    async (status) => {
+      const { service, ctx } = await nativeSetup(
+        [{ id: 'deepseek-flash', name: 'DeepSeek' }],
+        [{ id: 'deepseek-account', name: 'DeepSeek account' }],
+      )
+      vi.spyOn(ctx.typertGateway, 'invoke').mockResolvedValue({ status } as never)
+      const discover = vi.spyOn(ctx.llm, 'listModels')
+      const catalog = await service.executionCatalog()
+      const accountModels = catalog.models.filter(
+        (item) => item.ref.provider === 'deepseek-account',
+      )
+      if (status === 'signed-out') {
+        expect(discover).not.toHaveBeenCalled()
+        expect(accountModels).toEqual([])
+      } else {
+        expect(discover).toHaveBeenCalledWith('deepseek-account')
+        expect(accountModels).toMatchObject([{ available: true }])
+      }
+    },
+  )
   it('creates independently named combinations for explicit Gateway channels', async () => {
     // This assertion lists every available model, so the machine's own official CLIs
     // must not leak into it: an installed MiniMax Code would legitimately add its own
