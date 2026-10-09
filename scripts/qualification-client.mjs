@@ -189,9 +189,18 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
     { label: ['模型', 'Models'], marker: 'gateway-models' },
   ]
   const screenshots = result.screenshots
+  async function recoverClosedSettings() {
+    if (result.settingsReopens || (await pipe.evaluate(session, `Boolean(${settingsNav})`))) return
+    result.settingsReopens++
+    await openSettings()
+  }
   for (const panel of panels) {
     const selectPanel = () =>
-      waitFor(clickLabel(panel.label, settingsNav), panel.label[0] + ' 插槽未注册')
+      waitFor(
+        clickLabel(panel.label, settingsNav),
+        panel.label[0] + ' 插槽未注册',
+        recoverClosedSettings,
+      )
     await selectPanel()
     await waitFor(
       `(() => {const node=document.querySelector('[data-opl-panel="${panel.marker}"]'); return Boolean(node && node.getClientRects().length && node.innerText.trim() && node.getAttribute('aria-busy') !== 'true' && !node.querySelector('[aria-busy="true"]'))})()`,
