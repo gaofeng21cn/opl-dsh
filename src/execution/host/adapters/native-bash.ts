@@ -25,7 +25,7 @@
  * Kept free of runtime imports so the standalone bridge bundle stays self-contained.
  */
 import { statSync } from 'node:fs'
-import { basename, delimiter, join, win32 } from 'node:path'
+import { win32 } from 'node:path'
 
 /** Permission profiles the suite can authorize for a native harness task. */
 export type NativePermission = 'read-only' | 'workspace' | 'full-access'
@@ -67,8 +67,8 @@ export function gitBashCandidates(env: NodeJS.ProcessEnv): string[] {
     (value): value is string => Boolean(value),
   )
   return roots.flatMap((root) => [
-    join(root, 'Git', 'bin', 'bash.exe'),
-    join(root, 'Git', 'usr', 'bin', 'bash.exe'),
+    win32.join(root, 'Git', 'bin', 'bash.exe'),
+    win32.join(root, 'Git', 'usr', 'bin', 'bash.exe'),
   ])
 }
 
@@ -99,9 +99,9 @@ export function resolveNativeGitBash(options: NativeBashOptions = {}): string | 
   const candidates = [
     ...gitBashCandidates(env),
     ...(env.PATH ?? '')
-      .split(delimiter)
+      .split(win32.delimiter)
       .filter(Boolean)
-      .map((directory) => join(directory, 'bash.exe')),
+      .map((directory) => win32.join(directory, 'bash.exe')),
   ]
   return [...new Set(candidates)].find((candidate) => exists(candidate))
 }
@@ -139,7 +139,7 @@ export function codexGitBashProblem(
   // the `bin` and the `usr\bin` layouts.
   let root = win32.dirname(path)
   while (root.length > 1) {
-    if (exists(join(root, 'cmd', 'git.exe'))) return undefined
+    if (exists(win32.join(root, 'cmd', 'git.exe'))) return undefined
     const parent = win32.dirname(root)
     if (parent === root) break
     root = parent
@@ -161,7 +161,7 @@ export function claudeGitBashProblem(
   options: NativeBashOptions = {},
 ): string | undefined {
   const exists = options.exists ?? fileExists
-  if (!['bash.exe', 'sh.exe', 'bash', 'sh'].includes(basename(path).toLowerCase()))
+  if (!['bash.exe', 'sh.exe', 'bash', 'sh'].includes(win32.basename(path).toLowerCase()))
     return `${path} 不是 bash/sh 可执行文件`
   if (!exists(path)) return `${path} 不存在`
   return undefined

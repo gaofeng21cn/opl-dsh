@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from 'vitest'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { createInterface } from 'node:readline'
 import { join, resolve } from 'node:path'
@@ -276,20 +276,24 @@ class Bridge {
   }
 }
 
-/**
- * Install the fake CLI inside a directory whose name contains a space, so the Windows
- * `cmd.exe` launch path is exercised with the same shape a real `Program Files` install
- * has. The launcher forwards its arguments, proving `app-server` reaches the CLI.
- */
+/** Quote one argument for the POSIX fixture launcher. */
+function shellQuote(value: string): string {
+  return "'" + value.replaceAll("'", "'\''") + "'"
+}
+
+/** Install a platform-native launcher with a spaced path and forwarded CLI arguments. */
 async function installFakeCli(root: string) {
   const directory = join(root, 'ZCode CLI')
   await mkdir(directory, { recursive: true })
   await writeFile(join(directory, 'fake-server.mjs'), FAKE_SERVER)
-  const command = join(directory, 'zcode.cmd')
+  const command = join(directory, process.platform === 'win32' ? 'zcode.cmd' : 'zcode')
   await writeFile(
     command,
-    `@echo off\r\n"${process.execPath}" "${join(directory, 'fake-server.mjs')}" %*\r\n`,
+    process.platform === 'win32'
+      ? `@echo off\r\n"${process.execPath}" "${join(directory, 'fake-server.mjs')}" %*\r\n`
+      : `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(join(directory, 'fake-server.mjs'))} "$@"\n`,
   )
+  await chmod(command, 0o755)
   return { command, directory }
 }
 

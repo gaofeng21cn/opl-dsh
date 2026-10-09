@@ -1,5 +1,5 @@
 import { statSync } from 'node:fs'
-import { delimiter, join, win32 } from 'node:path'
+import { win32 } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { SandboxBashExecutor, type Config as LocalBashConfig } from '@deepseek-ai/dsh-bash-sandbox'
 import type { ShellExecSpec, ShellExecution } from '@deepseek-ai/dsh-shell'
@@ -21,8 +21,8 @@ export function gitBashCandidates(env: NodeJS.ProcessEnv = process.env): string[
   )
   return [
     ...roots.flatMap((root) => [
-      join(root, 'Git', 'bin', 'bash.exe'),
-      join(root, 'Git', 'usr', 'bin', 'bash.exe'),
+      win32.join(root, 'Git', 'bin', 'bash.exe'),
+      win32.join(root, 'Git', 'usr', 'bin', 'bash.exe'),
     ]),
     ...(env.OPL_GIT_BASH_PATH ? [env.OPL_GIT_BASH_PATH] : []),
   ]
@@ -59,9 +59,9 @@ export function resolveGitBashPath(options: GitBashPathOptions = {}): string {
     ...(env.OPL_GIT_BASH_PATH ? [env.OPL_GIT_BASH_PATH] : []),
     ...gitBashCandidates(env),
     ...(env.PATH ?? '')
-      .split(delimiter)
+      .split(win32.delimiter)
       .filter(Boolean)
-      .map((directory) => join(directory, 'bash.exe')),
+      .map((directory) => win32.join(directory, 'bash.exe')),
   ]
   const path = [...new Set(candidates)].find((candidate) => exists(candidate))
   if (path) return path

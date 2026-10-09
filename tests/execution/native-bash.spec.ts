@@ -98,10 +98,14 @@ describe('native Git Bash resolution', () => {
 
   it('rejects an explicit but unusable path instead of falling back', { skip: !WINDOWS }, () => {
     expect(() =>
-      resolveNativeGitBash({ env: { OPL_GIT_BASH_PATH: 'C:/not-installed/bash.exe' } }),
+      resolveNativeGitBash({
+        platform: 'win32',
+        env: { OPL_GIT_BASH_PATH: 'C:/not-installed/bash.exe' },
+      }),
     ).toThrow(/no fallback/)
     expect(() =>
       nativeGitBashEnv('claude', 'workspace', {
+        platform: 'win32',
         env: { OPL_GIT_BASH_PATH: 'C:/not-installed/bash.exe' },
       }),
     ).toThrow(/no fallback/)
@@ -109,13 +113,18 @@ describe('native Git Bash resolution', () => {
 
   it('returns no patch when no Git Bash is installed', () => {
     expect(
-      nativeGitBashEnv('claude', 'workspace', { env: { PATH: '' }, exists: () => false }),
+      nativeGitBashEnv('claude', 'workspace', {
+        platform: 'win32',
+        env: { PATH: '' },
+        exists: () => false,
+      }),
     ).toEqual({})
   })
 
   it('honours a path the Host already resolved', () => {
     expect(
       nativeGitBashEnv('claude', 'workspace', {
+        platform: 'win32',
         bash: 'C:\\Program Files\\Git\\bin\\bash.exe',
         exists: () => true,
       }),
@@ -131,9 +140,13 @@ describe('official harness shell variables', () => {
   it('never assumes Git Bash for Codex, because upstream Codex has no such interface', () => {
     // The variable exists only in a local patch build, so it is never applied by default.
     expect(codexGitBashOptIn({})).toBe(false)
-    expect(nativeGitBashEnv('codex', 'full-access', { bash, exists })).toEqual({})
+    expect(nativeGitBashEnv('codex', 'full-access', { platform: 'win32', bash, exists })).toEqual(
+      {},
+    )
     // Even a resolved Git Bash on this machine does not switch Codex on its own.
-    expect(nativeGitBashEnv('codex', 'full-access', { bash, exists, env: {} })).toEqual({})
+    expect(
+      nativeGitBashEnv('codex', 'full-access', { platform: 'win32', bash, exists, env: {} }),
+    ).toEqual({})
   })
 
   it('offers Git Bash to Codex only after an explicit opt-in and the profile it accepts', () => {
@@ -146,10 +159,12 @@ describe('official harness shell variables', () => {
     expect(codexAllowsGitBash('workspace')).toBe(false)
     expect(codexAllowsGitBash('full-access')).toBe(true)
     for (const permission of ['read-only', 'workspace'] as const)
-      expect(() => nativeGitBashEnv('codex', permission, { bash, exists, env: optIn })).toThrow(
-        /不会为 Bash 扩大受限任务的权限/,
-      )
-    expect(nativeGitBashEnv('codex', 'full-access', { bash, exists, env: optIn })).toEqual({
+      expect(() =>
+        nativeGitBashEnv('codex', permission, { platform: 'win32', bash, exists, env: optIn }),
+      ).toThrow(/不会为 Bash 扩大受限任务的权限/)
+    expect(
+      nativeGitBashEnv('codex', 'full-access', { platform: 'win32', bash, exists, env: optIn }),
+    ).toEqual({
       CODEX_NATIVE_GIT_BASH_PATH: bash,
     })
   })
@@ -157,9 +172,13 @@ describe('official harness shell variables', () => {
   it('does not escalate a restricted profile to reach Git Bash', () => {
     for (const permission of ['read-only', 'workspace'] as const) {
       // Without the opt-in nothing is requested, so the harness keeps its own shell.
-      expect(nativeGitBashEnv('codex', permission, { bash, exists, env: {} })).toEqual({})
+      expect(
+        nativeGitBashEnv('codex', permission, { platform: 'win32', bash, exists, env: {} }),
+      ).toEqual({})
       // With the opt-in the request fails instead of quietly widening the task.
-      expect(() => nativeGitBashEnv('codex', permission, { bash, exists, env: optIn })).toThrow()
+      expect(() =>
+        nativeGitBashEnv('codex', permission, { platform: 'win32', bash, exists, env: optIn }),
+      ).toThrow()
       expect(codexSandboxMode(permission)).not.toBe('danger-full-access')
     }
   })
@@ -168,6 +187,7 @@ describe('official harness shell variables', () => {
     // Restricted permission plus an explicit Git Bash request.
     expect(() =>
       nativeGitBashEnv('codex', 'read-only', {
+        platform: 'win32',
         env: { OPL_NATIVE_CODEX_GIT_BASH: '1' },
         exists: () => true,
       }),
@@ -175,6 +195,7 @@ describe('official harness shell variables', () => {
     // No Git Bash installed at all, but the request was explicit.
     expect(() =>
       nativeGitBashEnv('codex', 'full-access', {
+        platform: 'win32',
         env: { ...optIn, PATH: '' },
         exists: () => false,
       }),
@@ -182,18 +203,23 @@ describe('official harness shell variables', () => {
     // An explicit but unusable Claude path is likewise not silently replaced.
     expect(() =>
       nativeGitBashEnv('claude', 'workspace', {
+        platform: 'win32',
         env: { OPL_GIT_BASH_PATH: 'C:/not-installed/bash.exe' },
       }),
     ).toThrow(/no fallback/)
     // Nothing requested and nothing installed stays a no-op.
     expect(
-      nativeGitBashEnv('claude', 'workspace', { env: { PATH: '' }, exists: () => false }),
+      nativeGitBashEnv('claude', 'workspace', {
+        platform: 'win32',
+        env: { PATH: '' },
+        exists: () => false,
+      }),
     ).toEqual({})
   })
 
   it('offers Git Bash to Claude for every profile Claude accepts', () => {
     for (const permission of ['read-only', 'workspace', 'full-access'] as const)
-      expect(nativeGitBashEnv('claude', permission, { bash, exists })).toEqual({
+      expect(nativeGitBashEnv('claude', permission, { platform: 'win32', bash, exists })).toEqual({
         CLAUDE_CODE_GIT_BASH_PATH: bash,
       })
   })
@@ -227,6 +253,7 @@ describe('official harness shell variables', () => {
   it('fails diagnosably when the harness would reject the resolved path', () => {
     expect(() =>
       nativeGitBashEnv('codex', 'full-access', {
+        platform: 'win32',
         bash: 'C:\\Windows\\System32\\bash.exe',
         env: optIn,
         exists: () => true,
@@ -234,6 +261,7 @@ describe('official harness shell variables', () => {
     ).toThrow(/WSL/)
     expect(() =>
       nativeGitBashEnv('claude', 'workspace', {
+        platform: 'win32',
         bash: 'C:\\Windows\\System32\\cmd.exe',
         exists: () => true,
       }),

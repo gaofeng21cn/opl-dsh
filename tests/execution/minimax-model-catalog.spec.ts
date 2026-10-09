@@ -14,7 +14,7 @@
  * (the `session/set_config_option` round-trip that pins `thinkingEffort=max`)
  * and the HarnessService session bridging, which the core owns separately.
  */
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -637,7 +637,9 @@ describe('MiniMax Code adapter routing seam', () => {
     const bin = join(root, 'minimax-code')
     await mkdir(bin, { recursive: true })
     await writeFile(join(bin, launcher), '')
+    await chmod(join(bin, launcher), 0o755)
     process.env.MINIMAX_CODE_HOME = bin
+    process.env.PATH = bin
     process.env.MINIMAX_DATA_DIR = join(root, 'data')
 
     const signedOut = await minimaxCodeAdapter.available(
@@ -658,9 +660,16 @@ describe('MiniMax Code adapter routing seam', () => {
 
   it('launches the official CLI in ACP mode with no bypass flag and only system environment', async () => {
     const root = await temp('opl-minimax-flags-')
+    const bin = join(root, 'minimax-code')
+    await mkdir(bin, { recursive: true })
+    const launcher = join(bin, process.platform === 'win32' ? 'mcode.cmd' : 'mcode')
+    await writeFile(launcher, '')
+    await chmod(launcher, 0o755)
+    process.env.MINIMAX_CODE_HOME = bin
+    process.env.PATH = bin
     process.env.MINIMAX_DATA_DIR = join(root, 'data')
     const path = await executablePath('mcode', MINIMAX_CODE_HARNESS)
-    expect(path, '本机需要已安装官方 mcode 才能验证启动参数').toBeDefined()
+    expect(path).toBe(launcher)
     const prepared = await minimaxCodeAdapter.prepare!(
       undefined as unknown as Context,
       record(M3),
