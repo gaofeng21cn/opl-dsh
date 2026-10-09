@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile, rm, access } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile, rm, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -16,11 +16,91 @@ import {
   GROK_COMBINATION,
   grokConfiguration,
 } from '../../src/execution/host/harness.ts'
+import { adapterFor } from '../../src/execution/host/adapters/index.ts'
+import { commandLaunch } from '../../src/execution/host/harness-registry.ts'
+import { systemEnvironment } from '../../src/execution/host/adapters/environment.ts'
+import { resolveGatewayExecution } from '../../src/gateway/host/execution-access.ts'
+import { GROK_API_KEY_REF } from '../../src/gateway/host/config.ts'
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
   while (cleanups.length) await cleanups.pop()!()
 })
+
+/**
+ * Run the generic ACP transport and lifecycle cases against a Node fixture agent.
+ *
+ * Every case in this file drives the harness' own persistence, approvals, deduplication,
+ * concurrency, resume, cancellation and conversation streaming against
+ * `tests/fixtures/acp-agent.mjs`. None of them is a test of an official CLI's OS sandbox.
+ *
+ * Production Grok deliberately refuses restricted tiers on Windows, because its official
+ * sandbox has no backend on this platform. That refusal is correct, and it is verified
+ * separately against the real adapter in the Grok suite. To keep this file about the harness,
+ * the adapter's `prepare` step is replaced for exactly this Node fixture:
+ *
+ * - only the adapter's launch step is replaced; the `HarnessService` under test stays real;
+ * - the configuration file and gateway-key handling stay real, reusing the production helpers;
+ * - no production module gains a test hook, no platform is faked, and no lifecycle, approval,
+ *   permission or deduplication assertion is removed or weakened.
+ *
+ * A passing case here therefore says nothing about whether an official CLI's sandbox works.
+ * @returns nothing; installs the fixture-only adapter preparation.
+ */
+function useNodeAcpFixtureAgent() {
+  const adapter = adapterFor('grok-build', {
+    provider: 'opl-gateway',
+    model: 'grok::grok-4.7',
+  })
+  if (!adapter) throw Error('fixture seam requires the Grok adapter entry')
+  vi.spyOn(adapter, 'prepare').mockImplementation(async (ctx, record, options) => {
+    if (
+      options.prefix?.length !== 1 ||
+      options.prefix[0] !== resolve('tests/fixtures/acp-agent.mjs')
+    )
+      throw Error('The fixture adapter only launches the Node ACP fixture')
+    const route = await resolveGatewayExecution(ctx, record.modelRef, options.resolveKey)
+    const home = join(options.home, 'harnesses', 'grok-build')
+    await mkdir(home, { recursive: true, mode: 0o700 })
+    // The real configuration layout is still written, so the credential assertions below
+    // still hold.
+    const config = join(home, 'config.toml'),
+      bytes = grokConfiguration(route.baseURL)
+    const current = await readFile(config, 'utf8').catch(() => undefined)
+    if (current === undefined) await writeFile(config, bytes, { mode: 0o600, flag: 'wx' })
+    else if (current !== bytes) await writeFile(config, bytes, { mode: 0o600 })
+    // A Node fixture agent has no OS sandbox, so it takes neutral fixture flags. These say
+    // nothing about the official Grok tiers.
+    const launch = commandLaunch(process.execPath, [
+      ...(options.prefix ?? []),
+      '--cwd',
+      record.cwd,
+      '--model',
+      'grok-4.7',
+      '--sandbox',
+      record.sandbox === 'read-only' ? 'read-only' : 'workspace-write',
+      '--permission-mode',
+      'default',
+      'agent',
+      '--no-leader',
+      'stdio',
+    ])
+    return {
+      home,
+      ...launch,
+      env: {
+        ...systemEnvironment(),
+        GROK_HOME: home,
+        [GROK_API_KEY_REF]: route.apiKey,
+        GROK_DEFAULT_SELECTED_PERMISSION: 'allow_once',
+      },
+    }
+  })
+}
+
 async function setup() {
+  useNodeAcpFixtureAgent()
   const root = await mkdtemp(join(tmpdir(), 'opl-acp-test-'))
   cleanups.push(() => rm(root, { recursive: true, force: true }))
   const options = {
@@ -49,9 +129,16 @@ async function nativeSetup(
   ],
   providers = [{ id: 'opl-gateway', name: 'OPL Gateway' }],
 ) {
-  const { root, options } = await setup()
+  const { root, options, service: initial } = await setup()
+  await initial.executionCatalog()
+  await initial.dispose()
   let current = { provider: 'opl-gateway', model: 'codex::test-model' }
-  const session = { id: 'native-session', header: { cwd: root }, append: vi.fn() }
+  const session = {
+    id: 'native-session',
+    header: { cwd: root },
+    append: vi.fn(),
+    snapshotEvents: () => [],
+  }
   const ctx = {
     get: () => undefined,
     agents: { get: () => undefined },
@@ -86,6 +173,71 @@ async function nativeSetup(
   }
 }
 describe('native conversation combinations', () => {
+  it.each(['aws', 'kiro'])(
+    'routes the first ordinary %s request through Claude without a picker binding',
+    async (channel) => {
+      const ref = { provider: 'opl-gateway', model: channel + '::claude-opus-5-5' }
+      const { service, ctx, root, session } = await nativeSetup([{ id: ref.model, name: 'Claude' }])
+      const settings = {
+        describe: () => [{ ns: 'opl-suite', value: { gatewayGroups: { kiro: true } } }],
+      }
+      Object.assign(ctx, {
+        settings,
+        get: (name: string) => (name === 'settings' ? settings : undefined),
+      })
+      const adapter = adapterFor('claude', ref)!
+      vi.spyOn(adapter, 'prepare').mockImplementation(async () => ({
+        home: root,
+        command: process.execPath,
+        args: [resolve('tests/fixtures/acp-agent.mjs')],
+        env: { ...systemEnvironment(), OPL_FIXTURE_MODEL: 'claude-opus-5-5' },
+      }))
+      const next = vi.fn(async function* () {
+        throw Error('unexpected direct Gateway request')
+      })
+      const options = {
+        ...ref,
+        sessionId: session.id,
+        messages: [
+          createUserMessage({
+            source: { kind: 'user' },
+            content: [{ type: 'text', text: 'first-' + channel }],
+          }),
+        ],
+      } as GenerateOptions
+      const chunks = await Array.fromAsync(service.conversationStream(options, next))
+      expect(next).not.toHaveBeenCalled()
+      expect(await readFile(join(root, 'calls.txt'), 'utf8')).toContain('first-' + channel)
+      expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+      const record = (await service.list()).sessions.find(
+        (item) => item.origin.kind === 'dsh' && item.origin.sessionId === session.id,
+      )!
+      expect(record).toMatchObject({ harnessRef: 'claude', modelRef: ref })
+    },
+  )
+
+  it('routes a default external model on first send without selecting its combination', async () => {
+    const { service, root, session } = await nativeSetup([{ id: 'grok::grok-4.7', name: 'Grok' }])
+    const next = vi.fn(async function* () {
+      throw Error('direct provider must not receive this model')
+    })
+    const options = {
+      sessionId: session.id,
+      provider: 'opl-gateway',
+      model: 'grok::grok-4.7',
+      messages: [
+        createUserMessage({
+          source: { kind: 'user' },
+          content: [{ type: 'text', text: 'first-send' }],
+        }),
+      ],
+    } as GenerateOptions
+    const chunks = await Array.fromAsync(service.conversationStream(options, next))
+    expect(next).not.toHaveBeenCalled()
+    expect(await readFile(join(root, 'calls.txt'), 'utf8')).toContain('first-send')
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
   it('hands off tool history through the official conversation stream and sends only new input on continuation', async () => {
     const { service, root, session } = await nativeSetup([{ id: 'grok::grok-4.7', name: 'Grok' }])
     await service.selectCombination({ sessionId: session.id, combination: GROK_COMBINATION })
@@ -287,6 +439,13 @@ describe('native conversation combinations', () => {
     ).toEqual([])
   })
   it('creates independently named combinations for explicit Gateway channels', async () => {
+    // This assertion lists every available model, so the machine's own official CLIs
+    // must not leak into it: an installed MiniMax Code would legitimately add its own
+    // account models and make the expected list environment-dependent.
+    vi.stubEnv('USERPROFILE', join(tmpdir(), 'opl-absent-cli'))
+    vi.stubEnv('HOME', join(tmpdir(), 'opl-absent-cli'))
+    vi.stubEnv('MINIMAX_DATA_DIR', join(tmpdir(), 'opl-absent-cli'))
+    vi.stubEnv('PATH', '')
     const { service } = await nativeSetup([
       { id: 'deepseek-flash', name: 'DeepSeek' },
       { id: 'codex::deepseek-flash', name: 'DeepSeek' },
@@ -354,7 +513,7 @@ describe('native conversation combinations', () => {
     const { service } = await nativeSetup()
     expect(
       (await service.list()).combinations.find((item) => item.id === GROK_COMBINATION),
-    ).toMatchObject({ available: false, reason: '模型未配置或凭据未就绪' })
+    ).toMatchObject({ available: false, reason: '模型未配置或分组未授权' })
   })
 })
 describe('external Harness production transport', () => {
@@ -396,6 +555,7 @@ describe('external Harness production transport', () => {
       ),
     ).toBe(false)
     const ask = pending.approvals[0]!
+    expect(ask.command).toBe('printf approved > controlled.txt')
     await expect(
       service.answer({ sessionId: a.id, approvalId: ask.id, optionId: 'invalid' }),
     ).rejects.toThrow()
@@ -662,6 +822,95 @@ describe('durable collaboration delivery', () => {
     await service.prompt({ sessionId: reader.id, text: 'read-result', operationId: 'one' })
     expect((await wait(service, reader.id)).state).toBe('completed')
     await service.cancel({ sessionId: writer.id })
+  })
+  it('runs declared disjoint writers concurrently while overlapping and undeclared writers wait', async () => {
+    const { root, service } = await setup()
+    const a = await start(service, root, 'scoped-a'),
+      b = await start(service, root, 'scoped-b')
+    const overlap = await start(service, root, 'scoped-overlap'),
+      legacy = await start(service, root, 'unscoped')
+    const request = {
+      sessionId: a.id,
+      text: 'wait',
+      operationId: 'hold',
+      writeScope: ['src/client'],
+    }
+    await service.prompt(request)
+    await service.prompt({
+      sessionId: b.id,
+      text: 'wait',
+      operationId: 'hold',
+      writeScope: ['src/host'],
+    })
+    await vi.waitFor(async () => {
+      const lines = (await readFile(join(root, 'calls.txt'), 'utf8')).trim().split('\n')
+      expect(lines).toEqual(['wait', 'wait'])
+    })
+    expect((await service.snapshot({ sessionId: a.id })).state).toBe('running')
+    expect((await service.snapshot({ sessionId: b.id })).state).toBe('running')
+    await service.prompt({
+      sessionId: overlap.id,
+      text: 'overlap',
+      operationId: 'one',
+      writeScope: ['src/client/a.ts'],
+    })
+    await service.prompt({ sessionId: legacy.id, text: 'legacy', operationId: 'one' })
+    expect((await service.snapshot({ sessionId: overlap.id })).state).toBe('queued')
+    expect((await service.snapshot({ sessionId: legacy.id })).state).toBe('queued')
+    await service.prompt(request)
+    await expect(service.prompt({ ...request, writeScope: ['src/different'] })).rejects.toThrow(
+      'operation',
+    )
+    await service.cancel({ sessionId: a.id })
+    expect((await wait(service, overlap.id)).state).toBe('completed')
+    expect((await service.snapshot({ sessionId: legacy.id })).state).toBe('queued')
+    await service.cancel({ sessionId: b.id })
+    expect((await wait(service, legacy.id)).state).toBe('completed')
+    const lines = (await readFile(join(root, 'calls.txt'), 'utf8')).trim().split('\n')
+    expect(lines).toEqual(['wait', 'wait', 'overlap', 'legacy'])
+  })
+  it('persists operation ownership and restores cancellation without replay', async () => {
+    const { root, service, ctx, options } = await setup()
+    const a = await start(service, root, 'restored-scope')
+    const request = {
+      sessionId: a.id,
+      text: 'wait',
+      operationId: 'one',
+      writeScope: ['src/file.ts'],
+    }
+    await service.prompt(request)
+    await vi.waitFor(async () =>
+      expect(await readFile(join(root, 'calls.txt'), 'utf8')).toBe('wait\n'),
+    )
+    await service.cancel({ sessionId: a.id })
+    await service.dispose()
+    const restored = new HarnessService(ctx, options)
+    cleanups.push(() => restored.dispose())
+    expect((await restored.snapshot({ sessionId: a.id })).turns[0]?.writeScope).toHaveLength(1)
+    await restored.prompt(request)
+    expect(await readFile(join(root, 'calls.txt'), 'utf8')).toBe('wait\n')
+    await restored.prompt({ ...request, operationId: 'two', text: 'next' })
+    expect((await wait(restored, a.id)).state).toBe('completed')
+  })
+  it('does not cancel or launch another scoped writer when a queued writer is cancelled', async () => {
+    const { root, service } = await setup()
+    const a = await start(service, root, 'lock-holder'),
+      b = await start(service, root, 'cancel-pending')
+    await service.prompt({ sessionId: a.id, text: 'wait', operationId: 'one', writeScope: ['src'] })
+    await vi.waitFor(async () =>
+      expect(await readFile(join(root, 'calls.txt'), 'utf8')).toBe('wait\n'),
+    )
+    await service.prompt({
+      sessionId: b.id,
+      text: 'never-executed',
+      operationId: 'one',
+      writeScope: ['src/a.ts'],
+    })
+    await service.cancel({ sessionId: b.id })
+    expect((await service.snapshot({ sessionId: b.id })).state).toBe('cancelled')
+    expect((await service.snapshot({ sessionId: a.id })).state).toBe('running')
+    await service.cancel({ sessionId: a.id })
+    expect(await readFile(join(root, 'calls.txt'), 'utf8')).toBe('wait\n')
   })
 })
 

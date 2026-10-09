@@ -27,6 +27,8 @@ const env = {
 }
 delete env.ELECTRON_RUN_AS_NODE
 const log = openSync(join(root, 'desktop.log'), 'a', 0o600)
+// The Suite launcher creates this process outside the calling Windows Job.
+// Keep the official app's private CDP pipes in this owned launcher process.
 const child = spawn(
   executable,
   ['--user-data-dir=' + join(root, 'electron'), '--remote-debugging-pipe'],

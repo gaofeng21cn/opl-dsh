@@ -22,6 +22,7 @@ describe('gateway settings section', () => {
     const resolved = Config({})
     expect(resolved.apiKeyEnv).toBe(DEFAULT_API_KEY_REF)
     expect(resolved.models).toEqual(DEFAULT_MODELS)
+    expect(resolved.reasoningEffort).toBe('max')
     // No endpoint is stored, so the account binding can supply the one this
     // key was issued against.
     expect(resolved.baseURL).toBeUndefined()

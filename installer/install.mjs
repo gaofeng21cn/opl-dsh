@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
-import { spawnSync, spawn } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
+import { launchIndependent, windowsSuiteLauncher } from './windows-lifecycle.mjs'
 const [app, root, payload, ...flags] = process.argv.slice(2)
 // The official desktop resolves the same default when DSH_HOME is unset.
 const home = process.env.OPL_DSH_HOME?.trim() || join(homedir(), '.dsh')
@@ -91,25 +92,20 @@ const compatibilityLauncher = join(
 const launcher = process.env.OPL_DESKTOP_LAUNCHER ?? compatibilityLauncher
 if (!process.env.OPL_DESKTOP_LAUNCHER) {
   if (process.platform === 'win32') {
-    const quoteVbs = (value) => '"' + value.replaceAll('"', '""') + '"'
-    const command =
-      '"' +
-      executable +
-      '"' +
-      ' "' +
-      join(release, 'setup.mjs') +
-      '" "' +
-      home +
-      '" "' +
-      root +
-      '" "' +
-      app +
-      '"'
     writeFileSync(
       compatibilityLauncher,
-      'Set shell = CreateObject("WScript.Shell")\r\nshell.Environment("Process")("ELECTRON_RUN_AS_NODE") = "1"\r\nshell.Run ' +
-        quoteVbs(command) +
-        ', 0, False\r\n',
+      Buffer.from(
+        '\ufeff' +
+          windowsSuiteLauncher({
+            executable,
+            setup: join(release, 'setup.mjs'),
+            home,
+            root,
+            app,
+            codexHome,
+          }),
+        'utf16le',
+      ),
     )
     const script =
       "$s = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath('Programs')) 'OPL DSH.lnk')); $s.TargetPath = 'wscript.exe'; $s.Arguments = [char]34 + $env:OPL_SHORTCUT_SCRIPT + [char]34; $s.IconLocation = $env:OPL_SHORTCUT_ICON; $s.Save()"
@@ -179,8 +175,16 @@ writeFileSync(
 )
 console.log('官方桌面和 OPL 增强已安装。Codex Skill：opl-dsh-official。')
 if (!flags.includes('--no-launch')) {
-  const env = { ...process.env, DSH_HOME: home }
-  delete env.ELECTRON_RUN_AS_NODE
-  const child = spawn(executable, [], { env, detached: true, stdio: 'ignore' })
-  child.unref()
+  // Same entry point as the desktop shortcut and the Skill: launch.vbs sets
+  // ELECTRON_RUN_AS_NODE and setup.mjs receives home/root/app as argv, so the
+  // start carries no state that a Job-independent broker could lose.
+  const started = launchIndependent({
+    command: process.platform === 'win32' ? 'wscript.exe' : compatibilityLauncher,
+    args: process.platform === 'win32' ? [compatibilityLauncher] : [],
+    label: 'install-auto-launch',
+  })
+  if (started.refusal) {
+    console.error(started.refusal)
+    process.exitCode = 1
+  }
 }

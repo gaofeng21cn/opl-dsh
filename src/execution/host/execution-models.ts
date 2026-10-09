@@ -6,13 +6,34 @@ import {
   gatewayModelSettings,
 } from '../../gateway/host/execution-access.ts'
 import { DSH_COMBINATION } from '../contracts/sessions.ts'
-import { displayModelName, isRetiredModel, modelRefKey } from '../contracts/catalog.ts'
+import {
+  displayModelName,
+  displayModelSource,
+  isRetiredModel,
+  modelRefKey,
+  type ModelRef,
+} from '../contracts/catalog.ts'
 import { ExecutionCatalogStore, type ExecutionCatalog } from './catalog.ts'
 import { defaultHarness } from './adapters/index.ts'
+import { HUAWEI_ZCODE_MODEL, HUAWEI_ZCODE_COMBINATION } from './adapters/zcode-models.ts'
+import {
+  minimaxCodeCombinations,
+  minimaxCodeModels,
+  MINIMAX_CODE_HARNESS,
+  MINIMAX_CODE_PROVIDER,
+} from './adapters/minimax.ts'
 export class ExecutionModelResolver {
   constructor(
     private readonly ctx: Context,
     private readonly store: ExecutionCatalogStore,
+    /**
+     * Probes a model that an external official CLI owns. These models bypass the OPL
+     * Gateway registry entirely, so their availability must come from the CLI itself
+     * (installed, signed in) rather than from a Gateway credential.
+     */
+    private readonly probeExternal?: (
+      ref: ModelRef,
+    ) => Promise<{ available: boolean; reason?: string }>,
   ) {}
   async resolve(): Promise<ExecutionCatalog> {
     const catalog = await this.store.get()
@@ -74,6 +95,13 @@ export class ExecutionModelResolver {
         for (const model of await this.ctx.llm.listModels(provider.id)) {
           const ref = { provider: provider.id, model: model.id }
           if (isRetiredModel(ref)) continue
+          const external =
+            provider.id === MINIMAX_CODE_PROVIDER || provider.id === HUAWEI_ZCODE_MODEL.provider
+              ? ((await this.probeExternal?.(ref)) ?? {
+                  available: false,
+                  reason: '外部 Harness 未就绪',
+                })
+              : undefined
           const source =
             provider.id === 'deepseek-account'
               ? 'DeepSeek 官方'
@@ -84,8 +112,14 @@ export class ExecutionModelResolver {
             ref,
             name: displayModelName(ref, model.name),
             source,
-            available: configured,
-            ...(!configured ? { reason: '凭据未配置' } : {}),
+            available: external?.available ?? configured,
+            ...(external
+              ? external.available
+                ? {}
+                : { reason: external.reason ?? '外部 Harness 未就绪' }
+              : !configured
+                ? { reason: '凭据未配置' }
+                : {}),
           })
         }
       } catch {
@@ -111,6 +145,57 @@ export class ExecutionModelResolver {
             })
         }
     }
+    // The official MiniMax Code CLI owns its own account and model list, so these two
+    // models are never projected from the OPL Gateway provider registry. They are only
+    // marked available once the CLI itself is installed and signed in, so a missing
+    // Gateway key never hides them and an absent CLI never advertises them.
+    for (const model of minimaxCodeModels())
+      if (!catalog.models.some((item) => modelRefKey(item.ref) === modelRefKey(model))) {
+        const probe = (await this.probeExternal?.(model)) ?? {
+          available: false,
+          reason: '尚未安装官方 MiniMax Code CLI',
+        }
+        catalog.models.push({
+          ref: model,
+          name: displayModelName(model),
+          source: displayModelSource(model),
+          available: probe.available,
+          ...(probe.available ? {} : { reason: probe.reason ?? '官方 MiniMax Code 未就绪' }),
+        })
+      }
+    for (const fixed of minimaxCodeCombinations())
+      if (!catalog.combinations.some((item) => item.id === fixed.combination))
+        catalog.combinations.push({
+          id: fixed.combination,
+          name: fixed.name,
+          modelRef: { provider: MINIMAX_CODE_PROVIDER, model: fixed.model },
+          harnessRef: MINIMAX_CODE_HARNESS,
+          permissionPolicy: 'full-access',
+          isDefault: true,
+          enabled: true,
+        })
+    if (!catalog.models.some((item) => modelRefKey(item.ref) === modelRefKey(HUAWEI_ZCODE_MODEL))) {
+      const status = (await this.probeExternal?.(HUAWEI_ZCODE_MODEL)) ?? {
+        available: false,
+        reason: '华为云 Key 或官方 ZCode 未就绪',
+      }
+      catalog.models.push({
+        ref: HUAWEI_ZCODE_MODEL,
+        name: 'GLM-5.2',
+        source: '华为云 MaaS',
+        ...status,
+      })
+    }
+    if (!catalog.combinations.some((item) => item.id === HUAWEI_ZCODE_COMBINATION))
+      catalog.combinations.push({
+        id: HUAWEI_ZCODE_COMBINATION,
+        name: 'GLM-5.2 · ZCode',
+        modelRef: HUAWEI_ZCODE_MODEL,
+        harnessRef: 'zcode',
+        permissionPolicy: 'full-access',
+        isDefault: true,
+        enabled: true,
+      })
     for (const combination of catalog.combinations)
       if (
         !isRetiredModel(combination.modelRef) &&

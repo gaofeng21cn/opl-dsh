@@ -40,6 +40,7 @@ test('stable versions advance numerically without downgrades or prereleases', ()
   assert.equal(newer('0.2.5', '0.2.4'), true)
   for (const value of ['0.2.0', '0.1.9', '0.3.0-rc.1', 'bad'])
     assert.equal(newer(value, '0.2.0'), false)
+  assert.equal(newer('0.2.19', '0.2.18-minimax.20261008.2'), false)
 })
 test('updates preserve the installed release while running, offline, or on checksum mismatch', async () => {
   const root = await mkdtemp(join(tmpdir(), 'opl-update-')),

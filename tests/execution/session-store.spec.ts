@@ -31,6 +31,21 @@ const record = (id: string): HarnessSession => ({
 })
 
 describe('per-session durable storage', () => {
+  it.each(['minimax-code', 'codex', 'claude', 'grok-build'])(
+    'reloads authorized full-access %s sessions from both storage generations',
+    async (harnessRef) => {
+      const { root, store } = await fixture()
+      const session = { ...record('full-access'), harnessRef, sandbox: 'full-access' as const }
+      const bytes = JSON.stringify([session])
+      await writeFile(store.legacyFilename, bytes)
+      expect(await store.load()).toContainEqual(session)
+      session.title = 'persisted update'
+      await store.saveChanged([session])
+      expect(await new HarnessSessionStore(root).load()).toContainEqual(session)
+      expect(await readFile(store.legacyFilename, 'utf8')).toBe(bytes)
+    },
+  )
+
   it('preserves legacy bytes and unknown fields while migrating once', async () => {
     const { root, store } = await fixture()
     const legacy = [{ ...record('one'), futureExtension: { owner: 'retain-me' } }]

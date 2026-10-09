@@ -11,6 +11,10 @@ test('an upgraded Skill keeps its backup outside active skill discovery and pres
     const release = join(base, 'release')
     const codexHome = join(base, 'codex')
     mkdirSync(join(release, 'skill'), { recursive: true })
+    writeFileSync(
+      join(release, 'windows-lifecycle.mjs'),
+      'export const launchIndependent = () => {}\n',
+    )
     for (const file of ['SKILL.md', 'control.mjs', 'harness-mcp.mjs', 'windows-acl.mjs']) {
       writeFileSync(join(release, 'skill', file), 'original\n')
     }

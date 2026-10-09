@@ -12,11 +12,22 @@ import {
   type Query,
   type McpServerConfig,
 } from '@anthropic-ai/claude-agent-sdk'
+import {
+  codexSandboxMode,
+  codexShellProbeCommand,
+  nativeGitBashEnv,
+  readShellProbe,
+  type NativePermission,
+} from './native-bash.ts'
 const kind = process.env.OPL_NATIVE_HARNESS!,
   command = process.env.OPL_NATIVE_COMMAND!
-const model = process.env.OPL_NATIVE_MODEL!,
+// The permission profile is a three-way authorization, not a boolean. Treating anything that
+// is not `workspace` as read-only silently demoted an explicitly authorized `full-access`
+// task, which also hid the only profile Codex accepts for Git Bash.
+const taskPermission = (process.env.OPL_NATIVE_PERMISSION ?? 'read-only') as NativePermission,
+  model = process.env.OPL_NATIVE_MODEL!,
   cwd = process.cwd(),
-  readonly = process.env.OPL_NATIVE_PERMISSION !== 'workspace'
+  readonly = taskPermission === 'read-only'
 const send = (value: object) =>
   process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...value }) + '\n')
 const emit = (update: object) => send({ method: 'session/update', params: { sessionId, update } })
@@ -46,9 +57,25 @@ function permission(title: string): Promise<boolean> {
     })
   })
 }
-const env = { ...process.env }
-delete env.ELECTRON_RUN_AS_NODE
+// Built on first use so a rejected Git Bash path is reported through the normal ACP error
+// path with its reason attached, instead of crashing the bridge before it can answer.
+let harnessEnvCache: NodeJS.ProcessEnv | undefined
+/** Non-empty when this session actually asked Codex to use a Git Bash executable. */
+let codexGitBashRequested = false
+function harnessEnv(): NodeJS.ProcessEnv {
+  if (harnessEnvCache) return harnessEnvCache
+  const preResolved = process.env.OPL_NATIVE_GIT_BASH
+  const patch = nativeGitBashEnv(kind === 'codex' ? 'codex' : 'claude', taskPermission, {
+    ...(preResolved ? { bash: preResolved } : {}),
+  })
+  codexGitBashRequested = kind === 'codex' && Boolean(patch.CODEX_NATIVE_GIT_BASH_PATH)
+  harnessEnvCache = { ...process.env, ...patch }
+  delete harnessEnvCache.ELECTRON_RUN_AS_NODE
+  return harnessEnvCache
+}
 let child: ReturnType<typeof spawn> | undefined
+/** Collects the output of an in-flight, model-free shell probe. */
+let shellProbe: { output: string; done?: () => void } | null = null
 const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>()
 let resolveTurn: ((value: unknown) => void) | undefined,
   rejectTurn: ((e: Error) => void) | undefined
@@ -68,7 +95,7 @@ async function openCodex() {
       : ['app-server', '--stdio'],
     {
       cwd,
-      env,
+      env: harnessEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
       // cmd.exe with /S strips only the outermost quote pair, so the script path must
@@ -126,6 +153,15 @@ async function openCodex() {
         return
       }
       if (p.threadId !== sessionId) return
+      // The shell probe borrows this thread's command stream; it is kept out of the tool
+      // call stream so it never surfaces as task activity.
+      if (shellProbe) {
+        if (m.method === 'item/commandExecution/outputDelta') shellProbe.output += p.delta ?? ''
+        else if (m.method === 'item/completed' && p.item?.type === 'commandExecution')
+          shellProbe.done?.()
+        // The probe is internal bookkeeping and is never surfaced as task activity.
+        if (m.method === 'item/started' || m.method === 'item/completed') return
+      }
       if (m.method === 'item/agentMessage/delta')
         emit({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: p.delta } })
       if (m.method === 'item/started' || m.method === 'item/completed') {
@@ -160,6 +196,56 @@ async function openCodex() {
   })
   child.stdin!.write(JSON.stringify({ method: 'initialized', params: {} }) + '\n')
 }
+/**
+ * Confirm with the running Codex process which shell it really executes commands with.
+ *
+ * Uses Codex's own `thread/shellCommand`, so the answer needs no model call and no
+ * credentials and cannot be faked by the environment the bridge happened to set. The probe
+ * only prints which shell is running it.
+ * @param threadId - the Codex thread to probe.
+ * @returns the raw probe output.
+ */
+async function probeCodexShell(threadId: string): Promise<string> {
+  const probe: { output: string; done?: () => void } = { output: '' }
+  shellProbe = probe
+  // The timeout still bounds the wait, but the timer is cleared on every exit path so a
+  // finished probe never keeps the event loop alive or fires into a later session.
+  const timer = setTimeout(() => probe.done?.(), 30000)
+  try {
+    const finished = new Promise<void>((resolve) => {
+      probe.done = resolve
+    })
+    await codexRequest('thread/shellCommand', {
+      threadId,
+      command: codexShellProbeCommand(),
+      timeoutMs: 20000,
+    })
+    await finished
+  } finally {
+    clearTimeout(timer)
+    delete probe.done
+    shellProbe = null
+  }
+  return probe.output
+}
+
+/**
+ * Refuse to continue when the requested Git Bash did not take effect.
+ *
+ * The Codex Git Bash variable is not an upstream Codex interface, so a build that ignores it
+ * would otherwise silently keep running on its own shell while the task claims Bash.
+ * @param threadId - the Codex thread to verify.
+ */
+async function confirmCodexGitBash(threadId: string): Promise<void> {
+  const shell = readShellProbe(await probeCodexShell(threadId))
+  if (shell?.bashVersion && shell.bashVersion !== 'none') return
+  throw Error(
+    '已请求 Codex 使用 Git Bash，但当前 Codex 进程实际使用的 shell 是 ' +
+      `${shell?.name ?? '未知（未收到回读）'}。` +
+      '该 Codex 构建不支持 Git Bash 设置，上游官方亦未提供此接口；请改用官方支持的 Windows 方案（PowerShell 或 WSL）。',
+  )
+}
+
 async function pathInProject(path: unknown): Promise<boolean> {
   if (typeof path !== 'string') return false
   const target = resolve(cwd, path)
@@ -180,6 +266,11 @@ async function claudePrompt(text: string, effort?: string) {
     throw Error('Claude Code 不支持该推理强度')
   cancelled = false
   hasHistory = (await getSessionMessages(sessionId, { dir: cwd, limit: 1 })).length > 0
+  // Restricted tasks keep the isolated sandbox and must fail loudly when no Windows sandbox
+  // backend is active. Only an explicitly authorized full-access task turns the restricted
+  // sandbox off, and it turns it off through the official SDK modes rather than by relaxing
+  // anything a restricted task relies on.
+  const fullAccess = taskPermission === 'full-access'
   const disallowed = readonly
     ? ['Bash', 'Write', 'Edit', 'NotebookEdit', 'Agent', 'Task']
     : ['Agent', 'Task']
@@ -205,27 +296,37 @@ async function claudePrompt(text: string, effort?: string) {
       abortController,
       ...(effort ? { effort: effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max' } : {}),
       pathToClaudeCodeExecutable: command,
-      env,
+      env: harnessEnv(),
       settingSources: [],
       strictMcpConfig: true,
       mcpServers: servers,
       ...(hasHistory ? { resume: sessionId } : { sessionId }),
-      permissionMode: 'default',
+      // `bypassPermissions` is the official SDK mode for a task the user already authorized at full
+      // access; it does not answer anyone else's pending approval, it only stops Claude Code
+      // from asking again about a decision this task was granted.
+      permissionMode: fullAccess ? 'bypassPermissions' : 'default',
       includePartialMessages: true,
       disallowedTools: disallowed,
-      sandbox: {
-        enabled: true,
-        failIfUnavailable: true,
-        autoAllowBashIfSandboxed: false,
-        allowUnsandboxedCommands: false,
-        filesystem: { allowWrite: readonly ? [] : [cwd] },
-        credentials: {
-          envVars: [
-            { name: 'ANTHROPIC_API_KEY', mode: 'deny' },
-            { name: 'OPL_NATIVE_API_KEY', mode: 'deny' },
-          ],
-        },
-      },
+      // A restricted task keeps the isolated sandbox and refuses to run without a Windows
+      // sandbox backend. Full access instead turns the restricted sandbox off explicitly.
+      sandbox: fullAccess
+        ? { enabled: false }
+        : {
+            enabled: true,
+            failIfUnavailable: true,
+            autoAllowBashIfSandboxed: false,
+            allowUnsandboxedCommands: false,
+            filesystem: { allowWrite: readonly ? [] : [cwd] },
+            credentials: {
+              envVars: [
+                { name: 'ANTHROPIC_API_KEY', mode: 'deny' },
+                { name: 'OPL_NATIVE_API_KEY', mode: 'deny' },
+              ],
+            },
+          },
+      // Restricted tasks only: under `bypassPermissions` the SDK auto-approves every tool call before
+      // this callback is consulted, so it is not a filesystem boundary for a full-access task.
+      // Such a task is bounded by the user's own explicit authorization, not by anything here.
       canUseTool: async (name, input) => {
         if (cancelled) return { behavior: 'deny', message: '任务已取消' }
         if (name.startsWith('mcp__opl-harness__')) return { behavior: 'allow', updatedInput: input }
@@ -350,7 +451,9 @@ async function invoke(method: string, p: any) {
         model,
         modelProvider: 'opl-gateway',
         cwd,
-        sandbox: readonly ? 'read-only' : 'workspace-write',
+        // Codex refuses to start a thread under a restricted profile once
+        // CODEX_NATIVE_GIT_BASH_PATH is set, so the mode and the Bash path have to agree.
+        sandbox: codexSandboxMode(taskPermission),
         approvalPolicy: 'never',
         config,
       }
@@ -360,6 +463,7 @@ async function invoke(method: string, p: any) {
       })
       sessionId = r.thread.id
       if (r.model && r.model !== model) throw Error('Codex 返回不同模型')
+      if (codexGitBashRequested) await confirmCodexGitBash(sessionId)
     } else {
       sessionId = p.sessionId ?? randomUUID()
       hasHistory = false

@@ -215,6 +215,29 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
       await captureFailureScreenshot()
       throw new Error(panel.label[0] + ' 报错：' + alerts.join('; '))
     }
+    if (panel.marker === 'catalog') {
+      await waitFor(
+        `(() => {const row=document.querySelector('[data-opl-proxy-row="minimax-code"]'); const builtin=document.querySelector('[data-opl-proxy-row="dsh"]'); return Boolean(row && row.querySelectorAll('input[type=radio]').length===3 && builtin && Array.from(builtin.querySelectorAll('input[type=radio]')).every(x=>x.disabled))})()`,
+        'Harness 独立代理设置未注册',
+      )
+      await pipe.evaluate(
+        session,
+        `document.querySelector('[data-opl-proxy-row="minimax-code"] input[value="custom"]').click()`,
+      )
+      await waitFor(
+        `Boolean(document.querySelector('[data-opl-proxy-url="minimax-code"]'))`,
+        '指定代理未显示地址输入框',
+      )
+      await pipe.evaluate(
+        session,
+        `(() => {const input=document.querySelector('[data-opl-proxy-url="minimax-code"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'http://127.0.0.1:7897'); input.dispatchEvent(new Event('input',{bubbles:true})); input.dispatchEvent(new Event('change',{bubbles:true})); document.querySelector('[data-opl-proxy-save="minimax-code"]').click()})()`,
+      )
+      await waitFor(
+        `(() => {const status=document.querySelector('[data-opl-proxy-outcome="minimax-code"]'); return Boolean(status && status.getAttribute('role')==='status' && status.textContent.includes('已保存'))})()`,
+        '真实代理保存未成功',
+      )
+      result.harnessProxySaved = true
+    }
     const file = await captureScreenshot(panel.marker)
     if (file) screenshots.push(file)
     else result.screenshotFailures.push(panel.marker)

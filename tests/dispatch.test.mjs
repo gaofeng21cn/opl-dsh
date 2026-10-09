@@ -45,6 +45,10 @@ test('a retry sends one prompt; changed content under the same operation is refu
   )
   await cp(new URL('../installer/skill/control.mjs', import.meta.url), join(root, 'control.mjs'))
   await cp(
+    new URL('../installer/windows-lifecycle.mjs', import.meta.url),
+    join(root, 'windows-lifecycle.mjs'),
+  )
+  await cp(
     new URL('../installer/skill/windows-acl.mjs', import.meta.url),
     join(root, 'windows-acl.mjs'),
   )
@@ -119,6 +123,10 @@ test('delegate-wait returns the persisted snapshot when the control deadline exp
     }),
   )
   await cp(new URL('../installer/skill/control.mjs', import.meta.url), join(root, 'control.mjs'))
+  await cp(
+    new URL('../installer/windows-lifecycle.mjs', import.meta.url),
+    join(root, 'windows-lifecycle.mjs'),
+  )
   await cp(
     new URL('../installer/skill/windows-acl.mjs', import.meta.url),
     join(root, 'windows-acl.mjs'),

@@ -7,6 +7,53 @@ import { pathToFileURL } from 'node:url'
 import { generateRpc } from '../scripts/generate-rpc.mjs'
 
 const repository = resolve(import.meta.dirname, '..')
+test('generated start and delegate codecs preserve explicit MiniMax full access', async () => {
+  const { TYPERT } = await import('../src/generated/host.mjs')
+  const origin = { kind: 'codex', sessionId: 'minimax-rpc-review' }
+  for (const method of ['start', 'delegate']) {
+    const invocation = TYPERT.invocations.find(
+      (item) => item.namespace === 'oplExecution' && item.method === method,
+    )
+    const codec = invocation.parameters.find((item) => item.wire === 'request').codec.create()
+    const request = {
+      combination: 'minimax-code/MiniMax-M3',
+      cwd: repository,
+      origin,
+      taskId: 'minimax-rpc-review',
+      sandbox: 'full-access',
+      ...(method === 'delegate'
+        ? { task: 'readonly check', operationId: 'initial', wait: false }
+        : {}),
+    }
+    assert.equal(codec.parse(request).sandbox, 'full-access')
+    assert.equal(codec.parse({ ...request, sandbox: 'workspace' }).sandbox, 'workspace')
+    assert.throws(() => codec.parse({ ...request, sandbox: 'unrecognized' }))
+  }
+})
+test('generated delegate and prompt codecs preserve operation write scopes', async () => {
+  const { TYPERT } = await import('../src/generated/host.mjs')
+  for (const method of ['delegate', 'prompt']) {
+    const invocation = TYPERT.invocations.find(
+      (item) => item.namespace === 'oplExecution' && item.method === method,
+    )
+    const codec = invocation.parameters.find((item) => item.wire === 'request').codec.create()
+    const request =
+      method === 'delegate'
+        ? {
+            origin: { kind: 'codex', sessionId: 'scope-review' },
+            task: 'scoped work',
+            taskId: 'scope-task',
+            operationId: 'one',
+            sandbox: 'full-access',
+          }
+        : { sessionId: 'harness-scope', text: 'scoped work', operationId: 'one' }
+    assert.deepEqual(
+      codec.parse({ ...request, writeScope: ['src/a.ts', 'tests/a.ts'] }).writeScope,
+      ['src/a.ts', 'tests/a.ts'],
+    )
+    assert.throws(() => codec.parse({ ...request, writeScope: 'src' }))
+  }
+})
 const source = (type = 'string') => `
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'

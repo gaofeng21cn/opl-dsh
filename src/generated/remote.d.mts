@@ -3,7 +3,7 @@ import type {
   RemoteResult,
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
+import type { CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, HuaweiMaaSKeyResult, HuaweiMaaSStatus, LoginChoice, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$6f706c436f6f7264696e6174696f6e {
@@ -32,6 +32,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     review: (request: ReviewRequest) => Promise<RemoteResult<HarnessSnapshot>>
     'save-catalog': (request: { catalog: ExecutionCatalog; }) => Promise<RemoteResult<ExecutionCatalog>>
     'save-cooperation-settings': (request: CooperationSettings) => Promise<RemoteResult<CooperationSettings>>
+    'save-harness-proxy': (request: { harnessId: string; proxy: HarnessProxy; }) => Promise<RemoteResult<ExecutionCatalog>>
     'select-combination': (request: { sessionId: string; combination: string; }) => Promise<RemoteResult<{ kind: string; sessionId: string; }>>
     'select-effort': (request: { sessionId: string; provider: string; model: string; reasoningEffort?: string; }) => Promise<RemoteResult<null>>
     sessions: (request: HarnessSessionsRequest) => Promise<RemoteResult<HarnessSessionsPage>>
@@ -52,6 +53,11 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     discover: (request: { group: string; }) => Promise<RemoteResult<ModelDraft[]>>
     edit: (request: GatewayModelEdit) => Promise<RemoteResult<GatewayModelSettings>>
     read: () => Promise<RemoteResult<GatewayModelSettings>>
+  }
+  interface TypertRemoteNamespace$6f706c4875617765694d616173 {
+    clearKey: () => Promise<RemoteResult<HuaweiMaaSKeyResult>>
+    saveKey: (key: string) => Promise<RemoteResult<HuaweiMaaSKeyResult>>
+    status: () => Promise<RemoteResult<HuaweiMaaSStatus>>
   }
   interface TypertRemoteNamespace$6f706c5365747570 {
     finish: (choice: Exclude<LoginChoice, 'undecided'>) => Promise<RemoteResult<null>>
@@ -97,6 +103,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/review': (request: ReviewRequest) => Promise<RemoteResult<HarnessSnapshot>>
     'oplExecution/save-catalog': (request: { catalog: ExecutionCatalog; }) => Promise<RemoteResult<ExecutionCatalog>>
     'oplExecution/save-cooperation-settings': (request: CooperationSettings) => Promise<RemoteResult<CooperationSettings>>
+    'oplExecution/save-harness-proxy': (request: { harnessId: string; proxy: HarnessProxy; }) => Promise<RemoteResult<ExecutionCatalog>>
     'oplExecution/select-combination': (request: { sessionId: string; combination: string; }) => Promise<RemoteResult<{ kind: string; sessionId: string; }>>
     'oplExecution/select-effort': (request: { sessionId: string; provider: string; model: string; reasoningEffort?: string; }) => Promise<RemoteResult<null>>
     'oplExecution/sessions': (request: HarnessSessionsRequest) => Promise<RemoteResult<HarnessSessionsPage>>
@@ -113,6 +120,9 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplGatewayModels/discover': (request: { group: string; }) => Promise<RemoteResult<ModelDraft[]>>
     'oplGatewayModels/edit': (request: GatewayModelEdit) => Promise<RemoteResult<GatewayModelSettings>>
     'oplGatewayModels/read': () => Promise<RemoteResult<GatewayModelSettings>>
+    'oplHuaweiMaas/clearKey': () => Promise<RemoteResult<HuaweiMaaSKeyResult>>
+    'oplHuaweiMaas/saveKey': (key: string) => Promise<RemoteResult<HuaweiMaaSKeyResult>>
+    'oplHuaweiMaas/status': () => Promise<RemoteResult<HuaweiMaaSStatus>>
     'oplSetup/finish': (choice: Exclude<LoginChoice, 'undecided'>) => Promise<RemoteResult<null>>
     'oplSetup/official-cancel': () => Promise<RemoteResult<null>>
     'oplSetup/official-key': (key: string) => Promise<RemoteResult<null>>
@@ -135,6 +145,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution': TypertRemoteNamespace$6f706c457865637574696f6e
     'oplGatewayAccount': TypertRemoteNamespace$6f706c476174657761794163636f756e74
     'oplGatewayModels': TypertRemoteNamespace$6f706c476174657761794d6f64656c73
+    'oplHuaweiMaas': TypertRemoteNamespace$6f706c4875617765694d616173
     'oplSetup': TypertRemoteNamespace$6f706c5365747570
     'taskFeedback': TypertRemoteNamespace$7461736b466565646261636b
   }

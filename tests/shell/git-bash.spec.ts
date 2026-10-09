@@ -16,4 +16,21 @@ describe('Git Bash path resolution', () => {
       resolveGitBashPath({ platform: 'win32', env: { PATH: '' }, exists: () => false }),
     ).toThrow(/OPL_GIT_BASH_PATH/)
   })
+
+  it('does not fall back when an explicit override is invalid', () => {
+    expect(() =>
+      resolveGitBashPath({
+        platform: 'win32',
+        env: { OPL_GIT_BASH_PATH: 'C:/missing/bash.exe', ProgramFiles: 'C:/Program Files' },
+        exists: (candidate) => candidate.includes('Program Files'),
+      }),
+    ).toThrow(/no fallback/)
+    expect(() =>
+      resolveGitBashPath({
+        platform: 'win32',
+        env: { OPL_GIT_BASH_PATH: 'bash.exe' },
+        exists: () => true,
+      }),
+    ).toThrow(/absolute/)
+  })
 })

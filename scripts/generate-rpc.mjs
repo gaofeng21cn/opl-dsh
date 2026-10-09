@@ -34,6 +34,7 @@ export async function generateRpc({
     const protocolRoot = join(temporary, 'packages', 'protocol')
     await cp(join(root, 'node_modules/@deepseek-ai/dsh-typert-protocol'), protocolRoot, {
       recursive: true,
+      dereference: true,
     })
     await writeFile(
       join(protocolRoot, 'tsconfig.json'),
