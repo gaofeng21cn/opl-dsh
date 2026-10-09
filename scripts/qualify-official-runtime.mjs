@@ -293,6 +293,7 @@ async function startDesktop() {
  */
 async function resolveWelcomeGate() {
   let welcome
+  let welcomeTarget
   for (let attempt = 0; attempt < 60 && !welcome; attempt++) {
     try {
       const { targetInfos } = await desktopPipe.command('Target.getTargets')
@@ -313,6 +314,7 @@ async function resolveWelcomeGate() {
           .catch(() => false)
         if (matched) {
           welcome = attached.sessionId
+          welcomeTarget = target.targetId
           break
         }
         await desktopPipe
@@ -338,9 +340,22 @@ async function resolveWelcomeGate() {
         `(() => {const labels=['稍后配置','Configure later','Skip for now'];const node=Array.from(document.querySelectorAll('button')).find(x=>x.getClientRects().length&&labels.includes((x.textContent||'').trim()));if(!node)return false;node.click();return true})()`,
       )
       .catch(() => false)
+    if (!deferred) {
+      // Closing the native window can destroy its execution context before
+      // Runtime.evaluate returns the click result. Confirm that exact target
+      // disappeared; the caller still requires a visible, painting content page.
+      const { targetInfos } = await desktopPipe.command('Target.getTargets')
+      deferred = !targetInfos.some((target) => target.targetId === welcomeTarget)
+    }
     if (!deferred) await delay(500)
   }
-  if (!deferred) throw new Error('官方欢迎窗口无法在无凭据条件下继续')
+  if (!deferred) {
+    const labels = await desktopPipe.evaluate(
+      welcome,
+      "Array.from(document.querySelectorAll('button')).filter(x=>x.getClientRects().length).map(x=>(x.textContent||'').trim())",
+    )
+    throw new Error('官方欢迎窗口无法在无凭据条件下继续；入口：' + JSON.stringify(labels))
+  }
   await desktopPipe.command('Target.detachFromTarget', { sessionId: welcome }).catch(() => {})
   return 'dismissed'
 }
