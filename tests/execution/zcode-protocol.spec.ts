@@ -1002,10 +1002,12 @@ describe('bridge against a fake official app-server', () => {
     })
   })
 
-  test('proves a spaced Windows path is launched with app-server verbatim', async () => {
+  test('launches a spaced platform-native path with app-server verbatim', async () => {
     await withHarness(async (bridge, cli) => {
       expect(cli.directory).toMatch(/ /)
-      expect(cli.command).toMatch(/zcode\.cmd$/)
+      expect(cli.command).toBe(
+        join(cli.directory, process.platform === 'win32' ? 'zcode.cmd' : 'zcode'),
+      )
       const init = await bridge.request('initialize', {})
       expect(init.agentInfo.name).toBe('zcode')
       expect(init.agentInfo.version).toBe('ZCode Protocol 1')

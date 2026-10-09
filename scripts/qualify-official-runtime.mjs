@@ -337,7 +337,7 @@ async function resolveWelcomeGate() {
     deferred = await desktopPipe
       .evaluate(
         welcome,
-        `(() => {const labels=['稍后配置','Configure later','Skip for now'];const node=Array.from(document.querySelectorAll('button')).find(x=>x.getClientRects().length&&labels.includes((x.textContent||'').trim()));if(!node)return false;node.click();return true})()`,
+        `(() => {const labels=['稍后配置','Set up later','Configure later','Skip for now'];const node=Array.from(document.querySelectorAll('button')).find(x=>x.getClientRects().length&&labels.includes((x.textContent||'').trim()));if(!node)return false;node.click();return true})()`,
       )
       .catch(() => false)
     if (!deferred) {
