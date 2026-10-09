@@ -11,13 +11,50 @@ import { HuaweiZcodeModelAdapter } from '../../src/execution/host/adapters/zcode
 import { withZcodePermissions } from '../../src/execution/host/adapters/zcode-permissions.ts'
 import type { HarnessAdapter } from '../../src/execution/host/adapters/types.ts'
 import type { HarnessSession } from '../../src/execution/contracts/sessions.ts'
+import * as keyring from '../../src/credentials/host/windows-keyring.ts'
 
 const roots: string[] = []
 afterEach(async () => {
+  vi.restoreAllMocks()
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 
 describe('Huawei ZCode model selection', () => {
+  it('reports a missing CLI without starting a keyring helper', async () => {
+    const describeKey = vi.spyOn(keyring, 'describeHuaweiMaaSApiKey')
+    const installation = { available: false, reason: 'ZCode fixture is not installed' }
+    const wrapped = withZcodePermissions({
+      id: 'zcode',
+      available: async () => installation,
+    } as unknown as HarnessAdapter)
+    expect(
+      await wrapped.available({} as Context, { home: '', grokCommand: '', nativeBridgePath: '' }),
+    ).toEqual(installation)
+    expect(describeKey).not.toHaveBeenCalled()
+  })
+  it.each([
+    { available: false, configured: false, expected: false },
+    { available: true, configured: false, expected: false },
+    { available: true, configured: true, expected: true },
+  ])(
+    'checks keyring readiness after finding the CLI: %j',
+    async ({ available, configured, expected }) => {
+      const describeKey = vi
+        .spyOn(keyring, 'describeHuaweiMaaSApiKey')
+        .mockResolvedValue({ available, configured } as never)
+      const wrapped = withZcodePermissions({
+        id: 'zcode',
+        available: async () => ({ available: true }),
+      } as unknown as HarnessAdapter)
+      const status = await wrapped.available({} as Context, {
+        home: '',
+        grokCommand: '',
+        nativeBridgePath: '',
+      })
+      expect(status.available).toBe(expected)
+      expect(describeKey).toHaveBeenCalledOnce()
+    },
+  )
   it('exposes GLM-5.2 through the official LLM registry and rejects unknown models', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
