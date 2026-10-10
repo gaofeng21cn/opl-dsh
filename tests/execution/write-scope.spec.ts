@@ -56,4 +56,16 @@ describe('operation write ownership', () => {
       await expect(resolveWriteScope(cwd, value)).rejects.toThrow('writeScope')
     expect(await resolveWriteScope(cwd, undefined)).toBeUndefined()
   })
+
+  it('undeclared writers own the canonical project through a symlink alias', async () => {
+    const root = await fixture()
+    const cwd = join(root, 'project')
+    const alias = join(root, 'alias')
+    await mkdir(cwd)
+    await symlink(cwd, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    const scoped = { cwd, writeScope: await resolveWriteScope(cwd, ['src/future.ts']) }
+    expect(writerConflicts(scoped, { cwd: alias })).toBe(true)
+    expect(writerConflicts({ cwd: alias }, scoped)).toBe(true)
+    expect(writerConflicts({ cwd }, { cwd: alias })).toBe(true)
+  })
 })

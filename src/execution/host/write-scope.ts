@@ -1,5 +1,5 @@
 /** Declared write ownership for scheduling; this is not filesystem confinement. */
-import { realpath } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 
 const key = (path: string) => {
@@ -8,12 +8,12 @@ const key = (path: string) => {
 }
 
 /** Resolve existing ancestors so symlink aliases and not-yet-created files share one lock. */
-async function canonical(path: string): Promise<string> {
+function canonical(path: string): string {
   const tail: string[] = []
   let parent = path
   while (true) {
     try {
-      return key(resolve(await realpath(parent), ...tail))
+      return key(resolve(realpathSync(parent), ...tail))
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
       if (code !== 'ENOENT') throw error
@@ -55,7 +55,7 @@ export function writerConflicts(
   right: { cwd: string; writeScope?: readonly string[] | undefined },
 ): boolean {
   return writeScopesOverlap(
-    left.writeScope ?? [key(left.cwd)],
-    right.writeScope ?? [key(right.cwd)],
+    left.writeScope ?? [canonical(resolve(left.cwd))],
+    right.writeScope ?? [canonical(resolve(right.cwd))],
   )
 }
