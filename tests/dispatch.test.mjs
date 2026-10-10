@@ -28,7 +28,9 @@ test('a retry sends one prompt; changed content under the same operation is refu
               ? { accepted: true }
               : data.method === 'register'
                 ? { task: data.args.request }
-                : {},
+                : data.method === 'selectModel'
+                  ? { selected: data.args.request }
+                  : {},
       }),
     )
   })

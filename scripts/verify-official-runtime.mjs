@@ -41,6 +41,23 @@ const harness = (method, input = {}) =>
   wire('oplExecution/' + method, Object.keys(input).length ? { request: input } : {})
 const gateway = (method, input) =>
   wire('oplGatewayModels/' + method, input ? { request: input } : {})
+// Harness completion precedes the official driver's final transcript events.
+async function settledConversation(sessionId, afterTurn) {
+  const deadline = Date.now() + 30000
+  while (true) {
+    const page = await rpc('session', 'snapshot', {
+      request: { address: { kind: 'session', sessionId }, maxMessages: 50 },
+    })
+    if (
+      page.records.some(
+        (item) => item.event?.type === 'turn/end' && item.event.data.turn > afterTurn,
+      )
+    )
+      return page
+    assert(Date.now() < deadline, 'Official conversation did not settle: ' + sessionId)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+}
 if (process.argv.includes('--readback-selections')) {
   const selections = JSON.parse(
     await readFile(join(root, 'profiles/desktop/combination-selection.json'), 'utf8'),
@@ -61,6 +78,15 @@ if (process.argv.includes('--readback-selections')) {
       request: { sessionId, cwd: projects.get(sessionId) ?? join(root, 'test-project') },
     })
     assert.equal((await harness('model-selection', { sessionId })).combination, combination)
+  }
+  const permissionSelections = JSON.parse(
+    await readFile(join(root, 'qualification-permission-selections.json'), 'utf8'),
+  )
+  for (const { sessionId, preset, approval } of permissionSelections) {
+    const actual = await rpc('session', 'permissions', { request: { sessionId } })
+    assert.equal(actual.preset, preset)
+    assert.equal(actual.sandbox, preset)
+    assert.equal(actual.approval, approval)
   }
   console.log(JSON.stringify({ selectionRestore: true, sessions: Object.keys(selections).length }))
   process.exit(0)
@@ -249,6 +275,10 @@ try {
     api: 'openai-completions',
     models: [
       { id: 'gpt-5.4', name: 'GPT-5.4' },
+      { id: 'gpt-6-astra', name: 'GPT-6 Astra' },
+      { id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol' },
+      { id: 'gpt-6-sol', name: 'GPT-6 Sol' },
+      { id: 'gpt-6-luna', name: 'GPT-6 Luna' },
       { id: 'deepseek-flash', name: 'DeepSeek-V4.1-Flash' },
     ],
   })
@@ -257,6 +287,9 @@ try {
   assert.equal(models.find((m) => m.id === 'deepseek-flash').name, 'DeepSeek 设置回读')
   assert(models.some((m) => m.id === 'codex::gpt-5.4'))
   assert(models.some((m) => m.id === 'codex::deepseek-flash'))
+  assert.equal(models.find((m) => m.id === 'deepseek-flash').reasoning.defaultEffort, 'high')
+  for (const id of ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna'])
+    assert.equal(models.find((m) => m.id === 'codex::' + id).reasoning.defaultEffort, 'medium')
   const catalog = await harness('catalog')
   const gpt = {
     id: 'accept-gpt-dsh',
@@ -269,6 +302,53 @@ try {
   }
   catalog.combinations.push(gpt)
   await harness('save-catalog', { catalog })
+  const generatedOpenAI = catalog.combinations.find(
+    (item) =>
+      item.generated &&
+      item.harnessRef === 'dsh' &&
+      item.modelRef.model === 'codex::deepseek-flash',
+  )
+  assert(generatedOpenAI, 'generated DeepSeek OpenAI combination is missing')
+  const permissionSelections = []
+  for (const [preset, approval] of [
+    ['read-only', 'ask'],
+    ['workspace-write', 'ask'],
+    ['danger-full-access', 'never'],
+  ]) {
+    const created = await rpc('session', 'create', {
+      request: { cwd: project, permissionPreset: preset },
+    })
+    await harness('select-combination', {
+      sessionId: created.sessionId,
+      combination: generatedOpenAI.id,
+    })
+    const actual = await rpc('session', 'permissions', {
+      request: { sessionId: created.sessionId },
+    })
+    assert.equal(actual.preset, preset)
+    assert.equal(actual.sandbox, preset)
+    assert.equal(actual.approval, approval)
+    permissionSelections.push({ sessionId: created.sessionId, preset, approval })
+  }
+  const explicitReview = await rpc('session', 'create', {
+    request: { cwd: project, permissionPreset: 'danger-full-access' },
+  })
+  await harness('select-combination', { sessionId: explicitReview.sessionId, combination: gpt.id })
+  const narrowed = await rpc('session', 'permissions', {
+    request: { sessionId: explicitReview.sessionId },
+  })
+  assert.equal(narrowed.preset, 'read-only')
+  assert.equal(narrowed.sandbox, 'read-only')
+  assert.equal(narrowed.approval, 'ask')
+  permissionSelections.push({
+    sessionId: explicitReview.sessionId,
+    preset: 'read-only',
+    approval: 'ask',
+  })
+  await writeFile(
+    join(root, 'qualification-permission-selections.json'),
+    JSON.stringify(permissionSelections) + '\n',
+  )
   for (const combination of ['dsh/deepseek-flash', gpt.id]) {
     const s = await harness('start', {
       combination,
@@ -386,12 +466,7 @@ try {
   await rpc('harness', 'wait', { sessionId: fullAccess.id })
   const transcriptState = await harness('snapshot', { sessionId: fullAccess.id })
   assert.equal(transcriptState.title, 'MiniMax transcript title')
-  const transcript = await rpc('session', 'snapshot', {
-    request: {
-      address: { kind: 'session', sessionId: fullAccess.nativeSessionId },
-      maxMessages: 50,
-    },
-  })
+  const transcript = await settledConversation(fullAccess.nativeSessionId, 0)
   const transcriptJson = JSON.stringify(transcript.records)
   assert(transcriptJson.includes('Inspecting the repository.'))
   assert(transcriptJson.includes('"type":"reasoning"'))
@@ -434,9 +509,13 @@ try {
   history = await rpc('harness', 'wait', { sessionId: history.id })
   assert.equal(history.state, 'completed', JSON.stringify(history.turns.at(-1)))
   assert.equal(await readFile(join(project, 'calls.txt'), 'utf8'), 'NEW_NATIVE_CONVERSATION\n')
-  const agentPage = await rpc('session', 'snapshot', {
-    request: { address: { kind: 'session', sessionId: history.nativeSessionId }, maxMessages: 50 },
-  })
+  const importedTurn = Math.max(
+    0,
+    ...oldPage.records
+      .filter((item) => item.event?.type === 'turn/start')
+      .map((item) => item.event.data.turn),
+  )
+  const agentPage = await settledConversation(history.nativeSessionId, importedTurn)
   assert(JSON.stringify(agentPage.records).includes('result:NEW_NATIVE_CONVERSATION'))
   assert(JSON.stringify(agentPage.records).includes('tool/result'))
   const nativeTurns = agentPage.records

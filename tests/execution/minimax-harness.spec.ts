@@ -78,8 +78,11 @@ async function setup(
 
   const current = { provider: MINIMAX_CODE_PROVIDER, model: options.nativeModel ?? 'MiniMax-M3' }
   const ctx = {
+    sessions: { list: () => [] },
+    waterfall: async (_name: unknown, _request: unknown, next: () => Promise<unknown[]>) => next(),
     get: () => undefined,
     agents: {
+      list: () => [],
       get: () =>
         options.nativeModel
           ? {
@@ -93,7 +96,10 @@ async function setup(
     },
     ...(options.nativeModel
       ? {
-          sessions: { get: () => ({ id: 'native-session', header: { cwd: root } }) },
+          sessions: {
+            list: () => [],
+            get: () => ({ id: 'native-session', header: { cwd: root } }),
+          },
           sessionProjections: {
             snapshot: () => ({ values: { modelSelection: { next: current } } }),
           },
@@ -137,7 +143,7 @@ async function setup(
     await service.wait({ sessionId }, AbortSignal.timeout(15000))
     return service.snapshot({ sessionId })
   }
-  return { root, state, service, journal, prompts, start, ask }
+  return { root, state, service, journal, prompts, start, ask, current }
 }
 
 const configureCalls = (entries: Journal[]) =>
@@ -254,7 +260,7 @@ describe('official MiniMax Code ACP combination', () => {
   it.each(['MiniMax-M3.1-Flash-Preview', 'MiniMax-M3'])(
     'executes the actual user request with injected reminders kept as context (%s)',
     async (model) => {
-      const { service, prompts } = await setup({ nativeModel: model })
+      const { service, prompts, current, journal } = await setup({ nativeModel: model })
       const reminder = (text: string) =>
         createUserMessage({
           source: { kind: 'skill-catalog', form: 'snapshot' } as never,
@@ -410,7 +416,7 @@ describe('official MiniMax Code ACP combination', () => {
   it.each(['MiniMax-M3.1-Flash-Preview', 'MiniMax-M3'])(
     'routes native model selection to the official CLI without a saved combination (%s)',
     async (model) => {
-      const { service, prompts } = await setup({ nativeModel: model })
+      const { service, prompts, current, journal } = await setup({ nativeModel: model })
       const selection = await service.modelSelection('native-session')
       expect(selection.combination).toBe(`minimax-code/${model}`)
       const next = vi.fn(async function* () {})
@@ -432,6 +438,15 @@ describe('official MiniMax Code ACP combination', () => {
       expect((await prompts())[0]).toContain('native-input')
       await Array.fromAsync(service.conversationStream(options, next))
       expect(await prompts()).toHaveLength(1)
+      current.provider = 'opl-gateway'
+      current.model = 'kiro::claude-opus-5-5'
+      const before = await journal()
+      expect(await service.stopEditState({ sessionId: 'native-session' })).toMatchObject({
+        supported: false,
+        boundaries: [],
+        reason: '该会话不是可编辑的侧栏对话',
+      })
+      expect(await journal()).toEqual(before)
     },
   )
 

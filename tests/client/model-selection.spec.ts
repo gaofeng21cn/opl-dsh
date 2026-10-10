@@ -557,6 +557,9 @@ async function pluginFixture(
         events = { register: () => () => {} }
       })(provider, 'uiConversation')
       new (class extends Service {
+        openSession = vi.fn()
+      })(provider, 'uiWorkspace')
+      new (class extends Service {
         register() {
           return () => {}
         }

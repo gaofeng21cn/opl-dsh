@@ -19,6 +19,7 @@ import {
   readShellProbe,
   type NativePermission,
 } from './native-bash.ts'
+import { acpUpdatesForClaudeEvent } from './claude-transcript.ts'
 const kind = process.env.OPL_NATIVE_HARNESS!,
   command = process.env.OPL_NATIVE_COMMAND!
 // The permission profile is a three-way authorization, not a boolean. Treating anything that
@@ -356,33 +357,8 @@ async function claudePrompt(text: string, effort?: string) {
         networkRetry = true
       if (event.type === 'assistant' || event.type === 'result' || event.type === 'stream_event')
         receivedResponse()
-      if (event.type === 'stream_event') {
-        const e = event.event
-        if (e.type === 'content_block_delta' && e.delta.type === 'text_delta')
-          emit({
-            sessionUpdate: 'agent_message_chunk',
-            content: { type: 'text', text: e.delta.text },
-          })
-      }
-      if (event.type === 'assistant')
-        for (const block of event.message.content)
-          if (block.type === 'tool_use')
-            emit({
-              sessionUpdate: 'tool_call',
-              toolCallId: block.id,
-              title: block.name,
-              status: 'in_progress',
-              kind: 'other',
-            })
-      if (event.type === 'user' && Array.isArray(event.message.content))
-        for (const block of event.message.content)
-          if (block.type === 'tool_result')
-            emit({
-              sessionUpdate: 'tool_call_update',
-              toolCallId: block.tool_use_id,
-              status: block.is_error ? 'failed' : 'completed',
-              kind: 'other',
-            })
+      // Complete assistant text blocks are not replayed after their streamed deltas.
+      for (const update of acpUpdatesForClaudeEvent(event)) emit(update)
       if (event.type === 'result') result = event
     }
   } catch (error) {

@@ -5,6 +5,7 @@ import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { DSH_COMBINATION, GROK_COMBINATION, type HarnessCatalog } from '../contracts/sessions.ts'
 import {
   displayModelSource,
+  isRetiredModel,
   modelRefKey,
   type ExecutionCatalog,
   type ModelRef,
@@ -214,6 +215,52 @@ export class ExecutionCatalogStore {
   }
   async dispose() {
     await this.queue
+  }
+  /** Clean obsolete combination rows against the latest catalog, retaining its launch settings. */
+  async cleanLegacyCombinations() {
+    await this.ready
+    const write = this.queue.then(async () => {
+      const value = normalizeCatalog({
+        ...this.value,
+        combinations: this.value.combinations
+          .filter((item) => !isRetiredModel(item.modelRef))
+          .map((item) =>
+            item.id === DSH_COMBINATION && item.name === 'DeepSeek + DSH'
+              ? { ...item, name: 'DeepSeek-V4.1-Flash + DSH' }
+              : item,
+          ),
+      })
+      await this.persist(value)
+      this.value = value
+      return structuredClone(value)
+    })
+    this.queue = write.then(
+      () => {},
+      () => {},
+    )
+    return write
+  }
+  /** Publish one verified launch command without overwriting concurrent proxy settings. */
+  async setHarnessLaunch(harnessId: string, command: string, prefix: string[]) {
+    await this.ready
+    const write = this.queue.then(async () => {
+      if (!this.value.harnesses.some((h) => h.id === harnessId)) throw Error('Harness 不存在')
+      const previous = this.value.harnesses.find((h) => h.id === harnessId)!
+      const value = normalizeCatalog({
+        ...this.value,
+        harnesses: this.value.harnesses.map((h) =>
+          h.id === harnessId ? { ...h, command, prefix } : h,
+        ),
+      })
+      await this.persist(value)
+      this.value = value
+      return { previousCommand: previous.command ?? 'mcode', previousPrefix: previous.prefix ?? [] }
+    })
+    this.queue = write.then(
+      () => {},
+      () => {},
+    )
+    return write
   }
   /** Merge one proxy against the latest queued catalog so independent settings do not overwrite it. */
   async setProxy(harnessId: string, proxy: unknown) {

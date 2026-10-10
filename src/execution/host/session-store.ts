@@ -77,9 +77,31 @@ function parseRecord(raw: unknown): HarnessSession {
     throw Error('组合会话推理设置无效，原文件已保留')
   if (
     item.nativeSessionId !== undefined &&
-    (typeof item.nativeSessionId !== 'string' || !item.nativeSessionId.startsWith('session-'))
+    (typeof item.nativeSessionId !== 'string' ||
+      !item.nativeSessionId.trim() ||
+      item.nativeSessionId.includes('\0'))
   )
     throw Error('组合会话的官方对话引用无效，原文件已保留')
+  // 回退谱系必须完整：缺任何一项都会让恢复后的复核落空，因此整条拒绝而不是补默认值。
+  if (item.stopEdit !== undefined) {
+    const stopEdit = item.stopEdit
+    if (
+      !stopEdit ||
+      typeof stopEdit !== 'object' ||
+      [
+        'clientRequestId',
+        'previousSessionId',
+        'sessionId',
+        'boundaryId',
+        'pendingOperationId',
+      ].some((key) => typeof stopEdit[key] !== 'string' || !stopEdit[key]) ||
+      !Number.isSafeInteger(stopEdit.removedTurns) ||
+      stopEdit.removedTurns < 0 ||
+      typeof stopEdit.at !== 'string' ||
+      !Number.isFinite(Date.parse(stopEdit.at))
+    )
+      throw Error('组合会话的停止后编辑记录无效，原文件已保留')
+  }
   if (item.assignment !== undefined) {
     const assignment = item.assignment
     if (
@@ -150,6 +172,18 @@ function parseRecord(raw: unknown): HarnessSession {
         !['pending', 'delivering', 'delivered', 'blocked'].includes(turn.delivery.state))
     )
       throw Error('组合会话回传记录无效，原文件已保留')
+    // 原生边界映射是精确事实：半个字段都不能补，否则会变成一次猜配出来的回退。
+    if (
+      turn.native !== undefined &&
+      (!turn.native ||
+        typeof turn.native !== 'object' ||
+        ['userMessageId', 'turnId', 'historyVersion'].some(
+          (key) => turn.native[key] !== undefined && typeof turn.native[key] !== 'string',
+        ) ||
+        (turn.native.officialSeq !== undefined &&
+          (!Number.isSafeInteger(turn.native.officialSeq) || turn.native.officialSeq < 0)))
+    )
+      throw Error('组合会话的原生边界映射无效，原文件已保留')
   }
   return {
     ...item,

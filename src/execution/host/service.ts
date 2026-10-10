@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { HarnessService } from './harness.ts'
 import type { HarnessProxy } from '../contracts/catalog.ts'
+import type { MiniMaxCandidateRequest, MiniMaxCandidateResult } from '../contracts/candidate.ts'
 import type {
   HarnessSessionsRequest,
   HarnessSessionsPage,
@@ -19,6 +20,10 @@ import type {
   HarnessStartRequest,
   HarnessPromptRequest,
   SessionRequest,
+  StopEditRequest,
+  StopEditResult,
+  StopEditState,
+  StopEditStateRequest,
   CooperationSettings,
   HarnessOrigin,
   DelegateRequest,
@@ -40,6 +45,11 @@ export class ExecutionService extends TypertRemoteService {
   @Remote('catalog')
   catalog(): Promise<ExecutionCatalog> {
     return this.execution.executionCatalog()
+  }
+  /** Import or select an immutable MiniMax candidate while all projects are idle. */
+  @Remote('select-minimax-candidate')
+  selectMiniMaxCandidate(request: MiniMaxCandidateRequest): Promise<MiniMaxCandidateResult> {
+    return this.execution.selectMiniMaxCandidate(request)
   }
   @Remote('save-catalog')
   saveCatalog(request: { catalog: ExecutionCatalog }): Promise<ExecutionCatalog> {
@@ -169,5 +179,23 @@ export class ExecutionService extends TypertRemoteService {
   @Remote('retry-delivery')
   retryDelivery(request: SessionRequest): Promise<HarnessSnapshot> {
     return this.execution.retryDelivery(request.sessionId)
+  }
+  /** 入口可见性与可选消息边界；不支持时 supported 为 false，客户端据此隐藏入口。 */
+  @Remote('stop-edit-state')
+  stopEditState(request: StopEditStateRequest): Promise<StopEditState> {
+    return this.execution.stopEditState(request)
+  }
+  /** 回退到所选消息之前并交回原文；本方法不会自行发送，下一次请求由用户触发。 */
+  @Remote('stop-edit')
+  stopEdit(request: StopEditRequest): Promise<StopEditResult> {
+    return this.execution.stopEdit(request)
+  }
+  /** 客户端确认已把原文放回输入框，恢复后不再重复填入。 */
+  @Remote('stop-edit-acknowledge')
+  acknowledgeStopEditDraft(request: {
+    sessionId: string
+    clientRequestId: string
+  }): Promise<{ acknowledged: boolean }> {
+    return this.execution.acknowledgeStopEditDraft(request)
   }
 }

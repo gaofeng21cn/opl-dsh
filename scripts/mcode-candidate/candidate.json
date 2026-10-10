@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "note": "MiniMax Bash 候选版的固定输入：官方来源与归档摘要、补丁及其摘要、构建链会下载的第三方归档、必须随产物保留的许可文件，以及启动器约定。脚本按本文件失败关闭；修改任何一项都要同时复核脚本检查和 docs/minimax-bash-candidate.md。",
+  "candidateVersion": "0.6.3-opl-bash.20261010.2",
+  "official": {
+    "repository": "https://github.com/MiniMax-AI/minimax-code",
+    "tag": "v0.6.3",
+    "version": "0.6.3",
+    "packageName": "@minimax-ai/code",
+    "packageNameNote": "候选目录里的 package.json 是官方构建链写出的分发清单：scripts/build.mjs 与 scripts/package-cli-release.mjs 都写 name=\"@minimax-ai/code\"、version=<候选版本>。未打包的源码根清单名是 minimax-code，因此身份校验针对的是分发产物而不是源码树。",
+    "archiveRevision": "07a2390",
+    "extractedSourceRevision": "9b9885e42a3cf1a3df1cfa52a46e4fdb034cfcee",
+    "archiveUrl": "https://codeload.github.com/MiniMax-AI/minimax-code/legacy.tar.gz/refs/tags/v0.6.3",
+    "archiveSha256": "ced0ad86a13b9f6fdd378027b50026c6a80df6481cdf2d9884478d780c94cdae",
+    "archiveBytes": 27501362,
+    "archiveRoot": "MiniMax-AI-minimax-code-07a2390",
+    "note": "archiveRevision 是 codeload 归档目录名里的 GitHub 修订；extractedSourceRevision 是仓库内 release/extraction.json 记录的内部源码修订。两者不同，打补丁前都要核对。"
+  },
+  "patches": [
+    {
+      "id": "minimal",
+      "file": "patches/mcode-shell-path-minimal.patch",
+      "sha256": "09a9f0aaf9bc328768596358bc8f84edc7cd26257cf5afa20ac1bcf546203e7e",
+      "required": true,
+      "touches": [
+        "third_party/pi-mono/packages/coding-agent/src/utils/shell.ts",
+        "packages/tui/src/acp/agent.ts"
+      ],
+      "summary": "运行时最小补丁：MCODE_SHELL_PATH 选择与 ACP _meta shell 回读。"
+    },
+    {
+      "id": "repo-gates",
+      "file": "patches/mcode-shell-path-repo-gates.patch",
+      "sha256": "2d800c1c297103f2e4164ffb487436050a4c084a2e3ddc0ccfbfdc3340c2d8a7",
+      "required": true,
+      "touches": [
+        "packages/local-runtime/test/unit/local-bash-shell-path.test.ts",
+        "test/vitest-suites.json",
+        "docs/tui-capabilities.md",
+        "release/public-source.json",
+        "third_party/pi-mono/MINIMAX_CHANGES.md"
+      ],
+      "summary": "仓库门禁补丁：回归测试、Vitest 组登记、公开清单、文档与 vendored 修改台账。"
+    },
+    {
+      "id": "opl-session-history",
+      "file": "patches/mcode-opl-session-history.patch",
+      "sha256": "f1f4f1d148826474028baa4718b2948219cc976dc47aca31f109fca9fdd22b42",
+      "required": true,
+      "touches": [
+        "packages/tui/src/acp/session-history-extension.ts",
+        "packages/tui/src/acp/agent.ts",
+        "packages/tui/test/unit/acp-session-history-extension.test.ts",
+        "packages/tui/test/unit/acp-session-history-agent.test.ts",
+        "test/vitest-suites.json",
+        "release/public-source.json",
+        "packages/tui/test/unit/acp-agent.test.ts"
+      ],
+      "summary": "停止后编辑的 ACP 会话历史扩展 v1：opl/session/history/list 与 conversation-only rewind，以及 clientRequestId 到真实已接纳 turn/用户消息的 opl/session/history/boundary 绑定，并把两个 focused 测试登记进 capability 组。rewind 不做前置 preview，直接沿用官方顺序（validate → completed-operation 复放 → resume），以免已应用回退的重试被已删除的边界挡住。agent.ts 的 _meta 上下文依赖 minimal 补丁先应用；vitest-suites.json 的 hunk 锚在 acp-agent.test.ts 行，与 repo-gates 的尾部 hunk 不重叠，两个补丁顺序无关。 新增三个历史接口源码/测试路径登记到官方公开源码清单。 官方 initialize 整体响应严格断言包含新增能力，保留其他全部断言。"
+    }
+  ],
+  "build": {
+    "packageManager": "pnpm@9.12.0",
+    "nodeEngine": ">=22.19 <23 || >=24.2 <27",
+    "externalModules": [
+      "better-sqlite3",
+      "@mariozechner/clipboard",
+      "@vscode/ripgrep",
+      "@larksuiteoapi/node-sdk"
+    ],
+    "install": [["pnpm", "install", "--frozen-lockfile"]],
+    "bundle": ["node", "scripts/build.mjs"],
+    "gates": [
+      ["pnpm", "typecheck"],
+      ["pnpm", "check:tsconfig"],
+      ["pnpm", "check:source"],
+      ["pnpm", "check:standalone"],
+      ["node", "scripts/run-vitest-suite.mjs", "capability"]
+    ],
+    "note": "install 与 gates 都是 argv 数组：元素是“可执行文件 + 参数”，不是扁平字符串列表；Windows 上 pnpm 是 pnpm.cmd shim，由 run() 经 cmd.exe 逐字传参启动。"
+  },
+  "mcodeToolsArtifact": {
+    "url": "https://registry.npmjs.org/@minimax-ai/code/-/code-0.3.11.tgz",
+    "version": "0.0.4",
+    "cachePath": ".cache/artifacts/code-0.3.11.tgz",
+    "integritySha512": "sBOd8yvQRVuQNoGvzCDwXKaj5rQxLI3gKnojWS4+0wnMU9IXtxObSqbfBxz30Lze/zitRtSG2v76iJGHOmHRUA==",
+    "entryCliSha256": "e5a59ec5362e395b519317ad6fecd99f6e92308b9d985be44b64eb2f2b73a722",
+    "note": "integritySha512 是整包摘要，entryCliSha256 是包内 embedded/mcode-tools/cli.mjs 的摘要；两者都来自官方 scripts/lib/mcode-tools-artifact.mjs 的固定值，语义不同不能互换。"
+  },
+  "license": {
+    "rootFiles": ["LICENSE", "NOTICE", "LICENSE-STATUS.md", "THIRD_PARTY_NOTICES.md"],
+    "extraFiles": [
+      "release/dependency-licenses.json",
+      "third_party/pi-mono/LICENSE",
+      "third_party/sandbox-runtime/LICENSE"
+    ]
+  },
+  "launcher": {
+    "windows": "mcode.cmd",
+    "runtime": "explicit-path-or-system-node"
+  },
+  "capability": {
+    "acpMetaKey": "minimax-code/shell",
+    "acpMetaVersion": 1,
+    "bundleMarkers": ["minimax-code/shell", "MCODE_SHELL_PATH"],
+    "acpSessionHistory": {
+      "metaKey": "opl/session-history",
+      "version": 1,
+      "methods": ["opl/session/history/list", "opl/session/history/rewind"],
+      "notifications": ["opl/session/history/boundary"],
+      "clientRequestIdMetaKey": "opl/clientRequestId",
+      "rewindScope": "conversation-only",
+      "runtimeOperationId": "sha256(sessionId\\u0000clientRequestId) 截断 32 位十六进制，前缀 oplsh1-；wire 始终回传调用方原始 ID",
+      "idleGate": "ACP prompt 生命周期整体（activePrompt 在 admission 设置、finally 清除），不使用仅为 steer 服务的 steerableTurnId；mutation 与 prompt admission 经官方 runSessionLifecycle 串行",
+      "note": "list/rewind/boundary 的方法串由 src/acp/session-history-extension.ts 的 oplSessionHistoryCapabilities() 同时驱动注册与 initialize _meta 公告，二者不会漂移。rewind 只回退对话上下文，永不回退文件：rewindTurnDiff 恒为 false，任何文件回退参数被显式拒绝。"
+    }
+  },
+  "unsupported": [
+    "官方 tag 与本文件不一致时拒绝应用本补丁；未复核的新版本必须先人工复核差异再改本文件。",
+    "构建只写 --out 指定的独占目录，不写系统 PATH，不改官方安装与官方登录目录。",
+    "本候选不是官方发布；不跟随官方更新自动改变。",
+    "opl/session/history/list 不返回 turnId：官方 SessionInputSummaryView 只提供 msgId、contentHead 与 timestamp，没有 turnId 字段（packages/local-runtime-v2/src/application/session/query-contract.ts）。协议 v1 写明 turnId「仅当 Runtime 提供」，因此此处确实不提供，OPL 不得依赖它做边界匹配。",
+    "opl/session/history/rewind 不发 prompt，也不调用 editSessionMessage：编辑后的内容由 OPL 放回输入框、由用户再次发送。回退后磁盘上已写文件保留，扩展不做任何文件还原。",
+    "重复 clientRequestId 的幂等由官方 Runtime 的 operation ledger 保证：conversation-rewind-edit-service.rewind 的顺序是 validate → 读取 completed operation 并复放既有结果 → resume，扩展刻意不做前置 preview，否则已应用回退的重试会被它自己删掉的边界挡住。扩展不自建本地幂等台账。",
+    "幂等与恢复的真实边界：官方 ledger 是 SessionOperationIntentRepository，源码注释明确「process-local，无数据库支撑，Runtime 重启会忘记未完成 operation」。因此同一进程内的重复请求可复放既有结果；跨进程重启后该记录消失，同 clientRequestId 会按新请求处理，而目标边界此时已被删除，Runtime 会以 MESSAGE_BOUNDARY_INVALID 拒绝。OPL 断线恢复后不得假设重放一定成功，必须以原生历史复核。",
+    "operationId 在官方 ledger 中是全局键：operation-intent-repository.ts 的 clientRequestKey(kind, clientRequestId) 不含 sessionId，且 assertMatchingTarget 会在记录的 sessionId 或目标不同时抛 REQUEST_CONFLICT。因此扩展把 sha256(sessionId\\u0000clientRequestId) 截断后作为 Runtime operationId 下发，wire 上仍回传调用方原始 clientRequestId；两个会话使用同一个外部 ID 不会互相冲突。",
+    "Runtime 错误不会被反射：ACP 错误只使用固定受控文案，已知 code（MESSAGE_BOUNDARY_INVALID、CONVERSATION_MUTATION_REQUEST_CONFLICT、CONVERSATION_MUTATION_NOT_SUPPORTED、HISTORY_CHAIN_CORRUPT）映射为公开措辞，未知 code 与 list 的任何异常一律降级为通用文案，不复制第三方 message，也不做事后脱敏。",
+    "静止性以 ACP prompt 生命周期整体为准：activePrompt 在 admission 设置、仅在 handler 的 finally 清除，并经官方 runSessionLifecycle 与 mutation 串行，因此覆盖「接纳前、运行中、取消后尚未 settle、questionnaire 交接」四种窗口。steering 的 steerableTurnId 比「忙」更窄，未被复用。",
+    "boundary 只在官方 Runtime 真正提交原始用户消息后才发送，依据是该消息流的真实 msg_id 与已接纳 turnId；不按 contentHead、时间或顺序猜测，也不为自动续轮或注入消息建立映射。边界台账按 (sessionId, clientRequestId) 组合键，两个会话复用同一外部 ID 时各自独立且各通知一次。"
+  ]
+}

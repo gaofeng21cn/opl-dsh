@@ -77,17 +77,34 @@ describe('Grok official ACP reasoning', () => {
 
 describe('Flash defaults across channels', () => {
   it.each(['deepseek-flash', 'codex::deepseek-flash'])(
-    'defaults %s to max while leaving other models unchanged',
+    'defaults %s to high while leaving other models unchanged',
     (model) => {
-      const reasoning = { defaultEffort: 'high', efforts: [{ id: 'high' }, { id: 'max' }] }
-      expect(modelDefaultEffort(model, reasoning)).toBe('max')
-      expect(modelDefaultEffort('deepseek-v4-pro', reasoning)).toBe('high')
+      const reasoning = { defaultEffort: 'max', efforts: [{ id: 'high' }, { id: 'max' }] }
+      expect(modelDefaultEffort(model, reasoning)).toBe('high')
+      expect(modelDefaultEffort('deepseek-v4-pro', reasoning)).toBe('max')
     },
   )
-  it('does not invent max when thinking is disabled or the provider omits it', () => {
+  it('does not invent high when thinking is disabled or the provider omits it', () => {
     expect(
       modelDefaultEffort('deepseek-flash', { defaultEffort: 'off', efforts: [{ id: 'off' }] }),
     ).toBe('off')
     expect(modelDefaultEffort('deepseek-flash', undefined)).toBeUndefined()
   })
+  it.each(['gpt-6-astra', 'codex::gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna'])(
+    'defaults %s to medium when supported',
+    (model) => {
+      expect(
+        modelDefaultEffort(model, {
+          defaultEffort: 'low',
+          efforts: [{ id: 'low' }, { id: 'medium' }, { id: 'max' }],
+        }),
+      ).toBe('medium')
+      expect(
+        modelDefaultEffort(model, {
+          defaultEffort: 'low',
+          efforts: [{ id: 'low' }],
+        }),
+      ).toBe('low')
+    },
+  )
 })

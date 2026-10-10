@@ -17,6 +17,8 @@ import {
   grokConfiguration,
 } from '../../src/execution/host/harness.ts'
 import { adapterFor } from '../../src/execution/host/adapters/index.ts'
+import { codexSandboxMode } from '../../src/execution/host/adapters/native-bash.ts'
+import { harnessPermissionPreset } from '../../src/execution/host/permissions.ts'
 import { commandLaunch } from '../../src/execution/host/harness-registry.ts'
 import { systemEnvironment } from '../../src/execution/host/adapters/environment.ts'
 import { resolveGatewayExecution } from '../../src/gateway/host/execution-access.ts'
@@ -109,7 +111,12 @@ async function setup() {
     prefix: [resolve('tests/fixtures/acp-agent.mjs')],
     resolveKey: async () => 'test-grok-key',
   }
-  const ctx = { get: () => undefined, agents: { get: () => undefined } } as unknown as Context
+  const ctx = {
+    get: () => undefined,
+    agents: { get: () => undefined, list: () => [] },
+    sessions: { list: () => [] },
+    waterfall: async (_event, _request, next) => next(),
+  } as unknown as Context
   const service = new HarnessService(ctx, options)
   cleanups.push(() => service.dispose())
   return { root, options, ctx, service }
@@ -141,8 +148,9 @@ async function nativeSetup(
   }
   const ctx = {
     get: () => undefined,
-    agents: { get: () => undefined },
-    sessions: { get: () => session },
+    agents: { get: () => undefined, list: () => [] },
+    waterfall: async (_event, _request, next) => next(),
+    sessions: { list: () => [], get: () => session },
     llm: {
       listProviders: () => providers,
       listConfigurableProviders: () => [],
@@ -347,33 +355,29 @@ describe('native conversation combinations', () => {
       start.mockRestore()
     }
   })
-  it('inherits DSH permissions for generated combinations without elevating other origins', async () => {
+  it('honours an explicitly stated permission for a generated combination in every origin', async () => {
     const { service, root } = await nativeSetup()
     const automatic = (await service.executionCatalog()).combinations.find(
       (item) => item.generated && item.modelRef.model === 'codex::test-model',
     )!
-    const dsh = await service.start(
-      {
-        combination: automatic.id,
-        cwd: root,
-        taskId: 'dsh-workspace',
-        origin: { kind: 'dsh', sessionId: 'native-session' },
-        sandbox: 'workspace',
-      },
-      true,
-    )
-    expect(dsh.sandbox).toBe('workspace')
-    const codex = await service.start(
-      {
-        combination: automatic.id,
-        cwd: root,
-        taskId: 'codex-workspace',
-        origin: { kind: 'codex', sessionId: 'parent' },
-        sandbox: 'workspace',
-      },
-      true,
-    )
-    expect(codex.sandbox).toBe('read-only')
+    // `generated` is the default the catalog generator picked, so an origin is irrelevant: both the
+    // DSH conversation path and the CLI dispatch path keep the permission the caller stated.
+    for (const origin of [
+      { kind: 'dsh', sessionId: 'native-session' },
+      { kind: 'codex', sessionId: 'parent' },
+    ] as const) {
+      const session = await service.start(
+        {
+          combination: automatic.id,
+          cwd: root,
+          taskId: `generated-${origin.kind}`,
+          origin,
+          sandbox: 'workspace',
+        },
+        true,
+      )
+      expect(session.sandbox).toBe('workspace')
+    }
   })
   it('retries a failed final session write on graceful shutdown', async () => {
     const { service, root, options } = await setup()
@@ -485,6 +489,9 @@ describe('native conversation combinations', () => {
   })
   it('restores the chosen combination among bindings to the same model without elevating permissions', async () => {
     const { service, ctx, options, session, changeModel } = await nativeSetup()
+    const setPermission = vi.fn()
+    ctx.get = ((name: string) =>
+      name === 'permissionPresets' ? { set: setPermission } : undefined) as typeof ctx.get
     const catalog = await service.executionCatalog()
     const modelRef = { provider: 'opl-gateway', model: 'codex::test-model' }
     catalog.combinations.push(
@@ -509,9 +516,11 @@ describe('native conversation combinations', () => {
     )
     await service.saveExecutionCatalog(catalog)
     await service.selectCombination({ sessionId: session.id, combination: 'review' })
-    expect(session.append).toHaveBeenCalledExactlyOnceWith('sandbox/mode', { mode: 'read-only' })
+    expect(setPermission).toHaveBeenCalledExactlyOnceWith(session, 'read-only')
+    expect(session.append).not.toHaveBeenCalled()
     await service.selectCombination({ sessionId: session.id, combination: 'work' })
-    expect(session.append).toHaveBeenCalledTimes(1)
+    expect(setPermission).toHaveBeenCalledTimes(1)
+    expect(session.append).not.toHaveBeenCalled()
     await service.dispose()
     const restored = new HarnessService(ctx, options)
     cleanups.push(() => restored.dispose())
@@ -519,6 +528,36 @@ describe('native conversation combinations', () => {
     changeModel()
     expect((await restored.modelSelection(session.id)).combination).toBeUndefined()
   })
+  it.each(['read-only', 'workspace-write', 'danger-full-access'])(
+    'preserves the selected %s preset when switching to a generated native combination',
+    async (mode) => {
+      const { service, ctx, session, options } = await nativeSetup([
+        { id: 'deepseek-flash', name: 'DeepSeek' },
+        { id: 'codex::deepseek-flash', name: 'DeepSeek OpenAI' },
+      ])
+      const setPermission = vi.fn()
+      ctx.get = ((name: string) =>
+        name === 'permissionPresets' ? { set: setPermission } : undefined) as typeof ctx.get
+      ctx.agents.get = (() => ({
+        status: 'idle',
+        ctx: { get: () => ({ resolve: () => ({ mode }) }) },
+      })) as typeof ctx.agents.get
+      const catalog = await service.executionCatalog()
+      const combination = catalog.combinations.find(
+        (item) => item.generated && item.modelRef.model === 'codex::deepseek-flash',
+      )!
+      expect(combination.permissionPolicy).toBe('read-only')
+      await service.selectCombination({ sessionId: session.id, combination: combination.id })
+      expect(setPermission).not.toHaveBeenCalled()
+      expect(session.append).not.toHaveBeenCalled()
+      await service.dispose()
+      const restored = new HarnessService(ctx, options)
+      cleanups.push(() => restored.dispose())
+      expect((await restored.modelSelection(session.id)).combination).toBe(combination.id)
+      expect(setPermission).not.toHaveBeenCalled()
+      expect(session.append).not.toHaveBeenCalled()
+    },
+  )
   it('preserves a disabled automatic combination instead of generating a duplicate', async () => {
     const { service } = await nativeSetup(),
       catalog = await service.executionCatalog()
@@ -612,7 +651,9 @@ describe('external Harness production transport', () => {
     ).rejects.toThrow('不一致')
   })
   it('fails closed without a Grok key and never falls back to machine credentials', async () => {
-    const { root, ctx, options } = await setup()
+    const { root, ctx, options, service: initial } = await setup()
+    await initial.executionCatalog()
+    await initial.dispose()
     const service = new HarnessService(ctx, { ...options, resolveKey: async () => undefined })
     cleanups.push(() => service.dispose())
     await expect(start(service, root)).rejects.toThrow('渠道凭据')
@@ -971,5 +1012,202 @@ describe('restart and cancellation boundaries', () => {
       ),
     )
     expect((await service.snapshot({ sessionId: parent.id })).turns).toHaveLength(1)
+  })
+})
+
+/** Generated catalog defaults preserve explicit authorization; declared restrictions stay binding. */
+describe('generated combination permission policy', () => {
+  const CODEX_REF = { provider: 'opl-gateway', model: 'codex::gpt-5-codex' },
+    CODEX_MODELS = [
+      { id: CODEX_REF.model, name: 'Codex' },
+      { id: 'deepseek-flash', name: 'DeepSeek' },
+    ],
+    codexOrigin = { kind: 'codex', sessionId: 'parent' } as const
+
+  /** Launch the Node ACP fixture for Codex and report the profile the service actually used. */
+  async function useCodexFixture(root: string, reported: string[]) {
+    const adapter = adapterFor('codex', CODEX_REF)
+    if (!adapter) throw Error('fixture seam requires the Codex adapter entry')
+    vi.spyOn(adapter, 'prepare').mockImplementation(async (_ctx, record) => {
+      reported.push(record.sandbox)
+      const home = join(root, 'harnesses', 'codex')
+      await mkdir(home, { recursive: true, mode: 0o700 })
+      return {
+        home,
+        command: process.execPath,
+        args: [resolve('tests/fixtures/acp-agent.mjs')],
+        env: { ...systemEnvironment(), OPL_FIXTURE_MODEL: CODEX_REF.model.split('::').at(-1) },
+      }
+    })
+  }
+  const generated = async (service: HarnessService) => {
+    const automatic = (await service.executionCatalog()).combinations.find(
+      (item) => item.generated && item.modelRef.model === CODEX_REF.model,
+    )
+    expect(automatic).toBeDefined()
+    return automatic!
+  }
+
+  it('keeps an explicitly authorized full-access CLI task on a generated combination', async () => {
+    const reported: string[] = []
+    const { service, root } = await nativeSetup(CODEX_MODELS)
+    await useCodexFixture(root, reported)
+    const automatic = await generated(service)
+    // The generator's conservative default is still there; it is simply not an authorization.
+    expect(automatic.permissionPolicy).toBe('read-only')
+    const session = await service.delegateFrom(codexOrigin, {
+      combination: automatic.id,
+      cwd: root,
+      task: 'run the delegated task',
+      taskId: 'delegated',
+      operationId: 'one',
+      sandbox: 'full-access',
+      wait: false,
+    })
+    expect(session.sandbox).toBe('full-access')
+    // The launched Harness received the granted profile, and the task actually ran under it.
+    expect(reported).toEqual(['full-access'])
+    expect((await wait(service, session.id)).state).toBe('completed')
+    expect(await readFile(join(root, 'calls.txt'), 'utf8')).toContain('run the delegated task')
+  })
+
+  it('maps that authorization onto the official Codex full-access preset', async () => {
+    const { service, root, ctx } = await nativeSetup(CODEX_MODELS)
+    Object.assign(ctx, { credentials: { resolve: async () => ({ value: 'test-codex-key' }) } })
+    const automatic = await generated(service)
+    const session = await service.start(
+      {
+        combination: automatic.id,
+        cwd: root,
+        taskId: 'preset',
+        origin: codexOrigin,
+        sandbox: 'full-access',
+      },
+      true,
+    )
+    expect(session.sandbox).toBe('full-access')
+    // The real Codex launch step, so this asserts the environment a running bridge would read.
+    const launch = await adapterFor('codex', CODEX_REF)!.prepare!(ctx, session, {
+      home: join(root, 'state'),
+      command: process.execPath,
+      grokCommand: '',
+      nativeBridgePath: '',
+    })
+    expect(launch.env.OPL_NATIVE_PERMISSION).toBe('full-access')
+    // The bridge turns that profile into Codex's official app-server sandbox mode, and the same
+    // three-way profile is the official permission preset used for native combination sessions.
+    expect(codexSandboxMode(launch.env.OPL_NATIVE_PERMISSION as 'full-access')).toBe(
+      'danger-full-access',
+    )
+    expect(harnessPermissionPreset('full-access')).toBe('danger-full-access')
+  })
+
+  it('still starts a generated combination read-only when the caller states no permission', async () => {
+    const { service, root } = await nativeSetup(CODEX_MODELS)
+    const automatic = await generated(service)
+    const session = await service.start(
+      { combination: automatic.id, cwd: root, taskId: 'unstated', origin: codexOrigin },
+      true,
+    )
+    expect(session.sandbox).toBe('read-only')
+  })
+
+  it('keeps a declared read-only combination restricted for a CLI caller', async () => {
+    const { service, root } = await nativeSetup(CODEX_MODELS),
+      catalog = await service.executionCatalog()
+    await service.saveExecutionCatalog({
+      ...catalog,
+      combinations: [
+        ...catalog.combinations,
+        {
+          id: 'declared-read-only',
+          name: 'Declared read-only',
+          modelRef: CODEX_REF,
+          harnessRef: 'codex',
+          permissionPolicy: 'read-only',
+          isDefault: false,
+          enabled: true,
+        },
+      ],
+    })
+    // A policy a person declared keeps its boundary: the request cannot widen it.
+    const session = await service.start(
+      {
+        combination: 'declared-read-only',
+        cwd: root,
+        taskId: 'declared',
+        origin: codexOrigin,
+        sandbox: 'full-access',
+      },
+      true,
+    )
+    expect(session.sandbox).toBe('read-only')
+  })
+
+  it('refuses a full-access request for a harness without a verified official path', async () => {
+    const { service, root } = await nativeSetup(CODEX_MODELS),
+      catalog = await service.executionCatalog()
+    await service.saveExecutionCatalog({
+      ...catalog,
+      combinations: [
+        ...catalog.combinations,
+        {
+          id: 'dsh-workspace',
+          name: 'DSH workspace',
+          modelRef: { provider: 'opl-gateway', model: 'deepseek-flash' },
+          harnessRef: 'dsh',
+          permissionPolicy: 'workspace',
+          isDefault: false,
+          enabled: true,
+        },
+      ],
+    })
+    // Refused, not downgraded to the workspace boundary the combination declares.
+    await expect(
+      service.start(
+        {
+          combination: 'dsh-workspace',
+          cwd: root,
+          taskId: 'unsupported',
+          origin: codexOrigin,
+          sandbox: 'full-access',
+        },
+        true,
+      ),
+    ).rejects.toThrow('没有经过验证的官方 full-access 路径')
+  })
+
+  it('does not upgrade a stored restricted session when it is continued', async () => {
+    const first = await nativeSetup(CODEX_MODELS),
+      automatic = await generated(first.service),
+      created = await first.service.start(
+        {
+          combination: automatic.id,
+          cwd: first.root,
+          taskId: 'stored',
+          origin: codexOrigin,
+          sandbox: 'read-only',
+        },
+        true,
+      )
+    await first.service.dispose()
+    // A stored record carries no `generated` flag, so its own profile is the declared one after a
+    // restart: continuing it cannot reach a profile its record never held.
+    const restored = new HarnessService(first.ctx, first.options)
+    cleanups.push(() => restored.dispose())
+    await expect(
+      restored.start(
+        {
+          combination: automatic.id,
+          cwd: first.root,
+          taskId: 'stored',
+          origin: codexOrigin,
+          existingSessionId: created.id,
+          sandbox: 'full-access',
+        },
+        true,
+      ),
+    ).rejects.toThrow('不能通过继续会话扩大权限')
+    expect((await restored.snapshot({ sessionId: created.id })).sandbox).toBe('read-only')
   })
 })

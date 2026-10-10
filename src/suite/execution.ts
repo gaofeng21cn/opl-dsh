@@ -43,12 +43,17 @@ export const inject = [
  */
 export function apply(ctx: Context, _config: Record<string, never>): void {
   const harness = createHarnessService(ctx)
-  // Apply the same Flash default on official/custom routes before the request is logged.
-  ctx.on('agent/request', async (_payload, next) => {
+  // Apply model defaults on official/custom routes before the request is logged.
+  ctx.on('agent/request', async (payload, next) => {
+    harness.assertRuntimeAvailable()
+    await harness.assertConversationEditable(payload.agent.session.id)
+    harness.assertRuntimeAvailable()
     const request = await next()
+    harness.assertRuntimeAvailable()
     if (
       request.reasoningEffort !== undefined ||
-      request.model.split('::').at(-1) !== 'deepseek-flash'
+      (request.model.split('::').at(-1) !== 'deepseek-flash' &&
+        !request.model.split('::').at(-1)?.startsWith('gpt-'))
     )
       return request
     const info = await ctx.llm.resolveModelInfo(request.provider, request.model)

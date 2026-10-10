@@ -37,16 +37,20 @@ OPL DSH 在官方桌面上提供账号自动配置、Harness 管理和组合选�
 
 ## 设置与使用
 
+DeepSeek 4.1 Flash 的 DeepSeek 与 OpenAI 协议渠道默认推理档位为 `high`；GPT 模型默认 `medium`。MiniMax M3.1 默认 `max`，M3 默认开启思考。默认值仅在未选择档位时使用，同一对话按模型和渠道保存的选择优先，切换模型不沿用其他模型的档位。
+
 - **OPL Gateway**：Gateway 登录、用量、分组权限与凭据。其他 Provider 保留官方的配置入口。
 - **模型**：沿用官方模型页面；OPL Gateway 排在第一位，其他 Provider 和自定义 API 使用官方表单。Gateway 默认显示模型及必要的渠道选项，手动字段和协议放进高级编辑，不要求重填 Key。
 - **Harness**：检测 DSH、Grok Build、Codex CLI、Claude Code、Antigravity CLI（agy）的安装、版本与路径；可登记其他程序。Codex CLI 与 Claude Code 会搜索登录 Shell PATH、常见用户目录和官方桌面附带目录；已安装时调用官方更新器，未安装时提供固定官方一键安装入口，安装后重新检测绝对路径和版本。内置 DSH 随官方桌面更新，不可删除。
 - **组合**：从 DSH 模型目录选择模型，绑定 Harness 与权限。每个模型可指定一个默认组合；没有自定义默认时，GPT 默认 Codex CLI、Claude 默认 Claude Code，其他模型使用已配置的官方默认组合。
 
-对话输入栏沿用 DSH 原生模型选择器和官方会话 UI，选项显示“模型 · Harness”，来源仅作为展开菜单的分组标题。没有凭据的官方 DeepSeek 模型不作为可选项。DSH 原生组合调用官方 Session 的模型选择接口；外部 Harness 组合绑定到当前官方 Session，由 Host 在 `llm/stream` 阶段转发同一轮请求并把文本流回官方 Session。只读组合可以收窄权限，不会静默扩大当前权限。原生会话列表不会出现第二套 OPL 管理页面；父子委派工具仍用于需要显式子任务、交付验收或跨 Harness 协作的场景。
+对话输入栏沿用 DSH 原生模型选择器和官方会话 UI，选项显示“模型 · Harness”，来源仅作为展开菜单的分组标题。没有凭据的官方 DeepSeek 模型不作为可选项。DSH 原生组合调用官方 Session 的模型选择接口；外部 Harness 组合绑定到当前官方 Session，由 Host 在 `llm/stream` 阶段转发同一轮请求并把文本流回官方 Session。自动生成组合的权限只作为新委派任务的缺省值，切换模型保留当前会话选择的权限；显式只读组合通过官方只读预设同时设置 sandbox 与审批策略，不产生两者混用的 custom 状态，也不会静默扩大当前权限。原生会话列表不会出现第二套 OPL 管理页面；父子委派工具仍用于需要显式子任务、交付验收或跨 Harness 协作的场景。
 
 每个原生对话选中的组合 ID 保存在 OPL 自有的 `combination-selection.json`，用于重启后区分同一模型的多个自定义组合。它只关联官方会话 ID，不改变官方会话格式；组合停用或模型被其他入口切换后，不再采用失配的关联。
 
 执行器使用官方 DSH、Grok Build、本机 Codex CLI 的 app-server，以及官方 Claude Agent SDK 驱动的本机 Claude Code。OPL 只做协议、权限、显示和协作映射，不实现 Agent 循环。Codex 与 Claude 的配置及会话保存在套件自有目录，不改日常 CLI 配置。Antigravity 暂仅支持本机管理。
+
+Claude Code 的官方 SDK 思考增量映射到对话中的思考流，正文增量仍独立显示；签名不显示，已完成的内容块不重复追加。只展示 SDK 实际发送的思考，渠道未发送时不补写。
 
 各已接入 Harness 的协作工具可以先查询可用组合，再使用组合 ID 派发同项目子任务。Codex Skill 同样通过组合目录派发。各 Harness 保留自己的上下文，交接依靠明确的任务说明。
 

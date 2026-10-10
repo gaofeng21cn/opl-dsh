@@ -137,7 +137,22 @@ const _one_person_lab_dsh_opl_oplExecution_answer_result$schema = () => (_one_pe
   'contentJson': z.string().optional(),
   'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_cancel_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_cancel_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_cancel_parameter_0$schema$value ??= z.object({
@@ -228,7 +243,22 @@ const _one_person_lab_dsh_opl_oplExecution_cancel_result$schema = () => (_one_pe
   'contentJson': z.string().optional(),
   'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_cancel_task_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_cancel_task_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_cancel_task_parameter_0$schema$value ??= z.object({
@@ -323,7 +353,22 @@ const _one_person_lab_dsh_opl_oplExecution_cancel_task_result$schema = () => (_o
   'contentJson': z.string().optional(),
   'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_catalog_result$schema$value
 const _one_person_lab_dsh_opl_oplExecution_catalog_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_catalog_result$schema$value ??= z.object({
@@ -487,7 +532,22 @@ const _one_person_lab_dsh_opl_oplExecution_delegate_result$schema = () => (_one_
   'contentJson': z.string().optional(),
   'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_detail_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_detail_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_detail_parameter_0$schema$value ??= z.object({
@@ -584,7 +644,22 @@ const _one_person_lab_dsh_opl_oplExecution_detail_result$schema = () => (_one_pe
   'contentJson': z.string().optional(),
   'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }).optional(),
   'totalTurns': z.number(),
   'beforeTurn': z.number(),
@@ -712,7 +787,22 @@ const _one_person_lab_dsh_opl_oplExecution_list_result$schema = () => (_one_pers
   'contentJson': z.string().optional(),
   'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 })),
 }))
 let _one_person_lab_dsh_opl_oplExecution_model_selection_parameter_0$schema$value
@@ -837,7 +927,22 @@ const _one_person_lab_dsh_opl_oplExecution_prompt_result$schema = () => (_one_pe
   'contentJson': z.string().optional(),
   'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_report_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_report_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_report_parameter_0$schema$value ??= z.object({
@@ -950,7 +1055,22 @@ const _one_person_lab_dsh_opl_oplExecution_result_result$schema = () => (_one_pe
   'contentJson': z.string().optional(),
   'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_retry_delivery_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_retry_delivery_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_retry_delivery_parameter_0$schema$value ??= z.object({
@@ -1041,7 +1161,22 @@ const _one_person_lab_dsh_opl_oplExecution_retry_delivery_result$schema = () => 
   'contentJson': z.string().optional(),
   'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_review_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_review_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_review_parameter_0$schema$value ??= z.object({
@@ -1139,7 +1274,22 @@ const _one_person_lab_dsh_opl_oplExecution_review_result$schema = () => (_one_pe
   'contentJson': z.string().optional(),
   'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_save_catalog_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_save_catalog_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_save_catalog_parameter_0$schema$value ??= z.object({
@@ -1315,6 +1465,21 @@ const _one_person_lab_dsh_opl_oplExecution_select_effort_parameter_0$schema = ()
 }))
 let _one_person_lab_dsh_opl_oplExecution_select_effort_result$schema$value
 const _one_person_lab_dsh_opl_oplExecution_select_effort_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_select_effort_result$schema$value ??= z.literal(null))
+let _one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_parameter_0$schema$value ??= z.object({
+  'version': z.string(),
+  'source': z.string().optional(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_result$schema$value
+const _one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_result$schema$value ??= z.object({
+  'version': z.string(),
+  'command': z.string(),
+  'previousCommand': z.string(),
+  'previousPrefix': z.array(z.string()),
+  'manifestSha256': z.string(),
+  'launcherSha256': z.string(),
+  'validation': z.literal("static"),
+}))
 let _one_person_lab_dsh_opl_oplExecution_sessions_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_sessions_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_sessions_parameter_0$schema$value ??= z.object({
   'cursor': z.string().optional(),
@@ -1356,6 +1521,15 @@ const _one_person_lab_dsh_opl_oplExecution_sessions_result$schema = () => (_one_
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }), z.object({
   'turnCount': z.number(),
   'lastReviewDecision': z.union([z.literal("accepted"), z.literal("pending"), z.literal("changes_requested")]).optional(),
@@ -1454,7 +1628,22 @@ const _one_person_lab_dsh_opl_oplExecution_snapshot_result$schema = () => (_one_
   'contentJson': z.string().optional(),
   'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_start_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_start_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_start_parameter_0$schema$value ??= z.object({
@@ -1553,7 +1742,108 @@ const _one_person_lab_dsh_opl_oplExecution_start_result$schema = () => (_one_per
   'contentJson': z.string().optional(),
   'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_stop_edit_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplExecution_stop_edit_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_stop_edit_parameter_0$schema$value ??= z.object({
+  'clientRequestId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_stop_edit_result$schema$value
+const _one_person_lab_dsh_opl_oplExecution_stop_edit_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_stop_edit_result$schema$value ??= z.object({
+  'clientRequestId': z.string(),
+  'sessionId': z.string(),
+  'preservedSessionId': z.string(),
+  'branchTitle': z.string(),
+  'moved': z.boolean(),
+  'boundary': z.object({
+  'id': z.string(),
+  'contentHead': z.string(),
+  'attachmentCount': z.number(),
+  'first': z.boolean(),
+  'historyVersion': z.string().optional(),
+  'operationId': z.string().optional(),
+  'blocked': z.boolean().optional(),
+  'blockedReason': z.string().optional(),
+}),
+  'draft': z.string(),
+  'unrestored': z.array(z.object({
+  'name': z.string().optional(),
+  'reason': z.string(),
+})),
+  'removedTurns': z.number(),
+  'review': z.object({
+  'model': z.string(),
+  'effort': z.string().optional(),
+  'permissions': z.string(),
+  'cwd': z.string(),
+  'workspaceId': z.string(),
+  'project': z.string().optional(),
+  'feedback': z.object({
+  'taskId': z.string().optional(),
+  'pendingDeliveries': z.number(),
+  'operationId': z.string(),
+}),
+}),
+  'version': z.number(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_parameter_0$schema$value ??= z.object({
+  'sessionId': z.string(),
+  'clientRequestId': z.string(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_result$schema$value
+const _one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_result$schema$value ??= z.object({
+  'acknowledged': z.boolean(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_stop_edit_state_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplExecution_stop_edit_state_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_stop_edit_state_parameter_0$schema$value ??= z.object({
+  'sessionId': z.string(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_stop_edit_state_result$schema$value
+const _one_person_lab_dsh_opl_oplExecution_stop_edit_state_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_stop_edit_state_result$schema$value ??= z.object({
+  'sessionId': z.string(),
+  'harness': z.union([z.literal("dsh"), z.literal("minimax-code")]).optional(),
+  'supported': z.boolean(),
+  'reason': z.string().optional(),
+  'busy': z.boolean(),
+  'pending': z.boolean(),
+  'boundaries': z.array(z.object({
+  'id': z.string(),
+  'contentHead': z.string(),
+  'attachmentCount': z.number(),
+  'first': z.boolean(),
+  'historyVersion': z.string().optional(),
+  'operationId': z.string().optional(),
+  'blocked': z.boolean().optional(),
+  'blockedReason': z.string().optional(),
+})),
+  'pendingDraft': z.object({
+  'text': z.string(),
+  'clientRequestId': z.string(),
+}).optional(),
+  'editBranch': z.object({
+  'sessionId': z.string(),
+  'title': z.string(),
+}).optional(),
+  'filesRestored': z.literal(false),
+  'version': z.number(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_task_summaries_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_task_summaries_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_task_summaries_parameter_0$schema$value ??= z.object({
@@ -1596,6 +1886,15 @@ const _one_person_lab_dsh_opl_oplExecution_task_summaries_result$schema = () => 
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }), z.object({
   'turnCount': z.number(),
   'lastReviewDecision': z.union([z.literal("accepted"), z.literal("pending"), z.literal("changes_requested")]).optional(),
@@ -1708,7 +2007,22 @@ const _one_person_lab_dsh_opl_oplExecution_tasks_result$schema = () => (_one_per
   'contentJson': z.string().optional(),
   'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 })))
 let _one_person_lab_dsh_opl_oplExecution_wait_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_wait_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_wait_parameter_0$schema$value ??= z.object({
@@ -1800,7 +2114,22 @@ const _one_person_lab_dsh_opl_oplExecution_wait_result$schema = () => (_one_pers
   'contentJson': z.string().optional(),
   'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplGatewayAccount_refresh_result$schema$value
 const _one_person_lab_dsh_opl_oplGatewayAccount_refresh_result$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_refresh_result$schema$value ??= z.object({
@@ -2766,7 +3095,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_answer_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":125,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":135,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/cancel',
@@ -2791,7 +3120,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_cancel_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":121,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":131,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/cancel-task',
@@ -2817,7 +3146,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_cancel_task_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":117,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":127,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/catalog',
@@ -2832,7 +3161,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#ExecutionCatalog',
         create: _one_person_lab_dsh_opl_oplExecution_catalog_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":41,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":46,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/combinations',
@@ -2847,7 +3176,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/combinations:result',
         create: _one_person_lab_dsh_opl_oplExecution_combinations_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":58,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":68,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/cooperation-settings',
@@ -2863,7 +3192,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#CooperationSettings',
         create: _one_person_lab_dsh_opl_oplExecution_cooperation_settings_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":154,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":164,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/delegate',
@@ -2889,7 +3218,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_delegate_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":98,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":108,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/detail',
@@ -2914,7 +3243,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessDetailPage',
         create: _one_person_lab_dsh_opl_oplExecution_detail_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":66,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":76,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/harness-installations',
@@ -2930,7 +3259,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/harness-installations:result',
         create: _one_person_lab_dsh_opl_oplExecution_harness_installations_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":70,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":80,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/harness-update',
@@ -2956,7 +3285,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/harness-update:result',
         create: _one_person_lab_dsh_opl_oplExecution_harness_update_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":74,"column":9},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":84,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/list',
@@ -2971,7 +3300,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessCatalog',
         create: _one_person_lab_dsh_opl_oplExecution_list_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":54,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":64,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/model-selection',
@@ -2997,7 +3326,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSelection',
         create: _one_person_lab_dsh_opl_oplExecution_model_selection_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":133,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":143,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/prompt',
@@ -3022,7 +3351,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_prompt_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":83,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":93,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/report',
@@ -3047,7 +3376,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/report:result',
         create: _one_person_lab_dsh_opl_oplExecution_report_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":102,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":112,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/result',
@@ -3073,7 +3402,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_result_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":110,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":120,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/retry-delivery',
@@ -3099,7 +3428,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_retry_delivery_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":170,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":180,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/review',
@@ -3124,7 +3453,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_review_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":106,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":116,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/save-catalog',
@@ -3150,7 +3479,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#ExecutionCatalog',
         create: _one_person_lab_dsh_opl_oplExecution_save_catalog_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":45,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":55,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/save-cooperation-settings',
@@ -3176,7 +3505,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#CooperationSettings',
         create: _one_person_lab_dsh_opl_oplExecution_save_cooperation_settings_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":158,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":168,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/save-harness-proxy',
@@ -3202,7 +3531,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#ExecutionCatalog',
         create: _one_person_lab_dsh_opl_oplExecution_save_harness_proxy_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":50,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":60,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/select-combination',
@@ -3228,7 +3557,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/select-combination:result',
         create: _one_person_lab_dsh_opl_oplExecution_select_combination_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":137,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":147,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/select-effort',
@@ -3254,7 +3583,33 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/select-effort:result',
         create: _one_person_lab_dsh_opl_oplExecution_select_effort_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":144,"column":9},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":154,"column":9},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplExecution/select-minimax-candidate',
+      service: 'oplExecution',
+      namespace: 'oplExecution',
+      method: 'select-minimax-candidate',
+      implementation: 'selectMiniMaxCandidate',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'request',
+          wire: 'request',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl/types#MiniMaxCandidateRequest',
+            create: _one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#MiniMaxCandidateResult',
+        create: _one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_result$schema,
+      },
+      sourceLocation: {"file":"src/execution/host/service.ts","line":51,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/sessions',
@@ -3279,7 +3634,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSessionsPage',
         create: _one_person_lab_dsh_opl_oplExecution_sessions_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":62,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":72,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/snapshot',
@@ -3304,7 +3659,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_snapshot_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":87,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":97,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/start',
@@ -3329,7 +3684,85 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_start_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":79,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":89,"column":3},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplExecution/stop-edit',
+      service: 'oplExecution',
+      namespace: 'oplExecution',
+      method: 'stop-edit',
+      implementation: 'stopEdit',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'request',
+          wire: 'request',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl/types#StopEditRequest',
+            create: _one_person_lab_dsh_opl_oplExecution_stop_edit_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#StopEditResult',
+        create: _one_person_lab_dsh_opl_oplExecution_stop_edit_result$schema,
+      },
+      sourceLocation: {"file":"src/execution/host/service.ts","line":190,"column":3},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplExecution/stop-edit-acknowledge',
+      service: 'oplExecution',
+      namespace: 'oplExecution',
+      method: 'stop-edit-acknowledge',
+      implementation: 'acknowledgeStopEditDraft',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'request',
+          wire: 'request',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl#oplExecution/stop-edit-acknowledge:request',
+            create: _one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl#oplExecution/stop-edit-acknowledge:result',
+        create: _one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_result$schema,
+      },
+      sourceLocation: {"file":"src/execution/host/service.ts","line":195,"column":3},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplExecution/stop-edit-state',
+      service: 'oplExecution',
+      namespace: 'oplExecution',
+      method: 'stop-edit-state',
+      implementation: 'stopEditState',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'request',
+          wire: 'request',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl/types#StopEditStateRequest',
+            create: _one_person_lab_dsh_opl_oplExecution_stop_edit_state_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#StopEditState',
+        create: _one_person_lab_dsh_opl_oplExecution_stop_edit_state_result$schema,
+      },
+      sourceLocation: {"file":"src/execution/host/service.ts","line":185,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/task-summaries',
@@ -3355,7 +3788,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/task-summaries:result',
         create: _one_person_lab_dsh_opl_oplExecution_task_summaries_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":166,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":176,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/tasks',
@@ -3380,7 +3813,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/tasks:result',
         create: _one_person_lab_dsh_opl_oplExecution_tasks_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":162,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":172,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/wait',
@@ -3406,7 +3839,7 @@ export const TYPERT = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_wait_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":91,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":101,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplGatewayAccount/refresh',

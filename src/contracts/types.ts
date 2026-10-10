@@ -2,6 +2,7 @@
 export type * from '../gateway/contracts/account.ts'
 export type * from '../gateway/contracts/models.ts'
 export type * from '../execution/contracts/sessions.ts'
+export type * from '../execution/contracts/stop-edit.ts'
 export type * from '../execution/contracts/catalog.ts'
 export type * from '../execution/contracts/installations.ts'
 export type * from '../execution/contracts/views.ts'
@@ -38,6 +39,8 @@ export interface HarnessPromptRequest {
   /** Files/directories owned by this operation; omitted means exclusive project writes. */
   writeScope?: string[]
 }
+/** Remote 读取普通侧栏会话的停止后编辑入口状态。 */
+export type { StopEditStateRequest } from '../execution/contracts/stop-edit.ts'
 export interface CooperationSettings {
   autoReview: boolean
   maxRevisions: number
@@ -85,3 +88,7 @@ export interface CoordinationStatus extends WakeSettings {
   update: { state?: string; checkedAt?: string; message?: string; checkTrigger: string }
   paths: { suiteRoot: string; profileHome: string; skillDir: string }
 }
+export type {
+  MiniMaxCandidateRequest,
+  MiniMaxCandidateResult,
+} from '../execution/contracts/candidate.ts'

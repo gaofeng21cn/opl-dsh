@@ -1,0 +1,1592 @@
+diff --git a/packages/tui/src/acp/agent.ts b/packages/tui/src/acp/agent.ts
+index 648d1e2..e1123e5 100644
+--- a/packages/tui/src/acp/agent.ts
++++ b/packages/tui/src/acp/agent.ts
+@@ -41,6 +41,14 @@ import {
+ import { runTuiAcpInteractions, type TuiAcpRuntimeProjection } from './interactions.js';
+ import { modelSupportsVariant } from './model-selection.js';
+ import { TuiAcpPromptContinuation } from './prompt-continuation.js';
++import {
++  OPL_SESSION_HISTORY_META_KEY,
++  OPL_SESSION_HISTORY_NOTIFICATIONS,
++  OplSessionBoundaryTracker,
++  oplSessionHistoryCapabilities,
++  readOplClientRequestId,
++  registerTuiAcpSessionHistoryExtension,
++} from './session-history-extension.js';
+ import { TuiAcpUpdateProjector } from './updates.js';
+ 
+ const AUTH_METHOD_ID = 'minimax-code-login';
+@@ -244,6 +252,8 @@ export function createTuiAcpAgent(options: CreateTuiAcpAgentOptions): acp.AgentA
+     return true;
+   };
+ 
++  const sessionBoundaryTracker = new OplSessionBoundaryTracker();
++
+   registerTuiAcpExtensions({
+     app,
+     runtime: options.runtime,
+@@ -258,6 +268,21 @@ export function createTuiAcpAgent(options: CreateTuiAcpAgentOptions): acp.AgentA
+     },
+   });
+ 
++  registerTuiAcpSessionHistoryExtension({
++    app,
++    runtime: options.runtime,
++    // Idle means "no prompt lifecycle in flight". `activePrompt` is set at
++    // admission and only cleared in the prompt handler's `finally`, so this also
++    // covers a cancelled turn that has not settled and the questionnaire
++    // hand-off window. Steering's `steerableTurnId` is deliberately not reused:
++    // it is narrower than "the session is busy" and is absent before admission.
++    isSessionIdle: (sessionId) => sessions.get(sessionId)?.activePrompt === undefined,
++    // Serialize mutations with prompt admission and recovery for this session so
++    // a prompt cannot be admitted while the mutation awaits Runtime I/O.
++    serializeWithSessionLifecycle: (sessionId, task) =>
++      runSessionLifecycle(sessionId, () => task()),
++  });
++
+   const attachPersistedSession = async (
+     params: acp.LoadSessionRequest | acp.ResumeSessionRequest,
+     signal: AbortSignal,
+@@ -434,6 +459,7 @@ export function createTuiAcpAgent(options: CreateTuiAcpAgentOptions): acp.AgentA
+   app.onRequest(acp.methods.agent.initialize, ({ params }) => {
+     clientCapabilities = params.clientCapabilities ?? {};
+     const extensionCapabilities = tuiAcpExtensionCapabilities(options.runtime);
++    const sessionHistoryCapabilities = oplSessionHistoryCapabilities();
+     const supportsTerminalAuth =
+       clientCapabilities.auth?.terminal === true ||
+       clientCapabilities._meta?.['terminal-auth'] === true;
+@@ -483,6 +509,11 @@ export function createTuiAcpAgent(options: CreateTuiAcpAgentOptions): acp.AgentA
+           methods: [...extensionCapabilities.methods],
+           notifications: [...extensionCapabilities.notifications],
+         },
++        [OPL_SESSION_HISTORY_META_KEY]: {
++          version: sessionHistoryCapabilities.version,
++          methods: [...sessionHistoryCapabilities.methods],
++          notifications: [...sessionHistoryCapabilities.notifications],
++        },
+       },
+     };
+   });
+@@ -1070,6 +1101,7 @@ export function createTuiAcpAgent(options: CreateTuiAcpAgentOptions): acp.AgentA
+   });
+ 
+   app.onRequest(acp.methods.agent.session.prompt, async (context) => {
++    const oplClientRequestId = readOplClientRequestId(context.params._meta);
+     if (promptCancelLatches.delete(context.params.sessionId)) {
+       return { stopReason: 'cancelled' };
+     }
+@@ -1163,6 +1195,15 @@ export function createTuiAcpAgent(options: CreateTuiAcpAgentOptions): acp.AgentA
+           }),
+         );
+       }
++      if (event.type !== 'message') return;
++      const boundary = sessionBoundaryTracker.resolve(context.params.sessionId, event.message);
++      if (!boundary) return;
++      if (!supportsTuiAcpExtensionNotifications(clientCapabilities)) return;
++      pendingUpdates.push(
++        context.client
++          .notify(OPL_SESSION_HISTORY_NOTIFICATIONS.boundary, { ...boundary })
++          .catch(() => undefined),
++      );
+     };
+ 
+     try {
+@@ -1186,6 +1227,11 @@ export function createTuiAcpAgent(options: CreateTuiAcpAgentOptions): acp.AgentA
+           modeIntentAccepted = true;
+           if (!promptController.signal.aborted && active.activePrompt === activePrompt) {
+             activePrompt.steerableTurnId = turnId;
++            // The Runtime admitted this Turn, so the operation identity now binds
++            // to a real turn; the committed user message confirms the boundary.
++            if (oplClientRequestId) {
++              sessionBoundaryTracker.track(context.params.sessionId, turnId, oplClientRequestId);
++            }
+           }
+         },
+       });
+diff --git a/packages/tui/src/acp/session-history-extension.ts b/packages/tui/src/acp/session-history-extension.ts
+new file mode 100644
+index 0000000..b115498
+--- /dev/null
++++ b/packages/tui/src/acp/session-history-extension.ts
+@@ -0,0 +1,451 @@
++import { createHash } from 'node:crypto';
++
++import * as acp from '@agentclientprotocol/sdk';
++
++/**
++ * OPL session history extension v1.
++ *
++ * The capability is announced through `initialize` `_meta['opl/session-history']`.
++ * OPL keeps the feature closed unless this announcement is present, so registration
++ * and announcement must stay in lockstep: `oplSessionHistoryCapabilities()` is the
++ * single source used both by `registerTuiAcpSessionHistoryExtension` and by the
++ * initialize response.
++ */
++export const OPL_SESSION_HISTORY_META_KEY = 'opl/session-history';
++export const OPL_SESSION_HISTORY_VERSION = 1;
++
++export const OPL_SESSION_HISTORY_METHODS = {
++  list: 'opl/session/history/list',
++  rewind: 'opl/session/history/rewind',
++} as const;
++
++export const OPL_SESSION_HISTORY_NOTIFICATIONS = {
++  boundary: 'opl/session/history/boundary',
++} as const;
++
++/** `_meta['opl/clientRequestId']` on `session/prompt` carries the OPL operation identity. */
++export const OPL_CLIENT_REQUEST_ID_META_KEY = 'opl/clientRequestId';
++
++const MAX_ID_LENGTH = 512;
++
++/**
++ * Separator for in-memory composite keys only.
++ *
++ * It is never stored or sent to the Runtime: the operation id handed to the
++ * Runtime is a hash, and this separator only keeps `(sessionId, id)` keys
++ * unambiguous. Request ids that contain it are rejected outright.
++ */
++const KEY_SEPARATOR = '\u0000';
++
++/**
++ * Request keys that would ask for file or turn-diff rollback.
++ *
++ * The official Runtime rewind mutates conversation history only; `rewindTurnDiff`
++ * is the single documented switch that would also revert turn diffs. The other
++ * spellings are refused explicitly rather than ignored, so a client that asks
++ * for file rollback gets a refusal instead of a silent conversation-only rewind
++ * it would misread as a file restore.
++ */
++const FILE_ROLLBACK_KEYS = [
++  'rewindTurnDiff',
++  'rewindFiles',
++  'restoreFiles',
++  'files',
++  'scope',
++  'rewindTurnDiffs',
++] as const;
++
++export interface OplSessionHistoryCapabilities {
++  version: number;
++  methods: readonly string[];
++  notifications: readonly string[];
++}
++
++/** Announcement payload; also the parity reference for registration. */
++export function oplSessionHistoryCapabilities(): OplSessionHistoryCapabilities {
++  return {
++    version: OPL_SESSION_HISTORY_VERSION,
++    methods: [OPL_SESSION_HISTORY_METHODS.list, OPL_SESSION_HISTORY_METHODS.rewind],
++    notifications: [OPL_SESSION_HISTORY_NOTIFICATIONS.boundary],
++  };
++}
++
++export interface OplSessionHistoryListRequest {
++  sessionId: string;
++}
++
++export interface OplSessionHistoryEntry {
++  readonly userMessageId: string;
++  readonly contentHead?: string;
++  readonly timestamp: number;
++  readonly fileChangeCount: number;
++  readonly assistantMessageId?: string;
++}
++
++export interface OplSessionHistoryListResponse {
++  version: number;
++  sessionId: string;
++  entries: readonly OplSessionHistoryEntry[];
++}
++
++export interface OplSessionHistoryRewindRequest {
++  sessionId: string;
++  userMessageId: string;
++  /** OPL's operation identity for this edit; echoed back verbatim on the wire. */
++  clientRequestId: string;
++  /** Must be omitted or false; file rewind is intentionally unsupported. */
++  rewindTurnDiff?: boolean;
++}
++
++export interface OplSessionHistoryRewindResponse {
++  version: number;
++  rewound: true;
++  sessionId: string;
++  userMessageId: string;
++  /** The caller-supplied identity, never the normalized Runtime operation id. */
++  clientRequestId: string;
++  deletedMessageIds: readonly string[];
++  displayRevision?: string;
++  historyRevision?: string;
++}
++
++export interface OplSessionHistoryBoundaryNotification {
++  sessionId: string;
++  clientRequestId: string;
++  userMessageId: string;
++  turnId: string;
++}
++
++/**
++ * Structural view of the official TUI session port members this extension uses.
++ *
++ * These mirror `TuiSessionInputSummary`, `TuiRewindInput` and `TuiRewindResult`
++ * from `../runtime/port.js` field for field. Declaring them locally keeps the
++ * extension dependent only on the ACP SDK and node crypto; `TuiAcpRuntime` is
++ * still checked against them at the registration call site, so drift in the
++ * official port fails the package typecheck.
++ */
++export interface SessionHistoryInputSummary {
++  readonly userMessageId: string;
++  readonly assistantMessageId?: string;
++  readonly contentHead?: string;
++  readonly timestamp: number;
++  readonly fileChangeCount: number;
++}
++
++/** Minimal committed-message view used for the boundary binding. */
++export interface SessionHistoryCommittedMessage {
++  readonly id?: string;
++  readonly turnId?: string;
++  readonly role: 'user' | 'assistant' | 'system' | 'unknown';
++}
++
++/** Runtime surface consumed by the extension. */
++export interface SessionHistoryRuntime {
++  listSessionInputSummaries(
++    sessionId: string,
++    input?: { limit?: number; before?: string },
++  ): Promise<readonly SessionHistoryInputSummary[]>;
++  rewindSession(input: {
++    sessionId: string;
++    userMessageId: string;
++    clientRequestId: string;
++    rewindTurnDiff?: boolean;
++  }): Promise<{
++    rewound: boolean;
++    displayRevision?: string;
++    historyRevision?: string;
++    deletedMessageIds?: readonly string[];
++  }>;
++}
++
++export interface RegisterSessionHistoryExtensionOptions {
++  readonly app: acp.AgentApp;
++  readonly runtime: SessionHistoryRuntime;
++  /**
++   * True only when the ACP prompt lifecycle is not in flight for this session.
++   *
++   * This must reflect the whole prompt lifecycle, not just steerability: a
++   * session is not idle between prompt admission and the handler's `finally`,
++   * including a cancelled turn that has not settled yet and the questionnaire
++   * hand-off window.
++   */
++  readonly isSessionIdle: (sessionId: string) => boolean;
++  /**
++   * Runs `task` serialized with ACP prompt admission and recovery for the
++   * session, so a new prompt cannot slip in while a mutation awaits Runtime I/O.
++   */
++  readonly serializeWithSessionLifecycle: <T>(
++    sessionId: string,
++    task: () => Promise<T>,
++  ) => Promise<T>;
++}
++
++/** Extracts the OPL operation identity from `session/prompt` `_meta`. */
++export function readOplClientRequestId(meta: unknown): string | undefined {
++  if (!isRecord(meta)) return undefined;
++  const value = meta[OPL_CLIENT_REQUEST_ID_META_KEY];
++  if (typeof value !== 'string') return undefined;
++  const trimmed = value.trim();
++  if (!trimmed || trimmed.length > MAX_ID_LENGTH) return undefined;
++  return trimmed;
++}
++
++/**
++ * Derives the operation id handed to the official Runtime mutation ledger.
++ *
++ * The Runtime addresses its ledger by `operationId` plus `kind` only — see
++ * `clientRequestKey` in `operation-intent-repository.ts` — and rejects a reused
++ * id whose recorded session or target differs. OPL request ids are only unique
++ * per operation, so the same `initial` or `edit-1` in two sessions would collide
++ * and fail as a request conflict. Hashing the pair keeps every operation
++ * session-scoped without storing either raw id, and keeps the value free of
++ * delimiter ambiguity.
++ *
++ * The caller's original id is what travels back on the wire.
++ */
++export function normalizeMutationOperationId(sessionId: string, clientRequestId: string): string {
++  const digest = createHash('sha256')
++    .update(`${sessionId}${KEY_SEPARATOR}${clientRequestId}`, 'utf8')
++    .digest('hex')
++    .slice(0, 32);
++  return `oplsh1-${digest}`;
++}
++
++/**
++ * Binds one `(sessionId, clientRequestId)` to a real admitted boundary.
++ *
++ * The runtime streams the committed user message with its real `msg_id` and the
++ * turn id that admitted it, so this binding uses only those ids. It never falls
++ * back to content head, timestamps, or ordering, and it ignores any message whose
++ * role is not `user` so injected or automatic continuation turns cannot create a
++ * mapping. Keys combine session and request id with a separator that request ids
++ * cannot contain, so two sessions using the same request id stay independent.
++ */
++export class OplSessionBoundaryTracker {
++  private readonly pending = new Map<string, string>();
++  private readonly settled = new Map<string, OplSessionHistoryBoundaryNotification>();
++
++  /** Registers the operation identity admitted for `turnId`. */
++  track(sessionId: string, turnId: string, clientRequestId: string): void {
++    if (this.settled.has(boundaryKey(sessionId, clientRequestId))) return;
++    this.pending.set(pendingKey(sessionId, turnId), clientRequestId);
++  }
++
++  /** Returns the boundary the stream proves, or undefined when the event proves none. */
++  resolve(
++    sessionId: string,
++    message: SessionHistoryCommittedMessage,
++  ): OplSessionHistoryBoundaryNotification | undefined {
++    if (message.role !== 'user') return undefined;
++    const { turnId, id: userMessageId } = message;
++    if (!turnId || !userMessageId) return undefined;
++    const key = pendingKey(sessionId, turnId);
++    const clientRequestId = this.pending.get(key);
++    if (!clientRequestId) return undefined;
++    this.pending.delete(key);
++    const boundary: OplSessionHistoryBoundaryNotification = {
++      sessionId,
++      clientRequestId,
++      userMessageId,
++      turnId,
++    };
++    this.settled.set(boundaryKey(sessionId, clientRequestId), boundary);
++    return boundary;
++  }
++
++  /** True when this operation already reported a boundary; keeps replay idempotent. */
++  has(sessionId: string, clientRequestId: string): boolean {
++    return this.settled.has(boundaryKey(sessionId, clientRequestId));
++  }
++}
++
++/**
++ * Registers both requests with the same method strings that
++ * `oplSessionHistoryCapabilities()` announces, so the served surface and the
++ * `initialize` `_meta` cannot drift apart.
++ */
++export function registerTuiAcpSessionHistoryExtension(
++  options: RegisterSessionHistoryExtensionOptions,
++): void {
++  const { app, runtime } = options;
++  const capabilities = oplSessionHistoryCapabilities();
++
++  app.onRequest<OplSessionHistoryListRequest, OplSessionHistoryListResponse>(
++    capabilities.methods[0],
++    { parse: parseListRequest },
++    async ({ params }) =>
++      options.serializeWithSessionLifecycle(params.sessionId, async () => {
++        try {
++          const summaries = await runtime.listSessionInputSummaries(params.sessionId);
++          return {
++            version: OPL_SESSION_HISTORY_VERSION,
++            sessionId: params.sessionId,
++            entries: summaries.map(toEntry),
++          };
++        } catch {
++          // Never reflect Runtime diagnostics: they can carry paths, prompts or keys.
++          throw acp.RequestError.internalError(
++            undefined,
++            'opl/session/history/list could not read the session boundary list.',
++          );
++        }
++      }),
++  );
++
++  app.onRequest<OplSessionHistoryRewindRequest, OplSessionHistoryRewindResponse>(
++    capabilities.methods[1],
++    { parse: parseRewindRequest },
++    async ({ params }) =>
++      options.serializeWithSessionLifecycle(params.sessionId, async () => {
++        if (!options.isSessionIdle(params.sessionId)) {
++          throw acp.RequestError.invalidRequest(
++            undefined,
++            'session is still running a turn; wait until it becomes idle before rewinding.',
++          );
++        }
++        // No pre-flight preview here on purpose. The official Runtime checks the
++        // boundary itself, and its order is: validate the request, return the
++        // recorded result for a completed operation, and only then plan the
++        // mutation. A preview before the rewind would reject the retry of an
++        // already-applied rewind, because the first attempt deleted the very
++        // boundary the preview looks up.
++        let result;
++        try {
++          result = await runtime.rewindSession({
++            sessionId: params.sessionId,
++            userMessageId: params.userMessageId,
++            clientRequestId: normalizeMutationOperationId(
++              params.sessionId,
++              params.clientRequestId,
++            ),
++            rewindTurnDiff: false,
++          });
++        } catch (error) {
++          throw rewindFailure(error);
++        }
++        if (!result.rewound) {
++          throw acp.RequestError.internalError(
++            undefined,
++            'The Runtime did not confirm this history rewind. Read the session history before retrying.',
++          );
++        }
++        return {
++          version: OPL_SESSION_HISTORY_VERSION,
++          rewound: true,
++          sessionId: params.sessionId,
++          userMessageId: params.userMessageId,
++          clientRequestId: params.clientRequestId,
++          deletedMessageIds: result.deletedMessageIds ?? [],
++          ...(result.displayRevision ? { displayRevision: result.displayRevision } : {}),
++          ...(result.historyRevision ? { historyRevision: result.historyRevision } : {}),
++        };
++      }),
++  );
++}
++
++/**
++ * Public, fixed text for known Runtime refusals.
++ *
++ * Keys are Runtime error codes. Anything unrecognised collapses to a generic
++ * message, and no branch ever copies a Runtime-supplied message into the ACP
++ * response.
++ */
++const PUBLIC_REWIND_FAILURES: Readonly<Record<string, string>> = Object.freeze({
++  MESSAGE_BOUNDARY_INVALID:
++    'This user message is not a rewindable conversation boundary for this session.',
++  CONVERSATION_MUTATION_REQUEST_CONFLICT:
++    'This request identity was already used for a different conversation mutation.',
++  CONVERSATION_MUTATION_NOT_SUPPORTED:
++    'This session does not support conversation history rewind.',
++  HISTORY_CHAIN_CORRUPT:
++    'The previous conversation mutation did not complete; start a new request.',
++});
++
++function rewindFailure(error: unknown): acp.RequestError {
++  const code = readErrorCode(error);
++  const message = (code && PUBLIC_REWIND_FAILURES[code]) || undefined;
++  if (message) return acp.RequestError.invalidRequest(undefined, message);
++  return acp.RequestError.internalError(
++    undefined,
++    'The Runtime could not confirm this conversation history rewind. Read the session history before retrying.',
++  );
++}
++
++/** Reads only a short, allow-listed code off an error; never its message or stack. */
++function readErrorCode(error: unknown): string | undefined {
++  if (typeof error !== 'object' || error === null) return undefined;
++  const code = (error as { code?: unknown }).code;
++  return typeof code === 'string' && Object.hasOwn(PUBLIC_REWIND_FAILURES, code) ? code : undefined;
++}
++
++function toEntry(summary: SessionHistoryInputSummary): OplSessionHistoryEntry {
++  return {
++    userMessageId: summary.userMessageId,
++    timestamp: summary.timestamp,
++    fileChangeCount: summary.fileChangeCount,
++    ...(summary.contentHead ? { contentHead: summary.contentHead } : {}),
++    ...(summary.assistantMessageId ? { assistantMessageId: summary.assistantMessageId } : {}),
++  };
++}
++
++function parseListRequest(value: unknown): OplSessionHistoryListRequest {
++  return { sessionId: requireId(value, 'sessionId') };
++}
++
++function parseRewindRequest(value: unknown): OplSessionHistoryRewindRequest {
++  const record = requireRecord(value);
++  for (const key of FILE_ROLLBACK_KEYS) {
++    const requested = record[key];
++    if (requested === undefined || requested === null) continue;
++    const conversationOnly = requested === false || requested === 'conversation';
++    if (!conversationOnly) {
++      throw acp.RequestError.invalidRequest(
++        undefined,
++        `${key} must be omitted, false, or "conversation"; this extension rewinds conversation history only and never reverts files.`,
++      );
++    }
++  }
++  return {
++    sessionId: requireId(value, 'sessionId'),
++    userMessageId: requireId(value, 'userMessageId'),
++    clientRequestId: requireId(value, 'clientRequestId'),
++    ...(record.rewindTurnDiff === undefined ? {} : { rewindTurnDiff: false }),
++  };
++}
++
++function requireId(value: unknown, key: string): string {
++  const record = requireRecord(value);
++  const field = record[key];
++  if (typeof field !== 'string') {
++    throw acp.RequestError.invalidParams(undefined, `${key} must be a string.`);
++  }
++  const trimmed = field.trim();
++  if (!trimmed || trimmed.length > MAX_ID_LENGTH) {
++    throw acp.RequestError.invalidParams(undefined, `${key} must be a non-empty id.`);
++  }
++  // The separator is reserved so composite keys stay unambiguous.
++  if (trimmed.includes(KEY_SEPARATOR)) {
++    throw acp.RequestError.invalidParams(undefined, `${key} must not contain a NUL character.`);
++  }
++  return trimmed;
++}
++
++function requireRecord(value: unknown): Record<string, unknown> {
++  if (!isRecord(value)) {
++    throw acp.RequestError.invalidParams(undefined, 'Extension params must be an object.');
++  }
++  return value;
++}
++
++function isRecord(value: unknown): value is Record<string, unknown> {
++  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
++}
++
++function pendingKey(sessionId: string, turnId: string): string {
++  return `${sessionId}${KEY_SEPARATOR}${turnId}`;
++}
++
++function boundaryKey(sessionId: string, clientRequestId: string): string {
++  return `${sessionId}${KEY_SEPARATOR}${clientRequestId}`;
++}
+diff --git a/packages/tui/test/unit/acp-session-history-agent.test.ts b/packages/tui/test/unit/acp-session-history-agent.test.ts
+new file mode 100644
+index 0000000..fb30cb5
+--- /dev/null
++++ b/packages/tui/test/unit/acp-session-history-agent.test.ts
+@@ -0,0 +1,453 @@
++import * as acp from '@agentclientprotocol/sdk';
++import { describe, expect, it, vi } from 'vitest';
++
++import { createTuiAcpAgent } from '../../src/acp/agent.js';
++import type { TuiAcpRuntime } from '../../src/acp/runtime.js';
++import {
++  normalizeMutationOperationId,
++  oplSessionHistoryCapabilities,
++} from '../../src/acp/session-history-extension.js';
++import type { TuiStreamEvent } from '../../src/runtime/stream-events.js';
++
++/** Stream mirroring the real Runtime: committed user message first, then output. */
++function committedUserStream(turnId: string, userMessageId: string): TuiStreamEvent[] {
++  return [
++    { type: 'message', message: { id: userMessageId, turnId, role: 'user', content: 'hello' } },
++    {
++      type: 'message',
++      message: { id: `msg-assistant-${turnId}`, turnId, role: 'assistant', content: 'hi' },
++    },
++    { type: 'done', turnId },
++  ];
++}
++
++function createRuntime(options: {
++  eventsFor?: (turnId: string) => readonly TuiStreamEvent[];
++  /** Holds the run open until the returned gate resolves (or the prompt aborts). */
++  holdRunUntilRelease?: boolean;
++  summaries?: {
++    userMessageId: string;
++    contentHead?: string;
++    timestamp: number;
++    fileChangeCount: number;
++  }[];
++}) {
++  const eventsFor = options.eventsFor ?? (() => []);
++  let releaseRun: (() => void) | undefined;
++  const runGate = options.holdRunUntilRelease
++    ? new Promise<void>((resolve) => {
++        releaseRun = resolve;
++      })
++    : Promise.resolve();
++  const sendMessage = vi.fn(async function* sendMessage(req: { turnId: string }, signal?: AbortSignal) {
++    for (const event of eventsFor(req.turnId)) yield event;
++    if (!options.holdRunUntilRelease) return;
++    // Mirror the official harness: a cancelled run stops instead of hanging.
++    await Promise.race([
++      runGate,
++      new Promise<void>((resolve) => {
++        if (!signal) return;
++        if (signal.aborted) resolve();
++        else signal.addEventListener('abort', () => resolve(), { once: true });
++      }),
++    ]);
++  });
++  const runtime = {
++    isGoalEnabled: () => false,
++    listSessions: vi.fn(async () => []),
++    listSessionPage: vi.fn(async () => ({ sessions: [], hasMore: false })),
++    getSession: vi.fn(async (sessionId: string) => ({ sessionId, workspaceDir: '/workspace' })),
++    getMessages: vi.fn(async () => []),
++    listMessagePage: vi.fn(async () => ({ messages: [], hasMore: false })),
++    createSession: vi.fn(async ({ workspaceDir }: { workspaceDir: string }) => ({
++      sessionId: 'session-1',
++      workspaceDir,
++    })),
++    clearSessionMcpServers: vi.fn(async () => undefined),
++    configureSessionMcpServers: vi.fn(async () => undefined),
++    deleteSession: vi.fn(async () => undefined),
++    listSessionInputSummaries: vi.fn(async () => options.summaries ?? []),
++    rewindSession: vi.fn(async () => ({ rewound: true, deletedMessageIds: [] })),
++    getAccountStatus: vi.fn(async () => ({ status: 'ready' as const, warnings: [] })),
++    getRuntimeDiagnostics: vi.fn(async () => ({ warnings: [] })),
++    listModels: vi.fn(async () => []),
++    selectModel: vi.fn(async () => true),
++    getPermissionMode: vi.fn(async () => 'default'),
++    setPermissionMode: vi.fn(async () => 'default'),
++    getPlanModeCapabilities: vi.fn(async () => ({ entryEnabled: true })),
++    getContextSnapshot: vi.fn(async () => ({ status: 'empty' })),
++    getSessionUsage: vi.fn(async () => ({})),
++    listSkills: vi.fn(async () => ({})),
++    listMcpServers: vi.fn(async () => []),
++    requestCompaction: vi.fn(async () => ({ success: true })),
++    replyPermission: vi.fn(async () => true),
++    getDelegationSnapshot: vi.fn(async (rootSessionId: string) => ({
++      schemaVersion: 1 as const,
++      rootSessionId,
++      members: [],
++    })),
++    stopDelegation: vi.fn(async (rootSessionId: string) => ({
++      schemaVersion: 1 as const,
++      rootSessionId,
++      stopped: [],
++    })),
++    getSessionForkOptions: vi.fn(async () => ({ canFork: false })),
++    forkSession: vi.fn(async () => ({ session: { sessionId: 'forked' } })),
++    abortSession: vi.fn(async () => true),
++    listQueuedMessages: vi.fn(async () => []),
++    sendMessage,
++  };
++  return {
++    runtime: runtime as unknown as TuiAcpRuntime,
++    sendMessage,
++    rewindSession: runtime.rewindSession,
++    release: () => releaseRun?.(),
++  };
++}
++
++/** The SDK requires an explicit params parser for custom notification methods. */
++const PASSTHROUGH = { parse: (params: unknown) => params };
++
++const NOTIFY_CAPABILITIES = {
++  _meta: { 'minimax-code/extensions': { version: 1, notifications: true } },
++};
++
++async function withAgent(
++  runtime: TuiAcpRuntime,
++  body: (connection: acp.AgentConnection, ctx: { sessionId: string; boundaries: unknown[] }) => Promise<void>,
++  options: { notify?: boolean; turnIds?: string[] } = {},
++): Promise<{ boundaries: unknown[] }> {
++  const boundaries: unknown[] = [];
++  const client = options.notify
++    ? acp
++        .client({ name: 'opl' })
++        .onNotification('opl/session/history/boundary', PASSTHROUGH, ({ params }) =>
++          boundaries.push(params),
++        )
++    : acp.client({ name: 'opl' });
++  const turnIds = [...(options.turnIds ?? [])];
++  const agent = createTuiAcpAgent({
++    runtime,
++    version: '1.2.3',
++    createTurnId: () => turnIds.shift() ?? 'turn-extra',
++  });
++  await client.connectWith(agent, async (connection) => {
++    await connection.request(acp.methods.agent.initialize, {
++      protocolVersion: acp.PROTOCOL_VERSION,
++      clientCapabilities: options.notify ? NOTIFY_CAPABILITIES : {},
++    });
++    const session = await connection.request(acp.methods.agent.session.new, {
++      cwd: '/workspace',
++      mcpServers: [],
++    });
++    await body(connection, { sessionId: session.sessionId, boundaries });
++  });
++  return { boundaries };
++}
++
++describe('opl session history through the real ACP agent', () => {
++  it('announces the capability and serves the announced methods over a real connection', async () => {
++    const { runtime } = createRuntime({
++      summaries: [
++        { userMessageId: 'msg-user-v1-a', contentHead: 'hi', timestamp: 1, fileChangeCount: 0 },
++      ],
++    });
++    await withAgent(runtime, async (connection, { sessionId }) => {
++      const initialized = await connection.request(acp.methods.agent.initialize, {
++        protocolVersion: acp.PROTOCOL_VERSION,
++        clientCapabilities: {},
++      });
++      const capabilities = oplSessionHistoryCapabilities();
++      expect((initialized._meta as Record<string, unknown>)['opl/session-history']).toEqual({
++        version: capabilities.version,
++        methods: [...capabilities.methods],
++        notifications: [...capabilities.notifications],
++      });
++      const list = await connection.request<
++        { sessionId: string },
++        { version: number; entries: { userMessageId: string }[] }
++      >(capabilities.methods[0], { sessionId });
++      expect(list.entries.map((entry) => entry.userMessageId)).toEqual(['msg-user-v1-a']);
++      expect(list.version).toBe(1);
++    });
++  });
++
++  it('rewinds conversation only over the real agent and rejects file rollback', async () => {
++    const { runtime, rewindSession } = createRuntime({});
++    await withAgent(runtime, async (connection, { sessionId }) => {
++      const rewindMethod = oplSessionHistoryCapabilities().methods[1];
++      const result = await connection.request<Record<string, unknown>, { rewound: boolean }>(
++        rewindMethod,
++        {
++          sessionId,
++          userMessageId: 'msg-user-v1-a',
++          clientRequestId: 'edit-1',
++          rewindTurnDiff: false,
++        },
++      );
++      expect(result.rewound).toBe(true);
++      expect(rewindSession).toHaveBeenCalledWith(
++        expect.objectContaining({
++          rewindTurnDiff: false,
++          clientRequestId: normalizeMutationOperationId('session-1', 'edit-1'),
++        }),
++      );
++      await expect(
++        connection.request(rewindMethod, {
++          sessionId,
++          userMessageId: 'msg-user-v1-a',
++          clientRequestId: 'edit-2',
++          rewindTurnDiff: true,
++        }),
++      ).rejects.toThrow();
++      expect(rewindSession).toHaveBeenCalledTimes(1);
++    });
++  });
++
++  it('binds clientRequestId to the real admitted turn and notifies the boundary once', async () => {
++    const { runtime } = createRuntime({
++      eventsFor: (turnId) => committedUserStream(turnId, `msg-user-v1-${turnId}`),
++    });
++    const { boundaries } = await withAgent(
++      runtime,
++      async (connection, { sessionId }) => {
++        await connection.request(acp.methods.agent.session.prompt, {
++          sessionId,
++          prompt: [{ type: 'text', text: 'hello' }],
++          _meta: { 'opl/clientRequestId': 'initial' },
++        });
++      },
++      { notify: true, turnIds: ['turn-real-1'] },
++    );
++    expect(boundaries).toEqual([
++      {
++        sessionId: 'session-1',
++        clientRequestId: 'initial',
++        userMessageId: 'msg-user-v1-turn-real-1',
++        turnId: 'turn-real-1',
++      },
++    ]);
++  });
++
++  it('sends no boundary for an injected or continuation message', async () => {
++    const { runtime } = createRuntime({
++      eventsFor: () => [
++        {
++          type: 'message',
++          message: { id: 'msg-assistant-v1-x', turnId: 'turn-real-2', role: 'assistant', content: 'auto' },
++        },
++        {
++          type: 'message',
++          message: { id: 'msg-system-v1-x', turnId: 'turn-real-2', role: 'system', content: 'auto' },
++        },
++        { type: 'done', turnId: 'turn-real-2' },
++      ],
++    });
++    const { boundaries } = await withAgent(
++      runtime,
++      async (connection, { sessionId }) => {
++        await connection.request(acp.methods.agent.session.prompt, {
++          sessionId,
++          prompt: [{ type: 'text', text: 'hello' }],
++          _meta: { 'opl/clientRequestId': 'op-real-2' },
++        });
++      },
++      { notify: true, turnIds: ['turn-real-2'] },
++    );
++    expect(boundaries).toEqual([]);
++  });
++
++  it('keeps a follow-up prompt to exactly one new operation', async () => {
++    const { runtime, sendMessage } = createRuntime({
++      eventsFor: (turnId) => committedUserStream(turnId, `msg-user-v1-${turnId}`),
++    });
++    const { boundaries } = await withAgent(
++      runtime,
++      async (connection, { sessionId }) => {
++        for (const [text, id] of [
++          ['first', 'op-1'],
++          ['second', 'op-2'],
++        ] as const) {
++          await connection.request(acp.methods.agent.session.prompt, {
++            sessionId,
++            prompt: [{ type: 'text', text }],
++            _meta: { 'opl/clientRequestId': id },
++          });
++        }
++      },
++      { notify: true, turnIds: ['turn-a', 'turn-b'] },
++    );
++    expect(boundaries).toEqual([
++      {
++        sessionId: 'session-1',
++        clientRequestId: 'op-1',
++        userMessageId: 'msg-user-v1-turn-a',
++        turnId: 'turn-a',
++      },
++      {
++        sessionId: 'session-1',
++        clientRequestId: 'op-2',
++        userMessageId: 'msg-user-v1-turn-b',
++        turnId: 'turn-b',
++      },
++    ]);
++    expect(sendMessage).toHaveBeenCalledTimes(2);
++  });
++
++  it('does not notify when the client never negotiated extension notifications', async () => {
++    const { runtime } = createRuntime({
++      eventsFor: (turnId) => committedUserStream(turnId, `msg-user-v1-${turnId}`),
++    });
++    const { boundaries } = await withAgent(
++      runtime,
++      async (connection, { sessionId }) => {
++        await connection.request(acp.methods.agent.session.prompt, {
++          sessionId,
++          prompt: [{ type: 'text', text: 'hello' }],
++          _meta: { 'opl/clientRequestId': 'op-real-3' },
++        });
++      },
++      { turnIds: ['turn-real-3'] },
++    );
++    expect(boundaries).toEqual([]);
++  });
++
++  it('refuses a rewind while a prompt is running and allows it once the prompt settles', async () => {
++    const harness = createRuntime({
++      eventsFor: (turnId) => committedUserStream(turnId, `msg-user-v1-${turnId}`),
++      holdRunUntilRelease: true,
++    });
++    const { boundaries } = await withAgent(
++      harness.runtime,
++      async (connection, { sessionId }) => {
++        const rewindMethod = oplSessionHistoryCapabilities().methods[1];
++        const prompt = connection.request(acp.methods.agent.session.prompt, {
++          sessionId,
++          prompt: [{ type: 'text', text: 'first' }],
++          _meta: { 'opl/clientRequestId': 'op-1' },
++        });
++        // Wait until the prompt has been admitted and is mid-run.
++        await vi.waitFor(() => expect(harness.sendMessage).toHaveBeenCalled());
++
++        await expect(
++          connection.request(rewindMethod, {
++            sessionId,
++            userMessageId: 'msg-user-v1-a',
++            clientRequestId: 'edit-1',
++            rewindTurnDiff: false,
++          }),
++        ).rejects.toThrow();
++        expect(harness.rewindSession).not.toHaveBeenCalled();
++
++        harness.release();
++        await prompt;
++        // Only after the prompt lifecycle finished may the rewind run.
++        await expect(
++          connection.request(rewindMethod, {
++            sessionId,
++            userMessageId: 'msg-user-v1-a',
++            clientRequestId: 'edit-1',
++            rewindTurnDiff: false,
++          }),
++        ).resolves.toMatchObject({ rewound: true });
++        expect(harness.rewindSession).toHaveBeenCalledTimes(1);
++      },
++      { notify: true, turnIds: ['turn-live'] },
++    );
++    expect(boundaries).toHaveLength(1);
++  });
++
++  it('refuses a rewind for a cancelled prompt that has not settled yet', async () => {
++    const harness = createRuntime({
++      eventsFor: () => [],
++      holdRunUntilRelease: true,
++    });
++    await withAgent(
++      harness.runtime,
++      async (connection, { sessionId }) => {
++        const rewindMethod = oplSessionHistoryCapabilities().methods[1];
++        const prompt = connection.request(acp.methods.agent.session.prompt, {
++          sessionId,
++          prompt: [{ type: 'text', text: 'first' }],
++          _meta: { 'opl/clientRequestId': 'op-1' },
++        });
++        await vi.waitFor(() => expect(harness.sendMessage).toHaveBeenCalled());
++        // Cancel the prompt; the handler has not finished yet, so the session is
++        // still busy even though the steerable turn is gone.
++        await connection.notify(acp.methods.agent.session.cancel, { sessionId });
++        await expect(
++          connection.request(rewindMethod, {
++            sessionId,
++            userMessageId: 'msg-user-v1-a',
++            clientRequestId: 'edit-1',
++            rewindTurnDiff: false,
++          }),
++        ).rejects.toThrow();
++        expect(harness.rewindSession).not.toHaveBeenCalled();
++        harness.release();
++        await prompt.catch(() => undefined);
++      },
++      { turnIds: ['turn-cancel'] },
++    );
++  });
++
++  it('serializes a rewind against a concurrent prompt admission', async () => {
++    let releaseRewind: (() => void) | undefined;
++    const rewindGate = new Promise<void>((resolve) => {
++      releaseRewind = resolve;
++    });
++    const order: string[] = [];
++    const { runtime, rewindSession } = createRuntime({
++      eventsFor: (turnId) => committedUserStream(turnId, `msg-user-v1-${turnId}`),
++    });
++    const gated = {
++      ...runtime,
++      rewindSession: vi.fn(async (input: unknown) => {
++        order.push('rewind:start');
++        await rewindGate;
++        order.push('rewind:end');
++        return { rewound: true, deletedMessageIds: [] } as never;
++      }),
++      sendMessage: vi.fn(async function* (req: { turnId: string }) {
++        order.push(`prompt:${req.turnId}`);
++        for (const event of committedUserStream(req.turnId, `msg-user-v1-${req.turnId}`)) {
++          yield event;
++        }
++      }),
++    } as unknown as TuiAcpRuntime;
++
++    await withAgent(
++      gated,
++      async (connection, { sessionId }) => {
++        const rewind = connection.request(
++          oplSessionHistoryCapabilities().methods[1],
++          {
++            sessionId,
++            userMessageId: 'msg-user-v1-a',
++            clientRequestId: 'edit-1',
++            rewindTurnDiff: false,
++          },
++        );
++        await vi.waitFor(() => expect(order).toContain('rewind:start'));
++
++        // A prompt arrives while the mutation is still awaiting Runtime I/O.
++        const prompt = connection.request(acp.methods.agent.session.prompt, {
++          sessionId,
++          prompt: [{ type: 'text', text: 'during rewind' }],
++          _meta: { 'opl/clientRequestId': 'op-during' },
++        });
++        await new Promise((resolve) => setTimeout(resolve, 20));
++        // The prompt must not have been admitted behind the open mutation.
++        expect(order).not.toContain('prompt:turn-race');
++
++        releaseRewind?.();
++        await rewind;
++        await prompt;
++      },
++      { turnIds: ['turn-race'] },
++    );
++    void rewindSession;
++    // The mutation completed before the prompt was admitted.
++    expect(order).toEqual(['rewind:start', 'rewind:end', 'prompt:turn-race']);
++  });
++});
+diff --git a/packages/tui/test/unit/acp-session-history-extension.test.ts b/packages/tui/test/unit/acp-session-history-extension.test.ts
+new file mode 100644
+index 0000000..cf9afae
+--- /dev/null
++++ b/packages/tui/test/unit/acp-session-history-extension.test.ts
+@@ -0,0 +1,516 @@
++import { describe, expect, it, vi } from 'vitest';
++
++import * as acp from '@agentclientprotocol/sdk';
++
++import {
++  OPL_CLIENT_REQUEST_ID_META_KEY,
++  OPL_SESSION_HISTORY_META_KEY,
++  OPL_SESSION_HISTORY_NOTIFICATIONS,
++  OplSessionBoundaryTracker,
++  normalizeMutationOperationId,
++  oplSessionHistoryCapabilities,
++  readOplClientRequestId,
++  registerTuiAcpSessionHistoryExtension,
++  type SessionHistoryInputSummary,
++  type SessionHistoryRuntime,
++} from '../../src/acp/session-history-extension.js';
++
++type ParamsParserLike = { parse: (params: unknown) => unknown };
++type HandlerLike = (context: never) => unknown;
++
++function createApp() {
++  const handlers = new Map<string, { parser: ParamsParserLike; handler: HandlerLike }>();
++  return {
++    handlers,
++    onRequest: (method: string, parser: ParamsParserLike, handler: HandlerLike) => {
++      handlers.set(method, { parser, handler });
++    },
++  };
++}
++
++function createRuntime(
++  overrides: Partial<SessionHistoryRuntime> = {},
++): SessionHistoryRuntime {
++  return {
++    listSessionInputSummaries: vi.fn(async () => []),
++    rewindSession: vi.fn(async () => ({ rewound: true, deletedMessageIds: [] })),
++    ...overrides,
++  } as SessionHistoryRuntime;
++}
++
++/**
++ * Stateful fake of the official mutation contract, mirroring the real order in
++ * `conversation-rewind-edit-service.rewind`: the recorded result for a completed
++ * operation is returned before the boundary is ever looked up. A rewind removes
++ * the target message and everything after it, so a later *fresh* request against
++ * that boundary fails exactly as `planInclusive` does.
++ */
++function createStatefulRewindRuntime(existing = ['msg-user-v1-a', 'msg-user-v1-b']) {
++  const completed = new Map<string, unknown>();
++  const messages = [...existing];
++  let mutations = 0;
++  const runtime = createRuntime({
++    rewindSession: vi.fn(async (input) => {
++      const recorded = completed.get(input.clientRequestId);
++      if (recorded) return recorded as never;
++      const at = messages.indexOf(input.userMessageId);
++      if (at < 0) {
++        throw Object.assign(new Error('Rewind target user message not found'), {
++          code: 'MESSAGE_BOUNDARY_INVALID',
++        });
++      }
++      const deleted = messages.splice(at);
++      mutations += 1;
++      const result = {
++        rewound: true,
++        deletedMessageIds: [...deleted, 'msg-assistant-v1-a'],
++        historyRevision: 'hist-2',
++        displayRevision: 'disp-2',
++      };
++      completed.set(input.clientRequestId, result);
++      return result as never;
++    }),
++  });
++  return { runtime, mutations: () => mutations, messages: () => [...messages] };
++}
++
++function summaries(): SessionHistoryInputSummary[] {
++  return [
++    {
++      userMessageId: 'msg-user-v1-a',
++      contentHead: 'first question',
++      timestamp: 1,
++      fileChangeCount: 0,
++    },
++    {
++      userMessageId: 'msg-user-v1-b',
++      timestamp: 2,
++      fileChangeCount: 3,
++      assistantMessageId: 'msg-assistant-v1-b',
++    },
++  ];
++}
++
++function register(
++  runtime: SessionHistoryRuntime,
++  options: {
++    isSessionIdle?: (sessionId: string) => boolean;
++    serializeWithSessionLifecycle?: <T>(sessionId: string, task: () => Promise<T>) => Promise<T>;
++  } = {},
++) {
++  const app = createApp();
++  const lifecycleOrder: string[] = [];
++  registerTuiAcpSessionHistoryExtension({
++    app,
++    runtime,
++    isSessionIdle: options.isSessionIdle ?? (() => true),
++    serializeWithSessionLifecycle:
++      options.serializeWithSessionLifecycle ??
++      ((_sessionId, task) => {
++        lifecycleOrder.push('enter');
++        return task().finally(() => lifecycleOrder.push('exit'));
++      }),
++  } as never);
++  const call = async (method: string, params: unknown) => {
++    const entry = app.handlers.get(method);
++    if (!entry) throw new Error(`handler not registered: ${method}`);
++    // Mirror the SDK AgentApp: raw params go through the registered parser first.
++    return entry.handler({ params: entry.parser.parse(params) } as never);
++  };
++  return { app, call, lifecycleOrder };
++}
++
++describe('opl session history extension', () => {
++  it('registers exactly the announced methods and announces them in initialize _meta', () => {
++    const capabilities = oplSessionHistoryCapabilities();
++    expect(capabilities).toEqual({
++      version: 1,
++      methods: ['opl/session/history/list', 'opl/session/history/rewind'],
++      notifications: ['opl/session/history/boundary'],
++    });
++    const { app } = register(createRuntime());
++    expect([...app.handlers.keys()].sort()).toEqual([...capabilities.methods].sort());
++    expect(OPL_SESSION_HISTORY_META_KEY).toBe('opl/session-history');
++  });
++
++  it('lists real runtime boundaries with public summary fields only', async () => {
++    const runtime = createRuntime({ listSessionInputSummaries: vi.fn(async () => summaries()) });
++    const { call } = register(runtime);
++    const result = await call('opl/session/history/list', { sessionId: 'sess-1' });
++    expect(runtime.listSessionInputSummaries).toHaveBeenCalledWith('sess-1');
++    expect(result).toEqual({
++      version: 1,
++      sessionId: 'sess-1',
++      entries: [
++        {
++          userMessageId: 'msg-user-v1-a',
++          contentHead: 'first question',
++          timestamp: 1,
++          fileChangeCount: 0,
++        },
++        {
++          userMessageId: 'msg-user-v1-b',
++          timestamp: 2,
++          fileChangeCount: 3,
++          assistantMessageId: 'msg-assistant-v1-b',
++        },
++      ],
++    });
++  });
++
++  it('rejects a list request without sessionId', async () => {
++    const { call } = register(createRuntime());
++    await expect(call('opl/session/history/list', {})).rejects.toBeInstanceOf(acp.RequestError);
++  });
++
++  it('runs the mutation inside the session lifecycle serialization point', async () => {
++    const order: string[] = [];
++    const { call } = register(createRuntime(), {
++      serializeWithSessionLifecycle: async (sessionId, task) => {
++        order.push(`enter:${sessionId}`);
++        try {
++          return await task();
++        } finally {
++          order.push('exit');
++        }
++      },
++    });
++    await call('opl/session/history/rewind', {
++      sessionId: 'sess-1',
++      userMessageId: 'msg-user-v1-a',
++      clientRequestId: 'edit-1',
++      rewindTurnDiff: false,
++    });
++    expect(order).toEqual(['enter:sess-1', 'exit']);
++  });
++
++  it('rewinds through the runtime with rewindTurnDiff false and never edits a message', async () => {
++    const rewindSession = vi.fn(async () => ({
++      rewound: true,
++      deletedMessageIds: ['msg-user-v1-b', 'msg-assistant-v1-b'],
++      historyRevision: 'hist-9',
++      displayRevision: 'disp-9',
++    }));
++    const runtime = createRuntime({ rewindSession });
++    const { call } = register(runtime);
++    const result = await call('opl/session/history/rewind', {
++      sessionId: 'sess-1',
++      userMessageId: 'msg-user-v1-a',
++      clientRequestId: 'edit-1',
++      rewindTurnDiff: false,
++    });
++    expect(rewindSession).toHaveBeenCalledTimes(1);
++    expect(rewindSession).toHaveBeenCalledWith({
++      sessionId: 'sess-1',
++      userMessageId: 'msg-user-v1-a',
++      clientRequestId: normalizeMutationOperationId('sess-1', 'edit-1'),
++      rewindTurnDiff: false,
++    });
++    expect(result).toMatchObject({
++      version: 1,
++      rewound: true,
++      // The caller sees its own id, never the normalized Runtime operation id.
++      clientRequestId: 'edit-1',
++      deletedMessageIds: ['msg-user-v1-b', 'msg-assistant-v1-b'],
++      historyRevision: 'hist-9',
++      displayRevision: 'disp-9',
++    });
++    expect(runtime).not.toHaveProperty('editSessionMessage');
++  });
++
++  it('replays the recorded result after the boundary was deleted, mutating once', async () => {
++    const { runtime, mutations, messages } = createStatefulRewindRuntime();
++    const { call } = register(runtime);
++    const request = {
++      sessionId: 'sess-1',
++      userMessageId: 'msg-user-v1-a',
++      clientRequestId: 'edit-1',
++      rewindTurnDiff: false,
++    };
++    const first = await call('opl/session/history/rewind', request);
++    expect(first).toMatchObject({
++      rewound: true,
++      deletedMessageIds: ['msg-user-v1-a', 'msg-user-v1-b', 'msg-assistant-v1-a'],
++    });
++    // The first rewind really removed the boundary and everything after it.
++    expect(messages()).toEqual([]);
++
++    // The replay must still succeed from the Runtime's own completed-operation
++    // ledger even though the boundary is gone, and must not mutate again.
++    const replay = await call('opl/session/history/rewind', request);
++    expect(replay).toMatchObject({
++      rewound: true,
++      clientRequestId: 'edit-1',
++      deletedMessageIds: ['msg-user-v1-a', 'msg-user-v1-b', 'msg-assistant-v1-a'],
++      historyRevision: 'hist-2',
++      displayRevision: 'disp-2',
++    });
++    // Byte-identical to the first reply: the replay is a ledger read, not a new plan.
++    expect(replay).toEqual(first);
++    expect(mutations()).toBe(1);
++  });
++
++  it('still rejects a genuinely unknown boundary after a successful rewind', async () => {
++    const { runtime, mutations } = createStatefulRewindRuntime();
++    const { call } = register(runtime);
++    await call('opl/session/history/rewind', {
++      sessionId: 'sess-1',
++      userMessageId: 'msg-user-v1-b',
++      clientRequestId: 'edit-1',
++      rewindTurnDiff: false,
++    });
++    await expect(
++      call('opl/session/history/rewind', {
++        sessionId: 'sess-1',
++        userMessageId: 'msg-user-v1-missing',
++        clientRequestId: 'edit-2',
++        rewindTurnDiff: false,
++      }),
++    ).rejects.toBeInstanceOf(acp.RequestError);
++    expect(mutations()).toBe(1);
++  });
++
++  it('gives two sessions with the same request id distinct Runtime operation ids', async () => {
++    const rewindSession = vi.fn(async () => ({ rewound: true, deletedMessageIds: [] }));
++    const { call } = register(createRuntime({ rewindSession }));
++    const request = {
++      userMessageId: 'msg-user-v1-a',
++      clientRequestId: 'edit-1',
++      rewindTurnDiff: false,
++    };
++    const a = await call('opl/session/history/rewind', { ...request, sessionId: 'sess-1' });
++    const b = await call('opl/session/history/rewind', { ...request, sessionId: 'sess-2' });
++    const ids = rewindSession.mock.calls.map(([input]) => input.clientRequestId);
++    expect(new Set(ids).size).toBe(2);
++    expect(ids[0]).not.toBe(ids[1]);
++    // Both replies still carry the caller's own request id.
++    expect(a.clientRequestId).toBe('edit-1');
++    expect(b.clientRequestId).toBe('edit-1');
++  });
++
++  it('keeps the normalized operation id stable, opaque and collision free', () => {
++    const a1 = normalizeMutationOperationId('sess-1', 'edit-1');
++    expect(a1).toBe(normalizeMutationOperationId('sess-1', 'edit-1'));
++    expect(a1).not.toBe(normalizeMutationOperationId('sess-2', 'edit-1'));
++    expect(a1).not.toBe(normalizeMutationOperationId('sess-1', 'edit-2'));
++    // No raw session id or request id leaks into the Runtime operation id.
++    expect(a1).not.toContain('sess-1');
++    expect(a1).not.toContain('edit-1');
++  });
++
++  it('refuses to rewind while the session is not idle', async () => {
++    const rewindSession = vi.fn(async () => ({ rewound: true }));
++    const { call } = register(createRuntime({ rewindSession }), { isSessionIdle: () => false });
++    await expect(
++      call('opl/session/history/rewind', {
++        sessionId: 'sess-1',
++        userMessageId: 'msg-user-v1-a',
++        clientRequestId: 'edit-1',
++        rewindTurnDiff: false,
++      }),
++    ).rejects.toBeInstanceOf(acp.RequestError);
++    expect(rewindSession).not.toHaveBeenCalled();
++  });
++
++  it('refuses rewindTurnDiff true and any file rewind option', async () => {
++    const rewindSession = vi.fn(async () => ({ rewound: true }));
++    const { call } = register(createRuntime({ rewindSession }));
++    for (const params of [
++      { rewindTurnDiff: true },
++      { rewindFiles: true },
++      { restoreFiles: true },
++      { files: true },
++      { scope: 'conversation_and_files' },
++      { rewindTurnDiffs: true },
++    ]) {
++      await expect(
++        call('opl/session/history/rewind', {
++          sessionId: 'sess-1',
++          userMessageId: 'msg-user-v1-a',
++          clientRequestId: 'edit-1',
++          ...params,
++        }),
++      ).rejects.toBeInstanceOf(acp.RequestError);
++    }
++    expect(rewindSession).not.toHaveBeenCalled();
++  });
++
++  it('rejects an unknown boundary and never claims a rewind happened', async () => {
++    const { runtime, mutations } = createStatefulRewindRuntime();
++    const { call } = register(runtime);
++    await expect(
++      call('opl/session/history/rewind', {
++        sessionId: 'sess-1',
++        userMessageId: 'msg-user-v1-missing',
++        clientRequestId: 'edit-missing',
++        rewindTurnDiff: false,
++      }),
++    ).rejects.toBeInstanceOf(acp.RequestError);
++    expect(mutations()).toBe(0);
++  });
++
++  it('never reports a successful rewind when the runtime declines', async () => {
++    const runtime = createRuntime({ rewindSession: vi.fn(async () => ({ rewound: false })) });
++    const { call } = register(runtime);
++    await expect(
++      call('opl/session/history/rewind', {
++        sessionId: 'sess-1',
++        userMessageId: 'msg-user-v1-a',
++        clientRequestId: 'edit-1',
++        rewindTurnDiff: false,
++      }),
++    ).rejects.toBeInstanceOf(acp.RequestError);
++  });
++
++  it('does not reflect private Runtime diagnostics on rewind', async () => {
++    const canary = 'SYNTHETIC_PRIVATE_VALUE_0714';
++    const runtime = createRuntime({
++      rewindSession: vi.fn(async () => {
++        throw Object.assign(new Error(canary), { code: 'MESSAGE_BOUNDARY_INVALID' });
++      }),
++    });
++    const { call } = register(runtime);
++    const failure = await call('opl/session/history/rewind', {
++      sessionId: 'sess-1',
++      userMessageId: 'msg-user-v1-a',
++      clientRequestId: 'edit-1',
++      rewindTurnDiff: false,
++    }).catch((error: unknown) => error);
++    expect(failure).toBeInstanceOf(acp.RequestError);
++    const text = `${(failure as Error).message}${(failure as Error).stack ?? ''}`;
++    expect(text).not.toContain(canary);
++    // A known code still maps to stable public wording.
++    expect((failure as Error).message).toMatch(/not a rewindable conversation boundary/);
++  });
++
++  it('does not reflect private Runtime diagnostics with an unknown code', async () => {
++    const canary = 'ANOTHER_PRIVATE_0714';
++    const runtime = createRuntime({
++      rewindSession: vi.fn(async () => {
++        throw Object.assign(new Error(canary), { code: 'SOME_INTERNAL_CODE' });
++      }),
++    });
++    const { call } = register(runtime);
++    const failure = await call('opl/session/history/rewind', {
++      sessionId: 'sess-1',
++      userMessageId: 'msg-user-v1-a',
++      clientRequestId: 'edit-1',
++      rewindTurnDiff: false,
++    }).catch((error: unknown) => error);
++    const text = `${(failure as Error).message}${(failure as Error).stack ?? ''}`;
++    expect(text).not.toContain(canary);
++  });
++
++  it('does not reflect private Runtime diagnostics on list', async () => {
++    const canary = 'LIST_PRIVATE_0714';
++    const runtime = createRuntime({
++      listSessionInputSummaries: vi.fn(async () => {
++        throw new Error(canary);
++      }),
++    });
++    const { call } = register(runtime);
++    const failure = await call('opl/session/history/list', {
++      sessionId: 'sess-1',
++    }).catch((error: unknown) => error);
++    expect(failure).toBeInstanceOf(acp.RequestError);
++    const text = `${(failure as Error).message}${(failure as Error).stack ?? ''}`;
++    expect(text).not.toContain(canary);
++  });
++
++  it('rejects request ids that would make composite keys ambiguous', async () => {
++    const { call } = register(createRuntime());
++    await expect(
++      call('opl/session/history/rewind', {
++        sessionId: 'sess-1',
++        userMessageId: 'msg-user-v1-a',
++        clientRequestId: 'edit-1\u0000evil',
++        rewindTurnDiff: false,
++      }),
++    ).rejects.toBeInstanceOf(acp.RequestError);
++  });
++});
++
++describe('opl session boundary tracker', () => {
++  it('reads the operation identity from prompt _meta', () => {
++    expect(readOplClientRequestId({ [OPL_CLIENT_REQUEST_ID_META_KEY]: 'op-1' })).toBe('op-1');
++    expect(readOplClientRequestId({ [OPL_CLIENT_REQUEST_ID_META_KEY]: '  op-2  ' })).toBe('op-2');
++    expect(readOplClientRequestId({})).toBeUndefined();
++    expect(readOplClientRequestId(undefined)).toBeUndefined();
++    expect(readOplClientRequestId(null)).toBeUndefined();
++    expect(readOplClientRequestId({ [OPL_CLIENT_REQUEST_ID_META_KEY]: 42 })).toBeUndefined();
++  });
++
++  it('binds the admitted turn to the committed user message and notifies once', () => {
++    const tracker = new OplSessionBoundaryTracker();
++    tracker.track('sess-1', 'turn-1', 'initial');
++    const boundary = tracker.resolve('sess-1', { id: 'msg-user-v1-a', turnId: 'turn-1', role: 'user' });
++    expect(boundary).toEqual({
++      sessionId: 'sess-1',
++      clientRequestId: 'initial',
++      userMessageId: 'msg-user-v1-a',
++      turnId: 'turn-1',
++    });
++    expect(tracker.has('sess-1', 'initial')).toBe(true);
++    // A replayed or duplicate stream frame must not produce a second mapping.
++    expect(
++      tracker.resolve('sess-1', { id: 'msg-user-v1-a', turnId: 'turn-1', role: 'user' }),
++    ).toBeUndefined();
++  });
++
++  it('gives two sessions using the same request id independent boundaries', () => {
++    const tracker = new OplSessionBoundaryTracker();
++    tracker.track('sess-1', 'turn-1', 'initial');
++    tracker.resolve('sess-1', { id: 'msg-user-v1-a', turnId: 'turn-1', role: 'user' });
++    // The second session reuses the same request id; it must not be swallowed.
++    tracker.track('sess-2', 'turn-2', 'initial');
++    const second = tracker.resolve('sess-2', { id: 'msg-user-v1-b', turnId: 'turn-2', role: 'user' });
++    expect(second).toEqual({
++      sessionId: 'sess-2',
++      clientRequestId: 'initial',
++      userMessageId: 'msg-user-v1-b',
++      turnId: 'turn-2',
++    });
++    expect(tracker.has('sess-1', 'initial')).toBe(true);
++    expect(tracker.has('sess-2', 'initial')).toBe(true);
++  });
++
++  it('ignores injected and automatic continuation messages', () => {
++    const tracker = new OplSessionBoundaryTracker();
++    tracker.track('sess-1', 'turn-1', 'op-1');
++    expect(
++      tracker.resolve('sess-1', { id: 'msg-assistant-v1-a', turnId: 'turn-1', role: 'assistant' }),
++    ).toBeUndefined();
++    expect(
++      tracker.resolve('sess-1', { id: 'msg-system-v1-a', turnId: 'turn-1', role: 'system' }),
++    ).toBeUndefined();
++    expect(
++      tracker.resolve('sess-1', { id: 'msg-user-v1-auto', turnId: 'turn-auto', role: 'user' }),
++    ).toBeUndefined();
++    expect(tracker.has('sess-1', 'op-1')).toBe(false);
++    expect(
++      tracker.resolve('sess-1', { id: 'msg-user-v1-a', turnId: 'turn-1', role: 'user' }),
++    ).toMatchObject({ clientRequestId: 'op-1', userMessageId: 'msg-user-v1-a' });
++  });
++
++  it('never binds by content, timestamp or ordering', () => {
++    const tracker = new OplSessionBoundaryTracker();
++    tracker.track('sess-1', 'turn-1', 'op-1');
++    expect(
++      tracker.resolve('sess-1', { id: 'msg-user-v1-x', turnId: 'turn-2', role: 'user' }),
++    ).toBeUndefined();
++    expect(tracker.resolve('sess-1', { turnId: 'turn-1', role: 'user' })).toBeUndefined();
++    expect(tracker.resolve('sess-1', { id: 'msg-user-v1-a', role: 'user' })).toBeUndefined();
++  });
++
++  it('keeps a second follow-up prompt independent from the first', () => {
++    const tracker = new OplSessionBoundaryTracker();
++    tracker.track('sess-1', 'turn-a', 'op-1');
++    tracker.track('sess-1', 'turn-b', 'op-2');
++    expect(
++      tracker.resolve('sess-1', { id: 'msg-user-v1-b', turnId: 'turn-b', role: 'user' }),
++    ).toMatchObject({ clientRequestId: 'op-2', userMessageId: 'msg-user-v1-b' });
++    expect(
++      tracker.resolve('sess-1', { id: 'msg-user-v1-a', turnId: 'turn-a', role: 'user' }),
++    ).toMatchObject({ clientRequestId: 'op-1', userMessageId: 'msg-user-v1-a' });
++  });
++});
+diff --git a/test/vitest-suites.json b/test/vitest-suites.json
+index 233c603..bd26b4b 100644
+--- a/test/vitest-suites.json
++++ b/test/vitest-suites.json
+@@ -33,6 +33,8 @@
+       "packages/tui/test/unit/update-service.test.ts",
+       "packages/tui/test/unit/update-application.test.ts",
+       "packages/tui/test/unit/acp-agent.test.ts",
++      "packages/tui/test/unit/acp-session-history-extension.test.ts",
++      "packages/tui/test/unit/acp-session-history-agent.test.ts",
+       "packages/mcode-tools-host/test/unit/lease-broker.test.ts",
+       "packages/mcode-tools-host/test/unit/resource.test.ts",
+       "packages/agent-modules/permission/test/unit/permission/cloud-classify-client.test.ts",
+diff --git a/release/public-source.json b/release/public-source.json
+--- a/release/public-source.json
++++ b/release/public-source.json
+@@ -2878,6 +2878,7 @@
+     "packages/tui/src/acp/paths.ts",
+     "packages/tui/src/acp/prompt-continuation.ts",
+     "packages/tui/src/acp/runtime.ts",
++    "packages/tui/src/acp/session-history-extension.ts",
+     "packages/tui/src/acp/stdio.ts",
+     "packages/tui/src/acp/updates.ts",
+     "packages/tui/src/analytics/business-telemetry.ts",
+@@ -3301,6 +3302,8 @@
+     "packages/tui/test/helpers/virtual-terminal.ts",
+     "packages/tui/test/pi-084-upstream/virtual-terminal.ts",
+     "packages/tui/test/unit/acp-agent.test.ts",
++    "packages/tui/test/unit/acp-session-history-agent.test.ts",
++    "packages/tui/test/unit/acp-session-history-extension.test.ts",
+     "packages/tui/test/unit/application-login-gate.test.ts",
+     "packages/tui/test/unit/auth-application.test.ts",
+     "packages/tui/test/unit/auth-session.test.ts",
+diff --git a/packages/tui/test/unit/acp-agent.test.ts b/packages/tui/test/unit/acp-agent.test.ts
+--- a/packages/tui/test/unit/acp-agent.test.ts
++++ b/packages/tui/test/unit/acp-agent.test.ts
+@@ -1182,6 +1182,11 @@
+         ],
+         agentInfo: { name: 'minimax-code', title: 'MiniMax Code', version: '1.2.3' },
+         _meta: {
++          'opl/session-history': {
++            version: 1,
++            methods: ['opl/session/history/list', 'opl/session/history/rewind'],
++            notifications: ['opl/session/history/boundary'],
++          },
+           'minimax-code/extensions': {
+             version: 1,
+             methods: expect.arrayContaining([
