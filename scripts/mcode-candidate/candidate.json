@@ -68,39 +68,14 @@
       "@vscode/ripgrep",
       "@larksuiteoapi/node-sdk"
     ],
-    "install": [
-      [
-        "pnpm",
-        "install",
-        "--frozen-lockfile"
-      ]
-    ],
-    "bundle": [
-      "node",
-      "scripts/build.mjs"
-    ],
+    "install": [["pnpm", "install", "--frozen-lockfile"]],
+    "bundle": ["node", "scripts/build.mjs"],
     "gates": [
-      [
-        "pnpm",
-        "typecheck"
-      ],
-      [
-        "pnpm",
-        "check:tsconfig"
-      ],
-      [
-        "pnpm",
-        "check:source"
-      ],
-      [
-        "pnpm",
-        "check:standalone"
-      ],
-      [
-        "node",
-        "scripts/run-vitest-suite.mjs",
-        "capability"
-      ]
+      ["pnpm", "typecheck"],
+      ["pnpm", "check:tsconfig"],
+      ["pnpm", "check:source"],
+      ["pnpm", "check:standalone"],
+      ["node", "scripts/run-vitest-suite.mjs", "capability"]
     ],
     "note": "install 与 gates 都是 argv 数组：元素是“可执行文件 + 参数”，不是扁平字符串列表；Windows 上 pnpm 是 pnpm.cmd shim，由 run() 经 cmd.exe 逐字传参启动。"
   },
@@ -113,12 +88,7 @@
     "note": "integritySha512 是整包摘要，entryCliSha256 是包内 embedded/mcode-tools/cli.mjs 的摘要；两者都来自官方 scripts/lib/mcode-tools-artifact.mjs 的固定值，语义不同不能互换。"
   },
   "license": {
-    "rootFiles": [
-      "LICENSE",
-      "NOTICE",
-      "LICENSE-STATUS.md",
-      "THIRD_PARTY_NOTICES.md"
-    ],
+    "rootFiles": ["LICENSE", "NOTICE", "LICENSE-STATUS.md", "THIRD_PARTY_NOTICES.md"],
     "extraFiles": [
       "release/dependency-licenses.json",
       "third_party/pi-mono/LICENSE",
@@ -132,20 +102,12 @@
   "capability": {
     "acpMetaKey": "minimax-code/shell",
     "acpMetaVersion": 1,
-    "bundleMarkers": [
-      "minimax-code/shell",
-      "MCODE_SHELL_PATH"
-    ],
+    "bundleMarkers": ["minimax-code/shell", "MCODE_SHELL_PATH"],
     "acpSessionHistory": {
       "metaKey": "opl/session-history",
       "version": 1,
-      "methods": [
-        "opl/session/history/list",
-        "opl/session/history/rewind"
-      ],
-      "notifications": [
-        "opl/session/history/boundary"
-      ],
+      "methods": ["opl/session/history/list", "opl/session/history/rewind"],
+      "notifications": ["opl/session/history/boundary"],
       "clientRequestIdMetaKey": "opl/clientRequestId",
       "rewindScope": "conversation-only",
       "runtimeOperationId": "sha256(sessionId\\u0000clientRequestId) 截断 32 位十六进制，前缀 oplsh1-；wire 始终回传调用方原始 ID",

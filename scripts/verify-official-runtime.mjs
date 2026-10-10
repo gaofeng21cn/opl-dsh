@@ -41,6 +41,23 @@ const harness = (method, input = {}) =>
   wire('oplExecution/' + method, Object.keys(input).length ? { request: input } : {})
 const gateway = (method, input) =>
   wire('oplGatewayModels/' + method, input ? { request: input } : {})
+// Harness completion precedes the official driver's final transcript events.
+async function settledConversation(sessionId, afterTurn) {
+  const deadline = Date.now() + 30000
+  while (true) {
+    const page = await rpc('session', 'snapshot', {
+      request: { address: { kind: 'session', sessionId }, maxMessages: 50 },
+    })
+    if (
+      page.records.some(
+        (item) => item.event?.type === 'turn/end' && item.event.data.turn > afterTurn,
+      )
+    )
+      return page
+    assert(Date.now() < deadline, 'Official conversation did not settle: ' + sessionId)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+}
 if (process.argv.includes('--readback-selections')) {
   const selections = JSON.parse(
     await readFile(join(root, 'profiles/desktop/combination-selection.json'), 'utf8'),
@@ -449,12 +466,7 @@ try {
   await rpc('harness', 'wait', { sessionId: fullAccess.id })
   const transcriptState = await harness('snapshot', { sessionId: fullAccess.id })
   assert.equal(transcriptState.title, 'MiniMax transcript title')
-  const transcript = await rpc('session', 'snapshot', {
-    request: {
-      address: { kind: 'session', sessionId: fullAccess.nativeSessionId },
-      maxMessages: 50,
-    },
-  })
+  const transcript = await settledConversation(fullAccess.nativeSessionId, 0)
   const transcriptJson = JSON.stringify(transcript.records)
   assert(transcriptJson.includes('Inspecting the repository.'))
   assert(transcriptJson.includes('"type":"reasoning"'))
@@ -497,9 +509,13 @@ try {
   history = await rpc('harness', 'wait', { sessionId: history.id })
   assert.equal(history.state, 'completed', JSON.stringify(history.turns.at(-1)))
   assert.equal(await readFile(join(project, 'calls.txt'), 'utf8'), 'NEW_NATIVE_CONVERSATION\n')
-  const agentPage = await rpc('session', 'snapshot', {
-    request: { address: { kind: 'session', sessionId: history.nativeSessionId }, maxMessages: 50 },
-  })
+  const importedTurn = Math.max(
+    0,
+    ...oldPage.records
+      .filter((item) => item.event?.type === 'turn/start')
+      .map((item) => item.event.data.turn),
+  )
+  const agentPage = await settledConversation(history.nativeSessionId, importedTurn)
   assert(JSON.stringify(agentPage.records).includes('result:NEW_NATIVE_CONVERSATION'))
   assert(JSON.stringify(agentPage.records).includes('tool/result'))
   const nativeTurns = agentPage.records

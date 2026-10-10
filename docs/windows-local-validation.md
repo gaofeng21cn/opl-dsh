@@ -16,14 +16,12 @@ Host/Client 类型检查、构建、权限与 bridge 聚焦测试、RPC 生成�
 
 控制桥兼容原生 helper 的平铺 session.wait 参数与旧 CLI 的 request 封装，参数仍需 sessionId 与非负 turn。隔离官方实例验证创建时显式权限、权限回读与切换及精确 Workspace 归属。UI 验收先等待首次引导关闭；设置容器意外消失时最多重新打开一次，面板错误与运行异常仍会使验收失败。重启验证通过官方接口恢复保存的 Session 后，再读取它的执行组合。
 
-
-
-| Harness | Git Bash 后端 | 完整访问与受限权限 |
-| --- | --- | --- |
-| Claude Code | 使用官方 `CLAUDE_CODE_GIT_BASH_PATH`，启动前验证 Git for Windows 路径 | 完整访问映射为官方 `bypassPermissions` 且关闭 sandbox；它允许工作目录外访问。Windows 受限任务若无可用官方 sandbox 后端则拒绝。 |
-| Grok Build | 使用官方 `GROK_SHELL=bash`；按 CLI 的候选顺序核对首个实际存在的 Git 安装，不匹配时拒绝 | 显式完整访问映射为 `--sandbox off --permission-mode bypassPermissions`。Windows 只读/工作区任务在读取凭据和创建 profile 前拒绝；macOS/Linux 保留内建档，但尚未验证强制隔离。 |
-| Codex CLI | 官方 0.160.1/0.161.0 的无模型 Shell 探针仍为 PowerShell。自用候选版须显式设置 `OPL_NATIVE_CODEX_GIT_BASH=1`，桥接器用真实 `thread/shellCommand` 验证 Bash 后才发送模型请求 | 权限映射为官方 read-only/workspace-write/danger-full-access，审批策略 never。候选版 Bash 仅接受显式完整访问；受限请求不会自动放宽。 |
-| MiniMax mcode | 需支持 Shell 回读的独立候选版，详见 [MiniMax 文档](minimax-code.md) | 只接受显式完整访问，并回读官方 Full access 模式；不代答已有人工审批。 |
+| Harness       | Git Bash 后端                                                                                                                                                              | 完整访问与受限权限                                                                                                                                                           |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code   | 使用官方 `CLAUDE_CODE_GIT_BASH_PATH`，启动前验证 Git for Windows 路径                                                                                                      | 完整访问映射为官方 `bypassPermissions` 且关闭 sandbox；它允许工作目录外访问。Windows 受限任务若无可用官方 sandbox 后端则拒绝。                                               |
+| Grok Build    | 使用官方 `GROK_SHELL=bash`；按 CLI 的候选顺序核对首个实际存在的 Git 安装，不匹配时拒绝                                                                                     | 显式完整访问映射为 `--sandbox off --permission-mode bypassPermissions`。Windows 只读/工作区任务在读取凭据和创建 profile 前拒绝；macOS/Linux 保留内建档，但尚未验证强制隔离。 |
+| Codex CLI     | 官方 0.160.1/0.161.0 的无模型 Shell 探针仍为 PowerShell。自用候选版须显式设置 `OPL_NATIVE_CODEX_GIT_BASH=1`，桥接器用真实 `thread/shellCommand` 验证 Bash 后才发送模型请求 | 权限映射为官方 read-only/workspace-write/danger-full-access，审批策略 never。候选版 Bash 仅接受显式完整访问；受限请求不会自动放宽。                                          |
+| MiniMax mcode | 需支持 Shell 回读的独立候选版，详见 [MiniMax 文档](minimax-code.md)                                                                                                        | 只接受显式完整访问，并回读官方 Full access 模式；不代答已有人工审批。                                                                                                        |
 
 各 Harness 保留自己的工具与会话，不通过模型提示词包装 bash.exe 来伪装后端。显式 `OPL_GIT_BASH_PATH` 必须有效；Shell 选择不会授予额外权限。组合的 full-access 须来自用户授权；自动生成组合的只读默认值不会覆盖调用方显式授权的权限，未指定权限时保留该默认值。用户声明的只读组合保持受限，已保存的受限会话不能通过续作扩大权限；不会为了 Windows 可用性自动提权。
 
@@ -42,3 +40,5 @@ Grok CLI 自动写入的 marketplace 初始化标记属于可接受布局，后�
 Windows 的安装后自动启动与 Codex Skill 自动启动通过 WMI 创建套件启动器，再由同一 launch.vbs / setup.mjs 入口设置 profile 与应用路径。桌面不继承调用方的 Windows Job；关闭 Codex 启动进程不会通过该 Job 终止桌面。启动器按安装时选择的 Codex home 显式设置 CODEX_HOME，保证通知 CLI 使用正确的状态目录。WMI 不传递调用方的自定义环境块，外部 Harness 的代理请保存在运行配置中。系统策略禁用 WMI 或启动失败时自动启动明确拒绝，不回退到共享 Job；此时从 OPL DSH 快捷方式打开。官方应用资源保持原样，安装器不创建持久服务或计划任务，也不要求提权。
 
 生命周期验收使用自有临时 Job、测试目标与 IPC，包含原 detached/unref 启动的负控和禁止 breakaway 的 Job；父子进程树关系与 Job 成员关系分别检查。真实关闭当前 Codex 的操作不作为自动验收步骤。
+
+官方对话验收在外部 Harness 结束后，继续等待官方会话记录出现本轮 `turn/end`，再检查回答和工具结果。等待最多 30 秒；超时失败，不把外部任务终态当作官方消息流已经写完。
