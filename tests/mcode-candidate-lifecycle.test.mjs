@@ -7,6 +7,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import {
   chmodSync,
   cpSync,
@@ -815,21 +817,30 @@ test('复制/发布阶段的失败会恢复原版本目录，并把被拒产物�
   }
 })
 
-test('写回执阶段的失败同样恢复原状态，不谎报 applied=false', () => {
+test('写回执阶段的失败同样恢复原状态，不谎报 applied=false', (t) => {
   const { base, env, source, store, version } = setup('rollback-receipt')
   try {
     importCandidate({ source, env, select: true, activeTasks: 0 })
     const receiptBefore = readFileSync(selectionPath(store), 'utf8')
     const v2 = '0.6.3-opl-bash.20261012.2'
-    // 注入：回执文件只读，Windows 上 rename 无法替换它，于是失败恰好落在写回执这一步。
-    chmodSync(selectionPath(store), 0o444)
+    // POSIX rename 可以替换只读文件；定点注入回执发布失败，保留真实导入与回切操作。
+    const originalRename = fs.renameSync
+    let receiptFailures = 0
+    t.mock.method(fs, 'renameSync', (source, destination) => {
+      if (destination === selectionPath(store)) {
+        receiptFailures++
+        throw Object.assign(new Error('Receipt publication denied'), { code: 'EACCES' })
+      }
+      return originalRename(source, destination)
+    })
+    syncBuiltinESMExports()
     const result = importCandidate({
       source: synthCandidate(join(base, 'v2'), v2),
       env,
       select: true,
       activeTasks: 0,
     })
-    chmodSync(selectionPath(store), 0o666)
+    assert.equal(receiptFailures, 1)
     assert.equal(result.ok, false)
     assert.equal(result.applied, false)
     assert.equal(result.restored, true, JSON.stringify(result))
@@ -845,11 +856,8 @@ test('写回执阶段的失败同样恢复原状态，不谎报 applied=false', 
     assert.equal(readFileSync(selectionPath(store), 'utf8'), receiptBefore)
     assert.equal(readSelection(store).selection.version, version)
   } finally {
-    try {
-      chmodSync(selectionPath(store), 0o666)
-    } catch {
-      /* 清理时忽略 */
-    }
+    t.mock.restoreAll()
+    syncBuiltinESMExports()
     cleanup(base)
   }
 })
