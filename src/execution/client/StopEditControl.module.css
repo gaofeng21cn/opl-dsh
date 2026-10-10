@@ -1,0 +1,135 @@
+/** 停止后编辑入口：普通侧栏对话内选择一条已发送的消息，把原文放回输入框。 */
+.root {
+  position: relative;
+}
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--opl-border, rgb(0 0 0 / 12%));
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.trigger[aria-expanded='true'] {
+  background: var(--opl-surface-hover, rgb(0 0 0 / 6%));
+}
+.panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 320px;
+  max-height: 320px;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid var(--opl-border, rgb(0 0 0 / 12%));
+  border-radius: 8px;
+  background: var(--opl-surface, #fff);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+}
+.title {
+  font-size: 12px;
+  font-weight: 600;
+}
+.hint,
+.result,
+.error,
+.blocked {
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.hint,
+.blocked {
+  color: var(--opl-text-muted, rgb(0 0 0 / 60%));
+}
+.error {
+  color: var(--opl-danger, #b3261e);
+}
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.row:hover:not(:disabled) {
+  background: var(--opl-surface-hover, rgb(0 0 0 / 6%));
+}
+.row:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.head {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meta {
+  font-size: 11px;
+  color: var(--opl-text-muted, rgb(0 0 0 / 60%));
+}
+.busy {
+  font-size: 11px;
+  color: var(--opl-text-muted, rgb(0 0 0 / 60%));
+}
+/** 首批 Harness 但暂时没有可回退边界，或此刻不可用时的固定状态说明。 */
+.status {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--opl-text-muted, rgb(0 0 0 / 60%));
+}
+/** 待填原文：输入框里已有草稿时，原文留在这里，可查看、可在清空后填回。 */
+.draft {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 320px;
+  padding: 6px 8px;
+  border: 1px solid var(--opl-border, rgb(0 0 0 / 12%));
+  border-radius: 6px;
+}
+.draftTitle {
+  font-size: 11px;
+  font-weight: 600;
+}
+.draftText {
+  max-height: 120px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.refill,
+.recovery {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border: 1px solid var(--opl-border, rgb(0 0 0 / 12%));
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.refill:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

@@ -62,6 +62,15 @@ if (process.argv.includes('--readback-selections')) {
     })
     assert.equal((await harness('model-selection', { sessionId })).combination, combination)
   }
+  const permissionSelections = JSON.parse(
+    await readFile(join(root, 'qualification-permission-selections.json'), 'utf8'),
+  )
+  for (const { sessionId, preset, approval } of permissionSelections) {
+    const actual = await rpc('session', 'permissions', { request: { sessionId } })
+    assert.equal(actual.preset, preset)
+    assert.equal(actual.sandbox, preset)
+    assert.equal(actual.approval, approval)
+  }
   console.log(JSON.stringify({ selectionRestore: true, sessions: Object.keys(selections).length }))
   process.exit(0)
 }
@@ -249,6 +258,10 @@ try {
     api: 'openai-completions',
     models: [
       { id: 'gpt-5.4', name: 'GPT-5.4' },
+      { id: 'gpt-6-astra', name: 'GPT-6 Astra' },
+      { id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol' },
+      { id: 'gpt-6-sol', name: 'GPT-6 Sol' },
+      { id: 'gpt-6-luna', name: 'GPT-6 Luna' },
       { id: 'deepseek-flash', name: 'DeepSeek-V4.1-Flash' },
     ],
   })
@@ -257,6 +270,9 @@ try {
   assert.equal(models.find((m) => m.id === 'deepseek-flash').name, 'DeepSeek 设置回读')
   assert(models.some((m) => m.id === 'codex::gpt-5.4'))
   assert(models.some((m) => m.id === 'codex::deepseek-flash'))
+  assert.equal(models.find((m) => m.id === 'deepseek-flash').reasoning.defaultEffort, 'high')
+  for (const id of ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna'])
+    assert.equal(models.find((m) => m.id === 'codex::' + id).reasoning.defaultEffort, 'medium')
   const catalog = await harness('catalog')
   const gpt = {
     id: 'accept-gpt-dsh',
@@ -269,6 +285,53 @@ try {
   }
   catalog.combinations.push(gpt)
   await harness('save-catalog', { catalog })
+  const generatedOpenAI = catalog.combinations.find(
+    (item) =>
+      item.generated &&
+      item.harnessRef === 'dsh' &&
+      item.modelRef.model === 'codex::deepseek-flash',
+  )
+  assert(generatedOpenAI, 'generated DeepSeek OpenAI combination is missing')
+  const permissionSelections = []
+  for (const [preset, approval] of [
+    ['read-only', 'ask'],
+    ['workspace-write', 'ask'],
+    ['danger-full-access', 'never'],
+  ]) {
+    const created = await rpc('session', 'create', {
+      request: { cwd: project, permissionPreset: preset },
+    })
+    await harness('select-combination', {
+      sessionId: created.sessionId,
+      combination: generatedOpenAI.id,
+    })
+    const actual = await rpc('session', 'permissions', {
+      request: { sessionId: created.sessionId },
+    })
+    assert.equal(actual.preset, preset)
+    assert.equal(actual.sandbox, preset)
+    assert.equal(actual.approval, approval)
+    permissionSelections.push({ sessionId: created.sessionId, preset, approval })
+  }
+  const explicitReview = await rpc('session', 'create', {
+    request: { cwd: project, permissionPreset: 'danger-full-access' },
+  })
+  await harness('select-combination', { sessionId: explicitReview.sessionId, combination: gpt.id })
+  const narrowed = await rpc('session', 'permissions', {
+    request: { sessionId: explicitReview.sessionId },
+  })
+  assert.equal(narrowed.preset, 'read-only')
+  assert.equal(narrowed.sandbox, 'read-only')
+  assert.equal(narrowed.approval, 'ask')
+  permissionSelections.push({
+    sessionId: explicitReview.sessionId,
+    preset: 'read-only',
+    approval: 'ask',
+  })
+  await writeFile(
+    join(root, 'qualification-permission-selections.json'),
+    JSON.stringify(permissionSelections) + '\n',
+  )
   for (const combination of ['dsh/deepseek-flash', gpt.id]) {
     const s = await harness('start', {
       combination,

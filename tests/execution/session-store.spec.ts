@@ -31,6 +31,14 @@ const record = (id: string): HarnessSession => ({
 })
 
 describe('per-session durable storage', () => {
+  it('preserves an opaque official conversation id across reloads and rejects empty references', async () => {
+    const { root, store } = await fixture()
+    const session = { ...record('ordinary'), nativeSessionId: 'native-session' }
+    await store.saveChanged([session])
+    expect(await new HarnessSessionStore(root).load()).toContainEqual(session)
+    await writeFile(store.filename('ordinary'), JSON.stringify({ ...session, nativeSessionId: '' }))
+    await expect(new HarnessSessionStore(root).load()).rejects.toThrow('官方对话引用')
+  })
   it.each(['minimax-code', 'codex', 'claude', 'grok-build'])(
     'reloads authorized full-access %s sessions from both storage generations',
     async (harnessRef) => {

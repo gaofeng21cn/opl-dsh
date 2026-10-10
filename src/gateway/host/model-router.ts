@@ -2,6 +2,7 @@
 import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { GatewayGroupId } from '../contracts/groups.ts'
+import { modelDefaultEffort } from '../../shared/model-reasoning.ts'
 export const OPENAI_PROVIDER = 'opl-gateway-openai'
 export interface GatewayModelRoute {
   group: GatewayGroupId
@@ -21,11 +22,13 @@ function withReasoning(model: LlmResolvedModelInfo): LlmResolvedModelInfo {
       : model.id === 'grok-4.7'
         ? ['low', 'medium', 'high', 'xhigh']
         : undefined
-  if (model.id === 'deepseek-flash' && model.reasoning?.efforts.some((e) => e.id === 'max'))
-    return { ...model, reasoning: { ...model.reasoning, defaultEffort: ReasoningEffortId('max') } }
-  if (!efforts) return model
-  const defaultEffort =
-    model.id === 'gpt-6-astra' ? 'low' : model.id === 'grok-4.7' ? 'high' : 'medium'
+  if (!efforts) {
+    const effort = modelDefaultEffort(model.id, model.reasoning)
+    return effort === undefined || !model.reasoning
+      ? model
+      : { ...model, reasoning: { ...model.reasoning, defaultEffort: ReasoningEffortId(effort) } }
+  }
+  const defaultEffort = model.id === 'grok-4.7' ? 'high' : 'medium'
   return {
     ...model,
     reasoning: {

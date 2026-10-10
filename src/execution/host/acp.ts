@@ -69,6 +69,8 @@ export class AcpProcess {
     private readonly permission: (id: string | number, value: unknown) => void,
     private readonly onExit: () => void,
     verbatimArguments = false,
+    /** 扩展通知：官方 ACP 只定义 `session/update`，其余通知必须由使用方自行取用。 */
+    private readonly notification?: (method: string, params: unknown) => void,
   ) {
     this.child = spawn(command, args, {
       cwd,
@@ -100,14 +102,15 @@ export class AcpProcess {
           p.reject(new HarnessTransportError(harnessFailure(object(m.error).code)))
         } else p.resolve(m.result)
       } else if (m.method === 'session/update') this.update(m.params)
-      else if ((typeof m.id === 'string' || typeof m.id === 'number') && m.method) {
+      else if (typeof m.id === 'string' || typeof m.id === 'number') {
+        // 带 id 的是发往本方的请求，必须照常回应；扩展通知永远不会走到这里。
         if (m.method === 'session/request_permission') this.permission(m.id, m.params)
         else
           this.send({
             id: m.id,
             error: { code: -32601, message: 'Unsupported ACP client request' },
           })
-      }
+      } else if (this.notification !== undefined) this.notification(m.method, m.params)
     })
   }
   private fail(message: string) {

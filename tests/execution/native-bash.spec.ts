@@ -514,11 +514,14 @@ describe('ordinary conversation full-access binding', () => {
       snapshotEvents: () => [],
     }
     const ctx = {
+      waterfall: async (_name: unknown, _request: unknown, next: () => Promise<unknown[]>) =>
+        next(),
       get: () => undefined,
       agents: {
+        list: () => [],
         get: () => ({ status: 'idle', ctx: { get: () => ({ resolve: () => ({ mode }) }) } }),
       },
-      sessions: { get: () => session },
+      sessions: { list: () => [], get: () => session },
       llm: {
         listProviders: () => [{ id: 'opl-gateway', name: 'OPL Gateway' }],
         listConfigurableProviders: () => [],
@@ -674,9 +677,11 @@ describe('explicit full-access requests', () => {
     const root = (await mkdtemp(join(tmpdir(), 'opl-fullaccess-'))).replace(/\\/g, '/')
     cleanups.push(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
     const ctx = {
+      waterfall: async (_name: unknown, _request: unknown, next: () => Promise<unknown[]>) =>
+        next(),
       get: () => undefined,
-      agents: { get: () => undefined },
-      sessions: { get: () => undefined },
+      agents: { get: () => undefined, list: () => [] },
+      sessions: { list: () => [], get: () => undefined },
       llm: {
         listProviders: () => [{ id: 'opl-gateway', name: 'OPL Gateway' }],
         listConfigurableProviders: () => [],

@@ -1,0 +1,120 @@
+diff --git a/packages/local-runtime/test/unit/local-bash-shell-path.test.ts b/packages/local-runtime/test/unit/local-bash-shell-path.test.ts
+new file mode 100644
+--- /dev/null
++++ b/packages/local-runtime/test/unit/local-bash-shell-path.test.ts
+@@ -0,0 +1,61 @@
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { existsSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { getShellConfig } from '@earendil-works/pi-coding-agent/shell';
++import { createLocalBashOperations } from '@earendil-works/pi-coding-agent/tools';
++
++afterEach(() => vi.unstubAllEnvs());
++const bash = process.platform === 'win32' ? 'C:/Program Files/Git/bin/bash.exe' : '/bin/bash';
++
++describe('explicit process shell selection', () => {
++  it('rejects a missing or relative environment override without choosing the platform default', () => {
++    for (const invalid of ['bash', '', 'C:/not-installed/bash.exe']) {
++      vi.stubEnv('MCODE_SHELL_PATH', invalid);
++      expect(() => getShellConfig()).toThrow(/MCODE_SHELL_PATH/);
++    }
++  });
++
++  it.skipIf(!existsSync(bash))('uses the same selected Bash for reporting and real operations', async () => {
++    vi.stubEnv('MCODE_SHELL_PATH', bash);
++    expect(getShellConfig()).toEqual({ shell: bash, args: ['-c'], type: 'bash' });
++    const chunks: Buffer[] = [];
++    const result = await createLocalBashOperations().exec('printf "BASH_SELECTED:%s" "$BASH_VERSION"; exit 17', tmpdir(), {
++      onData: data => chunks.push(data), timeout: 10,
++    });
++    expect(Buffer.concat(chunks).toString()).toMatch(/BASH_SELECTED:[0-9]/);
++    expect(result.exitCode).toBe(17);
++  });
++});
++
++describe.skipIf(process.platform !== 'win32' || !existsSync(bash))('Git Bash process lifecycle', () => {
++  it('ends the owned descendant after cancellation', async () => {
++    vi.stubEnv('MCODE_SHELL_PATH', bash);
++    const controller = new AbortController();
++    let pid: number | undefined;
++    let output = '';
++    const command = `node -e 'console.log("CHILD_PID="+process.pid);setInterval(()=>{},1000)'`;
++    const running = createLocalBashOperations({ parentDeathGuard: true }).exec(command, tmpdir(), {
++      signal: controller.signal, timeout: 15,
++      onData: data => {
++        output += data.toString();
++        const found = output.match(/CHILD_PID=(\d+)/);
++        if (found) { pid = Number(found[1]); controller.abort(); }
++      },
++    });
++    await expect(running).rejects.toThrow(/aborted/);
++    expect(pid).toBeGreaterThan(0);
++    await expect.poll(() => { try { process.kill(pid!, 0); return true; } catch { return false; } }, { timeout: 5000, interval: 20 }).toBe(false);
++  }, 20000);
++
++  it('reports command timeout and streams stdout and stderr', async () => {
++    vi.stubEnv('MCODE_SHELL_PATH', bash);
++    const chunks: Buffer[] = [];
++    const ops = createLocalBashOperations();
++    await expect(ops.exec('printf "TIMEOUT_STDOUT"; printf "TIMEOUT_STDERR" >&2; sleep 30', tmpdir(), {
++      timeout: 0.25, onData: data => chunks.push(data),
++    })).rejects.toThrow(/timeout/);
++    const output = Buffer.concat(chunks).toString();
++    expect(output).toContain('TIMEOUT_STDOUT');
++    expect(output).toContain('TIMEOUT_STDERR');
++  }, 15000);
++});
+diff --git a/test/vitest-suites.json b/test/vitest-suites.json
+--- a/test/vitest-suites.json
++++ b/test/vitest-suites.json
+@@ -215,7 +215,8 @@
+       "packages/local-runtime-v2/src/service/turn-system/execution/turn-execution.service.test.ts",
+       "packages/local-runtime-v2/test/integration/session-stop-cascade.integration.test.ts",
+       "packages/local-runtime/test/unit/local-background-task-user-stop-cascade.test.ts",
+-      "packages/local-runtime/test/unit/local-task-append.test.ts"
++      "packages/local-runtime/test/unit/local-task-append.test.ts",
++      "packages/local-runtime/test/unit/local-bash-shell-path.test.ts"
+     ],
+     "status-contract": [
+       "packages/tui/test/unit/tui-build-mode-contract.test.ts"
+diff --git a/docs/tui-capabilities.md b/docs/tui-capabilities.md
+--- a/docs/tui-capabilities.md
++++ b/docs/tui-capabilities.md
+@@ -338,3 +338,7 @@
+ name plus its `local` or `official` source; display labels do not determine the
+ selection. Legacy whitespace-delimited `@package-name` text remains supported
+ when it identifies exactly one effective plugin.
++
++### Process-local shell selection
++
++Set `MCODE_SHELL_PATH` to an existing absolute shell executable before starting the CLI to override the platform default. The shared shell resolver applies the same choice to foreground/background Bash operations and environment descriptions. Invalid paths fail without falling back. ACP initialize reports `_meta["minimax-code/shell"]` with version 1, executable, arguments, and shell type when this override is present. This setting changes the command interpreter only; it does not change permissions, approval decisions, or sandbox policy.
+diff --git a/release/public-source.json b/release/public-source.json
+--- a/release/public-source.json
++++ b/release/public-source.json
+@@ -2709,6 +2709,7 @@
+     "packages/local-runtime/test/unit/error-reporting-privacy.test.ts",
+     "packages/local-runtime/test/unit/local-background-task-task-output-polling-reminder.test.ts",
+     "packages/local-runtime/test/unit/local-background-task-user-stop-cascade.test.ts",
++    "packages/local-runtime/test/unit/local-bash-shell-path.test.ts",
+     "packages/local-runtime/test/unit/local-memory-edit-literal.test.ts",
+     "packages/local-runtime/test/unit/local-native-tools.test.ts",
+     "packages/local-runtime/test/unit/local-output-safety-writer-v2-guide-review.test.ts",
+diff --git a/third_party/pi-mono/MINIMAX_CHANGES.md b/third_party/pi-mono/MINIMAX_CHANGES.md
+index f0d7f7f..ef99205 100644
+--- a/third_party/pi-mono/MINIMAX_CHANGES.md
++++ b/third_party/pi-mono/MINIMAX_CHANGES.md
+@@ -13,6 +13,14 @@ This directory vendors `pi-mono` as source so MiniMax can patch, validate, and s
+ 
+ No upstream source files are changed in the baseline import.
+ 
++### 2026-10-10 - process-local shell selection with ACP capability readback
++
++- Reason: on Windows the shared resolver prefers PowerShell, so a host that requires Bash cannot select it for mcode's own foreground and background command tools, and an ACP client cannot verify which interpreter the CLI actually uses.
++- Affected package: `packages/coding-agent` (`@earendil-works/pi-coding-agent`), `src/utils/shell.ts` shell resolution; reported through `packages/tui/src/acp/agent.ts` ACP initialize metadata.
++- Change type: generic, upstreamable. `MCODE_SHELL_PATH` selects an existing absolute shell executable when no explicit argument is supplied; a missing, relative or non-file value raises an error instead of falling back to the platform default. The same resolved value drives command execution and the environment description. ACP initialize reports `_meta["minimax-code/shell"]` with version 1, the resolved executable, its arguments and shell type while the override is present. Permission modes, approval decisions, sandbox policy and the recorded account state are unchanged.
++- Upstream PR: not opened; the interface proposal is published as https://github.com/MiniMax-AI/minimax-code/issues/474.
++- Validation: `packages/local-runtime/test/unit/local-bash-shell-path.test.ts`, registered in the `capability` suite, covers rejection of relative, empty and missing overrides, real Bash identity with a nonzero exit status through `createLocalBashOperations`, cancellation cleanup of the owned descendant, and timeout stdout and stderr streaming. Vendored upstream suites remain outside this distribution's verification, and no live model service is called.
++
+ ### 2026-10-06 — opt-in fallback for unexpected provider tool calls
+ 
+ - Reason: a conversational host can intentionally advertise no tools, but a provider may still emit a structured tool call. The normal missing-tool result starts another model hop and can leave the host without a final assistant response.

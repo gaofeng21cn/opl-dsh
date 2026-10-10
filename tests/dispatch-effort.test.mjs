@@ -130,3 +130,12 @@ test('dispatch refuses to register or send a prompt if the Host falls back from 
   assert.match(result.stderr, /推理档位校验失败/)
   assert.deepEqual(f.counts(), { prompts: 0, registrations: 0 })
 })
+
+test('dispatch selects high when no effort is configured', async (t) => {
+  const f = await fixture(t)
+  await f.config(undefined)
+  const result = await f.run()
+  assert.equal(result.code, 0, result.stderr)
+  assert.equal(JSON.parse(result.stdout).reasoningEffort, 'high')
+  assert.deepEqual(f.selections, ['high'])
+})

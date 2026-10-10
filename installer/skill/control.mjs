@@ -166,7 +166,19 @@ async function waitHarness(input) {
     return harnessRpc('snapshot', { sessionId: input.sessionId })
   }
 }
-if (
+if (command === 'minimax-candidate-select') {
+  if (!args.version?.trim()) throw Error('需要 --version <候选版本>')
+  for (const name of Object.keys(args))
+    if (!['version', 'source'].includes(name)) throw Error(`不支持参数 --${name}`)
+  console.log(
+    JSON.stringify(
+      await harnessRpc('select-minimax-candidate', {
+        version: args.version,
+        ...(args.source ? { source: args.source } : {}),
+      }),
+    ),
+  )
+} else if (
   [
     'delegate-review',
     'delegate-tasks',
@@ -285,7 +297,7 @@ if (
   if (!['opl-gateway', 'opl-gateway-openai'].includes(provider))
     throw new Error('未知 Gateway 通道')
   const preset = args.preset
-  const configuredEffort = args['reasoning-effort'] ?? config.dispatchReasoningEffort
+  const configuredEffort = args['reasoning-effort'] ?? config.dispatchReasoningEffort ?? 'high'
   if (
     configuredEffort !== undefined &&
     (typeof configuredEffort !== 'string' || !configuredEffort.trim())

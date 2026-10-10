@@ -1052,14 +1052,17 @@ describe('loopback credential relay', () => {
   }
 
   test('refuses a request without the per-session ticket', async () => {
-    const relay = await startHuaweiRelay(async () => 'never-used')
+    const readKey = vi.fn(async () => undefined)
+    const relay = await startHuaweiRelay(readKey)
     try {
       const target = `${relay.baseUrl}/chat/completions`
       expect((await httpGet(target, {})).status).toBe(403)
       expect((await httpGet(target, { [HUAWEI_RELAY_TICKET_HEADER]: 'wrong' })).status).toBe(403)
-      expect(
-        (await httpGet(target, { [HUAWEI_RELAY_TICKET_HEADER]: relay.ticket })).status,
-      ).not.toBe(403)
+      expect(readKey).not.toHaveBeenCalled()
+      expect((await httpGet(target, { [HUAWEI_RELAY_TICKET_HEADER]: relay.ticket })).status).toBe(
+        503,
+      )
+      expect(readKey).toHaveBeenCalledOnce()
     } finally {
       relay.close()
     }

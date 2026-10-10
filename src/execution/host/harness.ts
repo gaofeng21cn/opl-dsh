@@ -3,6 +3,9 @@ import { inspectHarness } from './harness-registry.ts'
 import { maintainHarness } from './harness-maintenance.ts'
 import type { HarnessInstallation } from '../contracts/installations.ts'
 import { modelRefKey } from '../contracts/catalog.ts'
+import type { MiniMaxCandidateRequest, MiniMaxCandidateResult } from '../contracts/candidate.ts'
+import { RuntimeMaintenance } from './runtime-maintenance.ts'
+import { prepareMiniMaxCandidate } from './minimax-candidate.ts'
 import { GATEWAY_GROUPS } from '../../gateway/contracts/groups.ts'
 /** Owns mappings and transport only; each official Harness owns its agent loop. */
 import { createHash, randomUUID } from 'node:crypto'
@@ -15,9 +18,9 @@ import { EventEmitter } from 'node:events'
 import { LlmError, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { Context } from '@deepseek-ai/cordis'
 import type { HarnessStartRequest } from '../../contracts/types.ts'
+import { STOP_EDIT_VERSION } from '../contracts/stop-edit.ts'
 export type { HarnessStartRequest } from '../../contracts/types.ts'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
-import { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { ModelCatalog, ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-workspace'
@@ -51,12 +54,42 @@ import { connectDsh } from './adapters/dsh.ts'
 import {
   MINIMAX_CODE_HARNESS,
   MINIMAX_CODE_PROVIDER,
+  minimaxCodeModels,
   minimaxReasoning,
 } from './adapters/minimax.ts'
 import type { AdapterOptions } from './adapters/types.ts'
 import { HarnessSessionStore } from './session-store.ts'
 import { NativeHarnessConversations, harnessRequestId } from './native-conversations.ts'
-import { harnessAllowsFullAccess } from './permissions.ts'
+import {
+  StopEditError,
+  StopEditService,
+  contentHead,
+  type StopEditHost,
+  type StopEditRewindOutcome,
+  type StopEditRuntime,
+  type StopEditTarget,
+} from './stop-edit.ts'
+import { StopEditIntentStore } from './stop-edit-intent.ts'
+import type { StopEditBoundary, StopEditResult } from '../contracts/stop-edit.ts'
+import {
+  nativeStopEditRuntime,
+  type NativeReviewFacts,
+  type NativeSessionSource,
+} from './stop-edit-native.ts'
+import {
+  HISTORY_BOUNDARY,
+  HISTORY_LIST,
+  HISTORY_REWIND,
+  minimaxStopEditRuntime,
+  readMinimaxCapability,
+  type MinimaxHistorySource,
+  type MinimaxReview,
+} from './stop-edit-minimax.ts'
+import {
+  harnessAllowsFullAccess,
+  harnessPermissionPreset,
+  setHarnessPermissions,
+} from './permissions.ts'
 import { resolveWriteScope, writerConflicts } from './write-scope.ts'
 import { harnessProxyEnvironment } from './proxy.ts'
 import type {
@@ -67,7 +100,12 @@ import type {
   HarnessDetailRequest,
   HarnessDetailPage,
 } from '../contracts/views.ts'
-import { catalogView, ExecutionCatalogStore, type ExecutionCatalog } from './catalog.ts'
+import {
+  catalogView,
+  ExecutionCatalogStore,
+  normalizeCatalog,
+  type ExecutionCatalog,
+} from './catalog.ts'
 const asSessionId = <T extends string>(value: string) => value as T
 export { GROK_COMBINATION, DSH_COMBINATION } from '../contracts/sessions.ts'
 export const HARNESS_NAMESPACE = 'harness'
@@ -144,6 +182,7 @@ interface Active {
 export { grokConfiguration } from './adapters/grok.ts'
 export { nativeHarnessMatches, defaultHarness } from './adapters/index.ts'
 export class HarnessService {
+  private readonly runtimeMaintenance = new RuntimeMaintenance()
   private selections: Record<string, string> = {}
   private readonly conversationOwners = new Map<
     string,
@@ -173,6 +212,8 @@ export class HarnessService {
   private readonly runtimeConnections = new Map<string, boolean>()
   private readonly catalogStore: ExecutionCatalogStore
   private readonly modelResolver: ExecutionModelResolver
+  private readonly stopEdits: StopEditService
+  private readonly stopEditIntents: StopEditIntentStore
   constructor(
     private readonly ctx: Context,
     private readonly options: {
@@ -190,7 +231,14 @@ export class HarnessService {
       this.probeExternalModel(ref),
     )
     this.events.setMaxListeners(100)
-    this.ready = Promise.all([this.load(), this.loadSelections()]).then(async () => {
+    this.stopEditIntents = new StopEditIntentStore(this.directory)
+    this.stopEdits = new StopEditService(this.stopEditHost())
+    this.ready = Promise.all([
+      this.load(),
+      this.loadSelections(),
+      // 编辑意图台账必须先恢复，否则一次未完成的编辑会被当成从未发生过。
+      this.stopEditIntents.load(),
+    ]).then(async () => {
       if (!this.conversations) return
       for (const record of this.records.values()) {
         try {
@@ -238,7 +286,14 @@ export class HarnessService {
     await write
   }
   private async ensureConversation(record: HarnessSession) {
-    if (!this.conversations || record.harnessRef === 'dsh' || record.origin.kind === 'dsh') return
+    if (record.harnessRef !== 'dsh' && record.origin.kind === 'dsh') {
+      if (!record.nativeSessionId) {
+        record.nativeSessionId = record.origin.sessionId
+        await this.save(record)
+      }
+      return
+    }
+    if (!this.conversations || record.harnessRef === 'dsh') return
     if (
       record.nativeSessionId &&
       this.ctx.agents.get(asSessionId<SessionId>(record.nativeSessionId))?.status === 'running'
@@ -357,6 +412,9 @@ export class HarnessService {
     )
   }
   async updateHarness(id: string) {
+    return this.runtimeMaintenance.admit(() => this.updateHarnessAdmitted(id))
+  }
+  private async updateHarnessAdmitted(id: string) {
     await this.ready
     if (this.disposed) throw Error('Harness 服务已关闭')
     if (this.maintenanceJobs.has(id)) return this.maintenance.get(id)
@@ -568,15 +626,81 @@ export class HarnessService {
   }
   async saveExecutionCatalog(value: unknown): Promise<ExecutionCatalog> {
     await this.ready
-    await this.catalogStore.set(value)
-    this.events.emit('catalog')
-    return this.executionCatalog()
+    this.runtimeMaintenance.assertAvailable()
+    const previous = await this.catalogStore.get()
+    this.runtimeMaintenance.assertAvailable()
+    const next = normalizeCatalog(value)
+    const launch = (catalog: ExecutionCatalog) =>
+      catalog.harnesses.map((h) => [h.id, h.command, h.prefix])
+    const changed = JSON.stringify(launch(previous)) !== JSON.stringify(launch(next))
+    const publish = async () => {
+      if (changed) await this.assertNoGlobalActivity()
+      await this.catalogStore.set(next)
+      this.events.emit('catalog')
+      return this.executionCatalog()
+    }
+    return changed
+      ? this.runtimeMaintenance.change(() => this.runtimeBusy(), publish)
+      : this.runtimeMaintenance.admit(publish)
+  }
+  /** Model requests use the same maintenance exclusion as external CLI admission. */
+  assertRuntimeAvailable(): void {
+    this.runtimeMaintenance.assertAvailable()
+  }
+  private runtimeBusy(): boolean {
+    return (
+      this.disposed ||
+      this.maintenanceJobs.size > 0 ||
+      this.connecting.size > 0 ||
+      this.ctx.agents?.list().some((agent) => agent.status === 'running') === true ||
+      [...this.records.values()].some((record) =>
+        record.turns.some((turn) =>
+          ['queued', 'running', 'waiting_child', 'needs_approval', 'needs_input'].includes(
+            turn.state,
+          ),
+        ),
+      ) ||
+      [...this.active.values()].some((active) => !!active.turn)
+    )
+  }
+  private async assertNoGlobalActivity(): Promise<void> {
+    if (this.runtimeBusy()) throw Error('仍有活动任务，不能切换 Harness 运行时')
+    for (const session of this.ctx.sessions.list()) {
+      const activity = await this.ctx.waterfall(
+        'workspace/session-activity',
+        { sessionId: session.id },
+        async () => [],
+      )
+      if (activity.length) throw Error('仍有活动任务，不能切换 Harness 运行时')
+    }
+    if (this.runtimeBusy()) throw Error('仍有活动任务，不能切换 Harness 运行时')
+  }
+  /** Publish the verified candidate into the actual catalog; receipts do not select it. */
+  async selectMiniMaxCandidate(request: MiniMaxCandidateRequest): Promise<MiniMaxCandidateResult> {
+    await this.ready
+    return this.runtimeMaintenance.change(
+      () => this.runtimeBusy(),
+      async () => {
+        await this.assertNoGlobalActivity()
+        const verified = prepareMiniMaxCandidate(request)
+        await this.assertNoGlobalActivity()
+        const previous = await this.catalogStore.setHarnessLaunch(
+          MINIMAX_CODE_HARNESS,
+          verified.command,
+          [],
+        )
+        this.events.emit('catalog')
+        return { ...verified, ...previous, version: request.version, validation: 'static' }
+      },
+    )
   }
   async saveHarnessProxy(harnessId: string, proxy: unknown): Promise<ExecutionCatalog> {
     await this.ready
-    await this.catalogStore.setProxy(harnessId, proxy)
-    this.events.emit('catalog')
-    return this.executionCatalog()
+    return this.runtimeMaintenance.admit(async () => {
+      await this.catalogStore.setProxy(harnessId, proxy)
+      this.events.emit('catalog')
+      return this.executionCatalog()
+    })
   }
   private view(record: HarnessSession, turns = record.turns): HarnessSnapshot {
     const active = this.active.get(record.id)
@@ -598,6 +722,12 @@ export class HarnessService {
     return this.view(record)
   }
   async start(input: HarnessStartRequest, deferConnection = false): Promise<HarnessSnapshot> {
+    return this.runtimeMaintenance.admit(() => this.startAdmitted(input, deferConnection))
+  }
+  private async startAdmitted(
+    input: HarnessStartRequest,
+    deferConnection = false,
+  ): Promise<HarnessSnapshot> {
     await this.ready
     if (this.disposed) throw Error('组合服务已关闭')
     const catalog = await this.executionCatalog()
@@ -659,12 +789,16 @@ export class HarnessService {
       input.sandbox ??
       parent?.sandbox ??
       (definition.permissionPolicy === 'full-access' ? 'workspace' : definition.permissionPolicy)
+    // `generated` marks the conservative default the catalog generator picked for an automatic
+    // combination, not a restriction any person declared, so it must not overwrite a permission the
+    // caller already authorized. Only a declared policy narrows a task, and a caller's own request
+    // still has to pass the verified-full-access gate below. A frozen definition has no `generated`
+    // flag, so a stored restricted session stays restricted and cannot be widened on resume.
+    const declaredReadOnly =
+      definition.permissionPolicy === 'read-only' &&
+      !('generated' in definition && definition.generated)
     const sandbox =
-      (definition.permissionPolicy === 'read-only' &&
-        !('generated' in definition && definition.generated && origin.kind === 'dsh')) ||
-      requestedSandbox === 'read-only'
-        ? 'read-only'
-        : requestedSandbox
+      declaredReadOnly || requestedSandbox === 'read-only' ? 'read-only' : requestedSandbox
     // An explicitly requested full-access task is never quietly downgraded. A harness without a
     // verified official full-access path is refused before any session or model request exists,
     // so the caller learns the task cannot run instead of running with weaker permissions.
@@ -711,6 +845,9 @@ export class HarnessService {
         : undefined
   }
   private connect(record: HarnessSession): Promise<void> {
+    return this.runtimeMaintenance.admit(() => this.connectAdmitted(record))
+  }
+  private connectAdmitted(record: HarnessSession): Promise<void> {
     if (this.disposed) return Promise.reject(Error('组合服务已关闭'))
     const pending = this.connecting.get(record.id)
     if (pending) return pending
@@ -724,6 +861,7 @@ export class HarnessService {
     )
     const launchSettings = hash([
       chosenHarness?.command,
+      chosenHarness?.prefix,
       chosenHarness?.proxy?.mode === 'inherit' ? undefined : chosenHarness?.proxy,
     ])
     const existing = this.active.get(record.id)
@@ -849,6 +987,11 @@ export class HarnessService {
         void active.bridgeStop?.()
       },
       launch.windowsVerbatimArguments,
+      // 扩展通知只能由 Runtime 自己发出；这里只消费已识别的那一个，其余一律忽略。
+      (method, params) => {
+        if (method !== HISTORY_BOUNDARY) return
+        void this.recordNativeBoundary(record, params).catch(() => {})
+      },
     )
     active.acp = acp
     try {
@@ -858,6 +1001,9 @@ export class HarnessService {
           clientCapabilities: {
             fs: { readTextFile: false, writeTextFile: false },
             terminal: false,
+            ...(record.harnessRef === MINIMAX_CODE_HARNESS
+              ? { _meta: { 'minimax-code/extensions': { version: 1, notifications: true } } }
+              : {}),
           },
           clientInfo: { name: 'opl-dsh', version: '0.2.13' },
         }),
@@ -1066,10 +1212,18 @@ export class HarnessService {
     return this.view(record)
   }
   async prompt(input: HarnessPromptRequest, reasoningEffort?: string): Promise<HarnessSnapshot> {
+    return this.runtimeMaintenance.admit(() => this.promptAdmitted(input, reasoningEffort))
+  }
+  private async promptAdmitted(
+    input: HarnessPromptRequest,
+    reasoningEffort?: string,
+  ): Promise<HarnessSnapshot> {
     await this.ready
     if (this.disposed) throw Error('组合服务已关闭')
     const record = this.records.get(required(input?.sessionId, 'sessionId'))
     if (!record) throw Error('组合会话不存在')
+    // 编辑与普通提示共用同一把互斥。先查一次，保证被卡住的会话不会被拉起子进程再失败。
+    this.assertStopEditIdle(record)
     const text = required(input.text, 'text'),
       operation = required(input.operationId, 'operationId')
     const writeScope = await resolveWriteScope(record.cwd, input.writeScope)
@@ -1101,6 +1255,8 @@ export class HarnessService {
       return this.view(record)
     }
     if (active.turn) throw Error('此会话仍在执行，请先等待或取消')
+    // 编辑与普通提示共用同一把互斥：回退期间或结果不确定的会话都不能再写入。
+    this.assertStopEditIdle(record)
     if (record.harnessRef === MINIMAX_CODE_HARNESS && reasoningEffort !== undefined) {
       if (!minimaxReasoning(record.modelRef, reasoningEffort))
         throw new HarnessConfigurationError('MiniMax 不支持所选推理设置，未发送任务。')
@@ -1120,6 +1276,8 @@ export class HarnessService {
       return this.view(record)
     }
     if (active.turn) throw Error('此会话仍在执行，请先等待或取消')
+    // 编辑与普通提示共用同一把互斥：回退期间或结果不确定的会话都不能再写入。
+    this.assertStopEditIdle(record)
     record.autoWakePaused = false
     const turn: HarnessTurn = {
       operationId: operation,
@@ -1251,9 +1409,14 @@ export class HarnessService {
             {
               sessionId: record.acpSessionId,
               prompt: [{ type: 'text', text: turn.prompt }],
-              ...(['codex', 'claude'].includes(record.harnessRef)
-                ? { _meta: { reasoningEffort: turn.reasoningEffort ?? null } }
-                : {}),
+              // 稳定的 operation 身份随提示一起进入 Runtime；扩展据此把真实入库的
+              // 用户消息绑定到这条轮次，停止后编辑才有精确边界可用。
+              _meta: {
+                'opl/clientRequestId': turn.operationId,
+                ...(['codex', 'claude'].includes(record.harnessRef)
+                  ? { reasoningEffort: turn.reasoningEffort ?? null }
+                  : {}),
+              },
             },
             24 * 60 * 60 * 1000,
           ),
@@ -1422,6 +1585,438 @@ export class HarnessService {
       check()
     })
   }
+  /**
+   * 停止后编辑的入口可见性。客户端只在 supported 时显示入口；
+   * 磁盘上的文件永远不在本流程内，也不会被撤销。
+   */
+  async stopEditState(input: { sessionId: string }) {
+    await this.ready
+    const target = this.stopEditTarget(input.sessionId)
+    if (
+      target?.record?.harnessRef === MINIMAX_CODE_HARNESS &&
+      !this.stopEditBlocked(input.sessionId)
+    )
+      await this.connect(target.record)
+    return this.stopEdits.state({ sessionId: required(input.sessionId, 'sessionId') })
+  }
+
+  /** Reject model requests while the addressed conversation's history is being changed or unresolved. */
+  async assertConversationEditable(sessionId: string): Promise<void> {
+    await this.ready
+    if (this.stopEdits.editing(sessionId)) throw Error('此会话正在处理停止后编辑，请稍后再发送')
+    const blocked = this.stopEditBlocked(sessionId)
+    if (blocked) throw Error(blocked)
+  }
+
+  /**
+   * 回退到所选用户消息之前，并把原文交给客户端放回普通输入框。
+   * 本方法绝不自行发送：下一次模型请求只能由用户再次发送触发。
+   */
+  async stopEdit(input: { clientRequestId: string; sessionId: string; boundaryId: string }) {
+    return this.runtimeMaintenance.admit(() => this.stopEditAdmitted(input))
+  }
+  private async stopEditAdmitted(input: {
+    clientRequestId: string
+    sessionId: string
+    boundaryId: string
+  }) {
+    await this.ready
+    try {
+      return await this.stopEdits.rewind({
+        clientRequestId: required(input.clientRequestId, 'clientRequestId'),
+        sessionId: required(input.sessionId, 'sessionId'),
+        boundaryId: required(input.boundaryId, 'boundaryId'),
+      })
+    } catch (error) {
+      // 机器可读的原因随消息一起跨过 Remote 边界；未知异常一律换成固定诊断，
+      // 绝不把 Runtime 或底层库的原始信息反射到界面。
+      if (error instanceof StopEditError)
+        throw new Error(`停止后编辑被拒绝（${error.reason}）：${error.message}`)
+      this.ctx.logger.warn(`停止后编辑失败：${error instanceof Error ? error.name : 'unknown'}`)
+      throw new Error('停止后编辑被拒绝（rewind-failed）：操作未能完成，请稍后重试')
+    }
+  }
+
+  /** 客户端确认已把原文放回输入框，避免恢复后重复填入同一条草稿。 */
+  async acknowledgeStopEditDraft(input: { sessionId: string; clientRequestId: string }) {
+    await this.ready
+    return {
+      acknowledged: await this.stopEdits.acknowledge({
+        sessionId: required(input.sessionId, 'sessionId'),
+        clientRequestId: required(input.clientRequestId, 'clientRequestId'),
+      }),
+    }
+  }
+
+  private stopEditHost(): StopEditHost {
+    return {
+      resolve: (sessionId) => this.stopEditTarget(sessionId),
+      addressedSession: (target) =>
+        target.record
+          ? target.record.harnessRef === 'dsh'
+            ? target.record.acpSessionId
+            : (target.record.nativeSessionId ?? target.record.acpSessionId)
+          : target.sessionId,
+      runtime: (target) => this.stopEditRuntime(target),
+      busy: (target) => this.stopEditBusy(target),
+      stopAndWait: (target) => this.stopEditSettle(target),
+      // 身份必须新：被回退轮次的 operation 不会被复用，交付和反馈也就不会落错目标。
+      nextOperationId: () => 'stop-edit-' + randomUUID(),
+      intent: (sessionId) => this.stopEditIntents.get(sessionId),
+      plan: async (input) => {
+        await this.stopEditIntents.plan({
+          sessionId: input.target.sessionId,
+          clientRequestId: input.clientRequestId,
+          boundaryId: input.boundaryId,
+          pendingOperationId: input.pendingOperationId,
+          pendingDraft: input.pendingDraft,
+          preservedSessionId: input.preservedSessionId,
+        })
+      },
+      markRewinding: async (sessionId) => {
+        await this.stopEditIntents.markRewinding(sessionId)
+      },
+      blocked: (sessionId) => this.stopEditBlocked(sessionId),
+      commit: (input) => this.commitStopEdit(input),
+      markUncertain: async (sessionId, reason) => {
+        await this.stopEditIntents.markUncertain(sessionId, reason)
+      },
+      acknowledgeDraft: (sessionId, clientRequestId) =>
+        this.stopEditIntents.acknowledge(sessionId, clientRequestId),
+    }
+  }
+
+  /**
+   * 这个会话是否被一次结果不确定的编辑卡住；编辑入口、普通发模型与委派共用同一判断。
+   *
+   * `planned` 表示意图已落盘但 Runtime 还没被调用过，会话没有被改动过，可以照常发送；
+   * `rewinding` 与 `uncertain` 都无法证明上下文仍是编辑前的状态，一律拒绝。进程重启后
+   * 读到的 `rewinding` 正是“改动已经发出但没有落定”的证据，因此同样按不确定处理。
+   */
+  private stopEditBlocked(sessionId: string): string | undefined {
+    const branch = [...this.records.values()].find(
+      (record) => record.nativeSessionId === sessionId || record.acpSessionId === sessionId,
+    )
+    const previous = branch?.stopEdit?.previousSessionId
+    const sourceIntent = previous ? this.stopEditIntents.get(previous) : undefined
+    if (sourceIntent?.phase === 'uncertain') return sourceIntent.reason
+    if (sourceIntent?.phase === 'rewinding')
+      return '编辑分支的提交尚未确认，请先核对会话历史后再发送'
+    const intent = this.stopEditIntents.get(sessionId)
+    if (!intent) return undefined
+    if (intent.phase === 'uncertain') return intent.reason
+    if (intent.phase === 'rewinding')
+      return '上一次停止后编辑在改动途中中断，请先核对会话历史后再发送'
+    if (
+      intent.result?.moved &&
+      minimaxCodeModels().some((model) => model.model === intent.result?.review.model) &&
+      intent.result.preservedSessionId === sessionId
+    )
+      return '这是编辑前保留的会话，请打开编辑分支后继续'
+    return undefined
+  }
+
+  /** 回退在途或结果不确定时拒绝写入：前者会互相覆盖历史，后者无法证明上下文还是编辑前的。 */
+  private assertStopEditIdle(record: HarnessSession): void {
+    const ids = record.nativeSessionId
+      ? [record.acpSessionId, record.nativeSessionId]
+      : [record.acpSessionId]
+    for (const id of ids) {
+      if (this.stopEdits.editing(id)) throw Error('此会话正在处理停止后编辑，请稍后再发送')
+      const blocked = this.stopEditBlocked(id)
+      if (blocked) throw Error(blocked)
+    }
+  }
+
+  /**
+   * 解析可编辑的侧栏会话。
+   *
+   * 普通原生 DSH 对话没有委派记录也必须能编辑，因此记录缺席时用官方会话本身作为目标，
+   * 此时不裁剪任何投影；MiniMax 需要真实 ACP 连接，没有记录就没有运行时，入口不出现。
+   */
+  private stopEditTarget(sessionId: string): StopEditTarget | undefined {
+    const session = this.ctx.sessions?.get(asSessionId<SessionId>(sessionId))
+    const current = session
+      ? this.ctx.sessionProjections.snapshot(session, ['modelSelection']).values.modelSelection
+      : undefined
+    const selected = current?.next ?? current?.lastUsed
+    for (const record of this.records.values())
+      if (record.acpSessionId === sessionId || record.nativeSessionId === sessionId) {
+        if (selected && defaultHarness(selected) !== record.harnessRef) return undefined
+        return { sessionId, harness: record.harnessRef === 'dsh' ? 'dsh' : 'minimax-code', record }
+      }
+    if (session && !session.header.origin) {
+      if (selected && defaultHarness(selected) !== 'dsh') return undefined
+      return { sessionId, harness: 'dsh' }
+    }
+    return undefined
+  }
+
+  /** 只有原生 DSH 与 MiniMax 首批提供停止后编辑；其他 Harness 没有任何入口。 */
+  private stopEditRuntime(target: StopEditTarget): StopEditRuntime | undefined {
+    const record = target.record
+    if (record && record.harnessRef !== 'dsh' && record.harnessRef !== MINIMAX_CODE_HARNESS)
+      return undefined
+    if (target.harness === 'dsh') return nativeStopEditRuntime(this.nativeStopEditSource())
+    const acp = record ? this.active.get(record.id)?.acp : undefined
+    if (!record || !acp) return undefined
+    const source: MinimaxHistorySource = {
+      // 能力只认 Runtime 自己的公告；没有安装扩展就是不可用。
+      capability: () => readMinimaxCapability(this.active.get(record.id)?.agentInfo),
+      list: (sessionId) => this.minimaxHistory(record, HISTORY_LIST, { sessionId }),
+      rewind: (sessionId, userMessageId, clientRequestId) =>
+        this.minimaxHistory(record, HISTORY_REWIND, {
+          sessionId,
+          userMessageId,
+          clientRequestId,
+          // 明确不回退本轮 diff：文件改动保持原样，界面不得暗示文件已还原。
+          rewindTurnDiff: false,
+        }),
+      deletedMessageIds: (value) =>
+        Array.isArray((value as any)?.deletedMessageIds)
+          ? ((value as any).deletedMessageIds as unknown[]).filter(
+              (item): item is string => typeof item === 'string',
+            )
+          : [],
+      review: () => this.stopEditReviewBySession(record.nativeSessionId ?? record.acpSessionId),
+    }
+    return minimaxStopEditRuntime(source, this.nativeStopEditSource())
+  }
+
+  /** 扩展方法必须经过已建立的 ACP 连接；没有连接就不提供任何历史能力。 */
+  private async minimaxHistory(
+    record: HarnessSession,
+    method: string,
+    params: object,
+  ): Promise<unknown> {
+    const acp = this.active.get(record.id)?.acp
+    if (!acp || acp.closed)
+      throw new StopEditError('capability-missing', 'Harness 连接未就绪，无法读取或回退会话历史')
+    return acp.request(method, params, 60_000)
+  }
+
+  private nativeStopEditSource(): NativeSessionSource {
+    const sessionOf = (sessionId: string) =>
+      this.ctx.sessions.get(asSessionId<SessionId>(sessionId))
+    return {
+      events: (sessionId) => sessionOf(sessionId)?.snapshotEvents(),
+      running: (sessionId) =>
+        this.ctx.agents.get(asSessionId<SessionId>(sessionId))?.status === 'running',
+      whenIdle: async (sessionId) => {
+        const agent = this.ctx.agents.get(asSessionId<SessionId>(sessionId))
+        if (agent) await agent.whenIdle()
+      },
+      cwd: (sessionId) => sessionOf(sessionId)?.header.cwd,
+      validateBranch: (sessionId) => {
+        const session = sessionOf(sessionId)
+        const permissions = this.ctx.get('permissionPresets')
+        if (!session || !permissions || permissions.current(session) === 'custom')
+          throw new StopEditError('missing-mapping', '无法完整复制原会话权限，请先选择内置权限选项')
+        const selection = this.ctx.sessionProjections.snapshot(session, ['modelSelection']).values
+          .modelSelection
+        if (!(selection?.next ?? selection?.lastUsed))
+          throw new StopEditError('missing-mapping', '无法读取原会话模型选择，已放弃回退')
+      },
+      fork: async (sessionId, atSeq) => {
+        const value = object(await this.native('fork', { sessionId, atSeq }))
+        return required(value.sessionId, 'forked sessionId')
+      },
+      create: async (sessionId, cwd) => {
+        const id = `session-${randomUUID()}`
+        const workspace = await this.ctx.workspaceRegistry.create(cwd)
+        await this.native('create', { sessionId: id, workspaceId: workspace.id })
+        return id
+      },
+      rebind: (sessionId, previousSessionId, editedHead) =>
+        this.rebindNativeBranch(sessionId, previousSessionId, editedHead),
+    }
+  }
+
+  /** 读取一个会话实际生效的事实；读不到就如实标为未知，不拿推定值冒充已复核。 */
+  private stopEditReviewBySession(sessionId: string): MinimaxReview {
+    const session = this.ctx.sessions.get(asSessionId<SessionId>(sessionId))
+    const record = [...this.records.values()].find(
+      (item) => item.acpSessionId === sessionId || item.nativeSessionId === sessionId,
+    )
+    const presets = this.ctx.get('permissionPresets')
+    return {
+      model: record?.modelRef.model ?? '未知',
+      ...(record?.reasoningEffort ? { effort: record.reasoningEffort } : {}),
+      permissions:
+        session && presets
+          ? presets.current(session)
+          : record
+            ? harnessPermissionPreset(record.sandbox)
+            : '未知',
+      cwd: session?.header.cwd ?? record?.cwd ?? '',
+      workspaceId: session?.header.cwd ? '已随分支复制' : '',
+      ...(session?.header.cwd ? { project: session.header.cwd } : {}),
+      title: '',
+    }
+  }
+
+  private stopEditBusy(target: StopEditTarget): boolean {
+    if (target.record && this.active.get(target.record.id)?.turn) return true
+    return this.stopEditOfficialSessions(target).some(
+      (sessionId) => this.ctx.agents.get(asSessionId<SessionId>(sessionId))?.status === 'running',
+    )
+  }
+
+  private stopEditOfficialSessions(target: StopEditTarget): string[] {
+    const record = target.record
+    if (record)
+      return [record.harnessRef === 'dsh' ? record.acpSessionId : record.nativeSessionId].filter(
+        (value): value is string => typeof value === 'string' && value.length > 0,
+      )
+    return [target.sessionId]
+  }
+
+  /** 停止必须走官方取消入口，并且要等到会话真正静止。 */
+  private async stopEditSettle(target: StopEditTarget): Promise<void> {
+    if (target.record && this.stopEditBusy(target))
+      await this.cancel({ sessionId: target.record.id }, false)
+    for (const sessionId of this.stopEditOfficialSessions(target)) {
+      const agent = this.ctx.agents.get(asSessionId<SessionId>(sessionId))
+      if (agent) {
+        agent.cancel({ kind: 'user' })
+        await agent.whenIdle()
+      }
+    }
+  }
+
+  /**
+   * 持久化回退结果：截断投影尾部、切换会话身份、记录可复核谱系。
+   * 原会话保持可浏览；被移除轮次的回传记录随之消失，不会被复用。
+   */
+  private async commitStopEdit(input: {
+    target: StopEditTarget
+    outcome: StopEditRewindOutcome
+    boundary: StopEditBoundary
+    clientRequestId: string
+    operationId: string
+    keep: number
+  }): Promise<StopEditResult> {
+    const { target, outcome, boundary, clientRequestId, operationId, keep } = input
+    const record = target.record
+    const previousSessionId = this.stopEdits.addressedSession(target)
+    const removedTurns = record ? record.turns.length - keep : 0
+    if (record) {
+      record.turns = record.turns.slice(0, keep)
+      if (record.harnessRef === 'dsh') record.acpSessionId = outcome.sessionId
+      else record.nativeSessionId = outcome.sessionId
+      record.stopEdit = {
+        clientRequestId,
+        previousSessionId,
+        sessionId: outcome.sessionId,
+        boundaryId: boundary.id,
+        pendingOperationId: operationId,
+        removedTurns,
+        at: now(),
+      }
+      this.changed(record)
+      await this.save(record)
+    }
+    const result: StopEditResult = {
+      sessionId: outcome.sessionId,
+      clientRequestId,
+      preservedSessionId: outcome.preservedSessionId,
+      branchTitle: outcome.review.title,
+      moved: outcome.sessionId !== outcome.preservedSessionId,
+      boundary,
+      draft: outcome.draft,
+      unrestored: outcome.unrestored,
+      removedTurns,
+      review: {
+        ...outcome.review,
+        feedback: {
+          ...(record?.assignment ? { taskId: record.assignment.taskId } : {}),
+          pendingDeliveries: (record?.turns ?? []).filter(
+            (turn) => turn.delivery?.state !== 'delivered',
+          ).length,
+          operationId,
+        },
+      },
+      version: STOP_EDIT_VERSION,
+    }
+    // 落两份：新的目标会话带着待填原文，旧页面只留结果、不带原文。
+    await this.stopEditIntents.markCommitted(outcome.sessionId, outcome.preservedSessionId, result)
+    return result
+  }
+
+  /**
+   * 把模型、内置权限与标题逐项落到新分支会话上。
+   *
+   * 官方公开的 fork 只复制 cwd、父会话与 preset，不会继承 OPL 绑定、内置权限或标题，
+   * 因此必须在这里逐项重写，并返回实际复核到的事实而不是沿用改写前的值。
+   */
+  private async rebindNativeBranch(
+    sessionId: string,
+    previousSessionId: string,
+    editedHead: string,
+  ): Promise<NativeReviewFacts> {
+    const previous = this.ctx.sessions.get(asSessionId<SessionId>(previousSessionId))
+    const record = [...this.records.values()].find(
+      (item) =>
+        item.acpSessionId === previousSessionId || item.nativeSessionId === previousSessionId,
+    )
+    const cwd = previous?.header.cwd ?? record?.cwd
+    if (!cwd) throw new StopEditError('rewind-failed', '原会话缺少项目目录，已放弃回退')
+    const session = this.ctx.sessions.get(asSessionId<SessionId>(sessionId))
+    if (!session) throw new StopEditError('rewind-failed', '新分支会话未就绪')
+    if (session.header.cwd !== cwd)
+      throw new StopEditError('rewind-failed', '新分支的项目目录与原会话不一致，已放弃回退')
+    if (!previous) throw new StopEditError('rewind-failed', '原会话已关闭')
+    const selection = this.ctx.sessionProjections.snapshot(previous, ['modelSelection']).values
+      .modelSelection
+    const selected = selection?.next ?? selection?.lastUsed ?? record?.modelRef
+    if (!selected) throw new StopEditError('rewind-failed', '原会话缺少可复核的模型选择')
+    await this.native('selectModel', { sessionId, ...selected })
+    const permissions = this.ctx.get('permissionPresets')
+    if (!permissions) throw new StopEditError('rewind-failed', '官方权限服务不可用')
+    permissions.set(session, permissions.current(previous))
+    // 分支标题沿用原会话，用户在普通会话列表里才找得到；带上“编辑分支”便于分辨。
+    // 官方标题由未公开的 sessionTitle 服务持有，Host 读不到；因此分支沿用本套件的
+    // 记录标题，没有记录时用被编辑消息的开头，保证在会话列表里可辨认而不是一串 id。
+    const base = record?.title ?? editedHead
+    const title = `${base} · 编辑分支`
+    await this.native('rename', { sessionId, title })
+    if (record) {
+      const binding = this.selections[previousSessionId]
+      if (binding) await this.bindSelection(sessionId, binding)
+    }
+    const facts = this.stopEditReviewBySession(sessionId)
+    return {
+      model: selected.model,
+      ...('reasoningEffort' in selected && selected.reasoningEffort
+        ? { effort: selected.reasoningEffort }
+        : facts.effort
+          ? { effort: facts.effort }
+          : {}),
+      permissions: facts.permissions,
+      cwd: facts.cwd,
+      workspaceId: facts.workspaceId,
+      ...(facts.project ? { project: facts.project } : {}),
+      title,
+    }
+  }
+
+  /** 记录 Runtime 回报的原生边界身份；通知可能先于 prompt 响应到达。 */
+  private async recordNativeBoundary(record: HarnessSession, params: unknown) {
+    const data = object(params)
+    if (data.sessionId !== record.acpSessionId) return
+    const clientRequestId = typeof data.clientRequestId === 'string' ? data.clientRequestId : ''
+    const userMessageId = typeof data.userMessageId === 'string' ? data.userMessageId : ''
+    if (!clientRequestId || !userMessageId) return
+    const turn = record.turns.find((item) => item.operationId === clientRequestId)
+    if (!turn || turn.native?.userMessageId === userMessageId) return
+    turn.native = {
+      ...turn.native,
+      userMessageId,
+      ...(typeof data.turnId === 'string' ? { turnId: data.turnId } : {}),
+      ...(typeof data.historyVersion === 'string' ? { historyVersion: data.historyVersion } : {}),
+    }
+    await this.save(record)
+  }
   async cancel(input: { sessionId: string }, pauseWake = true) {
     await this.ready
     const record = this.records.get(required(input.sessionId, 'sessionId')),
@@ -1577,6 +2172,8 @@ export class HarnessService {
     const p = object(input),
       parent = this.parentOf(origin),
       existing = p.sessionId ? this.ownedTask(origin, p.sessionId) : undefined
+    // 委派同样会发模型：目标会话被结果不确定的编辑卡住时，在启动或写下任务记录之前就拒绝。
+    if (existing) this.assertStopEditIdle(existing)
     // A dispatch with no parent is addressed to the caller itself, so its own
     // origin must name the Session the outcome goes to.
     if (!parent) this.requireExternalReviewer(origin)
@@ -2372,8 +2969,9 @@ export class HarnessService {
     const selection = await this.selectionForModel(session, definition.modelRef)
     if (definition.harnessRef === 'dsh') {
       await this.native('selectModel', { sessionId: session.id, ...selection })
-      // A combination may narrow permissions; it must never silently elevate an existing session.
-      if (definition.permissionPolicy === 'read-only') setSandboxMode(session, 'read-only')
+      // Generated policies default new tasks; they do not override a conversation's selected preset.
+      if (definition.permissionPolicy === 'read-only' && !definition.generated)
+        setHarnessPermissions(this.ctx, session, 'read-only')
       await this.bindSelection(session.id, definition.id)
       return { kind: 'native', sessionId: session.id }
     }
@@ -2486,6 +3084,28 @@ export class HarnessService {
       } else {
         await this.prompt({ sessionId: record.id, text, operationId }, options.reasoningEffort)
       }
+      const conversationTurn = record.turns.find((item) => item.operationId === operationId)!
+      const rpcId =
+        user.source?.kind === 'user' && 'rpcId' in user.source ? user.source.rpcId : undefined
+      const officialMessage =
+        rpcId === undefined
+          ? undefined
+          : session
+              .snapshotEvents()
+              .find(
+                (event) =>
+                  event.type === 'user/message' &&
+                  event.data.source.kind === 'user' &&
+                  'rpcId' in event.data.source &&
+                  event.data.source.rpcId === rpcId,
+              )
+      if (officialMessage) {
+        conversationTurn.native = {
+          ...conversationTurn.native,
+          officialSeq: Number(officialMessage.seq),
+        }
+        await this.save(record)
+      }
       while (true) {
         options.signal?.throwIfAborted()
         const turn = record.turns.find((item) => item.operationId === operationId)!
@@ -2585,6 +3205,8 @@ export class HarnessService {
         return this.saveExecutionCatalog(p.catalog)
       case 'save-harness-proxy':
         return this.saveHarnessProxy(p.harnessId, p.proxy)
+      case 'select-minimax-candidate':
+        return this.selectMiniMaxCandidate(p as MiniMaxCandidateRequest)
       case 'start':
         return this.start(p as HarnessStartRequest)
       case 'prompt':
@@ -2607,6 +3229,7 @@ export class HarnessService {
   async dispose() {
     this.disposed = true
     clearInterval(this.tick)
+    await this.runtimeMaintenance.close()
     await this.ready
     await Promise.allSettled(this.maintenanceJobs.values())
     await Promise.allSettled([...this.connecting.values()])

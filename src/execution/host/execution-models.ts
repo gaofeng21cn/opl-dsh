@@ -36,7 +36,7 @@ export class ExecutionModelResolver {
     ) => Promise<{ available: boolean; reason?: string }>,
   ) {}
   async resolve(): Promise<ExecutionCatalog> {
-    const catalog = await this.store.get()
+    let catalog = await this.store.get()
     // Remove combinations from old releases before projecting the live model
     // registry. The write is idempotent and keeps the on-disk catalog clean so
     // retired entries cannot return after a restart.
@@ -45,14 +45,7 @@ export class ExecutionModelResolver {
       (item) => item.id === DSH_COMBINATION && item.name === 'DeepSeek + DSH',
     )
     if (retired.length || legacyDefault) {
-      catalog.combinations = catalog.combinations
-        .filter((item) => !isRetiredModel(item.modelRef))
-        .map((item) =>
-          item.id === DSH_COMBINATION && item.name === 'DeepSeek + DSH'
-            ? { ...item, name: 'DeepSeek-V4.1-Flash + DSH' }
-            : item,
-        )
-      await this.store.set(catalog)
+      catalog = await this.store.cleanLegacyCombinations()
     }
     for (const provider of this.ctx.llm?.listProviders() ?? []) {
       if (internalGatewayProvider(provider.id)) continue

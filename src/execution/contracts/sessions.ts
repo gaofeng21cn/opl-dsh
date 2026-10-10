@@ -37,6 +37,23 @@ export interface HarnessTurn {
   review?: CollaborationReview
   delivery?: CollaborationDelivery
   tools: HarnessTool[]
+  /**
+   * 精确的原生边界身份，由 Harness 运行时回报或由官方会话日志推导。
+   * 缺失表示这条轮次没有落进可定位的原生历史：停止后编辑必须拒绝按文本、时间或
+   * 顺序猜配，而不是把一条猜出来的分支交给用户。
+   */
+  native?: HarnessTurnNative
+}
+/** 一条轮次在原生会话历史中的精确落点。 */
+export interface HarnessTurnNative {
+  /** 原生用户消息 id；MiniMax 由运行时边界通知回报。 */
+  userMessageId?: string
+  /** 原生 turn id。 */
+  turnId?: string
+  /** 官方会话日志中该条用户消息事件的 seq。 */
+  officialSeq?: number
+  /** 运行时提供的历史版本标识。 */
+  historyVersion?: string
 }
 /** ACP tool data retained for transcript rendering, never for tool execution. */
 export interface HarnessTool {
@@ -76,6 +93,28 @@ export interface HarnessSession {
   createdAt: string
   updatedAt: string
   turns: HarnessTurn[]
+  /**
+   * 最近一次停止后编辑的持久谱系。缺失表示这个会话从未被回退过。
+   * `pendingOperationId` 是回退后下一次发送必须使用的 operation 身份；被回退轮次的
+   * 旧身份一律不再复用，避免反馈落错目标。
+   */
+  stopEdit?: HarnessStopEdit
+}
+/** 一次成功回退留下的可复核谱系。 */
+export interface HarnessStopEdit {
+  /** 与 `StopEditResult.clientRequestId` 相同，用于重复点击的幂等判定。 */
+  clientRequestId: string
+  /** 回退前的会话身份，用户随时可以回去查看原记录。 */
+  previousSessionId: string
+  /** 回退后记录所指向的会话。 */
+  sessionId: string
+  /** 回退到的边界 id。 */
+  boundaryId: string
+  /** 下一次发送必须使用的 operation 身份。 */
+  pendingOperationId: string
+  /** 被移除的投影尾部轮次数。 */
+  removedTurns: number
+  at: string
 }
 export interface HarnessSnapshot extends HarnessSession {
   connected: boolean

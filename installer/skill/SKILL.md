@@ -5,13 +5,13 @@ description: 在同项目关联子对话中，用 DSH、Codex CLI、Claude Code�
 
 # OPL DSH 官方桌面协作
 
-配置位于本 Skill 的 `config.json`。运行 `control.mjs` 时使用配置中的 `executable`，并设置 `ELECTRON_RUN_AS_NODE=1`；helper 会在需要时启动官方桌面。不得读取或回显 control.json 中的 token。
+配置位于本 Skill 的 `config.json`。运行 `control.mjs` 时使用配置中的 `executable`，并设置 `ELECTRON_RUN_AS_NODE=1`；helper 会在需要时启动官方桌面。不得直接读取或回显 Desktop 的 `control.json`、Harness 的 `*.control.json` 或私人凭据文件；运行身份、状态和配置通过受控 CLI 的公开结果核对，不能先输出整个私有文件再脱敏。helper 内部用于已授权 IPC 的鉴权不将 token 返回给模型。
 
 Windows 自动启动通过 WMI 的 `Win32_Process.Create` 创建套件启动器，使官方桌面不继承调用方的 Windows Job；安装后自动启动和 Skill 自动启动都使用同一 `launch.vbs → setup.mjs` 入口。该方式无需提权或安装服务，profile 和应用路径由套件启动器显式设置，不传递 Codex 进程的自定义环境变量。启动器按安装配置显式设置 `CODEX_HOME`，使通知 CLI 使用同一 Codex 状态目录；代理配置应保存在各 Harness 的运行配置中。WMI 被系统策略禁用或启动失败时明确报错，改由用户打开 OPL DSH 快捷方式；不回退成共享 Job 的自动启动。Windows 父 PID、不同 PID 或 `detached/unref` 不能代替独立生命周期验收。
 
 新任务未指定模型或 Harness 时，先读取 `config.json` 的 `preferredDelegation`（`harness`、`model`、`reasoningEffort`），按该偏好选择组合入口；用户明确指定时以用户选择为准。先查询 `delegate-list` 确认实际组合 ID、可用状态与固定参数，再使用 `delegate`。偏好为 MiniMax M3.1-Flash-Preview/max 时走官方 mcode 账号和 ACP，未显式选择时默认 max；权限仍须符合下文完整访问授权要求。偏好模型不可用时报告具体原因，不自动回退 DeepSeek 或其他模型。现有 Session 和 operation 的重试保留原模型与身份；此偏好只决定新任务。赞助或免费额度不代替任务权限，也不授权自动向厂商发送仓库、对话或诊断。
 
-派发前，为任务选择绝对工作目录，把提示词保存为 UTF-8 文件。使用稳定的 task 与 operation ID；对同一次失败重试必须沿用原 ID，不得换 ID重复执行。
+派发前，为任务选择绝对工作目录，把提示词保存为 UTF-8 文件。提示词引用工作目录之外的审查报告、负例或交付目录时，写明绝对路径；不要用“本目录”混指仓库和报告目录。使用稳定的 task 与 operation ID；对同一次失败重试必须沿用原 ID，不得换 ID重复执行。
 
 ```sh
 ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' dispatch --task task-id --operation initial --cwd /absolute/project --prompt-file /absolute/prompt.txt
@@ -21,7 +21,7 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' sna
 
 同一 task 的后续指令使用新的 operation ID，helper 保留同一个 DSH Session。需要用户授权或补充信息时报告真实等待状态；不自动扩大权限。任务完成后读取 snapshot，独立检查产物。上述 `dispatch` 命令是原生 DeepSeek 入口，使用 opl-gateway/deepseek-flash；配置外部组合偏好时按前述规则使用 `delegate`。OpenAI 协议分组是独立渠道。
 
-原生 DeepSeek Flash 派发的推理档位可用 `--reasoning-effort max` 显式指定，或在本 Skill 的 `config.json` 设置 `dispatchReasoningEffort` 作为新 operation 的默认值；用户要求固定 `max` 时使用该设置并核对实际选择。helper 在发送 prompt 前确认 Host 返回相同档位，不能默默使用 `high`。同一 operation 的重试保留首次解析的档位，修改默认值只影响新 operation；更改显式档位须使用新 operation。
+DeepSeek 4.1 Flash 默认推理档位为 `high`，GPT 模型默认 `medium`；MiniMax M3.1 默认 `max`、M3 默认开启思考。用户显式选择和现有对话记忆优先。原生 Flash 派发可用 `--reasoning-effort` 显式指定，或在本 Skill 的 `config.json` 设置 `dispatchReasoningEffort`；未配置时使用 `high`。helper 在发送 prompt 前确认 Host 返回相同档位。同一 operation 的重试保留首次解析的档位，修改默认值只影响新 operation；更改显式档位须使用新 operation。
 
 ## 模型 + Harness 执行组合
 
@@ -139,6 +139,12 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' rep
 
 该命令只修复指定目录，并设置对子项的继承权限，授予当前 Windows 身份 Full Control；必须由用户明确执行，不能由 dispatch 自动调用。修复后重启新的 DSH Session，再用 `--preset workspace-write` 验证。官方 rc.2 的 Windows ACL 后端还会把受限子进程降到 Low integrity；MSYS2/Git Bash 的外部程序需要在 `\\BaseNamedObjects` 创建共享目录，因此在 `workspace-write` 下仍可能报告 `NtCreateDirectoryObject ... 0xC0000022`。这是官方后端的完整性级别限制，ACL 修复命令不能消除；需要 Git Bash 外部程序时使用用户已授权的 `--preset danger-full-access`，或等待官方 Windows ACL 后端提供可配置的 integrity level。401 `INVALID_API_KEY` 属于渠道凭据失败；先检查 Gateway 刷新结果，遇到手动凭据冲突须保留备份并由用户授权修复，不能自动换渠道或放宽权限。`accepted=true` 仅说明 prompt 已接收，必须核对实际工具结果、终态和反馈目标后才能宣称可用。
 
+## 停止后编辑与系统通知
+
+停止后编辑只支持原生 DSH 和广告 `opl/session-history` v1 的 MiniMax Runtime。它保留磁盘文件及旧对话，编辑分支在正常侧栏中打开；再次发送由用户决定。缺少原生用户消息映射、不可回填附件或权限无法完整复制时拒绝，不按文本猜配，不截断显示来冒充真实回退。改动途中断线后先核对持久编辑意图与真实历史，不重放回退或旧 prompt。
+
+系统通知位于设置 → 系统通知。开启后，Desktop 在后台时已观察到的根对话运行结束和失败会发送 Windows 通知；通知只含标题与状态，不含回答、工具输出或错误详情。前台结束、首次加载空闲对话、重连和子任务不补发通知。该通知与 taskFeedback 的 Codex 自动回传分别验收，收到其中一种不能作为另一种已生效的证据。
+
 ## 当前会话、续作与验收
 
 派发前确认 `CODEX_THREAD_ID` 是当前主审会话；未取得真实会话 id 时停止派发，不使用 `manual` 作为反馈目标。CLI 在原生派发及需要 origin 的组合命令执行前拒绝缺失或占位身份。配置的 home 必须属于运行中的官方 Desktop，不能用旧 fork 的 Session id 或 ledger 映射新状态。`dispatch` 的 Session 身份包含当前会话、task 和 cwd：同一任务的新指令保留三者，换新的 operation；重试原指令保留原 operation。原生 dispatch 不使用旧 workflow helper 的 `--continues` 参数。
@@ -149,6 +155,12 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' rep
 
 用户要求并行时，为每个 operation 写一个 UTF-8 JSON 精确路径数组文件，并通过 `delegate` 或 `delegate-prompt` 的 `--write-scope-file <绝对文件路径>` 传入。范围是本轮独占写入的文件或目录，可相对项目或使用绝对路径；目录包括子项，不支持 glob。Host 规范化真实路径、符号链接与 Windows 大小写后，不相交范围可同时运行；同文件、父子目录或共享输出互斥。未声明范围的旧任务独占整个项目；构建、安装和共享生成物使用项目根目录范围，保持串行。writeScope 仅用于协作调度，不限制完整访问工具，提示词也须说明独占范围；不能承诺沙箱隔离。重试同 operation 保留范围；新范围使用新 operation。会话中已有明确完整访问授权时，后续任务沿用并显式传 `--sandbox full-access`，不重复索取同一授权；Harness 自身的人工审批仍由用户决定。不得更新正在托管任务的 Desktop。需要补充正在运行的指令时先核实 Session 仍有活动轮次；结束后的续作必须用同 task 的新 operation 登记反馈，不能把 steer 当作无副作用的留言。审计须同时核对 Session 最新轮次，不能用旧 task 的 completed 状态代替。失败后先读原 Session，一次有界续作仍失败就记录阻塞，不能循环重派。
 
+用户对工作树操作的禁令须写入每个委派 prompt，并适用于测试和基线比较：禁止 `checkout/restore/reset/clean/stash/commit/push` 时，不得临时还原共享文件来做红绿验证。基线内容用只读 `git show` 获取；需要执行对照时仅在本轮声明的独占目录中创建副本。主审验收同时检查实际工具命令；发现违规保留记录、明确登记影响，不能仅凭最终 diff 或子任务声称恢复原状判定流程合规。
+
+独占写范围同时覆盖临时 profile、解包副本、截图、测试缓存和子进程临时文件；需要时在新进程启动前将 TEMP/TMP 指向范围内已创建的目录。框架无法限制写入位置时先报告所需范围，用新 operation 明确声明后再运行，不能因临时文件随后删除就认为没有越界。
+
 用户配置周期审计时，每轮只核对一次本会话 ledger、tasks、outbox/receipts、未验收结果及人工等待；同时主动检查尚未分派的可行动工作、依赖、文件归属和可用并发容量。即使已有活动线程，用户已授权并行且存在文件范围不相交的独立任务时也应补派，不等用户再次提醒；没有独立范围或容量时记录依赖，不制造占位任务。无变化保持安静，不用快速轮询替代通知。空闲但有已授权且可行动的后续工作时补派；所有 DSH 任务验收完毕，或仅剩无可行动步骤的人工/外部依赖时暂停审计，记录恢复条件。Skill 本身不创建 heartbeat；只有自动化工具确认配置成功才报告已启用。
 
 已明确授权的旧完整访问任务若显示 `custom`，先确认对应普通 DSH 会话已空闲，再执行 `permissions --session <nativeSessionId> --preset danger-full-access`；随后读取 `permissions --session <nativeSessionId>`，核对 preset、sandbox、approval 分别为 `danger-full-access`、`danger-full-access`、`never`。该操作不发送模型 prompt，不批准挂起的工具请求，也不改动其他会话。
+
+MiniMax 候选的 Host 选择命令为 `minimax-candidate-select --version <候选版本> [--source <候选目录>]`。它通过公开 `oplExecution/select-minimax-candidate` 检查同一 Host 所有项目活动并持有维护互斥，把已校验启动器写入实际运行配置；不读取离线 `selection.json` 作为当前选择。省略来源可切回已导入版本，不覆盖已有版本或改官方账号。返回 `validation: static` 仅代表文件校验，仍须核对真实 ACP Shell、模型和 Bash。生产安装前按当前全局任务重新核验空闲；不能凭上一次审计或回执断言可切换。

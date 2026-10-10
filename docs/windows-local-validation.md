@@ -25,7 +25,7 @@ Host/Client 类型检查、构建、权限与 bridge 聚焦测试、RPC 生成�
 | Codex CLI | 官方 0.160.1/0.161.0 的无模型 Shell 探针仍为 PowerShell。自用候选版须显式设置 `OPL_NATIVE_CODEX_GIT_BASH=1`，桥接器用真实 `thread/shellCommand` 验证 Bash 后才发送模型请求 | 权限映射为官方 read-only/workspace-write/danger-full-access，审批策略 never。候选版 Bash 仅接受显式完整访问；受限请求不会自动放宽。 |
 | MiniMax mcode | 需支持 Shell 回读的独立候选版，详见 [MiniMax 文档](minimax-code.md) | 只接受显式完整访问，并回读官方 Full access 模式；不代答已有人工审批。 |
 
-各 Harness 保留自己的工具与会话，不通过模型提示词包装 bash.exe 来伪装后端。显式 `OPL_GIT_BASH_PATH` 必须有效；Shell 选择不会授予额外权限。组合的 full-access 须来自用户授权；未请求权限时仍按工作区处理，不会为了 Windows 可用性自动提权。
+各 Harness 保留自己的工具与会话，不通过模型提示词包装 bash.exe 来伪装后端。显式 `OPL_GIT_BASH_PATH` 必须有效；Shell 选择不会授予额外权限。组合的 full-access 须来自用户授权；自动生成组合的只读默认值不会覆盖调用方显式授权的权限，未指定权限时保留该默认值。用户声明的只读组合保持受限，已保存的受限会话不能通过续作扩大权限；不会为了 Windows 可用性自动提权。
 
 主审在 Windows 上通过真实 Grok 1.0.46 和本地模拟推理端点验证 Bash 工具输出 BASH_VERSION，PowerShell 对照无法执行同一 printf 命令；read-only 下的受控越界写入也实际成功，因此套件拒绝该平台的受限任务。这些探针不调用真实模型，不替代 Gateway 渠道验收。Codex 的官方与候选版能力分别记录，不能把本机补丁变量当作官方能力。
 
