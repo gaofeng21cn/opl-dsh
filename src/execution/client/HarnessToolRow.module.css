@@ -1,0 +1,23 @@
+.wrapper {
+  min-width: 0;
+}
+.body pre,
+.raw pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+.body {
+  max-height: 360px;
+  overflow: auto;
+}
+.raw {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+.raw pre {
+  max-height: 320px;
+  overflow: auto;
+}

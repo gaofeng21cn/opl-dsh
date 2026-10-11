@@ -6,6 +6,7 @@ import { executablePath } from '../harness-registry.ts'
 import type { HarnessSession } from '../../contracts/sessions.ts'
 import type { AdapterOptions, AdapterLaunch } from './types.ts'
 import { systemEnvironment } from './environment.ts'
+import { codexGitBashOptIn, resolveNativeGitBash } from './native-bash.ts'
 export async function nativeAvailable(name: string, id: string, options: AdapterOptions) {
   return (await executablePath(options.command || id))
     ? { available: true }
@@ -24,6 +25,10 @@ export async function prepareNative(
   const home = join(options.home, 'harnesses', record.harnessRef, record.id)
   await mkdir(home, { recursive: true, mode: 0o700 })
   const base = route.baseURL
+  // The bridge child runs with the reduced suite environment, which drops ProgramFiles, so
+  // resolve Git Bash here where the full environment is visible and hand the path down. An
+  // explicit but unusable OPL_GIT_BASH_PATH is rejected before a session is ever launched.
+  const gitBash = resolveNativeGitBash()
   return {
     home,
     command: process.execPath,
@@ -37,6 +42,10 @@ export async function prepareNative(
       OPL_NATIVE_PERMISSION: record.sandbox,
       OPL_NATIVE_BASE_URL: base,
       OPL_NATIVE_API_KEY: key,
+      ...(gitBash ? { OPL_NATIVE_GIT_BASH: gitBash } : {}),
+      // Codex has no upstream Git Bash interface, so the opt-in is carried explicitly and the
+      // bridge verifies the real shell instead of assuming the request took effect.
+      ...(codexGitBashOptIn() ? { OPL_NATIVE_CODEX_GIT_BASH: '1' } : {}),
       ...environment(home, base, key),
     },
   }

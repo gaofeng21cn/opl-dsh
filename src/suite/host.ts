@@ -1,5 +1,6 @@
 import { GatewayModelsService } from '../gateway/host/model-service.ts'
 import { SetupService } from '../setup/host/index.ts'
+import { HuaweiMaaSService } from '../credentials/host/huawei-maas-service.ts'
 import { CoordinationService } from '../collaboration/host/settings-service.ts'
 import TaskFeedbackService from '../collaboration/host/feedback/index.ts'
 /** OPL account and collaboration contributions for an unmodified DSH Desktop. */
@@ -22,6 +23,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.plugin(control, {})
   ctx.plugin(GatewayModelsService)
   ctx.plugin(SetupService)
+  ctx.plugin(HuaweiMaaSService)
   ctx.plugin(CoordinationService)
   ctx.plugin(TaskFeedbackService, {
     wakeTransport: config.wakeTransport.get(),

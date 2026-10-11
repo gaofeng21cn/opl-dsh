@@ -1,9 +1,11 @@
 /** Pure task state, bounded notices, and stable identities. */
+import { createHash } from 'node:crypto'
 import type { SessionEvent, TurnEndReason } from '@deepseek-ai/dsh-session'
 import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller'
 import type { AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
+import type { HarnessState } from '../../../execution/contracts/sessions.ts'
 import type { NeedsInputNoticeState, TaskRecordState, ReceiptRecordState } from './spec.ts'
-import type { TaskState, TaskReceipt } from './types.ts'
+import type { HarnessReportState, TaskState, TaskReceipt } from './types.ts'
 const sessionRequestId = <T extends string>(value: string) => value as T
 
 /** The states in which a task still accepts new observations. */
@@ -26,6 +28,9 @@ export const DEFAULT_NOTIFY_STATES: readonly TaskState[] = [
 
 /** Longest tail of deciding event positions one evidence record keeps. */
 const EVIDENCE_EVENT_LIMIT = 8
+
+/** Namespace every combination feedback task id carries, so it is never read as a native caller's id. */
+const HARNESS_TASK_NAMESPACE = 'harness-task'
 
 /**
  * The exact protocol failure the bounded automatic resume handles.
@@ -110,6 +115,103 @@ export function sameFamilies(
  */
 export function rootTaskIdOf(record: TaskRecordState): string {
   return record.rootTaskId ?? record.taskId
+}
+
+/**
+ * Stable durable identity of one combination operation's feedback task.
+ *
+ * The identity hashes the whole tuple instead of joining its parts: the same
+ * dispatcher task name and operation name are legitimate in more than one
+ * combination session — two Codex reviewers, two projects, or two combinations
+ * produce different sessions carrying the same names — and a joined string would
+ * make the second legal dispatch collide with the first and fail. The real
+ * combination session id is therefore part of the hashed tuple, and the
+ * namespace prefix keeps the result from ever being read as a native caller's
+ * id. Nothing here depends on object identity, wall-clock time, or which turn
+ * happened to end last, so a retry of one operation lands on the same task, a
+ * new instruction gets its own, and an old `completed` can never be read as the
+ * outcome of a newer turn.
+ * @param execution - the combination execution: its session, dispatcher task, and operation.
+ * @returns the feedback task id.
+ */
+export function harnessTaskIdOf(execution: {
+  readonly harnessSessionId: string
+  readonly taskId: string
+  readonly operationId: string
+}): string {
+  const identity = createHash('sha256')
+    .update(
+      JSON.stringify([
+        HARNESS_TASK_NAMESPACE,
+        execution.harnessSessionId,
+        execution.taskId,
+        execution.operationId,
+      ]),
+    )
+    .digest('hex')
+  return `${HARNESS_TASK_NAMESPACE}:${identity}`
+}
+
+/**
+ * Map one observed combination turn state onto the task state it reports.
+ *
+ * The mapping reads the executor's own record, never a wish: an unfinished turn
+ * is `accepted` or `running`, a pause keeps its waiting state, and a turn this
+ * Host can no longer observe — because it restarted while the operation was in
+ * flight — is `disconnected`, which is observed but never notified.
+ * `interrupted` is deliberately not a failure: the original instruction is not
+ * resent, and calling an unobserved outcome a failure would be the one wrong
+ * answer.
+ * @param state - the state the execution Harness service recorded for the turn.
+ * @returns the task state that turn reports.
+ */
+export function harnessTaskStateOf(state: HarnessState): HarnessReportState {
+  switch (state) {
+    case 'queued':
+      return 'accepted'
+    case 'idle':
+    case 'waiting_child':
+    case 'running':
+      return 'running'
+    case 'waiting_approval':
+      return 'waiting_approval'
+    case 'waiting_input':
+      return 'waiting_input'
+    case 'completed':
+      return 'completed'
+    case 'failed':
+      return 'failed'
+    case 'cancelled':
+      return 'cancelled'
+    default:
+      // `interrupted`: the Host restarted and no outcome was observed.
+      return 'disconnected'
+  }
+}
+
+/**
+ * Whether two durable execution references describe the same execution.
+ *
+ * A re-registration may only be idempotent: one feedback task must always name
+ * the same combination session, the same operation, and the same dispatcher
+ * task, so a delivery can never be retargeted at another Session.
+ * @param left - stored execution reference.
+ * @param right - execution reference just supplied.
+ * @returns true when both name the same execution.
+ */
+export function sameHarnessExecution(
+  left: TaskRecordState['execution'],
+  right: TaskRecordState['execution'],
+): boolean {
+  if (left.kind !== 'harness-session' || right.kind !== 'harness-session')
+    return left.kind === right.kind
+  return (
+    left.harnessSessionId === right.harnessSessionId &&
+    left.harnessRef === right.harnessRef &&
+    left.combination === right.combination &&
+    left.taskId === right.taskId &&
+    left.operationId === right.operationId
+  )
 }
 
 /**

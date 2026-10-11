@@ -24,8 +24,13 @@ describe('Harness executable discovery', () => {
   it('reads a version printed on stderr and records a configured absolute path', async () => {
     const root = await mkdtemp(join(tmpdir(), 'opl-harness-registry-'))
     roots.push(root)
-    const command = join(root, 'codex')
-    await writeFile(command, '#!/bin/sh\nprintf "codex-cli 9.9.9\\n" >&2\n')
+    const command = join(root, process.platform === 'win32' ? 'codex.cmd' : 'codex')
+    await writeFile(
+      command,
+      process.platform === 'win32'
+        ? '@echo off\r\necho codex-cli 9.9.9 1>&2\r\n'
+        : '#!/bin/sh\nprintf "codex-cli 9.9.9\\n" >&2\n',
+    )
     await chmod(command, 0o700)
     const item = await inspectHarness(
       { id: 'codex', name: 'Codex CLI', kind: 'acp', command },

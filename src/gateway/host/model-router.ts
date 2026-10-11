@@ -2,6 +2,7 @@
 import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { GatewayGroupId } from '../contracts/groups.ts'
+import { modelDefaultEffort } from '../../shared/model-reasoning.ts'
 export const OPENAI_PROVIDER = 'opl-gateway-openai'
 export interface GatewayModelRoute {
   group: GatewayGroupId
@@ -14,16 +15,26 @@ export const gatewayModelId = (group: GatewayGroupId, id: string) =>
   group === 'deepseek' ? id : `${group}::${id}`
 
 function withReasoning(model: LlmResolvedModelInfo): LlmResolvedModelInfo {
-  if (model.reasoning) return model
-  const efforts = ['gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna'].includes(model.id)
-    ? ['low', 'medium', 'high', 'xhigh']
+  const efforts = ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna'].includes(model.id)
+    ? ['low', 'medium', 'high', 'xhigh', 'max']
     : model.id === 'claude-opus-5-5'
       ? ['low', 'medium', 'high', 'xhigh', 'max']
-      : undefined
-  if (!efforts) return model
+      : model.id === 'grok-4.7'
+        ? ['low', 'medium', 'high', 'xhigh']
+        : undefined
+  if (!efforts) {
+    const effort = modelDefaultEffort(model.id, model.reasoning)
+    return effort === undefined || !model.reasoning
+      ? model
+      : { ...model, reasoning: { ...model.reasoning, defaultEffort: ReasoningEffortId(effort) } }
+  }
+  const defaultEffort = model.id === 'grok-4.7' ? 'high' : 'medium'
   return {
     ...model,
-    reasoning: { efforts: efforts.map((id) => ({ id: ReasoningEffortId(id), name: id })) },
+    reasoning: {
+      efforts: efforts.map((id) => ({ id: ReasoningEffortId(id), name: id })),
+      defaultEffort: ReasoningEffortId(defaultEffort),
+    },
   }
 }
 export class GatewayModelAdapter extends LlmAdapter {

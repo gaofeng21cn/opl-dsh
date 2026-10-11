@@ -1,0 +1,19 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.thought {
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+}
+.text {
+  white-space: pre-wrap;
+}
+.preview {
+  margin-inline-start: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+}

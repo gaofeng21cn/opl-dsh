@@ -1,0 +1,44 @@
+diff --git a/third_party/pi-mono/packages/coding-agent/src/utils/shell.ts b/third_party/pi-mono/packages/coding-agent/src/utils/shell.ts
+--- a/third_party/pi-mono/packages/coding-agent/src/utils/shell.ts
++++ b/third_party/pi-mono/packages/coding-agent/src/utils/shell.ts
+@@ -1,6 +1,6 @@
+ import { randomUUID } from "node:crypto";
+-import { existsSync } from "node:fs";
+-import { delimiter, win32 } from "node:path";
++import { existsSync, statSync } from "node:fs";
++import { delimiter, isAbsolute, win32 } from "node:path";
+ import { spawn, spawnSync } from "child_process";
+ import { getBinDir } from "../config.ts";
+ 
+@@ -112,6 +112,13 @@
+  * 3. On Unix: /bin/bash, then bash on PATH, then fallback to sh
+  */
+ export function getShellConfig(customShellPath?: string): ShellConfig {
++	const configured = process.env.MCODE_SHELL_PATH;
++	if (customShellPath === undefined && configured !== undefined) {
++		if (!configured.trim() || !isAbsolute(configured) || !statSync(configured, { throwIfNoEntry: false })?.isFile()) {
++			throw new Error("MCODE_SHELL_PATH must name an existing absolute shell executable.");
++		}
++		customShellPath = configured;
++	}
+ 	// 1. Check user-specified shell path
+ 	if (customShellPath) {
+ 		if (existsSync(customShellPath)) {
+diff --git a/packages/tui/src/acp/agent.ts b/packages/tui/src/acp/agent.ts
+--- a/packages/tui/src/acp/agent.ts
++++ b/packages/tui/src/acp/agent.ts
+@@ -1,3 +1,4 @@
++import { getShellConfig } from "@earendil-works/pi-coding-agent/shell";
+ import { randomUUID } from 'node:crypto';
+ import { isAbsolute, resolve } from 'node:path';
+ 
+@@ -474,6 +475,9 @@
+         version: options.version,
+       },
+       _meta: {
++        ...(process.env.MCODE_SHELL_PATH !== undefined ? {
++          'minimax-code/shell': { version: 1, ...getShellConfig() },
++        } : {}),
+         'minimax-code/extensions': {
+           version: TUI_ACP_EXTENSION_VERSION,
+           methods: [...extensionCapabilities.methods],

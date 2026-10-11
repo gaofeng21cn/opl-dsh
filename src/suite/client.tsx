@@ -8,6 +8,8 @@ import * as gateway from '../gateway/client/index.tsx'
 import * as execution from '../execution/client/index.tsx'
 import * as collaboration from '../collaboration/client/index.tsx'
 import * as setup from '../setup/client/index.tsx'
+import * as huaweiMaas from '../credentials/client/index.tsx'
+import * as notifications from '../notifications/client/index.tsx'
 export const inject = ['remote', 'slots', 'locale']
 export async function apply(ctx: Context): Promise<void> {
   const dispose = await ctx.remote.$mount(remote)
@@ -15,7 +17,9 @@ export async function apply(ctx: Context): Promise<void> {
   let openModels: (() => void) | undefined
   ctx.plugin(gateway, { openModels: () => openModels?.() })
   ctx.plugin(execution)
+  ctx.plugin(huaweiMaas)
   ctx.plugin(collaboration)
+  ctx.plugin(notifications)
   ctx.plugin(setup, {
     bindModelNavigation: (navigate: (() => void) | undefined) => {
       openModels = navigate

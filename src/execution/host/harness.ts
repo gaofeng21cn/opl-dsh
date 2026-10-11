@@ -3,6 +3,9 @@ import { inspectHarness } from './harness-registry.ts'
 import { maintainHarness } from './harness-maintenance.ts'
 import type { HarnessInstallation } from '../contracts/installations.ts'
 import { modelRefKey } from '../contracts/catalog.ts'
+import type { MiniMaxCandidateRequest, MiniMaxCandidateResult } from '../contracts/candidate.ts'
+import { RuntimeMaintenance } from './runtime-maintenance.ts'
+import { prepareMiniMaxCandidate } from './minimax-candidate.ts'
 import { GATEWAY_GROUPS } from '../../gateway/contracts/groups.ts'
 /** Owns mappings and transport only; each official Harness owns its agent loop. */
 import { createHash, randomUUID } from 'node:crypto'
@@ -14,12 +17,24 @@ import { homedir } from 'node:os'
 import { EventEmitter } from 'node:events'
 import { LlmError, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { Context } from '@deepseek-ai/cordis'
+import type { HarnessStartRequest } from '../../contracts/types.ts'
+import { STOP_EDIT_VERSION } from '../contracts/stop-edit.ts'
+export type { HarnessStartRequest } from '../../contracts/types.ts'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
-import { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
+import type { ModelCatalog, ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-workspace'
 import type {} from '@deepseek-ai/dsh-user-questions'
-import { AcpProcess, HarnessTransportError, object } from './acp.ts'
+import type { AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
+import type TaskFeedbackService from '../../collaboration/host/feedback/index.ts'
+import type {
+  DeliveryRecord,
+  HarnessPauseReport,
+  HarnessReportState,
+} from '../../collaboration/host/feedback/types.ts'
+import { NO_SESSION_TARGET_THREAD_ID } from '../../collaboration/host/feedback/types.ts'
+import { harnessTaskIdOf, harnessTaskStateOf } from '../../collaboration/host/feedback/state.ts'
+import { AcpProcess, HarnessConfigurationError, HarnessTransportError, object } from './acp.ts'
 import { waitForSession } from './session-wait.ts'
 import {
   DSH_COMBINATION,
@@ -32,11 +47,51 @@ import {
   type CollaborationReport,
 } from '../contracts/sessions.ts'
 import { ExecutionModelResolver } from './execution-models.ts'
-import type { CombinationDefinition } from '../contracts/catalog.ts'
-import { adapterFor } from './adapters/index.ts'
+import { modelDefaultEffort } from '../../shared/model-reasoning.ts'
+import type { CombinationDefinition, ModelRef } from '../contracts/catalog.ts'
+import { adapterFor, defaultHarness } from './adapters/index.ts'
 import { connectDsh } from './adapters/dsh.ts'
+import {
+  MINIMAX_CODE_HARNESS,
+  MINIMAX_CODE_PROVIDER,
+  minimaxCodeModels,
+  minimaxReasoning,
+} from './adapters/minimax.ts'
 import type { AdapterOptions } from './adapters/types.ts'
 import { HarnessSessionStore } from './session-store.ts'
+import { NativeHarnessConversations, harnessRequestId } from './native-conversations.ts'
+import {
+  StopEditError,
+  StopEditService,
+  contentHead,
+  type StopEditHost,
+  type StopEditRewindOutcome,
+  type StopEditRuntime,
+  type StopEditTarget,
+} from './stop-edit.ts'
+import { StopEditIntentStore } from './stop-edit-intent.ts'
+import type { StopEditBoundary, StopEditResult } from '../contracts/stop-edit.ts'
+import {
+  nativeStopEditRuntime,
+  type NativeReviewFacts,
+  type NativeSessionSource,
+} from './stop-edit-native.ts'
+import {
+  HISTORY_BOUNDARY,
+  HISTORY_LIST,
+  HISTORY_REWIND,
+  minimaxStopEditRuntime,
+  readMinimaxCapability,
+  type MinimaxHistorySource,
+  type MinimaxReview,
+} from './stop-edit-minimax.ts'
+import {
+  harnessAllowsFullAccess,
+  harnessPermissionPreset,
+  setHarnessPermissions,
+} from './permissions.ts'
+import { resolveWriteScope, writerConflicts } from './write-scope.ts'
+import { harnessProxyEnvironment } from './proxy.ts'
 import type {
   HarnessTaskSummary,
   HarnessSessionSummary,
@@ -45,7 +100,12 @@ import type {
   HarnessDetailRequest,
   HarnessDetailPage,
 } from '../contracts/views.ts'
-import { catalogView, ExecutionCatalogStore, type ExecutionCatalog } from './catalog.ts'
+import {
+  catalogView,
+  ExecutionCatalogStore,
+  normalizeCatalog,
+  type ExecutionCatalog,
+} from './catalog.ts'
 const asSessionId = <T extends string>(value: string) => value as T
 export { GROK_COMBINATION, DSH_COMBINATION } from '../contracts/sessions.ts'
 export const HARNESS_NAMESPACE = 'harness'
@@ -98,18 +158,11 @@ const required = (value: unknown, label: string): string => {
     throw Error(`无效的 ${label}`)
   return value
 }
-export interface HarnessStartRequest {
-  combination: string
-  cwd: string
-  existingSessionId?: string
-  taskId?: string
-  origin?: HarnessOrigin
-  sandbox?: 'read-only' | 'workspace'
-}
 export interface HarnessPromptRequest {
   sessionId: string
   text: string
   operationId: string
+  writeScope?: string[]
 }
 interface Active {
   acp?: AcpProcess
@@ -118,11 +171,18 @@ interface Active {
   cancelled: boolean
   bridgeStop?: (() => Promise<void>) | undefined
   approvals: Map<string, HarnessApproval & { rpcId: string | number }>
+  /** `initialize` result, kept for adapter capability and version diagnostics. */
+  agentInfo?: Record<string, any>
+  /** Latest config options the agent advertised for this ACP session. */
+  configOptions?: unknown
+  /** Catalog launch settings used by this connection, compared before the next turn. */
+  launchSettings?: string
 }
 
 export { grokConfiguration } from './adapters/grok.ts'
 export { nativeHarnessMatches, defaultHarness } from './adapters/index.ts'
 export class HarnessService {
+  private readonly runtimeMaintenance = new RuntimeMaintenance()
   private selections: Record<string, string> = {}
   private readonly conversationOwners = new Map<
     string,
@@ -132,6 +192,7 @@ export class HarnessService {
   private readonly maintenanceJobs = new Map<string, Promise<void>>()
   private readonly records = new Map<string, HarnessSession>()
   private readonly dirtyRecords = new Map<string, HarnessSession>()
+  private readonly titleUpdates = new Map<string, Promise<void>>()
   private readonly active = new Map<string, Active>()
   private readonly starting = new Map<string, Promise<HarnessSnapshot>>()
   private readonly connecting = new Map<string, Promise<void>>()
@@ -151,6 +212,8 @@ export class HarnessService {
   private readonly runtimeConnections = new Map<string, boolean>()
   private readonly catalogStore: ExecutionCatalogStore
   private readonly modelResolver: ExecutionModelResolver
+  private readonly stopEdits: StopEditService
+  private readonly stopEditIntents: StopEditIntentStore
   constructor(
     private readonly ctx: Context,
     private readonly options: {
@@ -159,13 +222,34 @@ export class HarnessService {
       prefix?: string[]
       resolveKey?: () => Promise<string | undefined>
     } = {},
+    private readonly conversations?: NativeHarnessConversations,
   ) {
     this.directory = options.home ?? dshHomePath()
     this.sessionStore = new HarnessSessionStore(this.directory)
     this.catalogStore = new ExecutionCatalogStore(this.directory)
-    this.modelResolver = new ExecutionModelResolver(ctx, this.catalogStore)
+    this.modelResolver = new ExecutionModelResolver(ctx, this.catalogStore, (ref) =>
+      this.probeExternalModel(ref),
+    )
     this.events.setMaxListeners(100)
-    this.ready = Promise.all([this.load(), this.loadSelections()]).then(() => undefined)
+    this.stopEditIntents = new StopEditIntentStore(this.directory)
+    this.stopEdits = new StopEditService(this.stopEditHost())
+    this.ready = Promise.all([
+      this.load(),
+      this.loadSelections(),
+      // 编辑意图台账必须先恢复，否则一次未完成的编辑会被当成从未发生过。
+      this.stopEditIntents.load(),
+    ]).then(async () => {
+      if (!this.conversations) return
+      for (const record of this.records.values()) {
+        try {
+          await this.ensureConversation(record)
+        } catch (error) {
+          // An unavailable historical project or model must not erase its record
+          // or prevent other conversations from being imported.
+          this.ctx.logger.warn(`外部会话 ${record.id} 迁移未完成：${String(error)}`)
+        }
+      }
+    })
     this.tick = setInterval(() => {
       void this.flushDeliveries().catch(() => {})
     }, 2000)
@@ -201,6 +285,27 @@ export class HarnessService {
     this.writeQueue = write.catch(() => {})
     await write
   }
+  private async ensureConversation(record: HarnessSession) {
+    if (record.harnessRef !== 'dsh' && record.origin.kind === 'dsh') {
+      if (!record.nativeSessionId) {
+        record.nativeSessionId = record.origin.sessionId
+        await this.save(record)
+      }
+      return
+    }
+    if (!this.conversations || record.harnessRef === 'dsh') return
+    if (
+      record.nativeSessionId &&
+      this.ctx.agents.get(asSessionId<SessionId>(record.nativeSessionId))?.status === 'running'
+    )
+      return
+    await this.conversations.ensure(record, () => this.save(record))
+    // The conversation owner seeds model/selection on creation. Replaying the
+    // picker RPC here would overwrite user choices and save each historical
+    // model as the deployment default during restart.
+    if (this.selections[record.nativeSessionId!] === undefined)
+      await this.bindSelection(record.nativeSessionId!, record.combination)
+  }
   private conversationBinding(session: Session, definition: CombinationDefinition) {
     if (!session.header.cwd) throw Error('请先选择项目目录')
     const policy = this.ctx.agents.get(session.id)?.ctx.get('sandboxPolicy')?.resolve({ session })
@@ -209,7 +314,9 @@ export class HarnessService {
       !policy ||
       policy.mode === 'read-only'
         ? 'read-only'
-        : 'workspace'
+        : policy.mode === 'danger-full-access' && harnessAllowsFullAccess(definition.harnessRef)
+          ? 'full-access'
+          : 'workspace'
     return {
       cwd: session.header.cwd,
       sandbox,
@@ -282,13 +389,15 @@ export class HarnessService {
       join(homedir(), '.grok/bin/grok')
     )
   }
-  private adapterOptions(command?: string): AdapterOptions {
+  private adapterOptions(command?: string, prefix?: string[]): AdapterOptions {
+    const launchPrefix = prefix ?? this.options.prefix
     return {
       home: this.directory,
       grokCommand: this.command(),
       nativeBridgePath: fileURLToPath(new URL('./native-harness-bridge.mjs', import.meta.url)),
+      zcodeBridgePath: fileURLToPath(new URL('./zcode-harness-bridge.mjs', import.meta.url)),
       ...(command ? { command } : {}),
-      ...(this.options.prefix ? { prefix: this.options.prefix } : {}),
+      ...(launchPrefix ? { prefix: launchPrefix } : {}),
       ...(this.options.resolveKey ? { resolveKey: this.options.resolveKey } : {}),
     }
   }
@@ -303,6 +412,9 @@ export class HarnessService {
     )
   }
   async updateHarness(id: string) {
+    return this.runtimeMaintenance.admit(() => this.updateHarnessAdmitted(id))
+  }
+  private async updateHarnessAdmitted(id: string) {
     await this.ready
     if (this.disposed) throw Error('Harness 服务已关闭')
     if (this.maintenanceJobs.has(id)) return this.maintenance.get(id)
@@ -377,7 +489,10 @@ export class HarnessService {
       const harness = catalog.harnesses.find((item) => item.id === combination.harnessRef)
       const adapter = adapterFor(combination.harnessRef, combination.modelRef)
       if (!model?.available)
-        availability.set(combination.id, { available: false, reason: '模型未配置或凭据未就绪' })
+        availability.set(combination.id, {
+          available: false,
+          reason: model?.reason ?? '模型未配置或凭据未就绪',
+        })
       else if (!adapter || !harness)
         availability.set(combination.id, {
           available: false,
@@ -385,7 +500,10 @@ export class HarnessService {
         })
       else {
         if (!probes.has(adapter.id))
-          probes.set(adapter.id, adapter.available(this.ctx, this.adapterOptions(harness.command)))
+          probes.set(
+            adapter.id,
+            adapter.available(this.ctx, this.adapterOptions(harness.command, harness.prefix)),
+          )
         availability.set(combination.id, await probes.get(adapter.id)!)
       }
     }
@@ -483,11 +601,106 @@ export class HarnessService {
     await this.ready
     return this.modelResolver.resolve()
   }
+  /**
+   * Availability of a model owned by an external official CLI rather than by the OPL
+   * Gateway. It reads the persisted catalog directly so the model projection cannot
+   * recurse into itself, and it asks the owning adapter so "installed and signed in"
+   * stays defined in exactly one place.
+   */
+  private async probeExternalModel(
+    ref: ModelRef,
+  ): Promise<{ available: boolean; reason?: string }> {
+    const adapter = adapterFor(defaultHarness(ref), ref)
+    if (!adapter) return { available: false, reason: '该模型尚无兼容的官方 CLI 适配器' }
+    try {
+      const harness = (await this.catalogStore.get()).harnesses.find(
+        (item) => item.id === adapter.id,
+      )
+      return await adapter.available(
+        this.ctx,
+        this.adapterOptions(harness?.command, harness?.prefix),
+      )
+    } catch {
+      return { available: false, reason: '官方 CLI 状态检测未完成，请重新打开此页' }
+    }
+  }
   async saveExecutionCatalog(value: unknown): Promise<ExecutionCatalog> {
     await this.ready
-    await this.catalogStore.set(value)
-    this.events.emit('catalog')
-    return this.executionCatalog()
+    this.runtimeMaintenance.assertAvailable()
+    const previous = await this.catalogStore.get()
+    this.runtimeMaintenance.assertAvailable()
+    const next = normalizeCatalog(value)
+    const launch = (catalog: ExecutionCatalog) =>
+      catalog.harnesses.map((h) => [h.id, h.command, h.prefix])
+    const changed = JSON.stringify(launch(previous)) !== JSON.stringify(launch(next))
+    const publish = async () => {
+      if (changed) await this.assertNoGlobalActivity()
+      await this.catalogStore.set(next)
+      this.events.emit('catalog')
+      return this.executionCatalog()
+    }
+    return changed
+      ? this.runtimeMaintenance.change(() => this.runtimeBusy(), publish)
+      : this.runtimeMaintenance.admit(publish)
+  }
+  /** Model requests use the same maintenance exclusion as external CLI admission. */
+  assertRuntimeAvailable(): void {
+    this.runtimeMaintenance.assertAvailable()
+  }
+  private runtimeBusy(): boolean {
+    return (
+      this.disposed ||
+      this.maintenanceJobs.size > 0 ||
+      this.connecting.size > 0 ||
+      this.ctx.agents?.list().some((agent) => agent.status === 'running') === true ||
+      [...this.records.values()].some((record) =>
+        record.turns.some((turn) =>
+          ['queued', 'running', 'waiting_child', 'needs_approval', 'needs_input'].includes(
+            turn.state,
+          ),
+        ),
+      ) ||
+      [...this.active.values()].some((active) => !!active.turn)
+    )
+  }
+  private async assertNoGlobalActivity(): Promise<void> {
+    if (this.runtimeBusy()) throw Error('仍有活动任务，不能切换 Harness 运行时')
+    for (const session of this.ctx.sessions.list()) {
+      const activity = await this.ctx.waterfall(
+        'workspace/session-activity',
+        { sessionId: session.id },
+        async () => [],
+      )
+      if (activity.length) throw Error('仍有活动任务，不能切换 Harness 运行时')
+    }
+    if (this.runtimeBusy()) throw Error('仍有活动任务，不能切换 Harness 运行时')
+  }
+  /** Publish the verified candidate into the actual catalog; receipts do not select it. */
+  async selectMiniMaxCandidate(request: MiniMaxCandidateRequest): Promise<MiniMaxCandidateResult> {
+    await this.ready
+    return this.runtimeMaintenance.change(
+      () => this.runtimeBusy(),
+      async () => {
+        await this.assertNoGlobalActivity()
+        const verified = prepareMiniMaxCandidate(request)
+        await this.assertNoGlobalActivity()
+        const previous = await this.catalogStore.setHarnessLaunch(
+          MINIMAX_CODE_HARNESS,
+          verified.command,
+          [],
+        )
+        this.events.emit('catalog')
+        return { ...verified, ...previous, version: request.version, validation: 'static' }
+      },
+    )
+  }
+  async saveHarnessProxy(harnessId: string, proxy: unknown): Promise<ExecutionCatalog> {
+    await this.ready
+    return this.runtimeMaintenance.admit(async () => {
+      await this.catalogStore.setProxy(harnessId, proxy)
+      this.events.emit('catalog')
+      return this.executionCatalog()
+    })
   }
   private view(record: HarnessSession, turns = record.turns): HarnessSnapshot {
     const active = this.active.get(record.id)
@@ -509,6 +722,12 @@ export class HarnessService {
     return this.view(record)
   }
   async start(input: HarnessStartRequest, deferConnection = false): Promise<HarnessSnapshot> {
+    return this.runtimeMaintenance.admit(() => this.startAdmitted(input, deferConnection))
+  }
+  private async startAdmitted(
+    input: HarnessStartRequest,
+    deferConnection = false,
+  ): Promise<HarnessSnapshot> {
     await this.ready
     if (this.disposed) throw Error('组合服务已关闭')
     const catalog = await this.executionCatalog()
@@ -531,7 +750,11 @@ export class HarnessService {
     if (origin.kind === 'harness' && !parent) throw Error('来源组合会话不存在')
     if (
       parent &&
-      (parent.cwd !== cwd || (input.sandbox === 'workspace' && parent.sandbox === 'read-only'))
+      (parent.cwd !== cwd ||
+        (input.sandbox !== undefined &&
+          input.sandbox !== 'read-only' &&
+          parent.sandbox === 'read-only') ||
+        (input.sandbox === 'full-access' && parent.sandbox !== 'full-access'))
     )
       throw Error('子对话必须继承原项目和权限边界')
     let ancestor = parent,
@@ -545,13 +768,44 @@ export class HarnessService {
       `harness-${hash([origin, input.taskId ?? randomUUID(), cwd, input.combination]).slice(0, 24)}`
     const prior = this.records.get(id)
     if (input.existingSessionId && !prior) throw Error('指定会话不存在，不会自动创建替代会话')
+    // Creating a combination session is a dispatch: it needs an addressable
+    // reviewer. Resuming an existing record stays allowed, so a historical
+    // session remains readable and continueable for its own origin.
+    if (prior === undefined && !parent) this.requireExternalReviewer(origin)
     if (prior && (prior.combination !== input.combination || prior.cwd !== cwd))
       throw Error('会话组合或项目与原记录不一致')
-    if (input.sandbox !== undefined && !['workspace', 'read-only'].includes(input.sandbox))
+    if (
+      input.sandbox !== undefined &&
+      !['workspace', 'read-only', 'full-access'].includes(input.sandbox)
+    )
       throw Error('无效的权限边界')
     if (prior && input.sandbox && prior.sandbox !== input.sandbox)
       throw Error('不能通过继续会话扩大权限')
     if (this.starting.has(id)) return this.starting.get(id)!
+    // A combination that declares full access is still only a declared policy: without an explicit
+    // request this call starts at the conservative workspace boundary, so no harness is widened
+    // merely because a combination happens to declare full access.
+    const requestedSandbox =
+      input.sandbox ??
+      parent?.sandbox ??
+      (definition.permissionPolicy === 'full-access' ? 'workspace' : definition.permissionPolicy)
+    // `generated` marks the conservative default the catalog generator picked for an automatic
+    // combination, not a restriction any person declared, so it must not overwrite a permission the
+    // caller already authorized. Only a declared policy narrows a task, and a caller's own request
+    // still has to pass the verified-full-access gate below. A frozen definition has no `generated`
+    // flag, so a stored restricted session stays restricted and cannot be widened on resume.
+    const declaredReadOnly =
+      definition.permissionPolicy === 'read-only' &&
+      !('generated' in definition && definition.generated)
+    const sandbox =
+      declaredReadOnly || requestedSandbox === 'read-only' ? 'read-only' : requestedSandbox
+    // An explicitly requested full-access task is never quietly downgraded. A harness without a
+    // verified official full-access path is refused before any session or model request exists,
+    // so the caller learns the task cannot run instead of running with weaker permissions.
+    if (requestedSandbox === 'full-access' && !harnessAllowsFullAccess(definition.harnessRef))
+      throw new HarnessConfigurationError(
+        `Harness ${definition.harnessRef} 没有经过验证的官方 full-access 路径，已拒绝启动该受限任务；不会自动降级为工作区权限。`,
+      )
     const record: HarnessSession = prior ?? {
       id,
       combination: input.combination,
@@ -559,22 +813,22 @@ export class HarnessService {
       modelRef: definition.modelRef,
       cwd,
       origin,
-      sandbox:
-        (definition.permissionPolicy === 'read-only' &&
-          !('generated' in definition && definition.generated && origin.kind === 'dsh')) ||
-        input.sandbox === 'read-only'
-          ? 'read-only'
-          : (parent?.sandbox ?? input.sandbox ?? definition.permissionPolicy),
+      sandbox,
       acpSessionId: '',
       title: definition.name,
       createdAt: now(),
       updatedAt: now(),
       turns: [],
     }
+    if (record.harnessRef === MINIMAX_CODE_HARNESS && record.sandbox !== 'full-access')
+      throw new HarnessConfigurationError(
+        'MiniMax 官方 CLI 暂不支持可验证的只读或工作区隔离。请显式授权 full-access；当前受限任务未启动。',
+      )
     // Persist the identity before creating a native session. A failed setup can
     // then resume the same mapping rather than orphaning an invisible session.
     this.records.set(id, record)
     const pending = this.save(record)
+      .then(() => this.ensureConversation(record))
       .then(() => (deferConnection ? undefined : this.connect(record)))
       .then(() => this.view(record))
       .finally(() => this.starting.delete(id))
@@ -591,6 +845,9 @@ export class HarnessService {
         : undefined
   }
   private connect(record: HarnessSession): Promise<void> {
+    return this.runtimeMaintenance.admit(() => this.connectAdmitted(record))
+  }
+  private connectAdmitted(record: HarnessSession): Promise<void> {
     if (this.disposed) return Promise.reject(Error('组合服务已关闭'))
     const pending = this.connecting.get(record.id)
     if (pending) return pending
@@ -599,8 +856,28 @@ export class HarnessService {
     return connection
   }
   private async openConnection(record: HarnessSession) {
+    const chosenHarness = (await this.catalogStore.get()).harnesses.find(
+      (h) => h.id === record.harnessRef,
+    )
+    const launchSettings = hash([
+      chosenHarness?.command,
+      chosenHarness?.prefix,
+      chosenHarness?.proxy?.mode === 'inherit' ? undefined : chosenHarness?.proxy,
+    ])
     const existing = this.active.get(record.id)
-    if (existing && (record.harnessRef === 'dsh' || (existing.acp && !existing.acp.closed))) return
+    if (existing && (record.harnessRef === 'dsh' || (existing.acp && !existing.acp.closed))) {
+      if (
+        record.harnessRef === 'dsh' ||
+        existing.launchSettings === launchSettings ||
+        existing.turn
+      )
+        return
+      // Finish the running turn on its original connection. Idle connections load
+      // their native session on a new process before another prompt is admitted.
+      await existing.acp?.dispose()
+      await existing.bridgeStop?.()
+      this.active.delete(record.id)
+    }
     const adapter = adapterFor(record.harnessRef, record.modelRef)
     if (!adapter) throw Error('此组合没有兼容的 Harness 适配器')
     if (adapter.transport === 'dsh') {
@@ -614,13 +891,10 @@ export class HarnessService {
       this.changed(record)
       return
     }
-    const chosenHarness = (await this.catalogStore.get()).harnesses.find(
-      (h) => h.id === record.harnessRef,
-    )
     const launch = await adapter.prepare!(
       this.ctx,
       record,
-      this.adapterOptions(chosenHarness?.command),
+      this.adapterOptions(chosenHarness?.command, chosenHarness?.prefix),
     )
     const home = launch.home
     const active: Active = {
@@ -628,6 +902,7 @@ export class HarnessService {
       turn: undefined,
       done: undefined,
       approvals: new Map(),
+      launchSettings,
     }
     const bindingPath = join(home, record.id + '.control.json')
     const bridgeStop = await startControlBridge(
@@ -704,12 +979,18 @@ export class HarnessService {
       launch.command,
       launch.args,
       record.cwd,
-      launch.env,
+      harnessProxyEnvironment(launch.env, chosenHarness?.proxy),
       (value) => this.update(record, active, value),
       (id, value) => this.ask(record, active, id, value),
       () => {
         this.changed(record)
         void active.bridgeStop?.()
+      },
+      launch.windowsVerbatimArguments,
+      // 扩展通知只能由 Runtime 自己发出；这里只消费已识别的那一个，其余一律忽略。
+      (method, params) => {
+        if (method !== HISTORY_BOUNDARY) return
+        void this.recordNativeBoundary(record, params).catch(() => {})
       },
     )
     active.acp = acp
@@ -720,6 +1001,9 @@ export class HarnessService {
           clientCapabilities: {
             fs: { readTextFile: false, writeTextFile: false },
             terminal: false,
+            ...(record.harnessRef === MINIMAX_CODE_HARNESS
+              ? { _meta: { 'minimax-code/extensions': { version: 1, notifications: true } } }
+              : {}),
           },
           clientInfo: { name: 'opl-dsh', version: '0.2.13' },
         }),
@@ -727,6 +1011,7 @@ export class HarnessService {
       if (init.protocolVersion !== 1) throw Error('Harness 未协商 ACP v1')
       if (record.acpSessionId && !object(init.agentCapabilities).loadSession)
         throw Error('此 Harness 不支持恢复原生会话')
+      active.agentInfo = init
       const session = object(
         await acp.request(record.acpSessionId ? 'session/load' : 'session/new', {
           ...(record.acpSessionId ? { sessionId: record.acpSessionId } : {}),
@@ -737,6 +1022,19 @@ export class HarnessService {
       if (!record.acpSessionId) {
         record.acpSessionId = required(session.sessionId, 'ACP sessionId')
         await this.save(record)
+      }
+      // An adapter that owns a fixed model and reasoning configuration pins it here,
+      // after the session exists and before any prompt can be sent. A refusal to honor
+      // the pinned values must abort the connection rather than run on other settings.
+      active.configOptions = object(session).configOptions
+      if (adapter.configureSession) {
+        const configured = await adapter.configureSession(acp, record, {
+          agent: init,
+          session,
+          configOptions: active.configOptions,
+        })
+        if (configured && 'configOptions' in configured)
+          active.configOptions = configured.configOptions
       }
       const model = object(session.models).currentModelId
       if (model !== undefined && model !== wireModel)
@@ -751,15 +1049,52 @@ export class HarnessService {
   }
   private update(record: HarnessSession, active: Active, value: unknown) {
     const envelope = object(value)
-    if (envelope.sessionId !== record.acpSessionId || !active.turn) return
-    const u = object(envelope.update),
-      turn = active.turn
+    if (envelope.sessionId !== record.acpSessionId) return
+    const u = object(envelope.update)
+    // Configuration advertisements arrive outside any turn, so this must run before the
+    // turn guard: an adapter's pre-prompt check reads the latest advertised state, and a
+    // notification dropped while idle would let a pinned combination drift unnoticed.
+    if (u.sessionUpdate === 'config_option_update' && Array.isArray(u.configOptions)) {
+      active.configOptions = u.configOptions
+      return
+    }
     if (
-      u.sessionUpdate === 'agent_message_chunk' &&
+      u.sessionUpdate === 'session_info_update' &&
+      typeof u.title === 'string' &&
+      u.title.trim()
+    ) {
+      const title = u.title.trim().slice(0, 400)
+      record.title = title
+      record.titleFromHarness = true
+      this.changed(record)
+      const target =
+        record.nativeSessionId ??
+        (record.origin.kind === 'dsh' ? record.origin.sessionId : undefined)
+      const pending = (this.titleUpdates.get(record.id) ?? Promise.resolve())
+        .then(async () => {
+          if (target) await this.native('rename', { sessionId: target, title })
+          await this.save(record)
+        })
+        .catch(() => {
+          this.ctx.logger?.warn('外部 Harness 标题未同步，原会话记录已保留')
+        })
+      this.titleUpdates.set(record.id, pending)
+      return
+    }
+    if (!active.turn) return
+    const turn = active.turn
+    if (
+      ['agent_message_chunk', 'agent_thought_chunk'].includes(u.sessionUpdate) &&
       object(u.content).type === 'text' &&
       typeof u.content.text === 'string'
-    )
-      turn.text += u.content.text
+    ) {
+      const type = u.sessionUpdate === 'agent_thought_chunk' ? 'reasoning' : 'text'
+      turn.content ??= turn.text ? [{ type: 'text', text: turn.text }] : []
+      const last = turn.content.at(-1)
+      if (last?.type === type) last.text += u.content.text
+      else turn.content.push({ type, text: u.content.text })
+      if (type === 'text') turn.text += u.content.text
+    }
     if (
       ['tool_call', 'tool_call_update'].includes(u.sessionUpdate) &&
       typeof u.toolCallId === 'string'
@@ -771,6 +1106,15 @@ export class HarnessService {
       }
       for (const field of ['title', 'status', 'kind'] as const)
         if (typeof u[field] === 'string') tool[field] = u[field].slice(0, 4000)
+      for (const [wire, field] of [
+        ['rawInput', 'inputJson'],
+        ['rawOutput', 'outputJson'],
+        ['content', 'contentJson'],
+        ['locations', 'locationsJson'],
+      ] as const)
+        if (u[wire] !== undefined) tool[field] = JSON.stringify(u[wire])
+      const owner = this.conversationOwners.get(record.id)
+      if (owner) this.conversations?.tool(owner.sessionId, record, turn, u)
     }
     this.changed(record)
   }
@@ -794,15 +1138,20 @@ export class HarnessService {
         kind: x.kind as string,
       }))
     const id = randomUUID()
+    const command = object(object(p.toolCall).rawInput).command
     active.approvals.set(id, {
       id,
       rpcId,
       title: String(object(p.toolCall).title ?? 'Harness 工具权限请求').slice(0, 4000),
+      ...(typeof command === 'string' ? { command } : {}),
       options,
     })
     active.turn.state = 'waiting_approval'
     this.changed(record)
     void this.save(record).catch(() => this.cancel({ sessionId: record.id }))
+    // Announced while the turn is still open: an approval wait would otherwise
+    // stay invisible until a human decision let the turn end.
+    void this.announceApproval(record, active.turn).catch(() => {})
     const owner = this.conversationOwners.get(record.id)
     const agent = owner && this.ctx.agents.get(asSessionId<SessionId>(owner.sessionId))
     if (agent) {
@@ -810,7 +1159,17 @@ export class HarnessService {
         const outcome = await this.ctx.get('approval')?.request({
           agent,
           toolName: record.harnessRef,
-          reason: active.approvals.get(id)!.title,
+          reason:
+            active.approvals.get(id)!.title + (typeof command === 'string' ? '\n\n' + command : ''),
+          ...(typeof object(p.toolCall).toolCallId === 'string' && this.conversations
+            ? {
+                callId: this.conversations.toolId(
+                  record,
+                  active.turn!,
+                  object(p.toolCall).toolCallId,
+                ),
+              }
+            : {}),
           ...(owner.signal ? { signal: owner.signal } : {}),
         })
         if (!active.approvals.has(id)) return
@@ -840,18 +1199,37 @@ export class HarnessService {
     if (active.turn) active.turn.state = active.approvals.size ? 'waiting_approval' : 'running'
     this.changed(record)
     await this.save(record)
+    // The decision is the human's; this service only reports that the turn moved
+    // on, and never answers a request itself.
+    if (active.turn) {
+      void this.reportNotification(
+        record,
+        active.turn,
+        'running',
+        this.turnSummary(active.turn),
+      ).catch(() => {})
+    }
     return this.view(record)
   }
   async prompt(input: HarnessPromptRequest, reasoningEffort?: string): Promise<HarnessSnapshot> {
+    return this.runtimeMaintenance.admit(() => this.promptAdmitted(input, reasoningEffort))
+  }
+  private async promptAdmitted(
+    input: HarnessPromptRequest,
+    reasoningEffort?: string,
+  ): Promise<HarnessSnapshot> {
     await this.ready
     if (this.disposed) throw Error('组合服务已关闭')
     const record = this.records.get(required(input?.sessionId, 'sessionId'))
     if (!record) throw Error('组合会话不存在')
+    // 编辑与普通提示共用同一把互斥。先查一次，保证被卡住的会话不会被拉起子进程再失败。
+    this.assertStopEditIdle(record)
     const text = required(input.text, 'text'),
       operation = required(input.operationId, 'operationId')
-    const fingerprint = hash(
-      reasoningEffort ? [record.id, text, reasoningEffort] : [record.id, text],
-    )
+    const writeScope = await resolveWriteScope(record.cwd, input.writeScope)
+    const content = reasoningEffort ? [record.id, text, reasoningEffort] : [record.id, text]
+    // Keep the existing fingerprint for old operations that did not declare ownership.
+    const fingerprint = hash(writeScope ? [...content, { writeScope }] : content)
     const previous = record.turns.find((t) => t.operationId === operation)
     if (previous) {
       if (previous.fingerprint !== fingerprint) throw Error('同一个 operation ID 的内容发生变化')
@@ -877,6 +1255,29 @@ export class HarnessService {
       return this.view(record)
     }
     if (active.turn) throw Error('此会话仍在执行，请先等待或取消')
+    // 编辑与普通提示共用同一把互斥：回退期间或结果不确定的会话都不能再写入。
+    this.assertStopEditIdle(record)
+    if (record.harnessRef === MINIMAX_CODE_HARNESS && reasoningEffort !== undefined) {
+      if (!minimaxReasoning(record.modelRef, reasoningEffort))
+        throw new HarnessConfigurationError('MiniMax 不支持所选推理设置，未发送任务。')
+      record.reasoningEffort = reasoningEffort
+    }
+    // Registered before the prompt is written to the agent: a turn that
+    // completes or pauses immediately afterwards must find its durable
+    // notification record already in place, so no fast outcome can be missed.
+    await this.registerNotification(record, operation)
+    // Registration awaited durable storage, so recheck exactly as after the
+    // connection: overlapping callers must not admit two turns into one session,
+    // and a replay of one operation must be answered with the turn it already
+    // created instead of executing it a second time.
+    const registered = record.turns.find((t) => t.operationId === operation)
+    if (registered) {
+      if (registered.fingerprint !== fingerprint) throw Error('同一个 operation ID 的内容发生变化')
+      return this.view(record)
+    }
+    if (active.turn) throw Error('此会话仍在执行，请先等待或取消')
+    // 编辑与普通提示共用同一把互斥：回退期间或结果不确定的会话都不能再写入。
+    this.assertStopEditIdle(record)
     record.autoWakePaused = false
     const turn: HarnessTurn = {
       operationId: operation,
@@ -886,8 +1287,13 @@ export class HarnessService {
       state: 'queued',
       tools: [],
       ...(reasoningEffort ? { reasoningEffort } : {}),
+      ...(writeScope ? { writeScope } : {}),
     }
-    if (!record.turns.length) record.title = text.slice(0, 80)
+    if (!record.turns.length && !record.titleFromHarness) {
+      record.title = text.slice(0, 80)
+      if (record.nativeSessionId)
+        await this.native('rename', { sessionId: record.nativeSessionId, title: record.title })
+    }
     record.turns.push(turn)
     active.turn = turn
     active.cancelled = false
@@ -903,7 +1309,16 @@ export class HarnessService {
       this.pendingRuns.set(record.id, () => {
         turn.state = 'running'
         this.changed(record)
-        void this.run(record, active, turn).finally(resolve)
+        // Reported as observed, so the durable record says what the execution is
+        // doing rather than what it was registered with.
+        void this.reportNotification(record, turn, 'running', this.turnSummary(turn)).catch(
+          () => {},
+        )
+        void (
+          record.nativeSessionId && !this.conversationOwners.has(record.id)
+            ? this.runConversation(record, active, turn)
+            : this.run(record, active, turn)
+        ).finally(resolve)
       }),
     )
     this.drainQueue()
@@ -912,6 +1327,74 @@ export class HarnessService {
   private native(method: string, request: object) {
     return this.ctx.typertGateway.invoke({ namespace: 'session', method, args: { request } })
   }
+  /** Admit delegated work through the real official Agent so its UI owns streaming and approvals. */
+  private async runConversation(record: HarnessSession, active: Active, turn: HarnessTurn) {
+    try {
+      if (active.cancelled) return await this.run(record, active, turn)
+      await this.native('prompt', {
+        sessionId: record.nativeSessionId,
+        requestId: harnessRequestId(record, turn),
+        mode: 'queue',
+        content: [{ type: 'text', text: turn.prompt }],
+      })
+      const agent = this.ctx.agents.get(asSessionId<SessionId>(record.nativeSessionId!))
+      if (!agent) throw Error('官方会话未就绪')
+      await agent.whenIdle()
+      await this.ctx.sessions.flush(agent.session)
+      // The official LLM stream invokes the same Harness turn through
+      // conversationStream. Its ACP completion may settle just after the Agent
+      // becomes idle, so wait for the service event instead of polling or
+      // manufacturing a second prompt.
+      if (active.turn === turn)
+        await new Promise<void>((resolve) => {
+          const done = () => {
+            this.events.off(record.id, done)
+            resolve()
+          }
+          this.events.once(record.id, done)
+        })
+      if (active.turn === turn) throw Error('官方会话未进入原 Harness 轮次')
+    } catch (error) {
+      if (active.turn === turn) {
+        turn.state = active.cancelled ? 'cancelled' : 'failed'
+        turn.error = '官方对话未完成外部任务；原指令不会自动重发。'
+        active.turn = undefined
+        this.changed(record)
+        await this.save(record)
+        await this.syncNotification(record, turn)
+        this.drainQueue()
+      }
+    }
+  }
+  /**
+   * Confirm and re-assert a combination's fixed model and reasoning parameters on the
+   * live ACP session, immediately before a prompt is sent.
+   *
+   * The pinned values are re-applied rather than read from the cached advertisement: a
+   * resumed session and a session whose configuration drifted must both be decided by
+   * what the agent reports now. A refusal fails the turn, so no prompt is dispatched
+   * with parameters the combination did not ask for.
+   */
+  private async pinSession(record: HarnessSession, active: Active, effort?: string) {
+    const adapter = adapterFor(record.harnessRef, record.modelRef)
+    if (!adapter || (!adapter.configureSession && !adapter.verifySession)) return
+    const acp = active.acp
+    if (!acp) throw Error('Harness 连接已关闭，无法在发送任务前确认固定模型')
+    const snapshot = {
+      agent: active.agentInfo ?? {},
+      session: {},
+      configOptions: active.configOptions,
+    }
+    const selectedRecord = effort === undefined ? record : { ...record, reasoningEffort: effort }
+    if (adapter.configureSession) {
+      const configured = await adapter.configureSession(acp, selectedRecord, snapshot)
+      if (configured && 'configOptions' in configured) {
+        active.configOptions = configured.configOptions
+        snapshot.configOptions = configured.configOptions
+      }
+    }
+    adapter.verifySession?.(selectedRecord, snapshot)
+  }
   private async run(record: HarnessSession, active: Active, turn: HarnessTurn) {
     try {
       if (active.cancelled) {
@@ -919,15 +1402,21 @@ export class HarnessService {
         return
       }
       if (record.harnessRef !== 'dsh') {
+        await this.pinSession(record, active, turn.reasoningEffort)
         const result = object(
           await active.acp!.request(
             'session/prompt',
             {
               sessionId: record.acpSessionId,
               prompt: [{ type: 'text', text: turn.prompt }],
-              ...(['codex', 'claude'].includes(record.harnessRef)
-                ? { _meta: { reasoningEffort: turn.reasoningEffort ?? null } }
-                : {}),
+              // 稳定的 operation 身份随提示一起进入 Runtime；扩展据此把真实入库的
+              // 用户消息绑定到这条轮次，停止后编辑才有精确边界可用。
+              _meta: {
+                'opl/clientRequestId': turn.operationId,
+                ...(['codex', 'claude'].includes(record.harnessRef)
+                  ? { reasoningEffort: turn.reasoningEffort ?? null }
+                  : {}),
+              },
             },
             24 * 60 * 60 * 1000,
           ),
@@ -973,12 +1462,18 @@ export class HarnessService {
             turn.state = 'waiting_input'
             this.changed(record)
             await this.save(record)
+            // A question has no Session event, so it is announced from the hook
+            // that observes it, with the cursor and question ids as its identity.
+            await this.announceQuestion(record, turn, request.agent?.session, request.questions)
             try {
               return await next()
             } finally {
               if (active.turn === turn && !active.cancelled) {
                 turn.state = 'running'
                 this.changed(record)
+                void this.reportNotification(record, turn, 'running', this.turnSummary(turn)).catch(
+                  () => {},
+                )
               }
             }
           },
@@ -1013,11 +1508,14 @@ export class HarnessService {
       }
     } catch (error) {
       turn.state = active.cancelled ? 'cancelled' : 'failed'
+      // A refused fixed configuration carries an actionable, credential-free reason and
+      // must not collapse into the generic transport text.
       turn.error =
-        error instanceof HarnessTransportError
+        error instanceof HarnessTransportError || error instanceof HarnessConfigurationError
           ? error.message
           : '执行未完成，请检查 Harness 安装、所选渠道和模型。原任务未自动重发。'
     } finally {
+      await this.titleUpdates.get(record.id)
       for (const p of active.approvals.values()) active.acp?.answer(p.rpcId)
       active.approvals.clear()
       active.turn = undefined
@@ -1039,6 +1537,10 @@ export class HarnessService {
         turn.error = '结果未能持久保存，请检查磁盘后重试读取'
         this.changed(record)
       })
+      // The turn's own record is written first, so the reviewer can always read
+      // what the notification announces; a crash between the two writes is
+      // repaired by the next reconciliation pass rather than by a resend.
+      await this.syncNotification(record, turn)
       this.drainQueue()
       void this.flushDeliveries().catch(() => {})
     }
@@ -1083,6 +1585,438 @@ export class HarnessService {
       check()
     })
   }
+  /**
+   * 停止后编辑的入口可见性。客户端只在 supported 时显示入口；
+   * 磁盘上的文件永远不在本流程内，也不会被撤销。
+   */
+  async stopEditState(input: { sessionId: string }) {
+    await this.ready
+    const target = this.stopEditTarget(input.sessionId)
+    if (
+      target?.record?.harnessRef === MINIMAX_CODE_HARNESS &&
+      !this.stopEditBlocked(input.sessionId)
+    )
+      await this.connect(target.record)
+    return this.stopEdits.state({ sessionId: required(input.sessionId, 'sessionId') })
+  }
+
+  /** Reject model requests while the addressed conversation's history is being changed or unresolved. */
+  async assertConversationEditable(sessionId: string): Promise<void> {
+    await this.ready
+    if (this.stopEdits.editing(sessionId)) throw Error('此会话正在处理停止后编辑，请稍后再发送')
+    const blocked = this.stopEditBlocked(sessionId)
+    if (blocked) throw Error(blocked)
+  }
+
+  /**
+   * 回退到所选用户消息之前，并把原文交给客户端放回普通输入框。
+   * 本方法绝不自行发送：下一次模型请求只能由用户再次发送触发。
+   */
+  async stopEdit(input: { clientRequestId: string; sessionId: string; boundaryId: string }) {
+    return this.runtimeMaintenance.admit(() => this.stopEditAdmitted(input))
+  }
+  private async stopEditAdmitted(input: {
+    clientRequestId: string
+    sessionId: string
+    boundaryId: string
+  }) {
+    await this.ready
+    try {
+      return await this.stopEdits.rewind({
+        clientRequestId: required(input.clientRequestId, 'clientRequestId'),
+        sessionId: required(input.sessionId, 'sessionId'),
+        boundaryId: required(input.boundaryId, 'boundaryId'),
+      })
+    } catch (error) {
+      // 机器可读的原因随消息一起跨过 Remote 边界；未知异常一律换成固定诊断，
+      // 绝不把 Runtime 或底层库的原始信息反射到界面。
+      if (error instanceof StopEditError)
+        throw new Error(`停止后编辑被拒绝（${error.reason}）：${error.message}`)
+      this.ctx.logger.warn(`停止后编辑失败：${error instanceof Error ? error.name : 'unknown'}`)
+      throw new Error('停止后编辑被拒绝（rewind-failed）：操作未能完成，请稍后重试')
+    }
+  }
+
+  /** 客户端确认已把原文放回输入框，避免恢复后重复填入同一条草稿。 */
+  async acknowledgeStopEditDraft(input: { sessionId: string; clientRequestId: string }) {
+    await this.ready
+    return {
+      acknowledged: await this.stopEdits.acknowledge({
+        sessionId: required(input.sessionId, 'sessionId'),
+        clientRequestId: required(input.clientRequestId, 'clientRequestId'),
+      }),
+    }
+  }
+
+  private stopEditHost(): StopEditHost {
+    return {
+      resolve: (sessionId) => this.stopEditTarget(sessionId),
+      addressedSession: (target) =>
+        target.record
+          ? target.record.harnessRef === 'dsh'
+            ? target.record.acpSessionId
+            : (target.record.nativeSessionId ?? target.record.acpSessionId)
+          : target.sessionId,
+      runtime: (target) => this.stopEditRuntime(target),
+      busy: (target) => this.stopEditBusy(target),
+      stopAndWait: (target) => this.stopEditSettle(target),
+      // 身份必须新：被回退轮次的 operation 不会被复用，交付和反馈也就不会落错目标。
+      nextOperationId: () => 'stop-edit-' + randomUUID(),
+      intent: (sessionId) => this.stopEditIntents.get(sessionId),
+      plan: async (input) => {
+        await this.stopEditIntents.plan({
+          sessionId: input.target.sessionId,
+          clientRequestId: input.clientRequestId,
+          boundaryId: input.boundaryId,
+          pendingOperationId: input.pendingOperationId,
+          pendingDraft: input.pendingDraft,
+          preservedSessionId: input.preservedSessionId,
+        })
+      },
+      markRewinding: async (sessionId) => {
+        await this.stopEditIntents.markRewinding(sessionId)
+      },
+      blocked: (sessionId) => this.stopEditBlocked(sessionId),
+      commit: (input) => this.commitStopEdit(input),
+      markUncertain: async (sessionId, reason) => {
+        await this.stopEditIntents.markUncertain(sessionId, reason)
+      },
+      acknowledgeDraft: (sessionId, clientRequestId) =>
+        this.stopEditIntents.acknowledge(sessionId, clientRequestId),
+    }
+  }
+
+  /**
+   * 这个会话是否被一次结果不确定的编辑卡住；编辑入口、普通发模型与委派共用同一判断。
+   *
+   * `planned` 表示意图已落盘但 Runtime 还没被调用过，会话没有被改动过，可以照常发送；
+   * `rewinding` 与 `uncertain` 都无法证明上下文仍是编辑前的状态，一律拒绝。进程重启后
+   * 读到的 `rewinding` 正是“改动已经发出但没有落定”的证据，因此同样按不确定处理。
+   */
+  private stopEditBlocked(sessionId: string): string | undefined {
+    const branch = [...this.records.values()].find(
+      (record) => record.nativeSessionId === sessionId || record.acpSessionId === sessionId,
+    )
+    const previous = branch?.stopEdit?.previousSessionId
+    const sourceIntent = previous ? this.stopEditIntents.get(previous) : undefined
+    if (sourceIntent?.phase === 'uncertain') return sourceIntent.reason
+    if (sourceIntent?.phase === 'rewinding')
+      return '编辑分支的提交尚未确认，请先核对会话历史后再发送'
+    const intent = this.stopEditIntents.get(sessionId)
+    if (!intent) return undefined
+    if (intent.phase === 'uncertain') return intent.reason
+    if (intent.phase === 'rewinding')
+      return '上一次停止后编辑在改动途中中断，请先核对会话历史后再发送'
+    if (
+      intent.result?.moved &&
+      minimaxCodeModels().some((model) => model.model === intent.result?.review.model) &&
+      intent.result.preservedSessionId === sessionId
+    )
+      return '这是编辑前保留的会话，请打开编辑分支后继续'
+    return undefined
+  }
+
+  /** 回退在途或结果不确定时拒绝写入：前者会互相覆盖历史，后者无法证明上下文还是编辑前的。 */
+  private assertStopEditIdle(record: HarnessSession): void {
+    const ids = record.nativeSessionId
+      ? [record.acpSessionId, record.nativeSessionId]
+      : [record.acpSessionId]
+    for (const id of ids) {
+      if (this.stopEdits.editing(id)) throw Error('此会话正在处理停止后编辑，请稍后再发送')
+      const blocked = this.stopEditBlocked(id)
+      if (blocked) throw Error(blocked)
+    }
+  }
+
+  /**
+   * 解析可编辑的侧栏会话。
+   *
+   * 普通原生 DSH 对话没有委派记录也必须能编辑，因此记录缺席时用官方会话本身作为目标，
+   * 此时不裁剪任何投影；MiniMax 需要真实 ACP 连接，没有记录就没有运行时，入口不出现。
+   */
+  private stopEditTarget(sessionId: string): StopEditTarget | undefined {
+    const session = this.ctx.sessions?.get(asSessionId<SessionId>(sessionId))
+    const current = session
+      ? this.ctx.sessionProjections.snapshot(session, ['modelSelection']).values.modelSelection
+      : undefined
+    const selected = current?.next ?? current?.lastUsed
+    for (const record of this.records.values())
+      if (record.acpSessionId === sessionId || record.nativeSessionId === sessionId) {
+        if (selected && defaultHarness(selected) !== record.harnessRef) return undefined
+        return { sessionId, harness: record.harnessRef === 'dsh' ? 'dsh' : 'minimax-code', record }
+      }
+    if (session && !session.header.origin) {
+      if (selected && defaultHarness(selected) !== 'dsh') return undefined
+      return { sessionId, harness: 'dsh' }
+    }
+    return undefined
+  }
+
+  /** 只有原生 DSH 与 MiniMax 首批提供停止后编辑；其他 Harness 没有任何入口。 */
+  private stopEditRuntime(target: StopEditTarget): StopEditRuntime | undefined {
+    const record = target.record
+    if (record && record.harnessRef !== 'dsh' && record.harnessRef !== MINIMAX_CODE_HARNESS)
+      return undefined
+    if (target.harness === 'dsh') return nativeStopEditRuntime(this.nativeStopEditSource())
+    const acp = record ? this.active.get(record.id)?.acp : undefined
+    if (!record || !acp) return undefined
+    const source: MinimaxHistorySource = {
+      // 能力只认 Runtime 自己的公告；没有安装扩展就是不可用。
+      capability: () => readMinimaxCapability(this.active.get(record.id)?.agentInfo),
+      list: (sessionId) => this.minimaxHistory(record, HISTORY_LIST, { sessionId }),
+      rewind: (sessionId, userMessageId, clientRequestId) =>
+        this.minimaxHistory(record, HISTORY_REWIND, {
+          sessionId,
+          userMessageId,
+          clientRequestId,
+          // 明确不回退本轮 diff：文件改动保持原样，界面不得暗示文件已还原。
+          rewindTurnDiff: false,
+        }),
+      deletedMessageIds: (value) =>
+        Array.isArray((value as any)?.deletedMessageIds)
+          ? ((value as any).deletedMessageIds as unknown[]).filter(
+              (item): item is string => typeof item === 'string',
+            )
+          : [],
+      review: () => this.stopEditReviewBySession(record.nativeSessionId ?? record.acpSessionId),
+    }
+    return minimaxStopEditRuntime(source, this.nativeStopEditSource())
+  }
+
+  /** 扩展方法必须经过已建立的 ACP 连接；没有连接就不提供任何历史能力。 */
+  private async minimaxHistory(
+    record: HarnessSession,
+    method: string,
+    params: object,
+  ): Promise<unknown> {
+    const acp = this.active.get(record.id)?.acp
+    if (!acp || acp.closed)
+      throw new StopEditError('capability-missing', 'Harness 连接未就绪，无法读取或回退会话历史')
+    return acp.request(method, params, 60_000)
+  }
+
+  private nativeStopEditSource(): NativeSessionSource {
+    const sessionOf = (sessionId: string) =>
+      this.ctx.sessions.get(asSessionId<SessionId>(sessionId))
+    return {
+      events: (sessionId) => sessionOf(sessionId)?.snapshotEvents(),
+      running: (sessionId) =>
+        this.ctx.agents.get(asSessionId<SessionId>(sessionId))?.status === 'running',
+      whenIdle: async (sessionId) => {
+        const agent = this.ctx.agents.get(asSessionId<SessionId>(sessionId))
+        if (agent) await agent.whenIdle()
+      },
+      cwd: (sessionId) => sessionOf(sessionId)?.header.cwd,
+      validateBranch: (sessionId) => {
+        const session = sessionOf(sessionId)
+        const permissions = this.ctx.get('permissionPresets')
+        if (!session || !permissions || permissions.current(session) === 'custom')
+          throw new StopEditError('missing-mapping', '无法完整复制原会话权限，请先选择内置权限选项')
+        const selection = this.ctx.sessionProjections.snapshot(session, ['modelSelection']).values
+          .modelSelection
+        if (!(selection?.next ?? selection?.lastUsed))
+          throw new StopEditError('missing-mapping', '无法读取原会话模型选择，已放弃回退')
+      },
+      fork: async (sessionId, atSeq) => {
+        const value = object(await this.native('fork', { sessionId, atSeq }))
+        return required(value.sessionId, 'forked sessionId')
+      },
+      create: async (sessionId, cwd) => {
+        const id = `session-${randomUUID()}`
+        const workspace = await this.ctx.workspaceRegistry.create(cwd)
+        await this.native('create', { sessionId: id, workspaceId: workspace.id })
+        return id
+      },
+      rebind: (sessionId, previousSessionId, editedHead) =>
+        this.rebindNativeBranch(sessionId, previousSessionId, editedHead),
+    }
+  }
+
+  /** 读取一个会话实际生效的事实；读不到就如实标为未知，不拿推定值冒充已复核。 */
+  private stopEditReviewBySession(sessionId: string): MinimaxReview {
+    const session = this.ctx.sessions.get(asSessionId<SessionId>(sessionId))
+    const record = [...this.records.values()].find(
+      (item) => item.acpSessionId === sessionId || item.nativeSessionId === sessionId,
+    )
+    const presets = this.ctx.get('permissionPresets')
+    return {
+      model: record?.modelRef.model ?? '未知',
+      ...(record?.reasoningEffort ? { effort: record.reasoningEffort } : {}),
+      permissions:
+        session && presets
+          ? presets.current(session)
+          : record
+            ? harnessPermissionPreset(record.sandbox)
+            : '未知',
+      cwd: session?.header.cwd ?? record?.cwd ?? '',
+      workspaceId: session?.header.cwd ? '已随分支复制' : '',
+      ...(session?.header.cwd ? { project: session.header.cwd } : {}),
+      title: '',
+    }
+  }
+
+  private stopEditBusy(target: StopEditTarget): boolean {
+    if (target.record && this.active.get(target.record.id)?.turn) return true
+    return this.stopEditOfficialSessions(target).some(
+      (sessionId) => this.ctx.agents.get(asSessionId<SessionId>(sessionId))?.status === 'running',
+    )
+  }
+
+  private stopEditOfficialSessions(target: StopEditTarget): string[] {
+    const record = target.record
+    if (record)
+      return [record.harnessRef === 'dsh' ? record.acpSessionId : record.nativeSessionId].filter(
+        (value): value is string => typeof value === 'string' && value.length > 0,
+      )
+    return [target.sessionId]
+  }
+
+  /** 停止必须走官方取消入口，并且要等到会话真正静止。 */
+  private async stopEditSettle(target: StopEditTarget): Promise<void> {
+    if (target.record && this.stopEditBusy(target))
+      await this.cancel({ sessionId: target.record.id }, false)
+    for (const sessionId of this.stopEditOfficialSessions(target)) {
+      const agent = this.ctx.agents.get(asSessionId<SessionId>(sessionId))
+      if (agent) {
+        agent.cancel({ kind: 'user' })
+        await agent.whenIdle()
+      }
+    }
+  }
+
+  /**
+   * 持久化回退结果：截断投影尾部、切换会话身份、记录可复核谱系。
+   * 原会话保持可浏览；被移除轮次的回传记录随之消失，不会被复用。
+   */
+  private async commitStopEdit(input: {
+    target: StopEditTarget
+    outcome: StopEditRewindOutcome
+    boundary: StopEditBoundary
+    clientRequestId: string
+    operationId: string
+    keep: number
+  }): Promise<StopEditResult> {
+    const { target, outcome, boundary, clientRequestId, operationId, keep } = input
+    const record = target.record
+    const previousSessionId = this.stopEdits.addressedSession(target)
+    const removedTurns = record ? record.turns.length - keep : 0
+    if (record) {
+      record.turns = record.turns.slice(0, keep)
+      if (record.harnessRef === 'dsh') record.acpSessionId = outcome.sessionId
+      else record.nativeSessionId = outcome.sessionId
+      record.stopEdit = {
+        clientRequestId,
+        previousSessionId,
+        sessionId: outcome.sessionId,
+        boundaryId: boundary.id,
+        pendingOperationId: operationId,
+        removedTurns,
+        at: now(),
+      }
+      this.changed(record)
+      await this.save(record)
+    }
+    const result: StopEditResult = {
+      sessionId: outcome.sessionId,
+      clientRequestId,
+      preservedSessionId: outcome.preservedSessionId,
+      branchTitle: outcome.review.title,
+      moved: outcome.sessionId !== outcome.preservedSessionId,
+      boundary,
+      draft: outcome.draft,
+      unrestored: outcome.unrestored,
+      removedTurns,
+      review: {
+        ...outcome.review,
+        feedback: {
+          ...(record?.assignment ? { taskId: record.assignment.taskId } : {}),
+          pendingDeliveries: (record?.turns ?? []).filter(
+            (turn) => turn.delivery?.state !== 'delivered',
+          ).length,
+          operationId,
+        },
+      },
+      version: STOP_EDIT_VERSION,
+    }
+    // 落两份：新的目标会话带着待填原文，旧页面只留结果、不带原文。
+    await this.stopEditIntents.markCommitted(outcome.sessionId, outcome.preservedSessionId, result)
+    return result
+  }
+
+  /**
+   * 把模型、内置权限与标题逐项落到新分支会话上。
+   *
+   * 官方公开的 fork 只复制 cwd、父会话与 preset，不会继承 OPL 绑定、内置权限或标题，
+   * 因此必须在这里逐项重写，并返回实际复核到的事实而不是沿用改写前的值。
+   */
+  private async rebindNativeBranch(
+    sessionId: string,
+    previousSessionId: string,
+    editedHead: string,
+  ): Promise<NativeReviewFacts> {
+    const previous = this.ctx.sessions.get(asSessionId<SessionId>(previousSessionId))
+    const record = [...this.records.values()].find(
+      (item) =>
+        item.acpSessionId === previousSessionId || item.nativeSessionId === previousSessionId,
+    )
+    const cwd = previous?.header.cwd ?? record?.cwd
+    if (!cwd) throw new StopEditError('rewind-failed', '原会话缺少项目目录，已放弃回退')
+    const session = this.ctx.sessions.get(asSessionId<SessionId>(sessionId))
+    if (!session) throw new StopEditError('rewind-failed', '新分支会话未就绪')
+    if (session.header.cwd !== cwd)
+      throw new StopEditError('rewind-failed', '新分支的项目目录与原会话不一致，已放弃回退')
+    if (!previous) throw new StopEditError('rewind-failed', '原会话已关闭')
+    const selection = this.ctx.sessionProjections.snapshot(previous, ['modelSelection']).values
+      .modelSelection
+    const selected = selection?.next ?? selection?.lastUsed ?? record?.modelRef
+    if (!selected) throw new StopEditError('rewind-failed', '原会话缺少可复核的模型选择')
+    await this.native('selectModel', { sessionId, ...selected })
+    const permissions = this.ctx.get('permissionPresets')
+    if (!permissions) throw new StopEditError('rewind-failed', '官方权限服务不可用')
+    permissions.set(session, permissions.current(previous))
+    // 分支标题沿用原会话，用户在普通会话列表里才找得到；带上“编辑分支”便于分辨。
+    // 官方标题由未公开的 sessionTitle 服务持有，Host 读不到；因此分支沿用本套件的
+    // 记录标题，没有记录时用被编辑消息的开头，保证在会话列表里可辨认而不是一串 id。
+    const base = record?.title ?? editedHead
+    const title = `${base} · 编辑分支`
+    await this.native('rename', { sessionId, title })
+    if (record) {
+      const binding = this.selections[previousSessionId]
+      if (binding) await this.bindSelection(sessionId, binding)
+    }
+    const facts = this.stopEditReviewBySession(sessionId)
+    return {
+      model: selected.model,
+      ...('reasoningEffort' in selected && selected.reasoningEffort
+        ? { effort: selected.reasoningEffort }
+        : facts.effort
+          ? { effort: facts.effort }
+          : {}),
+      permissions: facts.permissions,
+      cwd: facts.cwd,
+      workspaceId: facts.workspaceId,
+      ...(facts.project ? { project: facts.project } : {}),
+      title,
+    }
+  }
+
+  /** 记录 Runtime 回报的原生边界身份；通知可能先于 prompt 响应到达。 */
+  private async recordNativeBoundary(record: HarnessSession, params: unknown) {
+    const data = object(params)
+    if (data.sessionId !== record.acpSessionId) return
+    const clientRequestId = typeof data.clientRequestId === 'string' ? data.clientRequestId : ''
+    const userMessageId = typeof data.userMessageId === 'string' ? data.userMessageId : ''
+    if (!clientRequestId || !userMessageId) return
+    const turn = record.turns.find((item) => item.operationId === clientRequestId)
+    if (!turn || turn.native?.userMessageId === userMessageId) return
+    turn.native = {
+      ...turn.native,
+      userMessageId,
+      ...(typeof data.turnId === 'string' ? { turnId: data.turnId } : {}),
+      ...(typeof data.historyVersion === 'string' ? { historyVersion: data.historyVersion } : {}),
+    }
+    await this.save(record)
+  }
   async cancel(input: { sessionId: string }, pauseWake = true) {
     await this.ready
     const record = this.records.get(required(input.sessionId, 'sessionId')),
@@ -1112,7 +2046,11 @@ export class HarnessService {
       active.approvals.clear()
       if (record.harnessRef === 'dsh')
         await this.native('cancel', { sessionId: record.acpSessionId })
-      else active.acp?.cancel(record.acpSessionId)
+      else {
+        active.acp?.cancel(record.acpSessionId)
+        if (record.nativeSessionId)
+          await this.native('cancel', { sessionId: record.nativeSessionId })
+      }
       const timer = setTimeout(() => {
         void active.acp?.dispose()
       }, 5000)
@@ -1232,7 +2170,13 @@ export class HarnessService {
     signal.throwIfAborted()
     origin = this.validOrigin(origin)
     const p = object(input),
-      parent = this.parentOf(origin)
+      parent = this.parentOf(origin),
+      existing = p.sessionId ? this.ownedTask(origin, p.sessionId) : undefined
+    // 委派同样会发模型：目标会话被结果不确定的编辑卡住时，在启动或写下任务记录之前就拒绝。
+    if (existing) this.assertStopEditIdle(existing)
+    // A dispatch with no parent is addressed to the caller itself, so its own
+    // origin must name the Session the outcome goes to.
+    if (!parent) this.requireExternalReviewer(origin)
     let cwd = parent?.cwd,
       sandbox = parent?.sandbox
     if (!parent && origin.kind === 'dsh') {
@@ -1243,14 +2187,20 @@ export class HarnessService {
         .get(session.id)
         ?.ctx.get('sandboxPolicy')
         ?.resolve({ session })?.mode
-      sandbox = mode && mode !== 'read-only' ? 'workspace' : 'read-only'
+      sandbox =
+        mode === 'danger-full-access'
+          ? 'full-access'
+          : mode && mode !== 'read-only'
+            ? 'workspace'
+            : 'read-only'
     }
     if (!parent && origin.kind === 'codex') {
       cwd = required(p.cwd, '项目目录')
-      sandbox = p.sandbox === 'read-only' ? 'read-only' : 'workspace'
+      if (p.sandbox !== undefined && !['read-only', 'workspace', 'full-access'].includes(p.sandbox))
+        throw Error('无效的权限边界')
+      sandbox = p.sandbox ?? existing?.sandbox ?? 'workspace'
     }
     if (!cwd) throw Error('来源对话不存在或没有项目目录')
-    const existing = p.sessionId ? this.ownedTask(origin, p.sessionId) : undefined
     const requestedModel =
       typeof p.model === 'string' ? p.model.trim().toLowerCase().replaceAll(' ', '') : ''
     const combination =
@@ -1302,7 +2252,12 @@ export class HarnessService {
     }
     if (wait) signal.addEventListener('abort', cancel, { once: true })
     try {
-      await this.prompt({ sessionId: record.id, text: task, operationId })
+      await this.prompt({
+        sessionId: record.id,
+        text: task,
+        operationId,
+        ...(p.writeScope === undefined ? {} : { writeScope: p.writeScope }),
+      })
       if (wait) {
         await this.wait({ sessionId: record.id, operationId }, signal)
         return await this.taskResult(origin, record.id, operationId)
@@ -1372,6 +2327,7 @@ export class HarnessService {
       this.observed.add(turn.delivery.id)
       await this.save(record)
     }
+    if (turn) await this.syncNotification(record, turn, true)
     return { ...this.view(record), sessionId: record.id }
   }
   async submitReport(origin: HarnessOrigin, input: unknown) {
@@ -1447,27 +2403,358 @@ export class HarnessService {
     void this.flushDeliveries().catch(() => {})
     return this.view(record)
   }
+  /**
+   * The durable notification outbox this deployment mounted, when it mounted one.
+   *
+   * The execution service never grows a second outbox: the wake transport, its
+   * retry schedule, and the receiver's claim ledger live in `taskFeedback`, and
+   * a combination outcome is handed to exactly that path.
+   */
+  private notifications(): TaskFeedbackService | undefined {
+    return this.ctx.get('taskFeedback')
+  }
+
+  /**
+   * The external reviewer one origin names, when this Host can actually reach it.
+   *
+   * Only a Codex origin carries a wakeable thread, and only when the dispatcher
+   * supplied a real Session id: the Skill's placeholder names no Session at all,
+   * so it is reported as unaddressable instead of being queued as if a delivery
+   * could reach it.
+   * @param origin - the origin recorded when the combination session was created.
+   * @returns the thread id to wake, or undefined when this origin is not addressable.
+   */
+  private externalReviewer(origin: HarnessOrigin): string | undefined {
+    if (origin.kind !== 'codex') return undefined
+    const thread = origin.sessionId.trim()
+    return thread === '' || thread === NO_SESSION_TARGET_THREAD_ID ? undefined : thread
+  }
+
+  /**
+   * Refuse a new external dispatch that names no reachable reviewer.
+   *
+   * A Codex-origin dispatch carries the Session that must receive the outcome.
+   * When that field holds no real Session id — the Skill's placeholder, which is
+   * also what a caller with no thread id supplies — there is nothing to notify
+   * and no way to find out: the dispatch is refused here, before any connection
+   * or prompt, instead of running work whose result can never reach its
+   * dispatcher. Internal origins (dsh, harness, desktop) are untouched: only an
+   * external Codex reviewer needs an addressable target.
+   * @param origin - the origin the caller supplied for the new dispatch.
+   * @throws when a Codex-origin dispatch names no real Session.
+   */
+  private requireExternalReviewer(origin: HarnessOrigin): void {
+    if (origin.kind !== 'codex' || this.externalReviewer(origin) !== undefined) return
+    throw Error(
+      `外部 Codex 派发需要真实 Codex 会话 ID，${JSON.stringify(origin.sessionId)} 不是可投递的反馈目标；已在发送提示词前拒绝，未创建子会话`,
+    )
+  }
+
+  /**
+   * Register one combination operation in the durable notification outbox.
+   *
+   * This runs before the prompt is written to the agent, because a turn that
+   * finishes or pauses immediately afterwards must find its registration already
+   * durable: a notification that depended on the dispatcher noticing in time
+   * would be exactly the gap this path closes. Re-registration is idempotent, so
+   * the reconciliation pass replays it freely.
+   * @param record - the combination session the operation will run in.
+   * @param operationId - the operation (turn) about to be prompted.
+   */
+  private async registerNotification(record: HarnessSession, operationId: string): Promise<void> {
+    const assignment = record.assignment
+    if (!assignment?.autoReview) return
+    const thread = this.externalReviewer(record.origin)
+    if (thread === undefined) return
+    const notifications = this.notifications()
+    if (notifications === undefined) return
+    await notifications.registerHarnessOperation({
+      execution: {
+        kind: 'harness-session',
+        harnessSessionId: record.id,
+        harnessRef: record.harnessRef,
+        combination: record.combination,
+        taskId: assignment.taskId,
+        operationId,
+      },
+      target: { kind: 'codex-thread', threadId: thread },
+      acceptance: assignment.acceptance,
+    })
+  }
+
+  /** One line describing what one combination turn actually reached. */
+  private turnSummary(turn: HarnessTurn): string {
+    switch (turn.state) {
+      case 'completed':
+        return 'the combination turn completed'
+      case 'failed':
+        return turn.error
+          ? `the combination turn failed: ${turn.error}`
+          : `the combination turn failed (stop reason ${turn.stopReason ?? 'unknown'})`
+      case 'cancelled':
+        return 'the combination turn was cancelled'
+      case 'interrupted':
+        return 'the Host restarted while this operation was in flight; the instruction was not sent again'
+      case 'waiting_approval':
+        return 'the combination session is waiting for a permission decision from its human'
+      case 'waiting_input':
+        return 'the combination session asked its human a question'
+      case 'queued':
+        return 'the combination turn is queued'
+      case 'waiting_child':
+        return 'the combination turn is waiting for a child task'
+      case 'running':
+        return 'the combination turn is running'
+      default:
+        return 'the combination session is idle'
+    }
+  }
+
+  /**
+   * The pause one waiting turn is in, rebuilt from the live execution state.
+   *
+   * Only an approval can be rebuilt after the fact, because the pending ask is
+   * still in memory; a structured question has no such record and is announced
+   * from the hook that observes it.
+   * @param record - the combination session holding the turn.
+   * @param turn - the turn that is waiting.
+   * @returns the pause report, or undefined when this state names no rebuildable pause.
+   */
+  private turnPause(record: HarnessSession, turn: HarnessTurn): HarnessPauseReport | undefined {
+    if (turn.state !== 'waiting_approval') return undefined
+    const asks = [...(this.active.get(record.id)?.approvals.values() ?? [])]
+    const ask = asks[asks.length - 1]
+    if (ask === undefined) return undefined
+    return {
+      kind: 'approval',
+      pauseId: `approval:${ask.id}`,
+      approval: { approvalId: ask.id, toolName: ask.title },
+    }
+  }
+
+  /**
+   * Fold one observed combination state into the durable notification outbox.
+   *
+   * The state reported is the one the execution recorded, never an inferred
+   * outcome, and the outbox answers with the delivery that state owes.
+   * @param record - the combination session.
+   * @param turn - the turn whose state is reported.
+   * @param state - the task state that turn reached.
+   * @param summary - one line describing what was observed.
+   * @param pause - the pause a waiting state is in, when it has one.
+   * @returns the delivery the state owes, or null when it owes none.
+   */
+  private async reportNotification(
+    record: HarnessSession,
+    turn: HarnessTurn,
+    state: HarnessReportState,
+    summary: string,
+    pause?: HarnessPauseReport,
+  ): Promise<DeliveryRecord | null> {
+    const assignment = record.assignment
+    if (!assignment?.autoReview || this.externalReviewer(record.origin) === undefined) return null
+    const notifications = this.notifications()
+    if (notifications === undefined) return null
+    const value = await notifications.reportHarnessState({
+      taskId: harnessTaskIdOf({
+        harnessSessionId: record.id,
+        taskId: assignment.taskId,
+        operationId: turn.operationId,
+      }),
+      state,
+      summary,
+      ...(pause === undefined ? {} : { pause }),
+    })
+    return value.delivery
+  }
+
+  /**
+   * Announce a permission pause the moment the agent asks for it.
+   *
+   * The pause is reported while the turn is still open, so the reviewer learns
+   * about the wait without waiting for a turn end that a human decision may hold
+   * back indefinitely. The guaranteed retry is the reconciliation pass, which
+   * rebuilds the same pause identity from the pending ask.
+   * @param record - the combination session holding the turn.
+   * @param turn - the turn that paused.
+   */
+  private async announceApproval(record: HarnessSession, turn: HarnessTurn): Promise<void> {
+    const pause = this.turnPause(record, turn)
+    if (pause === undefined) return
+    await this.registerNotification(record, turn.operationId)
+    await this.reportNotification(record, turn, 'waiting_approval', this.turnSummary(turn), pause)
+  }
+
+  /**
+   * Announce a structured question the moment the combination session asks it.
+   *
+   * The pause identity is the log cursor the request was observed at plus the
+   * caller-provided question ids, so a replay of one request is one pause while
+   * a genuinely new ask at a later cursor is another.
+   * @param record - the combination session holding the turn.
+   * @param turn - the turn that paused.
+   * @param session - the DSH Session the question was asked on, when it is attached.
+   * @param questions - the questions, in caller order.
+   */
+  private async announceQuestion(
+    record: HarnessSession,
+    turn: HarnessTurn,
+    session: Session | undefined,
+    questions: readonly AskUserQuestionItem[],
+  ): Promise<void> {
+    if (!record.assignment) return
+    await this.registerNotification(record, turn.operationId)
+    const cursor = session === undefined ? 0 : Number(session.seq)
+    await this.reportNotification(record, turn, 'waiting_input', this.turnSummary(turn), {
+      kind: 'question',
+      pauseId: `question:${String(cursor)}:${questions.map((question) => question.id).join('|')}`,
+      questions,
+    })
+  }
+
+  /**
+   * Reconcile one combination turn with the durable notification outbox.
+   *
+   * This is the only route a combination outcome takes to its reviewer, and it
+   * never prompts a model: the outbox owns the delivery, its retry schedule, the
+   * wake transport, and the receiver's claim ledger. Registration is replayed
+   * first, so a crash between the turn's own record and the outbox write is
+   * repaired by the next pass, and the local card then mirrors the outbox stage,
+   * so a notification that is still pending is never shown as delivered. A
+   * failure to register is reported on the card as blocked with its reason.
+   * @param record - the combination session whose turn is reconciled.
+   * @param turn - the turn to report.
+   * @param read - whether the reviewer just read this turn's result itself.
+   */
+  private async syncNotification(
+    record: HarnessSession,
+    turn: HarnessTurn,
+    read = false,
+  ): Promise<void> {
+    if (!record.assignment || this.parentOf(record.origin) !== undefined) return
+    const delivery = (turn.delivery ??= {
+      id: hash([record.id, turn.operationId]),
+      state: 'pending',
+      attempt: 0,
+    })
+    const before = `${delivery.state}\u0000${delivery.error ?? ''}`
+    try {
+      await this.syncNotificationState(record, turn, delivery, read)
+    } catch (error) {
+      delivery.state = 'blocked'
+      delivery.error = `后台通知未登记：${error instanceof Error ? error.message : String(error)}`
+    }
+    if (`${delivery.state}\u0000${delivery.error ?? ''}` === before) return
+    this.changed(record)
+    await this.save(record).catch(() => {})
+  }
+
+  /**
+   * The reconciliation body, so its caller reports one blocked reason for every failure.
+   * @param record - the combination session.
+   * @param turn - the turn being reconciled.
+   * @param delivery - the local card entry mirroring the durable outbox.
+   * @param read - whether the reviewer just read this turn's result itself.
+   */
+  private async syncNotificationState(
+    record: HarnessSession,
+    turn: HarnessTurn,
+    delivery: NonNullable<HarnessTurn['delivery']>,
+    read: boolean,
+  ): Promise<void> {
+    const assignment = record.assignment
+    if (!assignment) return
+    if (!assignment.autoReview) {
+      delivery.state = 'blocked'
+      delivery.error = '自动回传已关闭：未登记后台通知，结果保留在组合记录中'
+      return
+    }
+    if (this.externalReviewer(record.origin) === undefined) {
+      delivery.state = 'blocked'
+      delivery.error =
+        '发起对话没有真实 Codex 会话 ID，未登记后台通知；不得把 manual 当作投递目标，可在此读取结果或重试回传'
+      return
+    }
+    const notifications = this.notifications()
+    if (notifications === undefined) {
+      delivery.state = 'blocked'
+      delivery.error = '本次部署未挂载通知 outbox，未登记后台投递；结果保留在组合记录中'
+      return
+    }
+    await this.registerNotification(record, turn.operationId)
+    const state = harnessTaskStateOf(turn.state)
+    const pause = this.turnPause(record, turn)
+    // A waiting state is only reportable together with its pause identity; a
+    // question is announced by the hook that observes it instead.
+    const reportable = state !== 'waiting_approval' || pause !== undefined
+    const owed = reportable
+      ? await this.reportNotification(record, turn, state, this.turnSummary(turn), pause)
+      : null
+    if (owed !== null && read && !owed.acknowledged && !owed.retired) {
+      // Reading the recorded result is the receiving Session taking this
+      // notification, so the handoff is recorded instead of being woken again.
+      await notifications.ack({
+        taskId: owed.taskId,
+        deliveryId: owed.deliveryId,
+        stage: 'received',
+      })
+      delivery.state = 'delivered'
+      delete delivery.error
+      return
+    }
+    if (owed === null) {
+      const terminal = state === 'disconnected' || state === 'cancelled'
+      delivery.state = terminal ? 'blocked' : 'pending'
+      if (state === 'disconnected') {
+        delivery.error =
+          'Host 已重启，该 operation 已中断；原指令未重发，如需继续请使用新的 operation'
+      } else if (state === 'cancelled') {
+        delivery.error = '该轮次已取消，不产生完成或失败通知；如需继续请使用新的 operation'
+      } else {
+        delete delivery.error
+      }
+      return
+    }
+    if (owed.acknowledged || owed.stage !== 'enqueued') {
+      // `delivered` is the wake adapter taking the handoff, exactly as the native
+      // path reports it; the receiver's own claim stays in its receipt ledger.
+      delivery.state = 'delivered'
+      delete delivery.error
+      return
+    }
+    if (owed.retired) {
+      delivery.state = 'blocked'
+      delivery.error = '该状态不产生通知：交付已退役，不会重发'
+      return
+    }
+    delivery.state = 'pending'
+    delivery.error = `通知已登记在 outbox（stage ${owed.stage}，第 ${String(owed.attempts)} 次投递），尚未被唤醒通道接收；未配置唤醒时它保留在 outbox 等待真实投递`
+  }
+
   private drainQueue() {
     if (this.disposed) return
     for (const [id, launch] of this.pendingRuns) {
       const record = this.records.get(id)!,
         active = this.active.get(id)!
       const busyWriter =
-        record.sandbox === 'workspace' &&
+        record.sandbox !== 'read-only' &&
         [...this.active].some(([otherId, other]) => {
           const r = this.records.get(otherId)!
           return (
             otherId !== id &&
-            r.cwd === record.cwd &&
-            r.sandbox === 'workspace' &&
+            r.sandbox !== 'read-only' &&
             other.turn &&
+            writerConflicts(
+              { cwd: record.cwd, writeScope: active.turn?.writeScope },
+              { cwd: r.cwd, writeScope: other.turn.writeScope },
+            ) &&
             ['running', 'waiting_approval', 'waiting_input'].includes(other.turn.state)
           )
         })
       const parent = this.parentOf(record.origin)
       const nativeBusy =
         record.assignment &&
-        record.sandbox === 'workspace' &&
+        record.sandbox !== 'read-only' &&
         !parent &&
         record.origin.kind === 'dsh' &&
         this.ctx.agents?.get(asSessionId<SessionId>(record.origin.sessionId))?.status ===
@@ -1487,7 +2774,17 @@ export class HarnessService {
       this.drainQueue()
       for (const record of this.records.values()) {
         const turn = record.turns.at(-1),
-          delivery = turn?.delivery
+          delivery = turn?.delivery,
+          parent = this.parentOf(record.origin)
+        // An external Codex reviewer has no Session in this Host to prompt, so
+        // its notification travels through the durable taskFeedback outbox: the
+        // same wake transport, retry schedule, and claim ledger the native path
+        // uses. Nothing here prompts a model, and nothing here runs the task
+        // again — a pending notification is retried, not re-executed.
+        if (turn && record.assignment && !parent && record.origin.kind === 'codex') {
+          await this.syncNotification(record, turn)
+          continue
+        }
         if (
           !record.assignment?.autoReview ||
           !delivery ||
@@ -1497,8 +2794,7 @@ export class HarnessService {
           turn?.review?.decision === 'accepted'
         )
           continue
-        const parent = this.parentOf(record.origin),
-          key = parent?.id ?? record.origin.kind + ':' + record.origin.sessionId
+        const key = parent?.id ?? record.origin.kind + ':' + record.origin.sessionId
         if (this.deliveryJobs.has(key)) continue
         if (parent?.autoWakePaused) {
           delivery.state = 'blocked'
@@ -1514,7 +2810,9 @@ export class HarnessService {
             'running'
         )
           continue
-        if (!parent && record.origin.kind !== 'dsh') continue // External Codex polls the same durable record.
+        // No addressable reviewer in this Host; the combination card stays the
+        // only reading surface for it.
+        if (!parent && record.origin.kind !== 'dsh') continue
         this.deliveryJobs.add(key)
         delivery.state = 'delivering'
         await this.save(record)
@@ -1564,14 +2862,84 @@ export class HarnessService {
     const projection = session
       ? this.ctx.sessionProjections.snapshot(session, ['modelSelection']).values.modelSelection
       : undefined
-    const current = projection?.next ?? catalog.default
-    const selected = (await this.executionCatalog()).combinations.find(
+    const executionCatalog = await this.executionCatalog()
+    const bound = executionCatalog.combinations.find(
+      (item) => item.enabled && item.id === this.selections[sessionId],
+    )
+    // A cold official Session may not be attached to the in-memory projection
+    // yet after Desktop restart. The durable OPL binding is the authoritative
+    // selector until the Session supplies its own next-request model.
+    const current = projection?.next ?? projection?.lastUsed ?? bound?.modelRef ?? catalog.default
+    const selected = this.combinationFor(sessionId, executionCatalog, current)
+    return { current, groups: catalog.groups, ...(selected ? { combination: selected.id } : {}) }
+  }
+  /**
+   * Resolve the combination bound to a DSH session.
+   *
+   * An explicit matching binding preserves the user's chosen channel. Without a
+   * binding, the configured default external combination for this exact model
+   * also handles the first ordinary conversation request. The picker need not
+   * be clicked to establish routing. Native DSH models retain provider routing.
+   */
+  private combinationFor(
+    sessionId: string,
+    catalog: ExecutionCatalog,
+    ref: { provider: string; model: string },
+  ): CombinationDefinition | undefined {
+    const exact = catalog.combinations.find(
       (item) =>
         item.enabled &&
         item.id === this.selections[sessionId] &&
-        modelRefKey(item.modelRef) === modelRefKey(current),
+        modelRefKey(item.modelRef) === modelRefKey(ref),
     )
-    return { current, groups: catalog.groups, ...(selected ? { combination: selected.id } : {}) }
+    if (exact) return exact
+    const externalDefault = catalog.combinations.find(
+      (item) =>
+        item.enabled &&
+        item.isDefault &&
+        item.harnessRef !== 'dsh' &&
+        modelRefKey(item.modelRef) === modelRefKey(ref),
+    )
+    if (externalDefault) return externalDefault
+    if (ref.provider !== MINIMAX_CODE_PROVIDER) return undefined
+    return catalog.combinations.find(
+      (item) =>
+        item.enabled &&
+        item.harnessRef === MINIMAX_CODE_HARNESS &&
+        modelRefKey(item.modelRef) === modelRefKey(ref),
+    )
+  }
+  /** Restore this Session's choice for the exact model, using its live default if absent or retired. */
+  private async selectionForModel(session: Session, ref: ModelRef): Promise<ModelSelection> {
+    const catalog = (await this.ctx.typertGateway.invoke({
+      namespace: 'session',
+      method: 'modelCatalog',
+      args: {},
+    })) as ModelCatalog
+    const reasoning = catalog.groups
+      .find((group) => group.id === ref.provider)
+      ?.models.find((model) => model.id === ref.model)?.reasoning
+    const projection = this.ctx.sessionProjections.snapshot(session, ['modelSelection']).values
+      .modelSelection
+    const current = projection?.next ?? projection?.lastUsed
+    const matches = (selection: ModelSelection) => modelRefKey(selection) === modelRefKey(ref)
+    const sameCurrentModel = current !== undefined && current !== null && matches(current)
+    const event = sameCurrentModel
+      ? undefined
+      : session
+          .snapshotEvents()
+          .findLast((event) => event.type === 'model/selection' && matches(event.data))
+    const previous = sameCurrentModel
+      ? current
+      : event?.type === 'model/selection'
+        ? event.data
+        : matches(catalog.default)
+          ? catalog.default
+          : undefined
+    const effort = previous?.reasoningEffort
+    const supported = effort !== undefined && reasoning?.efforts.some((item) => item.id === effort)
+    const reasoningEffort = supported ? effort : modelDefaultEffort(ref.model, reasoning)
+    return { ...ref, ...(reasoningEffort === undefined ? {} : { reasoningEffort }) }
   }
   async selectCombination(input: { sessionId: string; combination: string }) {
     await this.ready
@@ -1593,12 +2961,17 @@ export class HarnessService {
     const harness = catalog.harnesses.find((item) => item.id === definition.harnessRef)
     const adapter = adapterFor(definition.harnessRef, definition.modelRef)
     if (!harness || !adapter) throw Error('组合没有兼容适配器')
-    const available = await adapter.available(this.ctx, this.adapterOptions(harness.command))
+    const available = await adapter.available(
+      this.ctx,
+      this.adapterOptions(harness.command, harness.prefix),
+    )
     if (!available.available) throw Error(available.reason ?? 'Harness 未就绪')
+    const selection = await this.selectionForModel(session, definition.modelRef)
     if (definition.harnessRef === 'dsh') {
-      await this.native('selectModel', { sessionId: session.id, ...definition.modelRef })
-      // A combination may narrow permissions; it must never silently elevate an existing session.
-      if (definition.permissionPolicy === 'read-only') setSandboxMode(session, 'read-only')
+      await this.native('selectModel', { sessionId: session.id, ...selection })
+      // Generated policies default new tasks; they do not override a conversation's selected preset.
+      if (definition.permissionPolicy === 'read-only' && !definition.generated)
+        setHarnessPermissions(this.ctx, session, 'read-only')
       await this.bindSelection(session.id, definition.id)
       return { kind: 'native', sessionId: session.id }
     }
@@ -1613,7 +2986,10 @@ export class HarnessService {
       },
       true,
     )
-    await this.native('selectModel', { sessionId: session.id, ...definition.modelRef })
+    await this.native('selectModel', {
+      sessionId: session.id,
+      ...selection,
+    })
     await this.bindSelection(session.id, definition.id)
     return { kind: 'external', sessionId: child.id }
   }
@@ -1623,12 +2999,9 @@ export class HarnessService {
     next: () => AsyncIterable<StreamChunk>,
   ): AsyncIterable<StreamChunk> {
     await this.ready
-    const definition = (await this.executionCatalog()).combinations.find(
-      (item) =>
-        item.enabled &&
-        item.id === this.selections[options.sessionId ?? ''] &&
-        modelRefKey(item.modelRef) === modelRefKey(options),
-    )
+    const definition = options.sessionId
+      ? this.combinationFor(options.sessionId, await this.executionCatalog(), options)
+      : undefined
     if (!options.sessionId || options.purpose || !definition || definition.harnessRef === 'dsh') {
       yield* next()
       return
@@ -1636,23 +3009,62 @@ export class HarnessService {
     const session = this.ctx.sessions.get(asSessionId<SessionId>(options.sessionId))
     if (!session) throw new LlmError('原会话已不存在', 'HARNESS_BINDING')
     const binding = this.conversationBinding(session, definition)
-    const started = await this.start(
-      {
-        combination: definition.id,
-        cwd: binding.cwd,
-        origin: { kind: 'dsh', sessionId: options.sessionId },
-        taskId: binding.taskId,
-        sandbox: binding.sandbox,
-      },
-      true,
+    const bound = [...this.records.values()].find(
+      (record) =>
+        record.nativeSessionId === options.sessionId && record.combination === definition.id,
     )
+    if (bound && bound.sandbox !== binding.sandbox)
+      throw new LlmError(
+        '官方会话权限与原外部任务不一致，请恢复原权限后继续；不会自动扩大权限。',
+        'HARNESS_PERMISSION',
+      )
+    const started = bound
+      ? this.view(bound)
+      : await this.start(
+          {
+            combination: definition.id,
+            cwd: binding.cwd,
+            origin: { kind: 'dsh', sessionId: options.sessionId },
+            taskId: binding.taskId,
+            sandbox: binding.sandbox,
+          },
+          true,
+        )
     const record = this.records.get(started.id)!
     await this.connect(record)
-    const user = options.messages.findLast((message) => message.role === 'user')
+    // The official session's materialized request effort is the setting the user chose in
+    // the picker. Recording it on the bound Harness session is what makes that choice
+    // real: the adapter writes it over `session/set_config_option` before every prompt.
+    // An absent value leaves the record alone, so a delegate created before reasoning was
+    // selectable keeps the Harness default rather than being back-filled here.
+    const chosen = typeof options.reasoningEffort === 'string' ? options.reasoningEffort.trim() : ''
+    if (chosen && record.reasoningEffort !== chosen) {
+      record.reasoningEffort = chosen
+      await this.save(record)
+    }
+    const user =
+      options.messages.findLast(
+        (message) =>
+          message.role === 'user' && message.source?.kind === 'user' && 'rpcId' in message.source,
+      ) ??
+      options.messages.findLast(
+        (message) => message.role === 'user' && message.source?.kind === 'user',
+      )
     if (!user) throw new LlmError('没有可执行的用户输入', 'HARNESS_INPUT')
-    const operationId = 'conversation:' + hash(user)
+    const admitted = record.turns.find(
+      (turn) =>
+        user.source?.kind === 'user' &&
+        'rpcId' in user.source &&
+        user.source.rpcId === harnessRequestId(record, turn),
+    )
+    const operationId = admitted?.operationId ?? 'conversation:' + hash(user)
     const previous = record.turns.find((turn) => turn.operationId === operationId)
-    const messages = record.turns.length && !previous ? [user] : previous ? [] : options.messages
+    const messages =
+      record.turns.length && !previous
+        ? options.messages.slice(options.messages.indexOf(user))
+        : previous
+          ? []
+          : options.messages
     const text = previous?.prompt ?? conversationPrompt(messages, user)
     this.conversationOwners.set(record.id, {
       sessionId: options.sessionId,
@@ -1662,17 +3074,62 @@ export class HarnessService {
       void this.cancel({ sessionId: record.id }, false)
     }
     options.signal?.addEventListener('abort', cancel, { once: true })
-    let offset = 0
+    let index = 0,
+      offset = 0,
+      opened = false
     try {
       options.signal?.throwIfAborted()
-      await this.prompt({ sessionId: record.id, text, operationId }, options.reasoningEffort)
-      yield { type: 'block-start', index: 0, blockType: 'text' }
+      if (admitted && this.active.get(record.id)?.turn === admitted) {
+        void this.run(record, this.active.get(record.id)!, admitted)
+      } else {
+        await this.prompt({ sessionId: record.id, text, operationId }, options.reasoningEffort)
+      }
+      const conversationTurn = record.turns.find((item) => item.operationId === operationId)!
+      const rpcId =
+        user.source?.kind === 'user' && 'rpcId' in user.source ? user.source.rpcId : undefined
+      const officialMessage =
+        rpcId === undefined
+          ? undefined
+          : session
+              .snapshotEvents()
+              .find(
+                (event) =>
+                  event.type === 'user/message' &&
+                  event.data.source.kind === 'user' &&
+                  'rpcId' in event.data.source &&
+                  event.data.source.rpcId === rpcId,
+              )
+      if (officialMessage) {
+        conversationTurn.native = {
+          ...conversationTurn.native,
+          officialSeq: Number(officialMessage.seq),
+        }
+        await this.save(record)
+      }
       while (true) {
         options.signal?.throwIfAborted()
         const turn = record.turns.find((item) => item.operationId === operationId)!
-        if (turn.text.length > offset) {
-          yield { type: 'text-delta', index: 0, text: turn.text.slice(offset) }
-          offset = turn.text.length
+        const content =
+          turn.content ?? (turn.text ? [{ type: 'text' as const, text: turn.text }] : [])
+        while (index < content.length) {
+          const block = content[index]!
+          if (!opened) {
+            yield { type: 'block-start', index, blockType: block.type }
+            opened = true
+          }
+          if (block.text.length > offset) {
+            yield {
+              type: block.type === 'reasoning' ? 'reasoning-delta' : 'text-delta',
+              index,
+              text: block.text.slice(offset),
+            }
+            offset = block.text.length
+          }
+          if (index === content.length - 1) break
+          yield { type: 'block-end', index, block: { ...block } }
+          index += 1
+          offset = 0
+          opened = false
         }
         if (
           !['queued', 'running', 'waiting_child', 'waiting_approval', 'waiting_input'].includes(
@@ -1681,7 +3138,7 @@ export class HarnessService {
         ) {
           if (turn.state !== 'completed')
             throw new LlmError(turn.error ?? 'Harness 执行已取消或中断', 'HARNESS_FAILED')
-          yield { type: 'block-end', index: 0, block: { type: 'text', text: turn.text } }
+          if (opened) yield { type: 'block-end', index, block: { ...content[index]! } }
           yield { type: 'finish', reason: { kind: 'stop' } }
           return
         }
@@ -1746,6 +3203,10 @@ export class HarnessService {
         return this.executionCatalog()
       case 'save-catalog':
         return this.saveExecutionCatalog(p.catalog)
+      case 'save-harness-proxy':
+        return this.saveHarnessProxy(p.harnessId, p.proxy)
+      case 'select-minimax-candidate':
+        return this.selectMiniMaxCandidate(p as MiniMaxCandidateRequest)
       case 'start':
         return this.start(p as HarnessStartRequest)
       case 'prompt':
@@ -1768,6 +3229,7 @@ export class HarnessService {
   async dispose() {
     this.disposed = true
     clearInterval(this.tick)
+    await this.runtimeMaintenance.close()
     await this.ready
     await Promise.allSettled(this.maintenanceJobs.values())
     await Promise.allSettled([...this.connecting.values()])
@@ -1781,6 +3243,7 @@ export class HarnessService {
       }),
     )
     await this.writeQueue
+    await Promise.all(this.titleUpdates.values())
     // Cancellation can update a record after its last normal save completed.
     // Drain the dirty set after all active turns are settled so shutdown never
     // drops the final state; a transient write failure is retried once before
@@ -1791,4 +3254,5 @@ export class HarnessService {
     await this.catalogStore.dispose()
   }
 }
-export const createHarnessService = (ctx: Context) => new HarnessService(ctx)
+export const createHarnessService = (ctx: Context) =>
+  new HarnessService(ctx, {}, new NativeHarnessConversations(ctx))

@@ -17,7 +17,9 @@ import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import type {
   DeliveryPayload,
   DeliveryStage,
+  HarnessExecution,
   NeedsInputNotice,
+  TaskExecution,
   TaskReceiptStatus,
   TaskState,
   TaskTarget,
@@ -25,6 +27,38 @@ import type {
 
 /** Session id at the durable boundary; branding has no runtime representation. */
 const sessionId = z.string().transform((value) => value as SessionId)
+
+/**
+ * Session reference as one record stores it.
+ *
+ * Nullable because a combination execution has no DSH Session at all: storing a
+ * combination session id here would make two different identities
+ * indistinguishable to every reader of this table. Records an earlier build
+ * wrote always named a DSH Session, so their value is unchanged.
+ */
+const optionalSessionId = sessionId.nullable().default(null)
+
+/**
+ * Which execution performs one task.
+ *
+ * The native marker is the default so a record an earlier build wrote — which
+ * could only ever have been a DSH Session — reads as what it was, while a
+ * combination record carries the exact session, combination, task, and
+ * operation a reviewer needs to read the result itself.
+ */
+const taskExecution = z
+  .union([
+    z.object({ kind: z.literal('dsh-session') }),
+    z.object({
+      kind: z.literal('harness-session'),
+      harnessSessionId: z.string().min(1),
+      harnessRef: z.string().min(1),
+      combination: z.string().min(1),
+      taskId: z.string().min(1),
+      operationId: z.string().min(1),
+    }),
+  ])
+  .default({ kind: 'dsh-session' })
 
 /** Every task state, for validating a stored record. */
 const taskState = z.enum([
@@ -50,7 +84,7 @@ const taskTarget = z.object({
 
 /** Local references that let a reviewer read the evidence instead of receiving it. */
 const taskEvidence = z.object({
-  sessionId,
+  sessionId: optionalSessionId,
   turn: z.number().int().nonnegative().nullable(),
   seq: z.number().int().nonnegative().nullable(),
   eventSeqs: z.array(z.number().int().nonnegative()),
@@ -81,7 +115,7 @@ const needsInputQuestion = z.object({
  */
 const needsInputNotice = z.object({
   kind: z.enum(['question', 'approval']),
-  sessionId,
+  sessionId: optionalSessionId,
   turn: z.number().int().nonnegative().nullable(),
   seq: z.number().int().nonnegative().nullable(),
   pauseId: z.string().min(1),
@@ -108,7 +142,9 @@ export type NeedsInputNoticeState = z.infer<typeof needsInputNotice>
 const deliveryPayload = z.object({
   taskId: z.string().min(1),
   state: taskState,
-  sessionId,
+  sessionId: optionalSessionId,
+  // Absent on records an earlier build wrote; those were DSH Sessions.
+  execution: taskExecution,
   turn: z.number().int().nonnegative().nullable(),
   summary: z.string(),
   evidence: taskEvidence,
@@ -126,7 +162,13 @@ const deliveryPayload = z.object({
  */
 export const taskRecord = z.object({
   taskId: z.string().min(1),
-  sessionId,
+  sessionId: optionalSessionId,
+  /**
+   * Which execution performs this task: the DSH Session named above, or a
+   * combination execution named in full. A reader learns the kind here instead
+   * of inferring it from a session id that may not be one.
+   */
+  execution: taskExecution,
   turn: z.number().int().nonnegative().nullable(),
   target: taskTarget,
   acceptance: z.string(),
@@ -299,7 +341,9 @@ export const taskFeedbackDomainSpec = defineDomain({
 export type {
   DeliveryPayload,
   DeliveryStage,
+  HarnessExecution,
   NeedsInputNotice,
+  TaskExecution,
   TaskReceiptStatus,
   TaskState,
   TaskTarget,

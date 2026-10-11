@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
-import { readFile, mkdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readFile, readdir, mkdir, writeFile, access } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { assertIsolatedRoot, safeBinding } from './qualification-support.mjs'
 // Run against an already booted, isolated official Desktop. Never target a user's profile.
 const root = await assertIsolatedRoot(process.argv[2] ?? '')
@@ -41,17 +41,52 @@ const harness = (method, input = {}) =>
   wire('oplExecution/' + method, Object.keys(input).length ? { request: input } : {})
 const gateway = (method, input) =>
   wire('oplGatewayModels/' + method, input ? { request: input } : {})
+// Harness completion precedes the official driver's final transcript events.
+async function settledConversation(sessionId, afterTurn) {
+  const deadline = Date.now() + 30000
+  while (true) {
+    const page = await rpc('session', 'snapshot', {
+      request: { address: { kind: 'session', sessionId }, maxMessages: 50 },
+    })
+    if (
+      page.records.some(
+        (item) => item.event?.type === 'turn/end' && item.event.data.turn > afterTurn,
+      )
+    )
+      return page
+    assert(Date.now() < deadline, 'Official conversation did not settle: ' + sessionId)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+}
 if (process.argv.includes('--readback-selections')) {
   const selections = JSON.parse(
     await readFile(join(root, 'profiles/desktop/combination-selection.json'), 'utf8'),
   )
   if (!Object.keys(selections).length) throw Error('没有可验收的组合选择记录')
+  const projects = new Map()
+  const sessionsDirectory = join(root, 'profiles/desktop/harness-sessions')
+  for (const name of await readdir(sessionsDirectory)) {
+    if (!/^[a-f0-9]{64}\.json$/.test(name)) continue
+    const record = JSON.parse(await readFile(join(sessionsDirectory, name), 'utf8'))
+    if (record.nativeSessionId) projects.set(record.nativeSessionId, record.cwd)
+  }
   for (const [sessionId, combination] of Object.entries(selections)) {
     // A restarted Host has not loaded these persisted Sessions yet. Resume
     // their exact identity through the official owner before reading the
     // Session projection; otherwise modelSelection can only see the default.
-    await rpc('session', 'create', { request: { sessionId, cwd: join(root, 'test-project') } })
+    await rpc('session', 'create', {
+      request: { sessionId, cwd: projects.get(sessionId) ?? join(root, 'test-project') },
+    })
     assert.equal((await harness('model-selection', { sessionId })).combination, combination)
+  }
+  const permissionSelections = JSON.parse(
+    await readFile(join(root, 'qualification-permission-selections.json'), 'utf8'),
+  )
+  for (const { sessionId, preset, approval } of permissionSelections) {
+    const actual = await rpc('session', 'permissions', { request: { sessionId } })
+    assert.equal(actual.preset, preset)
+    assert.equal(actual.sandbox, preset)
+    assert.equal(actual.approval, approval)
   }
   console.log(JSON.stringify({ selectionRestore: true, sessions: Object.keys(selections).length }))
   process.exit(0)
@@ -240,6 +275,10 @@ try {
     api: 'openai-completions',
     models: [
       { id: 'gpt-5.4', name: 'GPT-5.4' },
+      { id: 'gpt-6-astra', name: 'GPT-6 Astra' },
+      { id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol' },
+      { id: 'gpt-6-sol', name: 'GPT-6 Sol' },
+      { id: 'gpt-6-luna', name: 'GPT-6 Luna' },
       { id: 'deepseek-flash', name: 'DeepSeek-V4.1-Flash' },
     ],
   })
@@ -248,6 +287,9 @@ try {
   assert.equal(models.find((m) => m.id === 'deepseek-flash').name, 'DeepSeek 设置回读')
   assert(models.some((m) => m.id === 'codex::gpt-5.4'))
   assert(models.some((m) => m.id === 'codex::deepseek-flash'))
+  assert.equal(models.find((m) => m.id === 'deepseek-flash').reasoning.defaultEffort, 'high')
+  for (const id of ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna'])
+    assert.equal(models.find((m) => m.id === 'codex::' + id).reasoning.defaultEffort, 'medium')
   const catalog = await harness('catalog')
   const gpt = {
     id: 'accept-gpt-dsh',
@@ -260,6 +302,53 @@ try {
   }
   catalog.combinations.push(gpt)
   await harness('save-catalog', { catalog })
+  const generatedOpenAI = catalog.combinations.find(
+    (item) =>
+      item.generated &&
+      item.harnessRef === 'dsh' &&
+      item.modelRef.model === 'codex::deepseek-flash',
+  )
+  assert(generatedOpenAI, 'generated DeepSeek OpenAI combination is missing')
+  const permissionSelections = []
+  for (const [preset, approval] of [
+    ['read-only', 'ask'],
+    ['workspace-write', 'ask'],
+    ['danger-full-access', 'never'],
+  ]) {
+    const created = await rpc('session', 'create', {
+      request: { cwd: project, permissionPreset: preset },
+    })
+    await harness('select-combination', {
+      sessionId: created.sessionId,
+      combination: generatedOpenAI.id,
+    })
+    const actual = await rpc('session', 'permissions', {
+      request: { sessionId: created.sessionId },
+    })
+    assert.equal(actual.preset, preset)
+    assert.equal(actual.sandbox, preset)
+    assert.equal(actual.approval, approval)
+    permissionSelections.push({ sessionId: created.sessionId, preset, approval })
+  }
+  const explicitReview = await rpc('session', 'create', {
+    request: { cwd: project, permissionPreset: 'danger-full-access' },
+  })
+  await harness('select-combination', { sessionId: explicitReview.sessionId, combination: gpt.id })
+  const narrowed = await rpc('session', 'permissions', {
+    request: { sessionId: explicitReview.sessionId },
+  })
+  assert.equal(narrowed.preset, 'read-only')
+  assert.equal(narrowed.sandbox, 'read-only')
+  assert.equal(narrowed.approval, 'ask')
+  permissionSelections.push({
+    sessionId: explicitReview.sessionId,
+    preset: 'read-only',
+    approval: 'ask',
+  })
+  await writeFile(
+    join(root, 'qualification-permission-selections.json'),
+    JSON.stringify(permissionSelections) + '\n',
+  )
   for (const combination of ['dsh/deepseek-flash', gpt.id]) {
     const s = await harness('start', {
       combination,
@@ -325,6 +414,172 @@ try {
     assert.equal(result.outcome.kind, 'completed')
     assert.equal(await readFile(join(project, 'opl-git-bash-smoke.txt'), 'utf8'), 'OPL_GIT_BASH_OK')
   }
+  await wire('credentials/set', { ref: 'OPL_GATEWAY_GROK_API_KEY', value: 'fixture-grok' })
+  const wrapper = join(
+    root,
+    process.platform === 'win32' ? 'fixture-harness.cmd' : 'fixture-harness',
+  )
+  const agentFixture = resolve(import.meta.dirname, '../tests/fixtures/acp-agent.mjs')
+  await writeFile(
+    wrapper,
+    process.platform === 'win32'
+      ? `@echo off\r\n"${process.execPath}" "${agentFixture}" %*\r\n`
+      : `#!/bin/sh\nexec '${process.execPath.replaceAll("'", "'\\''")}' '${agentFixture.replaceAll("'", "'\\''")}' "$@"\n`,
+    { mode: 0o700 },
+  )
+  const externalCatalog = await harness('catalog')
+  externalCatalog.harnesses.find((item) => item.id === 'grok-build').command = wrapper
+  const minimaxWrapper = join(
+    root,
+    process.platform === 'win32' ? 'fixture-minimax.cmd' : 'fixture-minimax',
+  )
+  const minimaxFixture = resolve(import.meta.dirname, '../tests/fixtures/minimax-acp-agent.mjs')
+  await writeFile(
+    minimaxWrapper,
+    process.platform === 'win32'
+      ? `@echo off\r\n"${process.execPath}" "${minimaxFixture}" %*\r\n`
+      : `#!/bin/sh\nexec '${process.execPath}' '${minimaxFixture}' "$@"\n`,
+    { mode: 0o700 },
+  )
+  externalCatalog.harnesses.find((item) => item.id === 'minimax-code').command = minimaxWrapper
+  await harness('save-catalog', { catalog: externalCatalog })
+  let history = await harness('snapshot', { sessionId: 'harness-qualification-history' })
+  assert.equal(history.nativeSessionId, 'session-harness-qualification-history')
+  const fullAccess = await harness('start', {
+    combination: 'minimax-code/MiniMax-M3',
+    cwd: project,
+    taskId: 'qualification-full-access-permissions',
+    origin: { kind: 'codex', sessionId: 'qualification-permission-review' },
+    sandbox: 'full-access',
+  })
+  const fullAccessPermissions = await rpc('session', 'permissions', {
+    request: { sessionId: fullAccess.nativeSessionId },
+  })
+  assert.equal(fullAccessPermissions.preset, 'danger-full-access')
+  assert.equal(fullAccessPermissions.sandbox, 'danger-full-access')
+  assert.equal(fullAccessPermissions.approval, 'never')
+  await harness('prompt', {
+    sessionId: fullAccess.id,
+    text: 'TRANSCRIPT_FIXTURE',
+    operationId: 'transcript',
+  })
+  await rpc('harness', 'wait', { sessionId: fullAccess.id })
+  const transcriptState = await harness('snapshot', { sessionId: fullAccess.id })
+  assert.equal(transcriptState.title, 'MiniMax transcript title')
+  const transcript = await settledConversation(fullAccess.nativeSessionId, 0)
+  const transcriptJson = JSON.stringify(transcript.records)
+  assert(transcriptJson.includes('Inspecting the repository.'))
+  assert(transcriptJson.includes('"type":"reasoning"'))
+  assert(transcriptJson.includes('TRANSCRIPT_DONE'))
+  assert(transcriptJson.includes('opl_harness_tool'))
+  assert(transcriptJson.includes('oplHarness'))
+  await assert.rejects(access(join(project, 'calls.txt')), 'history import executed a prompt')
+  const oldPage = await rpc('session', 'snapshot', {
+    request: { address: { kind: 'session', sessionId: history.nativeSessionId }, maxMessages: 50 },
+  })
+  assert(JSON.stringify(oldPage.records).includes('HISTORY_USER'))
+  assert(JSON.stringify(oldPage.records).includes('HISTORY_RESULT'))
+  if (process.platform === 'win32') {
+    for (const sandbox of ['read-only', 'workspace']) {
+      await assert.rejects(
+        harness('start', {
+          combination: history.combination,
+          cwd: project,
+          taskId: 'qualification-restricted-' + sandbox,
+          origin: history.origin,
+          sandbox,
+        }),
+        /Windows.*沙箱后端/,
+      )
+    }
+  }
+  const continued = await harness('start', {
+    combination: history.combination,
+    cwd: project,
+    existingSessionId: history.id,
+    origin: history.origin,
+    sandbox: history.sandbox,
+  })
+  assert.equal(continued.acpSessionId, history.acpSessionId)
+  await harness('prompt', {
+    sessionId: history.id,
+    operationId: 'live-after-import',
+    text: 'NEW_NATIVE_CONVERSATION',
+  })
+  history = await rpc('harness', 'wait', { sessionId: history.id })
+  assert.equal(history.state, 'completed', JSON.stringify(history.turns.at(-1)))
+  assert.equal(await readFile(join(project, 'calls.txt'), 'utf8'), 'NEW_NATIVE_CONVERSATION\n')
+  const importedTurn = Math.max(
+    0,
+    ...oldPage.records
+      .filter((item) => item.event?.type === 'turn/start')
+      .map((item) => item.event.data.turn),
+  )
+  const agentPage = await settledConversation(history.nativeSessionId, importedTurn)
+  assert(JSON.stringify(agentPage.records).includes('result:NEW_NATIVE_CONVERSATION'))
+  assert(JSON.stringify(agentPage.records).includes('tool/result'))
+  const nativeTurns = agentPage.records
+    .filter((item) => item.event?.type === 'turn/start')
+    .map((item) => item.event.data.turn)
+  assert.equal(new Set(nativeTurns).size, nativeTurns.length)
+  const projects = await rpc('workspace', 'follow')
+  assert(
+    projects.value.items.some(
+      (item) => item.path === project && item.sessionIds.includes(history.nativeSessionId),
+    ),
+  )
+  const concurrentProject = join(root, 'scoped-project')
+  await mkdir(concurrentProject, { recursive: true })
+  const scoped = async (taskId) =>
+    harness('start', {
+      combination: history.combination,
+      cwd: concurrentProject,
+      taskId,
+      origin: { kind: 'codex', sessionId: 'qualification-scoped-review' },
+      sandbox: process.platform === 'win32' ? 'full-access' : 'workspace',
+    })
+  const a = await scoped('scope-a'),
+    b = await scoped('scope-b'),
+    conflict = await scoped('scope-conflict')
+  await harness('prompt', {
+    sessionId: a.id,
+    text: 'wait',
+    operationId: 'hold',
+    writeScope: ['src/client'],
+  })
+  await harness('prompt', {
+    sessionId: b.id,
+    text: 'wait',
+    operationId: 'hold',
+    writeScope: ['src/host'],
+  })
+  // Bounded transport readiness: wait for the two fixture admissions, not model progress.
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const calls = await readFile(join(concurrentProject, 'calls.txt'), 'utf8').catch((error) => {
+      if (error.code !== 'ENOENT') throw error
+      return ''
+    })
+    if (calls === 'wait\nwait\n') break
+    if (attempt === 59) throw Error('two scoped Harness prompts did not run together')
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  assert.equal((await harness('snapshot', { sessionId: a.id })).state, 'running')
+  assert.equal((await harness('snapshot', { sessionId: b.id })).state, 'running')
+  await harness('prompt', {
+    sessionId: conflict.id,
+    text: 'overlap',
+    operationId: 'one',
+    writeScope: ['src/client/file.ts'],
+  })
+  assert.equal((await harness('snapshot', { sessionId: conflict.id })).state, 'queued')
+  await harness('cancel', { sessionId: a.id })
+  assert.equal((await rpc('harness', 'wait', { sessionId: conflict.id })).state, 'completed')
+  assert.equal((await harness('snapshot', { sessionId: b.id })).state, 'running')
+  await harness('cancel', { sessionId: b.id })
+  assert.equal(
+    await readFile(join(concurrentProject, 'calls.txt'), 'utf8'),
+    'wait\nwait\noverlap\n',
+  )
   console.log(
     JSON.stringify(
       {
@@ -332,8 +587,29 @@ try {
         controlPermissions: true,
         controlProjectAttribution: true,
         ...(gitBashProbe ? { gitBashExecution: true } : {}),
+        scopedConcurrentWriters: {
+          independentRunningTogether: true,
+          overlapQueued: true,
+          cancellationReleasesOwnScope: true,
+        },
+        controlPermissions: true,
+        harnessTranscript: {
+          sessionId: fullAccess.nativeSessionId,
+          thinking: true,
+          automaticTitle: true,
+          toolPresentation: true,
+        },
+        controlProjectAttribution: true,
         groupedModels: models.map((m) => m.id),
         officialTools: true,
+        externalOrdinaryConversation: {
+          historyWithoutExecution: true,
+          exactAcpResume: true,
+          promptExecutedOnce: true,
+          nativeTranscript: true,
+          nativeToolResult: true,
+          workspaceMembership: true,
+        },
         requests: requests.map(({ key, ...rest }) => rest),
       },
       null,

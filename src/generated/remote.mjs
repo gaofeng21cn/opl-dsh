@@ -59,6 +59,7 @@ const _one_person_lab_dsh_opl_oplExecution_answer_result$schema = () => (_one_pe
   'approvals': z.array(z.object({
   'id': z.string(),
   'title': z.string(),
+  'command': z.string().optional(),
   'options': z.array(z.object({
   'optionId': z.string(),
   'name': z.string(),
@@ -72,8 +73,10 @@ const _one_person_lab_dsh_opl_oplExecution_answer_result$schema = () => (_one_pe
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -89,7 +92,8 @@ const _one_person_lab_dsh_opl_oplExecution_answer_result$schema = () => (_one_pe
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -97,7 +101,12 @@ const _one_person_lab_dsh_opl_oplExecution_answer_result$schema = () => (_one_pe
   'fingerprint': z.string(),
   'prompt': z.string(),
   'reasoningEffort': z.string().optional(),
+  'writeScope': z.array(z.string()).optional(),
   'text': z.string(),
+  'content': z.array(z.object({
+  'type': z.union([z.literal("text"), z.literal("reasoning")]),
+  'text': z.string(),
+})).optional(),
   'state': z.union([z.literal("queued"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("idle"), z.literal("waiting_child"), z.literal("interrupted")]),
   'stopReason': z.string().optional(),
   'error': z.string().optional(),
@@ -123,8 +132,27 @@ const _one_person_lab_dsh_opl_oplExecution_answer_result$schema = () => (_one_pe
   'title': z.string(),
   'status': z.string(),
   'kind': z.string(),
+  'inputJson': z.string().optional(),
+  'outputJson': z.string().optional(),
+  'contentJson': z.string().optional(),
+  'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_cancel_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_cancel_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_cancel_parameter_0$schema$value ??= z.object({
@@ -137,6 +165,7 @@ const _one_person_lab_dsh_opl_oplExecution_cancel_result$schema = () => (_one_pe
   'approvals': z.array(z.object({
   'id': z.string(),
   'title': z.string(),
+  'command': z.string().optional(),
   'options': z.array(z.object({
   'optionId': z.string(),
   'name': z.string(),
@@ -150,8 +179,10 @@ const _one_person_lab_dsh_opl_oplExecution_cancel_result$schema = () => (_one_pe
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -167,7 +198,8 @@ const _one_person_lab_dsh_opl_oplExecution_cancel_result$schema = () => (_one_pe
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -175,7 +207,12 @@ const _one_person_lab_dsh_opl_oplExecution_cancel_result$schema = () => (_one_pe
   'fingerprint': z.string(),
   'prompt': z.string(),
   'reasoningEffort': z.string().optional(),
+  'writeScope': z.array(z.string()).optional(),
   'text': z.string(),
+  'content': z.array(z.object({
+  'type': z.union([z.literal("text"), z.literal("reasoning")]),
+  'text': z.string(),
+})).optional(),
   'state': z.union([z.literal("queued"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("idle"), z.literal("waiting_child"), z.literal("interrupted")]),
   'stopReason': z.string().optional(),
   'error': z.string().optional(),
@@ -201,8 +238,27 @@ const _one_person_lab_dsh_opl_oplExecution_cancel_result$schema = () => (_one_pe
   'title': z.string(),
   'status': z.string(),
   'kind': z.string(),
+  'inputJson': z.string().optional(),
+  'outputJson': z.string().optional(),
+  'contentJson': z.string().optional(),
+  'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_cancel_task_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_cancel_task_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_cancel_task_parameter_0$schema$value ??= z.object({
@@ -219,6 +275,7 @@ const _one_person_lab_dsh_opl_oplExecution_cancel_task_result$schema = () => (_o
   'approvals': z.array(z.object({
   'id': z.string(),
   'title': z.string(),
+  'command': z.string().optional(),
   'options': z.array(z.object({
   'optionId': z.string(),
   'name': z.string(),
@@ -232,8 +289,10 @@ const _one_person_lab_dsh_opl_oplExecution_cancel_task_result$schema = () => (_o
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -249,7 +308,8 @@ const _one_person_lab_dsh_opl_oplExecution_cancel_task_result$schema = () => (_o
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -257,7 +317,12 @@ const _one_person_lab_dsh_opl_oplExecution_cancel_task_result$schema = () => (_o
   'fingerprint': z.string(),
   'prompt': z.string(),
   'reasoningEffort': z.string().optional(),
+  'writeScope': z.array(z.string()).optional(),
   'text': z.string(),
+  'content': z.array(z.object({
+  'type': z.union([z.literal("text"), z.literal("reasoning")]),
+  'text': z.string(),
+})).optional(),
   'state': z.union([z.literal("queued"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("idle"), z.literal("waiting_child"), z.literal("interrupted")]),
   'stopReason': z.string().optional(),
   'error': z.string().optional(),
@@ -283,8 +348,27 @@ const _one_person_lab_dsh_opl_oplExecution_cancel_task_result$schema = () => (_o
   'title': z.string(),
   'status': z.string(),
   'kind': z.string(),
+  'inputJson': z.string().optional(),
+  'outputJson': z.string().optional(),
+  'contentJson': z.string().optional(),
+  'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_catalog_result$schema$value
 const _one_person_lab_dsh_opl_oplExecution_catalog_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_catalog_result$schema$value ??= z.object({
@@ -304,7 +388,16 @@ const _one_person_lab_dsh_opl_oplExecution_catalog_result$schema = () => (_one_p
   'name': z.string(),
   'kind': z.union([z.literal("dsh"), z.literal("grok-build"), z.literal("acp")]),
   'command': z.string().optional(),
+  'prefix': z.array(z.string()).optional(),
   'adapter': z.string().optional(),
+  'proxy': z.union([z.object({
+  'mode': z.literal("inherit"),
+}), z.object({
+  'mode': z.literal("direct"),
+}), z.object({
+  'mode': z.literal("custom"),
+  'url': z.string(),
+})]).optional(),
 })),
   'combinations': z.array(z.object({
   'id': z.string(),
@@ -315,7 +408,7 @@ const _one_person_lab_dsh_opl_oplExecution_catalog_result$schema = () => (_one_p
 }),
   'harnessRef': z.string(),
   'generated': z.boolean().optional(),
-  'permissionPolicy': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'permissionPolicy': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'isDefault': z.boolean(),
   'enabled': z.boolean(),
 })),
@@ -351,6 +444,8 @@ const _one_person_lab_dsh_opl_oplExecution_delegate_parameter_0$schema = () => (
   'sessionId': z.string().optional(),
   'acceptance': z.string().optional(),
   'wait': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]).optional(),
+  'writeScope': z.array(z.string()).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_delegate_result$schema$value
 const _one_person_lab_dsh_opl_oplExecution_delegate_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_delegate_result$schema$value ??= z.object({
@@ -359,6 +454,7 @@ const _one_person_lab_dsh_opl_oplExecution_delegate_result$schema = () => (_one_
   'approvals': z.array(z.object({
   'id': z.string(),
   'title': z.string(),
+  'command': z.string().optional(),
   'options': z.array(z.object({
   'optionId': z.string(),
   'name': z.string(),
@@ -372,8 +468,10 @@ const _one_person_lab_dsh_opl_oplExecution_delegate_result$schema = () => (_one_
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -389,7 +487,8 @@ const _one_person_lab_dsh_opl_oplExecution_delegate_result$schema = () => (_one_
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -397,7 +496,12 @@ const _one_person_lab_dsh_opl_oplExecution_delegate_result$schema = () => (_one_
   'fingerprint': z.string(),
   'prompt': z.string(),
   'reasoningEffort': z.string().optional(),
+  'writeScope': z.array(z.string()).optional(),
   'text': z.string(),
+  'content': z.array(z.object({
+  'type': z.union([z.literal("text"), z.literal("reasoning")]),
+  'text': z.string(),
+})).optional(),
   'state': z.union([z.literal("queued"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("idle"), z.literal("waiting_child"), z.literal("interrupted")]),
   'stopReason': z.string().optional(),
   'error': z.string().optional(),
@@ -423,8 +527,27 @@ const _one_person_lab_dsh_opl_oplExecution_delegate_result$schema = () => (_one_
   'title': z.string(),
   'status': z.string(),
   'kind': z.string(),
+  'inputJson': z.string().optional(),
+  'outputJson': z.string().optional(),
+  'contentJson': z.string().optional(),
+  'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_detail_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_detail_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_detail_parameter_0$schema$value ??= z.object({
@@ -443,6 +566,7 @@ const _one_person_lab_dsh_opl_oplExecution_detail_result$schema = () => (_one_pe
   'approvals': z.array(z.object({
   'id': z.string(),
   'title': z.string(),
+  'command': z.string().optional(),
   'options': z.array(z.object({
   'optionId': z.string(),
   'name': z.string(),
@@ -456,8 +580,10 @@ const _one_person_lab_dsh_opl_oplExecution_detail_result$schema = () => (_one_pe
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -473,7 +599,8 @@ const _one_person_lab_dsh_opl_oplExecution_detail_result$schema = () => (_one_pe
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -481,7 +608,12 @@ const _one_person_lab_dsh_opl_oplExecution_detail_result$schema = () => (_one_pe
   'fingerprint': z.string(),
   'prompt': z.string(),
   'reasoningEffort': z.string().optional(),
+  'writeScope': z.array(z.string()).optional(),
   'text': z.string(),
+  'content': z.array(z.object({
+  'type': z.union([z.literal("text"), z.literal("reasoning")]),
+  'text': z.string(),
+})).optional(),
   'state': z.union([z.literal("queued"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("idle"), z.literal("waiting_child"), z.literal("interrupted")]),
   'stopReason': z.string().optional(),
   'error': z.string().optional(),
@@ -507,8 +639,27 @@ const _one_person_lab_dsh_opl_oplExecution_detail_result$schema = () => (_one_pe
   'title': z.string(),
   'status': z.string(),
   'kind': z.string(),
+  'inputJson': z.string().optional(),
+  'outputJson': z.string().optional(),
+  'contentJson': z.string().optional(),
+  'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }).optional(),
   'totalTurns': z.number(),
   'beforeTurn': z.number(),
@@ -558,6 +709,7 @@ const _one_person_lab_dsh_opl_oplExecution_list_result$schema = () => (_one_pers
   'approvals': z.array(z.object({
   'id': z.string(),
   'title': z.string(),
+  'command': z.string().optional(),
   'options': z.array(z.object({
   'optionId': z.string(),
   'name': z.string(),
@@ -571,8 +723,10 @@ const _one_person_lab_dsh_opl_oplExecution_list_result$schema = () => (_one_pers
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -588,7 +742,8 @@ const _one_person_lab_dsh_opl_oplExecution_list_result$schema = () => (_one_pers
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -596,7 +751,12 @@ const _one_person_lab_dsh_opl_oplExecution_list_result$schema = () => (_one_pers
   'fingerprint': z.string(),
   'prompt': z.string(),
   'reasoningEffort': z.string().optional(),
+  'writeScope': z.array(z.string()).optional(),
   'text': z.string(),
+  'content': z.array(z.object({
+  'type': z.union([z.literal("text"), z.literal("reasoning")]),
+  'text': z.string(),
+})).optional(),
   'state': z.union([z.literal("queued"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("idle"), z.literal("waiting_child"), z.literal("interrupted")]),
   'stopReason': z.string().optional(),
   'error': z.string().optional(),
@@ -622,8 +782,27 @@ const _one_person_lab_dsh_opl_oplExecution_list_result$schema = () => (_one_pers
   'title': z.string(),
   'status': z.string(),
   'kind': z.string(),
+  'inputJson': z.string().optional(),
+  'outputJson': z.string().optional(),
+  'contentJson': z.string().optional(),
+  'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 })),
 }))
 let _one_person_lab_dsh_opl_oplExecution_model_selection_parameter_0$schema$value
@@ -661,6 +840,7 @@ const _one_person_lab_dsh_opl_oplExecution_prompt_parameter_0$schema = () => (_o
   'sessionId': z.string(),
   'text': z.string(),
   'operationId': z.string(),
+  'writeScope': z.array(z.string()).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_prompt_result$schema$value
 const _one_person_lab_dsh_opl_oplExecution_prompt_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_prompt_result$schema$value ??= z.object({
@@ -669,6 +849,7 @@ const _one_person_lab_dsh_opl_oplExecution_prompt_result$schema = () => (_one_pe
   'approvals': z.array(z.object({
   'id': z.string(),
   'title': z.string(),
+  'command': z.string().optional(),
   'options': z.array(z.object({
   'optionId': z.string(),
   'name': z.string(),
@@ -682,8 +863,10 @@ const _one_person_lab_dsh_opl_oplExecution_prompt_result$schema = () => (_one_pe
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -699,7 +882,8 @@ const _one_person_lab_dsh_opl_oplExecution_prompt_result$schema = () => (_one_pe
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -707,7 +891,12 @@ const _one_person_lab_dsh_opl_oplExecution_prompt_result$schema = () => (_one_pe
   'fingerprint': z.string(),
   'prompt': z.string(),
   'reasoningEffort': z.string().optional(),
+  'writeScope': z.array(z.string()).optional(),
   'text': z.string(),
+  'content': z.array(z.object({
+  'type': z.union([z.literal("text"), z.literal("reasoning")]),
+  'text': z.string(),
+})).optional(),
   'state': z.union([z.literal("queued"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("idle"), z.literal("waiting_child"), z.literal("interrupted")]),
   'stopReason': z.string().optional(),
   'error': z.string().optional(),
@@ -733,8 +922,27 @@ const _one_person_lab_dsh_opl_oplExecution_prompt_result$schema = () => (_one_pe
   'title': z.string(),
   'status': z.string(),
   'kind': z.string(),
+  'inputJson': z.string().optional(),
+  'outputJson': z.string().optional(),
+  'contentJson': z.string().optional(),
+  'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_report_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_report_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_report_parameter_0$schema$value ??= z.object({
@@ -769,6 +977,7 @@ const _one_person_lab_dsh_opl_oplExecution_result_result$schema = () => (_one_pe
   'approvals': z.array(z.object({
   'id': z.string(),
   'title': z.string(),
+  'command': z.string().optional(),
   'options': z.array(z.object({
   'optionId': z.string(),
   'name': z.string(),
@@ -782,8 +991,10 @@ const _one_person_lab_dsh_opl_oplExecution_result_result$schema = () => (_one_pe
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -799,7 +1010,8 @@ const _one_person_lab_dsh_opl_oplExecution_result_result$schema = () => (_one_pe
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -807,7 +1019,12 @@ const _one_person_lab_dsh_opl_oplExecution_result_result$schema = () => (_one_pe
   'fingerprint': z.string(),
   'prompt': z.string(),
   'reasoningEffort': z.string().optional(),
+  'writeScope': z.array(z.string()).optional(),
   'text': z.string(),
+  'content': z.array(z.object({
+  'type': z.union([z.literal("text"), z.literal("reasoning")]),
+  'text': z.string(),
+})).optional(),
   'state': z.union([z.literal("queued"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("idle"), z.literal("waiting_child"), z.literal("interrupted")]),
   'stopReason': z.string().optional(),
   'error': z.string().optional(),
@@ -833,8 +1050,27 @@ const _one_person_lab_dsh_opl_oplExecution_result_result$schema = () => (_one_pe
   'title': z.string(),
   'status': z.string(),
   'kind': z.string(),
+  'inputJson': z.string().optional(),
+  'outputJson': z.string().optional(),
+  'contentJson': z.string().optional(),
+  'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_retry_delivery_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_retry_delivery_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_retry_delivery_parameter_0$schema$value ??= z.object({
@@ -847,6 +1083,7 @@ const _one_person_lab_dsh_opl_oplExecution_retry_delivery_result$schema = () => 
   'approvals': z.array(z.object({
   'id': z.string(),
   'title': z.string(),
+  'command': z.string().optional(),
   'options': z.array(z.object({
   'optionId': z.string(),
   'name': z.string(),
@@ -860,8 +1097,10 @@ const _one_person_lab_dsh_opl_oplExecution_retry_delivery_result$schema = () => 
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -877,7 +1116,8 @@ const _one_person_lab_dsh_opl_oplExecution_retry_delivery_result$schema = () => 
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -885,7 +1125,12 @@ const _one_person_lab_dsh_opl_oplExecution_retry_delivery_result$schema = () => 
   'fingerprint': z.string(),
   'prompt': z.string(),
   'reasoningEffort': z.string().optional(),
+  'writeScope': z.array(z.string()).optional(),
   'text': z.string(),
+  'content': z.array(z.object({
+  'type': z.union([z.literal("text"), z.literal("reasoning")]),
+  'text': z.string(),
+})).optional(),
   'state': z.union([z.literal("queued"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("idle"), z.literal("waiting_child"), z.literal("interrupted")]),
   'stopReason': z.string().optional(),
   'error': z.string().optional(),
@@ -911,8 +1156,27 @@ const _one_person_lab_dsh_opl_oplExecution_retry_delivery_result$schema = () => 
   'title': z.string(),
   'status': z.string(),
   'kind': z.string(),
+  'inputJson': z.string().optional(),
+  'outputJson': z.string().optional(),
+  'contentJson': z.string().optional(),
+  'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_review_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_review_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_review_parameter_0$schema$value ??= z.object({
@@ -932,6 +1196,7 @@ const _one_person_lab_dsh_opl_oplExecution_review_result$schema = () => (_one_pe
   'approvals': z.array(z.object({
   'id': z.string(),
   'title': z.string(),
+  'command': z.string().optional(),
   'options': z.array(z.object({
   'optionId': z.string(),
   'name': z.string(),
@@ -945,8 +1210,10 @@ const _one_person_lab_dsh_opl_oplExecution_review_result$schema = () => (_one_pe
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -962,7 +1229,8 @@ const _one_person_lab_dsh_opl_oplExecution_review_result$schema = () => (_one_pe
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -970,7 +1238,12 @@ const _one_person_lab_dsh_opl_oplExecution_review_result$schema = () => (_one_pe
   'fingerprint': z.string(),
   'prompt': z.string(),
   'reasoningEffort': z.string().optional(),
+  'writeScope': z.array(z.string()).optional(),
   'text': z.string(),
+  'content': z.array(z.object({
+  'type': z.union([z.literal("text"), z.literal("reasoning")]),
+  'text': z.string(),
+})).optional(),
   'state': z.union([z.literal("queued"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("idle"), z.literal("waiting_child"), z.literal("interrupted")]),
   'stopReason': z.string().optional(),
   'error': z.string().optional(),
@@ -996,8 +1269,27 @@ const _one_person_lab_dsh_opl_oplExecution_review_result$schema = () => (_one_pe
   'title': z.string(),
   'status': z.string(),
   'kind': z.string(),
+  'inputJson': z.string().optional(),
+  'outputJson': z.string().optional(),
+  'contentJson': z.string().optional(),
+  'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_save_catalog_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_save_catalog_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_save_catalog_parameter_0$schema$value ??= z.object({
@@ -1018,7 +1310,16 @@ const _one_person_lab_dsh_opl_oplExecution_save_catalog_parameter_0$schema = () 
   'name': z.string(),
   'kind': z.union([z.literal("dsh"), z.literal("grok-build"), z.literal("acp")]),
   'command': z.string().optional(),
+  'prefix': z.array(z.string()).optional(),
   'adapter': z.string().optional(),
+  'proxy': z.union([z.object({
+  'mode': z.literal("inherit"),
+}), z.object({
+  'mode': z.literal("direct"),
+}), z.object({
+  'mode': z.literal("custom"),
+  'url': z.string(),
+})]).optional(),
 })),
   'combinations': z.array(z.object({
   'id': z.string(),
@@ -1029,7 +1330,7 @@ const _one_person_lab_dsh_opl_oplExecution_save_catalog_parameter_0$schema = () 
 }),
   'harnessRef': z.string(),
   'generated': z.boolean().optional(),
-  'permissionPolicy': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'permissionPolicy': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'isDefault': z.boolean(),
   'enabled': z.boolean(),
 })),
@@ -1053,7 +1354,16 @@ const _one_person_lab_dsh_opl_oplExecution_save_catalog_result$schema = () => (_
   'name': z.string(),
   'kind': z.union([z.literal("dsh"), z.literal("grok-build"), z.literal("acp")]),
   'command': z.string().optional(),
+  'prefix': z.array(z.string()).optional(),
   'adapter': z.string().optional(),
+  'proxy': z.union([z.object({
+  'mode': z.literal("inherit"),
+}), z.object({
+  'mode': z.literal("direct"),
+}), z.object({
+  'mode': z.literal("custom"),
+  'url': z.string(),
+})]).optional(),
 })),
   'combinations': z.array(z.object({
   'id': z.string(),
@@ -1064,7 +1374,7 @@ const _one_person_lab_dsh_opl_oplExecution_save_catalog_result$schema = () => (_
 }),
   'harnessRef': z.string(),
   'generated': z.boolean().optional(),
-  'permissionPolicy': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'permissionPolicy': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'isDefault': z.boolean(),
   'enabled': z.boolean(),
 })),
@@ -1080,6 +1390,61 @@ const _one_person_lab_dsh_opl_oplExecution_save_cooperation_settings_result$sche
   'autoReview': z.boolean(),
   'maxRevisions': z.number(),
   'externalCodex': z.boolean(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_save_harness_proxy_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplExecution_save_harness_proxy_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_save_harness_proxy_parameter_0$schema$value ??= z.object({
+  'harnessId': z.string(),
+  'proxy': z.union([z.object({
+  'mode': z.literal("inherit"),
+}), z.object({
+  'mode': z.literal("direct"),
+}), z.object({
+  'mode': z.literal("custom"),
+  'url': z.string(),
+})]),
+}))
+let _one_person_lab_dsh_opl_oplExecution_save_harness_proxy_result$schema$value
+const _one_person_lab_dsh_opl_oplExecution_save_harness_proxy_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_save_harness_proxy_result$schema$value ??= z.object({
+  'version': z.literal(2),
+  'models': z.array(z.object({
+  'ref': z.object({
+  'provider': z.string(),
+  'model': z.string(),
+}),
+  'name': z.string(),
+  'source': z.string(),
+  'available': z.boolean(),
+  'reason': z.string().optional(),
+})),
+  'harnesses': z.array(z.object({
+  'id': z.string(),
+  'name': z.string(),
+  'kind': z.union([z.literal("dsh"), z.literal("grok-build"), z.literal("acp")]),
+  'command': z.string().optional(),
+  'prefix': z.array(z.string()).optional(),
+  'adapter': z.string().optional(),
+  'proxy': z.union([z.object({
+  'mode': z.literal("inherit"),
+}), z.object({
+  'mode': z.literal("direct"),
+}), z.object({
+  'mode': z.literal("custom"),
+  'url': z.string(),
+})]).optional(),
+})),
+  'combinations': z.array(z.object({
+  'id': z.string(),
+  'name': z.string(),
+  'modelRef': z.object({
+  'provider': z.string(),
+  'model': z.string(),
+}),
+  'harnessRef': z.string(),
+  'generated': z.boolean().optional(),
+  'permissionPolicy': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'isDefault': z.boolean(),
+  'enabled': z.boolean(),
+})),
 }))
 let _one_person_lab_dsh_opl_oplExecution_select_combination_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_select_combination_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_select_combination_parameter_0$schema$value ??= z.object({
@@ -1100,6 +1465,21 @@ const _one_person_lab_dsh_opl_oplExecution_select_effort_parameter_0$schema = ()
 }))
 let _one_person_lab_dsh_opl_oplExecution_select_effort_result$schema$value
 const _one_person_lab_dsh_opl_oplExecution_select_effort_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_select_effort_result$schema$value ??= z.literal(null))
+let _one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_parameter_0$schema$value ??= z.object({
+  'version': z.string(),
+  'source': z.string().optional(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_result$schema$value
+const _one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_result$schema$value ??= z.object({
+  'version': z.string(),
+  'command': z.string(),
+  'previousCommand': z.string(),
+  'previousPrefix': z.array(z.string()),
+  'manifestSha256': z.string(),
+  'launcherSha256': z.string(),
+  'validation': z.literal("static"),
+}))
 let _one_person_lab_dsh_opl_oplExecution_sessions_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_sessions_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_sessions_parameter_0$schema$value ??= z.object({
   'cursor': z.string().optional(),
@@ -1118,8 +1498,10 @@ const _one_person_lab_dsh_opl_oplExecution_sessions_result$schema = () => (_one_
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -1135,9 +1517,19 @@ const _one_person_lab_dsh_opl_oplExecution_sessions_result$schema = () => (_one_
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }), z.object({
   'turnCount': z.number(),
   'lastReviewDecision': z.union([z.literal("accepted"), z.literal("pending"), z.literal("changes_requested")]).optional(),
@@ -1158,6 +1550,7 @@ const _one_person_lab_dsh_opl_oplExecution_snapshot_result$schema = () => (_one_
   'approvals': z.array(z.object({
   'id': z.string(),
   'title': z.string(),
+  'command': z.string().optional(),
   'options': z.array(z.object({
   'optionId': z.string(),
   'name': z.string(),
@@ -1171,8 +1564,10 @@ const _one_person_lab_dsh_opl_oplExecution_snapshot_result$schema = () => (_one_
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -1188,7 +1583,8 @@ const _one_person_lab_dsh_opl_oplExecution_snapshot_result$schema = () => (_one_
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -1196,7 +1592,12 @@ const _one_person_lab_dsh_opl_oplExecution_snapshot_result$schema = () => (_one_
   'fingerprint': z.string(),
   'prompt': z.string(),
   'reasoningEffort': z.string().optional(),
+  'writeScope': z.array(z.string()).optional(),
   'text': z.string(),
+  'content': z.array(z.object({
+  'type': z.union([z.literal("text"), z.literal("reasoning")]),
+  'text': z.string(),
+})).optional(),
   'state': z.union([z.literal("queued"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("idle"), z.literal("waiting_child"), z.literal("interrupted")]),
   'stopReason': z.string().optional(),
   'error': z.string().optional(),
@@ -1222,8 +1623,27 @@ const _one_person_lab_dsh_opl_oplExecution_snapshot_result$schema = () => (_one_
   'title': z.string(),
   'status': z.string(),
   'kind': z.string(),
+  'inputJson': z.string().optional(),
+  'outputJson': z.string().optional(),
+  'contentJson': z.string().optional(),
+  'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_start_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_start_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_start_parameter_0$schema$value ??= z.object({
@@ -1235,7 +1655,7 @@ const _one_person_lab_dsh_opl_oplExecution_start_parameter_0$schema = () => (_on
   'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
   'sessionId': z.string(),
 }).optional(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]).optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]).optional(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_start_result$schema$value
 const _one_person_lab_dsh_opl_oplExecution_start_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_start_result$schema$value ??= z.object({
@@ -1244,6 +1664,7 @@ const _one_person_lab_dsh_opl_oplExecution_start_result$schema = () => (_one_per
   'approvals': z.array(z.object({
   'id': z.string(),
   'title': z.string(),
+  'command': z.string().optional(),
   'options': z.array(z.object({
   'optionId': z.string(),
   'name': z.string(),
@@ -1257,8 +1678,10 @@ const _one_person_lab_dsh_opl_oplExecution_start_result$schema = () => (_one_per
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -1274,7 +1697,8 @@ const _one_person_lab_dsh_opl_oplExecution_start_result$schema = () => (_one_per
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -1282,7 +1706,12 @@ const _one_person_lab_dsh_opl_oplExecution_start_result$schema = () => (_one_per
   'fingerprint': z.string(),
   'prompt': z.string(),
   'reasoningEffort': z.string().optional(),
+  'writeScope': z.array(z.string()).optional(),
   'text': z.string(),
+  'content': z.array(z.object({
+  'type': z.union([z.literal("text"), z.literal("reasoning")]),
+  'text': z.string(),
+})).optional(),
   'state': z.union([z.literal("queued"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("idle"), z.literal("waiting_child"), z.literal("interrupted")]),
   'stopReason': z.string().optional(),
   'error': z.string().optional(),
@@ -1308,8 +1737,113 @@ const _one_person_lab_dsh_opl_oplExecution_start_result$schema = () => (_one_per
   'title': z.string(),
   'status': z.string(),
   'kind': z.string(),
+  'inputJson': z.string().optional(),
+  'outputJson': z.string().optional(),
+  'contentJson': z.string().optional(),
+  'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_stop_edit_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplExecution_stop_edit_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_stop_edit_parameter_0$schema$value ??= z.object({
+  'clientRequestId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_stop_edit_result$schema$value
+const _one_person_lab_dsh_opl_oplExecution_stop_edit_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_stop_edit_result$schema$value ??= z.object({
+  'clientRequestId': z.string(),
+  'sessionId': z.string(),
+  'preservedSessionId': z.string(),
+  'branchTitle': z.string(),
+  'moved': z.boolean(),
+  'boundary': z.object({
+  'id': z.string(),
+  'contentHead': z.string(),
+  'attachmentCount': z.number(),
+  'first': z.boolean(),
+  'historyVersion': z.string().optional(),
+  'operationId': z.string().optional(),
+  'blocked': z.boolean().optional(),
+  'blockedReason': z.string().optional(),
+}),
+  'draft': z.string(),
+  'unrestored': z.array(z.object({
+  'name': z.string().optional(),
+  'reason': z.string(),
+})),
+  'removedTurns': z.number(),
+  'review': z.object({
+  'model': z.string(),
+  'effort': z.string().optional(),
+  'permissions': z.string(),
+  'cwd': z.string(),
+  'workspaceId': z.string(),
+  'project': z.string().optional(),
+  'feedback': z.object({
+  'taskId': z.string().optional(),
+  'pendingDeliveries': z.number(),
+  'operationId': z.string(),
+}),
+}),
+  'version': z.number(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_parameter_0$schema$value ??= z.object({
+  'sessionId': z.string(),
+  'clientRequestId': z.string(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_result$schema$value
+const _one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_result$schema$value ??= z.object({
+  'acknowledged': z.boolean(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_stop_edit_state_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplExecution_stop_edit_state_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_stop_edit_state_parameter_0$schema$value ??= z.object({
+  'sessionId': z.string(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_stop_edit_state_result$schema$value
+const _one_person_lab_dsh_opl_oplExecution_stop_edit_state_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_stop_edit_state_result$schema$value ??= z.object({
+  'sessionId': z.string(),
+  'harness': z.union([z.literal("dsh"), z.literal("minimax-code")]).optional(),
+  'supported': z.boolean(),
+  'reason': z.string().optional(),
+  'busy': z.boolean(),
+  'pending': z.boolean(),
+  'boundaries': z.array(z.object({
+  'id': z.string(),
+  'contentHead': z.string(),
+  'attachmentCount': z.number(),
+  'first': z.boolean(),
+  'historyVersion': z.string().optional(),
+  'operationId': z.string().optional(),
+  'blocked': z.boolean().optional(),
+  'blockedReason': z.string().optional(),
+})),
+  'pendingDraft': z.object({
+  'text': z.string(),
+  'clientRequestId': z.string(),
+}).optional(),
+  'editBranch': z.object({
+  'sessionId': z.string(),
+  'title': z.string(),
+}).optional(),
+  'filesRestored': z.literal(false),
+  'version': z.number(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_task_summaries_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_task_summaries_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_task_summaries_parameter_0$schema$value ??= z.object({
@@ -1329,8 +1863,10 @@ const _one_person_lab_dsh_opl_oplExecution_task_summaries_result$schema = () => 
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -1346,9 +1882,19 @@ const _one_person_lab_dsh_opl_oplExecution_task_summaries_result$schema = () => 
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }), z.object({
   'turnCount': z.number(),
   'lastReviewDecision': z.union([z.literal("accepted"), z.literal("pending"), z.literal("changes_requested")]).optional(),
@@ -1383,6 +1929,7 @@ const _one_person_lab_dsh_opl_oplExecution_tasks_result$schema = () => (_one_per
   'approvals': z.array(z.object({
   'id': z.string(),
   'title': z.string(),
+  'command': z.string().optional(),
   'options': z.array(z.object({
   'optionId': z.string(),
   'name': z.string(),
@@ -1396,8 +1943,10 @@ const _one_person_lab_dsh_opl_oplExecution_tasks_result$schema = () => (_one_per
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -1413,7 +1962,8 @@ const _one_person_lab_dsh_opl_oplExecution_tasks_result$schema = () => (_one_per
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -1421,7 +1971,12 @@ const _one_person_lab_dsh_opl_oplExecution_tasks_result$schema = () => (_one_per
   'fingerprint': z.string(),
   'prompt': z.string(),
   'reasoningEffort': z.string().optional(),
+  'writeScope': z.array(z.string()).optional(),
   'text': z.string(),
+  'content': z.array(z.object({
+  'type': z.union([z.literal("text"), z.literal("reasoning")]),
+  'text': z.string(),
+})).optional(),
   'state': z.union([z.literal("queued"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("idle"), z.literal("waiting_child"), z.literal("interrupted")]),
   'stopReason': z.string().optional(),
   'error': z.string().optional(),
@@ -1447,8 +2002,27 @@ const _one_person_lab_dsh_opl_oplExecution_tasks_result$schema = () => (_one_per
   'title': z.string(),
   'status': z.string(),
   'kind': z.string(),
+  'inputJson': z.string().optional(),
+  'outputJson': z.string().optional(),
+  'contentJson': z.string().optional(),
+  'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 })))
 let _one_person_lab_dsh_opl_oplExecution_wait_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_wait_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_wait_parameter_0$schema$value ??= z.object({
@@ -1462,6 +2036,7 @@ const _one_person_lab_dsh_opl_oplExecution_wait_result$schema = () => (_one_pers
   'approvals': z.array(z.object({
   'id': z.string(),
   'title': z.string(),
+  'command': z.string().optional(),
   'options': z.array(z.object({
   'optionId': z.string(),
   'name': z.string(),
@@ -1475,8 +2050,10 @@ const _one_person_lab_dsh_opl_oplExecution_wait_result$schema = () => (_one_pers
   'provider': z.string(),
   'model': z.string(),
 }),
+  'reasoningEffort': z.string().optional(),
   'cwd': z.string(),
   'acpSessionId': z.string(),
+  'nativeSessionId': z.string().optional(),
   'autoWakePaused': z.boolean().optional(),
   'assignment': z.object({
   'taskId': z.string(),
@@ -1492,7 +2069,8 @@ const _one_person_lab_dsh_opl_oplExecution_wait_result$schema = () => (_one_pers
   'sessionId': z.string(),
 }),
   'title': z.string(),
-  'sandbox': z.union([z.literal("read-only"), z.literal("workspace")]),
+  'titleFromHarness': z.boolean().optional(),
+  'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -1500,7 +2078,12 @@ const _one_person_lab_dsh_opl_oplExecution_wait_result$schema = () => (_one_pers
   'fingerprint': z.string(),
   'prompt': z.string(),
   'reasoningEffort': z.string().optional(),
+  'writeScope': z.array(z.string()).optional(),
   'text': z.string(),
+  'content': z.array(z.object({
+  'type': z.union([z.literal("text"), z.literal("reasoning")]),
+  'text': z.string(),
+})).optional(),
   'state': z.union([z.literal("queued"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("idle"), z.literal("waiting_child"), z.literal("interrupted")]),
   'stopReason': z.string().optional(),
   'error': z.string().optional(),
@@ -1526,8 +2109,27 @@ const _one_person_lab_dsh_opl_oplExecution_wait_result$schema = () => (_one_pers
   'title': z.string(),
   'status': z.string(),
   'kind': z.string(),
+  'inputJson': z.string().optional(),
+  'outputJson': z.string().optional(),
+  'contentJson': z.string().optional(),
+  'locationsJson': z.string().optional(),
 })),
+  'native': z.object({
+  'userMessageId': z.string().optional(),
+  'turnId': z.string().optional(),
+  'officialSeq': z.number().optional(),
+  'historyVersion': z.string().optional(),
+}).optional(),
 })),
+  'stopEdit': z.object({
+  'clientRequestId': z.string(),
+  'previousSessionId': z.string(),
+  'sessionId': z.string(),
+  'boundaryId': z.string(),
+  'pendingOperationId': z.string(),
+  'removedTurns': z.number(),
+  'at': z.string(),
+}).optional(),
 }))
 let _one_person_lab_dsh_opl_oplGatewayAccount_refresh_result$schema$value
 const _one_person_lab_dsh_opl_oplGatewayAccount_refresh_result$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_refresh_result$schema$value ??= z.object({
@@ -1823,6 +2425,52 @@ const _one_person_lab_dsh_opl_oplGatewayModels_read_result$schema = () => (_one_
   'revision': z.number(),
 })),
 }))
+let _one_person_lab_dsh_opl_oplHuaweiMaas_clearKey_result$schema$value
+const _one_person_lab_dsh_opl_oplHuaweiMaas_clearKey_result$schema = () => (_one_person_lab_dsh_opl_oplHuaweiMaas_clearKey_result$schema$value ??= z.object({
+  'ok': z.boolean().readonly(),
+  'status': z.object({
+  'baseUrl': z.string().readonly(),
+  'model': z.string().readonly(),
+  'credential': z.object({
+  'configured': z.boolean().readonly(),
+  'source': z.literal("windows-credential-manager").readonly(),
+  'supported': z.boolean().readonly(),
+  'available': z.boolean().readonly(),
+  'failure': z.union([z.literal("unsupported-platform"), z.literal("unavailable-target"), z.literal("empty-value"), z.literal("invalid-value"), z.literal("value-too-large"), z.literal("helper-unavailable"), z.literal("helper-failed"), z.literal("unexpected-response")]).readonly().optional(),
+}).readonly(),
+}).readonly(),
+  'failure': z.union([z.literal("unsupported-platform"), z.literal("unavailable-target"), z.literal("empty-value"), z.literal("invalid-value"), z.literal("value-too-large"), z.literal("helper-unavailable"), z.literal("helper-failed"), z.literal("unexpected-response")]).readonly().optional(),
+}))
+let _one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_parameter_0$schema$value ??= z.string())
+let _one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_result$schema$value
+const _one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_result$schema = () => (_one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_result$schema$value ??= z.object({
+  'ok': z.boolean().readonly(),
+  'status': z.object({
+  'baseUrl': z.string().readonly(),
+  'model': z.string().readonly(),
+  'credential': z.object({
+  'configured': z.boolean().readonly(),
+  'source': z.literal("windows-credential-manager").readonly(),
+  'supported': z.boolean().readonly(),
+  'available': z.boolean().readonly(),
+  'failure': z.union([z.literal("unsupported-platform"), z.literal("unavailable-target"), z.literal("empty-value"), z.literal("invalid-value"), z.literal("value-too-large"), z.literal("helper-unavailable"), z.literal("helper-failed"), z.literal("unexpected-response")]).readonly().optional(),
+}).readonly(),
+}).readonly(),
+  'failure': z.union([z.literal("unsupported-platform"), z.literal("unavailable-target"), z.literal("empty-value"), z.literal("invalid-value"), z.literal("value-too-large"), z.literal("helper-unavailable"), z.literal("helper-failed"), z.literal("unexpected-response")]).readonly().optional(),
+}))
+let _one_person_lab_dsh_opl_oplHuaweiMaas_status_result$schema$value
+const _one_person_lab_dsh_opl_oplHuaweiMaas_status_result$schema = () => (_one_person_lab_dsh_opl_oplHuaweiMaas_status_result$schema$value ??= z.object({
+  'baseUrl': z.string().readonly(),
+  'model': z.string().readonly(),
+  'credential': z.object({
+  'configured': z.boolean().readonly(),
+  'source': z.literal("windows-credential-manager").readonly(),
+  'supported': z.boolean().readonly(),
+  'available': z.boolean().readonly(),
+  'failure': z.union([z.literal("unsupported-platform"), z.literal("unavailable-target"), z.literal("empty-value"), z.literal("invalid-value"), z.literal("value-too-large"), z.literal("helper-unavailable"), z.literal("helper-failed"), z.literal("unexpected-response")]).readonly().optional(),
+}).readonly(),
+}))
 let _one_person_lab_dsh_opl_oplSetup_finish_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplSetup_finish_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplSetup_finish_parameter_0$schema$value ??= z.union([z.literal("gateway"), z.literal("official"), z.literal("later")]))
 let _one_person_lab_dsh_opl_oplSetup_finish_result$schema$value
@@ -1866,11 +2514,21 @@ const _one_person_lab_dsh_opl_taskFeedback_ack_result$schema = () => (_one_perso
   'payload': z.object({
   'taskId': z.string().readonly(),
   'state': z.union([z.literal("queued"), z.literal("accepted"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("disconnected")]).readonly(),
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
+  'execution': z.union([z.object({
+  'kind': z.literal("dsh-session").readonly(),
+}), z.object({
+  'kind': z.literal("harness-session").readonly(),
+  'harnessSessionId': z.string().readonly(),
+  'harnessRef': z.string().readonly(),
+  'combination': z.string().readonly(),
+  'taskId': z.string().readonly(),
+  'operationId': z.string().readonly(),
+})]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'summary': z.string().readonly(),
   'evidence': z.object({
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'seq': z.union([z.literal(null), z.number()]).readonly(),
   'eventSeqs': z.array(z.number()).readonly(),
@@ -1878,7 +2536,7 @@ const _one_person_lab_dsh_opl_taskFeedback_ack_result$schema = () => (_one_perso
   'acceptance': z.string().readonly(),
   'needsInput': z.union([z.literal(null), z.object({
   'kind': z.union([z.literal("question"), z.literal("approval")]).readonly(),
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'seq': z.union([z.literal(null), z.number()]).readonly(),
   'pauseId': z.string().readonly(),
@@ -1948,11 +2606,21 @@ const _one_person_lab_dsh_opl_taskFeedback_outbox_result$schema = () => (_one_pe
   'payload': z.object({
   'taskId': z.string().readonly(),
   'state': z.union([z.literal("queued"), z.literal("accepted"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("disconnected")]).readonly(),
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
+  'execution': z.union([z.object({
+  'kind': z.literal("dsh-session").readonly(),
+}), z.object({
+  'kind': z.literal("harness-session").readonly(),
+  'harnessSessionId': z.string().readonly(),
+  'harnessRef': z.string().readonly(),
+  'combination': z.string().readonly(),
+  'taskId': z.string().readonly(),
+  'operationId': z.string().readonly(),
+})]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'summary': z.string().readonly(),
   'evidence': z.object({
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'seq': z.union([z.literal(null), z.number()]).readonly(),
   'eventSeqs': z.array(z.number()).readonly(),
@@ -1960,7 +2628,7 @@ const _one_person_lab_dsh_opl_taskFeedback_outbox_result$schema = () => (_one_pe
   'acceptance': z.string().readonly(),
   'needsInput': z.union([z.literal(null), z.object({
   'kind': z.union([z.literal("question"), z.literal("approval")]).readonly(),
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'seq': z.union([z.literal(null), z.number()]).readonly(),
   'pauseId': z.string().readonly(),
@@ -2031,11 +2699,21 @@ const _one_person_lab_dsh_opl_taskFeedback_receive_result$schema = () => (_one_p
   'payload': z.object({
   'taskId': z.string().readonly(),
   'state': z.union([z.literal("queued"), z.literal("accepted"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("disconnected")]).readonly(),
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
+  'execution': z.union([z.object({
+  'kind': z.literal("dsh-session").readonly(),
+}), z.object({
+  'kind': z.literal("harness-session").readonly(),
+  'harnessSessionId': z.string().readonly(),
+  'harnessRef': z.string().readonly(),
+  'combination': z.string().readonly(),
+  'taskId': z.string().readonly(),
+  'operationId': z.string().readonly(),
+})]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'summary': z.string().readonly(),
   'evidence': z.object({
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'seq': z.union([z.literal(null), z.number()]).readonly(),
   'eventSeqs': z.array(z.number()).readonly(),
@@ -2043,7 +2721,7 @@ const _one_person_lab_dsh_opl_taskFeedback_receive_result$schema = () => (_one_p
   'acceptance': z.string().readonly(),
   'needsInput': z.union([z.literal(null), z.object({
   'kind': z.union([z.literal("question"), z.literal("approval")]).readonly(),
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'seq': z.union([z.literal(null), z.number()]).readonly(),
   'pauseId': z.string().readonly(),
@@ -2088,7 +2766,17 @@ let _one_person_lab_dsh_opl_taskFeedback_register_result$schema$value
 const _one_person_lab_dsh_opl_taskFeedback_register_result$schema = () => (_one_person_lab_dsh_opl_taskFeedback_register_result$schema$value ??= z.object({
   'task': z.object({
   'taskId': z.string().readonly(),
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
+  'execution': z.union([z.object({
+  'kind': z.literal("dsh-session").readonly(),
+}), z.object({
+  'kind': z.literal("harness-session").readonly(),
+  'harnessSessionId': z.string().readonly(),
+  'harnessRef': z.string().readonly(),
+  'combination': z.string().readonly(),
+  'taskId': z.string().readonly(),
+  'operationId': z.string().readonly(),
+})]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'target': z.object({
   'kind': z.literal("codex-thread").readonly(),
@@ -2099,7 +2787,7 @@ const _one_person_lab_dsh_opl_taskFeedback_register_result$schema = () => (_one_
   'state': z.union([z.literal("queued"), z.literal("accepted"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("disconnected")]).readonly(),
   'summary': z.string().readonly(),
   'evidence': z.object({
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'seq': z.union([z.literal(null), z.number()]).readonly(),
   'eventSeqs': z.array(z.number()).readonly(),
@@ -2150,11 +2838,21 @@ const _one_person_lab_dsh_opl_taskFeedback_resumeFailed_result$schema = () => (_
   'payload': z.object({
   'taskId': z.string().readonly(),
   'state': z.union([z.literal("queued"), z.literal("accepted"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("disconnected")]).readonly(),
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
+  'execution': z.union([z.object({
+  'kind': z.literal("dsh-session").readonly(),
+}), z.object({
+  'kind': z.literal("harness-session").readonly(),
+  'harnessSessionId': z.string().readonly(),
+  'harnessRef': z.string().readonly(),
+  'combination': z.string().readonly(),
+  'taskId': z.string().readonly(),
+  'operationId': z.string().readonly(),
+})]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'summary': z.string().readonly(),
   'evidence': z.object({
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'seq': z.union([z.literal(null), z.number()]).readonly(),
   'eventSeqs': z.array(z.number()).readonly(),
@@ -2162,7 +2860,7 @@ const _one_person_lab_dsh_opl_taskFeedback_resumeFailed_result$schema = () => (_
   'acceptance': z.string().readonly(),
   'needsInput': z.union([z.literal(null), z.object({
   'kind': z.union([z.literal("question"), z.literal("approval")]).readonly(),
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'seq': z.union([z.literal(null), z.number()]).readonly(),
   'pauseId': z.string().readonly(),
@@ -2201,7 +2899,17 @@ const _one_person_lab_dsh_opl_taskFeedback_task_parameter_0$schema = () => (_one
 let _one_person_lab_dsh_opl_taskFeedback_task_result$schema$value
 const _one_person_lab_dsh_opl_taskFeedback_task_result$schema = () => (_one_person_lab_dsh_opl_taskFeedback_task_result$schema$value ??= z.object({
   'taskId': z.string().readonly(),
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
+  'execution': z.union([z.object({
+  'kind': z.literal("dsh-session").readonly(),
+}), z.object({
+  'kind': z.literal("harness-session").readonly(),
+  'harnessSessionId': z.string().readonly(),
+  'harnessRef': z.string().readonly(),
+  'combination': z.string().readonly(),
+  'taskId': z.string().readonly(),
+  'operationId': z.string().readonly(),
+})]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'target': z.object({
   'kind': z.literal("codex-thread").readonly(),
@@ -2212,7 +2920,7 @@ const _one_person_lab_dsh_opl_taskFeedback_task_result$schema = () => (_one_pers
   'state': z.union([z.literal("queued"), z.literal("accepted"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("disconnected")]).readonly(),
   'summary': z.string().readonly(),
   'evidence': z.object({
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'seq': z.union([z.literal(null), z.number()]).readonly(),
   'eventSeqs': z.array(z.number()).readonly(),
@@ -2230,7 +2938,17 @@ const _one_person_lab_dsh_opl_taskFeedback_task_result$schema = () => (_one_pers
 let _one_person_lab_dsh_opl_taskFeedback_tasks_result$schema$value
 const _one_person_lab_dsh_opl_taskFeedback_tasks_result$schema = () => (_one_person_lab_dsh_opl_taskFeedback_tasks_result$schema$value ??= z.array(z.object({
   'taskId': z.string().readonly(),
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
+  'execution': z.union([z.object({
+  'kind': z.literal("dsh-session").readonly(),
+}), z.object({
+  'kind': z.literal("harness-session").readonly(),
+  'harnessSessionId': z.string().readonly(),
+  'harnessRef': z.string().readonly(),
+  'combination': z.string().readonly(),
+  'taskId': z.string().readonly(),
+  'operationId': z.string().readonly(),
+})]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'target': z.object({
   'kind': z.literal("codex-thread").readonly(),
@@ -2241,7 +2959,7 @@ const _one_person_lab_dsh_opl_taskFeedback_tasks_result$schema = () => (_one_per
   'state': z.union([z.literal("queued"), z.literal("accepted"), z.literal("running"), z.literal("waiting_approval"), z.literal("waiting_input"), z.literal("completed"), z.literal("failed"), z.literal("cancelled"), z.literal("disconnected")]).readonly(),
   'summary': z.string().readonly(),
   'evidence': z.object({
-  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.union([z.literal(null), z.intersection(z.string(), z.unknown())]).readonly(),
   'turn': z.union([z.literal(null), z.number()]).readonly(),
   'seq': z.union([z.literal(null), z.number()]).readonly(),
   'eventSeqs': z.array(z.number()).readonly(),
@@ -2374,7 +3092,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_answer_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":119,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":135,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/cancel',
@@ -2399,7 +3117,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_cancel_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":115,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":131,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/cancel-task',
@@ -2425,7 +3143,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_cancel_task_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":111,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":127,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/catalog',
@@ -2440,7 +3158,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#ExecutionCatalog',
         create: _one_person_lab_dsh_opl_oplExecution_catalog_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":40,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":46,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/combinations',
@@ -2455,7 +3173,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/combinations:result',
         create: _one_person_lab_dsh_opl_oplExecution_combinations_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":52,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":68,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/cooperation-settings',
@@ -2471,7 +3189,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#CooperationSettings',
         create: _one_person_lab_dsh_opl_oplExecution_cooperation_settings_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":148,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":164,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/delegate',
@@ -2497,7 +3215,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_delegate_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":92,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":108,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/detail',
@@ -2522,7 +3240,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessDetailPage',
         create: _one_person_lab_dsh_opl_oplExecution_detail_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":60,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":76,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/harness-installations',
@@ -2538,7 +3256,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/harness-installations:result',
         create: _one_person_lab_dsh_opl_oplExecution_harness_installations_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":64,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":80,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/harness-update',
@@ -2564,7 +3282,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/harness-update:result',
         create: _one_person_lab_dsh_opl_oplExecution_harness_update_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":68,"column":9},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":84,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/list',
@@ -2579,7 +3297,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessCatalog',
         create: _one_person_lab_dsh_opl_oplExecution_list_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":48,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":64,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/model-selection',
@@ -2605,7 +3323,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSelection',
         create: _one_person_lab_dsh_opl_oplExecution_model_selection_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":127,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":143,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/prompt',
@@ -2630,7 +3348,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_prompt_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":77,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":93,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/report',
@@ -2655,7 +3373,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/report:result',
         create: _one_person_lab_dsh_opl_oplExecution_report_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":96,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":112,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/result',
@@ -2681,7 +3399,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_result_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":104,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":120,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/retry-delivery',
@@ -2707,7 +3425,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_retry_delivery_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":164,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":180,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/review',
@@ -2732,7 +3450,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_review_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":100,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":116,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/save-catalog',
@@ -2758,7 +3476,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#ExecutionCatalog',
         create: _one_person_lab_dsh_opl_oplExecution_save_catalog_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":44,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":55,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/save-cooperation-settings',
@@ -2784,7 +3502,33 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#CooperationSettings',
         create: _one_person_lab_dsh_opl_oplExecution_save_cooperation_settings_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":152,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":168,"column":3},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplExecution/save-harness-proxy',
+      service: 'oplExecution',
+      namespace: 'oplExecution',
+      method: 'save-harness-proxy',
+      implementation: 'saveHarnessProxy',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'request',
+          wire: 'request',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl#oplExecution/save-harness-proxy:request',
+            create: _one_person_lab_dsh_opl_oplExecution_save_harness_proxy_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#ExecutionCatalog',
+        create: _one_person_lab_dsh_opl_oplExecution_save_harness_proxy_result$schema,
+      },
+      sourceLocation: {"file":"src/execution/host/service.ts","line":60,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/select-combination',
@@ -2810,7 +3554,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/select-combination:result',
         create: _one_person_lab_dsh_opl_oplExecution_select_combination_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":131,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":147,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/select-effort',
@@ -2836,7 +3580,33 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/select-effort:result',
         create: _one_person_lab_dsh_opl_oplExecution_select_effort_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":138,"column":9},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":154,"column":9},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplExecution/select-minimax-candidate',
+      service: 'oplExecution',
+      namespace: 'oplExecution',
+      method: 'select-minimax-candidate',
+      implementation: 'selectMiniMaxCandidate',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'request',
+          wire: 'request',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl/types#MiniMaxCandidateRequest',
+            create: _one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#MiniMaxCandidateResult',
+        create: _one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_result$schema,
+      },
+      sourceLocation: {"file":"src/execution/host/service.ts","line":51,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/sessions',
@@ -2861,7 +3631,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSessionsPage',
         create: _one_person_lab_dsh_opl_oplExecution_sessions_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":56,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":72,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/snapshot',
@@ -2886,7 +3656,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_snapshot_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":81,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":97,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/start',
@@ -2911,7 +3681,85 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_start_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":73,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":89,"column":3},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplExecution/stop-edit',
+      service: 'oplExecution',
+      namespace: 'oplExecution',
+      method: 'stop-edit',
+      implementation: 'stopEdit',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'request',
+          wire: 'request',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl/types#StopEditRequest',
+            create: _one_person_lab_dsh_opl_oplExecution_stop_edit_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#StopEditResult',
+        create: _one_person_lab_dsh_opl_oplExecution_stop_edit_result$schema,
+      },
+      sourceLocation: {"file":"src/execution/host/service.ts","line":190,"column":3},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplExecution/stop-edit-acknowledge',
+      service: 'oplExecution',
+      namespace: 'oplExecution',
+      method: 'stop-edit-acknowledge',
+      implementation: 'acknowledgeStopEditDraft',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'request',
+          wire: 'request',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl#oplExecution/stop-edit-acknowledge:request',
+            create: _one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl#oplExecution/stop-edit-acknowledge:result',
+        create: _one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_result$schema,
+      },
+      sourceLocation: {"file":"src/execution/host/service.ts","line":195,"column":3},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplExecution/stop-edit-state',
+      service: 'oplExecution',
+      namespace: 'oplExecution',
+      method: 'stop-edit-state',
+      implementation: 'stopEditState',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'request',
+          wire: 'request',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl/types#StopEditStateRequest',
+            create: _one_person_lab_dsh_opl_oplExecution_stop_edit_state_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#StopEditState',
+        create: _one_person_lab_dsh_opl_oplExecution_stop_edit_state_result$schema,
+      },
+      sourceLocation: {"file":"src/execution/host/service.ts","line":185,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/task-summaries',
@@ -2937,7 +3785,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/task-summaries:result',
         create: _one_person_lab_dsh_opl_oplExecution_task_summaries_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":160,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":176,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/tasks',
@@ -2962,7 +3810,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/tasks:result',
         create: _one_person_lab_dsh_opl_oplExecution_tasks_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":156,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":172,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/wait',
@@ -2988,7 +3836,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_wait_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":85,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":101,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplGatewayAccount/refresh',
@@ -3161,6 +4009,61 @@ export const TYPERT_REMOTE = {
       sourceLocation: {"file":"src/gateway/host/model-service.ts","line":20,"column":3},
     },
     {
+      id: '@one-person-lab/dsh-opl#oplHuaweiMaas/clearKey',
+      service: 'oplHuaweiMaas',
+      namespace: 'oplHuaweiMaas',
+      method: 'clearKey',
+      invocation: { kind: 'direct' },
+      parameters: [
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#HuaweiMaaSKeyResult',
+        create: _one_person_lab_dsh_opl_oplHuaweiMaas_clearKey_result$schema,
+      },
+      sourceLocation: {"file":"src/credentials/host/huawei-maas-service.ts","line":58,"column":9},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplHuaweiMaas/saveKey',
+      service: 'oplHuaweiMaas',
+      namespace: 'oplHuaweiMaas',
+      method: 'saveKey',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'key',
+          wire: 'key',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl#oplHuaweiMaas/saveKey:key',
+            create: _one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#HuaweiMaaSKeyResult',
+        create: _one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_result$schema,
+      },
+      sourceLocation: {"file":"src/credentials/host/huawei-maas-service.ts","line":40,"column":9},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplHuaweiMaas/status',
+      service: 'oplHuaweiMaas',
+      namespace: 'oplHuaweiMaas',
+      method: 'status',
+      invocation: { kind: 'direct' },
+      parameters: [
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#HuaweiMaaSStatus',
+        create: _one_person_lab_dsh_opl_oplHuaweiMaas_status_result$schema,
+      },
+      sourceLocation: {"file":"src/credentials/host/huawei-maas-service.ts","line":27,"column":9},
+    },
+    {
       id: '@one-person-lab/dsh-opl#oplSetup/finish',
       service: 'oplSetup',
       namespace: 'oplSetup',
@@ -3281,7 +4184,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskAckValue',
         create: _one_person_lab_dsh_opl_taskFeedback_ack_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":621,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":839,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/consume',
@@ -3306,7 +4209,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskConsumeValue',
         create: _one_person_lab_dsh_opl_taskFeedback_consume_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":678,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":896,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/flush',
@@ -3321,7 +4224,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskFlushValue',
         create: _one_person_lab_dsh_opl_taskFeedback_flush_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":1341,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":1589,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/outbox',
@@ -3337,7 +4240,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#taskFeedback/outbox:result',
         create: _one_person_lab_dsh_opl_taskFeedback_outbox_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":572,"column":3},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":790,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/receipts',
@@ -3352,7 +4255,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#taskFeedback/receipts:result',
         create: _one_person_lab_dsh_opl_taskFeedback_receipts_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":662,"column":3},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":880,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/receive',
@@ -3377,7 +4280,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskReceiveValue',
         create: _one_person_lab_dsh_opl_taskFeedback_receive_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":649,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":867,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/register',
@@ -3402,7 +4305,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskRegistrationValue',
         create: _one_person_lab_dsh_opl_taskFeedback_register_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":450,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":459,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/resumeFailed',
@@ -3427,7 +4330,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskResumeValue',
         create: _one_person_lab_dsh_opl_taskFeedback_resumeFailed_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":697,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":915,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/task',
@@ -3452,7 +4355,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskRecord',
         create: _one_person_lab_dsh_opl_taskFeedback_task_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":554,"column":3},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":772,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/tasks',
@@ -3467,7 +4370,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#taskFeedback/tasks:result',
         create: _one_person_lab_dsh_opl_taskFeedback_tasks_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":563,"column":3},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":781,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/wake',
@@ -3482,7 +4385,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#WakeStatus',
         create: _one_person_lab_dsh_opl_taskFeedback_wake_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":587,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":805,"column":9},
     },
   ],
 }

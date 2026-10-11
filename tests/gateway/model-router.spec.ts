@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { GatewayModelAdapter } from '../../src/gateway/host/model-router.ts'
 const request: GenerateOptions = {
@@ -72,6 +72,35 @@ describe('explicit group routing', () => {
     await collect(adapter, { ...request, model: 'codex::gpt-6-sol' })
     expect(codex).toHaveBeenCalledOnce()
   })
+  it('publishes high as the Flash default for both protocol channels', async () => {
+    const { adapter } = setup()
+    vi.spyOn(Adapter.prototype, 'listModels').mockImplementation(async function (provider) {
+      return this.models.map((id) => ({
+        provider,
+        id,
+        name: id,
+        reasoning: {
+          defaultEffort: ReasoningEffortId('max'),
+          efforts: ['low', 'high', 'max'].map((id) => ({ id: ReasoningEffortId(id), name: id })),
+        },
+      }))
+    })
+    vi.spyOn(Adapter.prototype, 'resolveModel').mockImplementation(async (provider, id) => ({
+      provider,
+      id,
+      name: id,
+      reasoning: {
+        defaultEffort: ReasoningEffortId('max'),
+        efforts: ['low', 'high', 'max'].map((id) => ({ id: ReasoningEffortId(id), name: id })),
+      },
+    }))
+    const listed = await adapter.listModels('opl-gateway')
+    for (const id of ['deepseek-flash', 'codex::deepseek-flash']) {
+      expect(listed.find((m) => m.id === id)?.reasoning?.defaultEffort).toBe('high')
+      expect((await adapter.resolveModel('opl-gateway', id)).reasoning?.defaultEffort).toBe('high')
+    }
+    vi.restoreAllMocks()
+  })
   it('exposes native Harness reasoning choices through the DSH model catalog', async () => {
     const { adapter } = setup()
     const model = await adapter.resolveModel('opl-gateway', 'codex::gpt-6-sol')
@@ -80,6 +109,7 @@ describe('explicit group routing', () => {
       'medium',
       'high',
       'xhigh',
+      'max',
     ])
     const listed = (await adapter.listModels('opl-gateway')).find(
       (item) => item.id === 'codex::gpt-6-sol',
@@ -89,7 +119,57 @@ describe('explicit group routing', () => {
       'medium',
       'high',
       'xhigh',
+      'max',
     ])
+    expect(model.reasoning?.defaultEffort).toBe('medium')
+  })
+  it.each([
+    ['gpt-6-astra', ['low', 'medium', 'high', 'xhigh', 'max'], 'medium'],
+    ['gpt-6.1-sol', ['low', 'medium', 'high', 'xhigh', 'max'], 'medium'],
+    ['gpt-6-luna', ['low', 'medium', 'high', 'xhigh', 'max'], 'medium'],
+    ['claude-opus-5-5', ['low', 'medium', 'high', 'xhigh', 'max'], 'medium'],
+    ['grok-4.7', ['low', 'medium', 'high', 'xhigh'], 'high'],
+  ] as const)('uses the official Harness efforts for %s', async (id, efforts, defaultEffort) => {
+    const adapter = new GatewayModelAdapter(
+      [
+        {
+          group: 'codex',
+          provider: 'source',
+          available: async () => true,
+          adapter: new Adapter(
+            async function* () {
+              yield { type: 'finish', reason: { kind: 'stop' } }
+            },
+            [id],
+          ),
+        },
+      ],
+      vi.fn(),
+    )
+    const prepared = await adapter.prepareCall('opl-gateway', 'codex::' + id)
+    expect(prepared.model.reasoning).toEqual({
+      efforts: efforts.map((id) => ({ id, name: id })),
+      defaultEffort,
+    })
+    expect(prepared.model.reasoning?.efforts.some((e) => ['default', 'ultra'].includes(e.id))).toBe(
+      false,
+    )
+  })
+  it('keeps unknown models under their own adapter capability', async () => {
+    const adapter = new GatewayModelAdapter(
+      [
+        {
+          group: 'codex',
+          provider: 'source',
+          available: async () => true,
+          adapter: new Adapter(async function* () {}, ['future-model']),
+        },
+      ],
+      vi.fn(),
+    )
+    expect(
+      (await adapter.resolveModel('opl-gateway', 'codex::future-model')).reasoning,
+    ).toBeUndefined()
   })
   it('does not send an unknown model to an arbitrary group', async () => {
     const { adapter, codex } = setup()

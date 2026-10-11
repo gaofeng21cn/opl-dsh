@@ -40,6 +40,9 @@ test('Skill repair retains a legacy ledger and refuses user changes without over
     mkdirSync(join(release, 'skill'), { recursive: true })
     for (const file of ['SKILL.md', 'control.mjs', 'harness-mcp.mjs', 'windows-acl.mjs'])
       writeFileSync(join(release, 'skill', file), 'fixture\n')
+    // control.mjs imports ./windows-lifecycle.mjs, so the Skill install copies
+    // that shared module out of the release root next to the Skill files.
+    writeFileSync(join(release, 'windows-lifecycle.mjs'), 'fixture\n')
     const options = {
       executable: join(base, 'app'),
       home,

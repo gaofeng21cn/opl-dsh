@@ -22,6 +22,8 @@ export function installSkill({
   suiteRoot = root,
   ledgerDir,
   release,
+  dispatchReasoningEffort,
+  preferredDelegation,
   codexHome = process.env.OPL_CODEX_HOME ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'),
 }) {
   const skillDir = join(codexHome, 'skills/opl-dsh-official')
@@ -36,6 +38,9 @@ export function installSkill({
   const skillStage = skillDir + '.stage-' + process.pid
   mkdirSync(skillStage, { recursive: true, mode: 0o700 })
   cpSync(join(release, 'skill'), skillStage, { recursive: true })
+  // control.mjs imports ./windows-lifecycle.mjs; the Skill is copied out of the
+  // release root, so the shared module has to travel with it.
+  cpSync(join(release, 'windows-lifecycle.mjs'), join(skillStage, 'windows-lifecycle.mjs'))
   writeFileSync(
     join(skillStage, 'config.json'),
     JSON.stringify(
@@ -46,6 +51,8 @@ export function installSkill({
         launcher,
         ledger,
         autoStart: previousConfig?.autoStart ?? true,
+        ...(dispatchReasoningEffort === undefined ? {} : { dispatchReasoningEffort }),
+        ...(preferredDelegation === undefined ? {} : { preferredDelegation }),
       },
       null,
       2,
@@ -53,10 +60,14 @@ export function installSkill({
     { mode: 0o600 },
   )
   const files = Object.fromEntries(
-    ['SKILL.md', 'control.mjs', 'harness-mcp.mjs', 'windows-acl.mjs', 'config.json'].map((file) => [
-      file,
-      digest(readFileSync(join(skillStage, file))),
-    ]),
+    [
+      'SKILL.md',
+      'control.mjs',
+      'harness-mcp.mjs',
+      'windows-acl.mjs',
+      'windows-lifecycle.mjs',
+      'config.json',
+    ].map((file) => [file, digest(readFileSync(join(skillStage, file)))]),
   )
   writeFileSync(
     join(skillStage, '.opl-install.json'),

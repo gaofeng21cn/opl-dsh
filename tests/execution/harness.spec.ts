@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile, rm, access } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile, rm, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -16,11 +16,93 @@ import {
   GROK_COMBINATION,
   grokConfiguration,
 } from '../../src/execution/host/harness.ts'
+import { adapterFor } from '../../src/execution/host/adapters/index.ts'
+import { codexSandboxMode } from '../../src/execution/host/adapters/native-bash.ts'
+import { harnessPermissionPreset } from '../../src/execution/host/permissions.ts'
+import { commandLaunch } from '../../src/execution/host/harness-registry.ts'
+import { systemEnvironment } from '../../src/execution/host/adapters/environment.ts'
+import { resolveGatewayExecution } from '../../src/gateway/host/execution-access.ts'
+import { GROK_API_KEY_REF } from '../../src/gateway/host/config.ts'
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
   while (cleanups.length) await cleanups.pop()!()
 })
+
+/**
+ * Run the generic ACP transport and lifecycle cases against a Node fixture agent.
+ *
+ * Every case in this file drives the harness' own persistence, approvals, deduplication,
+ * concurrency, resume, cancellation and conversation streaming against
+ * `tests/fixtures/acp-agent.mjs`. None of them is a test of an official CLI's OS sandbox.
+ *
+ * Production Grok deliberately refuses restricted tiers on Windows, because its official
+ * sandbox has no backend on this platform. That refusal is correct, and it is verified
+ * separately against the real adapter in the Grok suite. To keep this file about the harness,
+ * the adapter's `prepare` step is replaced for exactly this Node fixture:
+ *
+ * - only the adapter's launch step is replaced; the `HarnessService` under test stays real;
+ * - the configuration file and gateway-key handling stay real, reusing the production helpers;
+ * - no production module gains a test hook, no platform is faked, and no lifecycle, approval,
+ *   permission or deduplication assertion is removed or weakened.
+ *
+ * A passing case here therefore says nothing about whether an official CLI's sandbox works.
+ * @returns nothing; installs the fixture-only adapter preparation.
+ */
+function useNodeAcpFixtureAgent() {
+  const adapter = adapterFor('grok-build', {
+    provider: 'opl-gateway',
+    model: 'grok::grok-4.7',
+  })
+  if (!adapter) throw Error('fixture seam requires the Grok adapter entry')
+  vi.spyOn(adapter, 'prepare').mockImplementation(async (ctx, record, options) => {
+    if (
+      options.prefix?.length !== 1 ||
+      options.prefix[0] !== resolve('tests/fixtures/acp-agent.mjs')
+    )
+      throw Error('The fixture adapter only launches the Node ACP fixture')
+    const route = await resolveGatewayExecution(ctx, record.modelRef, options.resolveKey)
+    const home = join(options.home, 'harnesses', 'grok-build')
+    await mkdir(home, { recursive: true, mode: 0o700 })
+    // The real configuration layout is still written, so the credential assertions below
+    // still hold.
+    const config = join(home, 'config.toml'),
+      bytes = grokConfiguration(route.baseURL)
+    const current = await readFile(config, 'utf8').catch(() => undefined)
+    if (current === undefined) await writeFile(config, bytes, { mode: 0o600, flag: 'wx' })
+    else if (current !== bytes) await writeFile(config, bytes, { mode: 0o600 })
+    // A Node fixture agent has no OS sandbox, so it takes neutral fixture flags. These say
+    // nothing about the official Grok tiers.
+    const launch = commandLaunch(process.execPath, [
+      ...(options.prefix ?? []),
+      '--cwd',
+      record.cwd,
+      '--model',
+      'grok-4.7',
+      '--sandbox',
+      record.sandbox === 'read-only' ? 'read-only' : 'workspace-write',
+      '--permission-mode',
+      'default',
+      'agent',
+      '--no-leader',
+      'stdio',
+    ])
+    return {
+      home,
+      ...launch,
+      env: {
+        ...systemEnvironment(),
+        GROK_HOME: home,
+        [GROK_API_KEY_REF]: route.apiKey,
+        GROK_DEFAULT_SELECTED_PERMISSION: 'allow_once',
+      },
+    }
+  })
+}
+
 async function setup() {
+  useNodeAcpFixtureAgent()
   const root = await mkdtemp(join(tmpdir(), 'opl-acp-test-'))
   cleanups.push(() => rm(root, { recursive: true, force: true }))
   const options = {
@@ -29,7 +111,12 @@ async function setup() {
     prefix: [resolve('tests/fixtures/acp-agent.mjs')],
     resolveKey: async () => 'test-grok-key',
   }
-  const ctx = { get: () => undefined, agents: { get: () => undefined } } as unknown as Context
+  const ctx = {
+    get: () => undefined,
+    agents: { get: () => undefined, list: () => [] },
+    sessions: { list: () => [] },
+    waterfall: async (_event, _request, next) => next(),
+  } as unknown as Context
   const service = new HarnessService(ctx, options)
   cleanups.push(() => service.dispose())
   return { root, options, ctx, service }
@@ -49,13 +136,21 @@ async function nativeSetup(
   ],
   providers = [{ id: 'opl-gateway', name: 'OPL Gateway' }],
 ) {
-  const { root, options } = await setup()
+  const { root, options, service: initial } = await setup()
+  await initial.executionCatalog()
+  await initial.dispose()
   let current = { provider: 'opl-gateway', model: 'codex::test-model' }
-  const session = { id: 'native-session', header: { cwd: root }, append: vi.fn() }
+  const session = {
+    id: 'native-session',
+    header: { cwd: root },
+    append: vi.fn(),
+    snapshotEvents: () => [],
+  }
   const ctx = {
     get: () => undefined,
-    agents: { get: () => undefined },
-    sessions: { get: () => session },
+    agents: { get: () => undefined, list: () => [] },
+    waterfall: async (_event, _request, next) => next(),
+    sessions: { list: () => [], get: () => session },
     llm: {
       listProviders: () => providers,
       listConfigurableProviders: () => [],
@@ -86,6 +181,71 @@ async function nativeSetup(
   }
 }
 describe('native conversation combinations', () => {
+  it.each(['aws', 'kiro'])(
+    'routes the first ordinary %s request through Claude without a picker binding',
+    async (channel) => {
+      const ref = { provider: 'opl-gateway', model: channel + '::claude-opus-5-5' }
+      const { service, ctx, root, session } = await nativeSetup([{ id: ref.model, name: 'Claude' }])
+      const settings = {
+        describe: () => [{ ns: 'opl-suite', value: { gatewayGroups: { kiro: true } } }],
+      }
+      Object.assign(ctx, {
+        settings,
+        get: (name: string) => (name === 'settings' ? settings : undefined),
+      })
+      const adapter = adapterFor('claude', ref)!
+      vi.spyOn(adapter, 'prepare').mockImplementation(async () => ({
+        home: root,
+        command: process.execPath,
+        args: [resolve('tests/fixtures/acp-agent.mjs')],
+        env: { ...systemEnvironment(), OPL_FIXTURE_MODEL: 'claude-opus-5-5' },
+      }))
+      const next = vi.fn(async function* () {
+        throw Error('unexpected direct Gateway request')
+      })
+      const options = {
+        ...ref,
+        sessionId: session.id,
+        messages: [
+          createUserMessage({
+            source: { kind: 'user' },
+            content: [{ type: 'text', text: 'first-' + channel }],
+          }),
+        ],
+      } as GenerateOptions
+      const chunks = await Array.fromAsync(service.conversationStream(options, next))
+      expect(next).not.toHaveBeenCalled()
+      expect(await readFile(join(root, 'calls.txt'), 'utf8')).toContain('first-' + channel)
+      expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+      const record = (await service.list()).sessions.find(
+        (item) => item.origin.kind === 'dsh' && item.origin.sessionId === session.id,
+      )!
+      expect(record).toMatchObject({ harnessRef: 'claude', modelRef: ref })
+    },
+  )
+
+  it('routes a default external model on first send without selecting its combination', async () => {
+    const { service, root, session } = await nativeSetup([{ id: 'grok::grok-4.7', name: 'Grok' }])
+    const next = vi.fn(async function* () {
+      throw Error('direct provider must not receive this model')
+    })
+    const options = {
+      sessionId: session.id,
+      provider: 'opl-gateway',
+      model: 'grok::grok-4.7',
+      messages: [
+        createUserMessage({
+          source: { kind: 'user' },
+          content: [{ type: 'text', text: 'first-send' }],
+        }),
+      ],
+    } as GenerateOptions
+    const chunks = await Array.fromAsync(service.conversationStream(options, next))
+    expect(next).not.toHaveBeenCalled()
+    expect(await readFile(join(root, 'calls.txt'), 'utf8')).toContain('first-send')
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
   it('hands off tool history through the official conversation stream and sends only new input on continuation', async () => {
     const { service, root, session } = await nativeSetup([{ id: 'grok::grok-4.7', name: 'Grok' }])
     await service.selectCombination({ sessionId: session.id, combination: GROK_COMBINATION })
@@ -195,33 +355,29 @@ describe('native conversation combinations', () => {
       start.mockRestore()
     }
   })
-  it('inherits DSH permissions for generated combinations without elevating other origins', async () => {
+  it('honours an explicitly stated permission for a generated combination in every origin', async () => {
     const { service, root } = await nativeSetup()
     const automatic = (await service.executionCatalog()).combinations.find(
       (item) => item.generated && item.modelRef.model === 'codex::test-model',
     )!
-    const dsh = await service.start(
-      {
-        combination: automatic.id,
-        cwd: root,
-        taskId: 'dsh-workspace',
-        origin: { kind: 'dsh', sessionId: 'native-session' },
-        sandbox: 'workspace',
-      },
-      true,
-    )
-    expect(dsh.sandbox).toBe('workspace')
-    const codex = await service.start(
-      {
-        combination: automatic.id,
-        cwd: root,
-        taskId: 'codex-workspace',
-        origin: { kind: 'codex', sessionId: 'parent' },
-        sandbox: 'workspace',
-      },
-      true,
-    )
-    expect(codex.sandbox).toBe('read-only')
+    // `generated` is the default the catalog generator picked, so an origin is irrelevant: both the
+    // DSH conversation path and the CLI dispatch path keep the permission the caller stated.
+    for (const origin of [
+      { kind: 'dsh', sessionId: 'native-session' },
+      { kind: 'codex', sessionId: 'parent' },
+    ] as const) {
+      const session = await service.start(
+        {
+          combination: automatic.id,
+          cwd: root,
+          taskId: `generated-${origin.kind}`,
+          origin,
+          sandbox: 'workspace',
+        },
+        true,
+      )
+      expect(session.sandbox).toBe('workspace')
+    }
   })
   it('retries a failed final session write on graceful shutdown', async () => {
     const { service, root, options } = await setup()
@@ -286,7 +442,36 @@ describe('native conversation combinations', () => {
       catalog.combinations.filter((item) => item.modelRef.provider === 'deepseek-official'),
     ).toEqual([])
   })
+  it.each(['signed-out', 'credential-stored'])(
+    'only discovers account models after login: %s',
+    async (status) => {
+      const { service, ctx } = await nativeSetup(
+        [{ id: 'deepseek-flash', name: 'DeepSeek' }],
+        [{ id: 'deepseek-account', name: 'DeepSeek account' }],
+      )
+      vi.spyOn(ctx.typertGateway, 'invoke').mockResolvedValue({ status } as never)
+      const discover = vi.spyOn(ctx.llm, 'listModels')
+      const catalog = await service.executionCatalog()
+      const accountModels = catalog.models.filter(
+        (item) => item.ref.provider === 'deepseek-account',
+      )
+      if (status === 'signed-out') {
+        expect(discover).not.toHaveBeenCalled()
+        expect(accountModels).toEqual([])
+      } else {
+        expect(discover).toHaveBeenCalledWith('deepseek-account')
+        expect(accountModels).toMatchObject([{ available: true }])
+      }
+    },
+  )
   it('creates independently named combinations for explicit Gateway channels', async () => {
+    // This assertion lists every available model, so the machine's own official CLIs
+    // must not leak into it: an installed MiniMax Code would legitimately add its own
+    // account models and make the expected list environment-dependent.
+    vi.stubEnv('USERPROFILE', join(tmpdir(), 'opl-absent-cli'))
+    vi.stubEnv('HOME', join(tmpdir(), 'opl-absent-cli'))
+    vi.stubEnv('MINIMAX_DATA_DIR', join(tmpdir(), 'opl-absent-cli'))
+    vi.stubEnv('PATH', '')
     const { service } = await nativeSetup([
       { id: 'deepseek-flash', name: 'DeepSeek' },
       { id: 'codex::deepseek-flash', name: 'DeepSeek' },
@@ -304,6 +489,9 @@ describe('native conversation combinations', () => {
   })
   it('restores the chosen combination among bindings to the same model without elevating permissions', async () => {
     const { service, ctx, options, session, changeModel } = await nativeSetup()
+    const setPermission = vi.fn()
+    ctx.get = ((name: string) =>
+      name === 'permissionPresets' ? { set: setPermission } : undefined) as typeof ctx.get
     const catalog = await service.executionCatalog()
     const modelRef = { provider: 'opl-gateway', model: 'codex::test-model' }
     catalog.combinations.push(
@@ -328,9 +516,11 @@ describe('native conversation combinations', () => {
     )
     await service.saveExecutionCatalog(catalog)
     await service.selectCombination({ sessionId: session.id, combination: 'review' })
-    expect(session.append).toHaveBeenCalledExactlyOnceWith('sandbox/mode', { mode: 'read-only' })
+    expect(setPermission).toHaveBeenCalledExactlyOnceWith(session, 'read-only')
+    expect(session.append).not.toHaveBeenCalled()
     await service.selectCombination({ sessionId: session.id, combination: 'work' })
-    expect(session.append).toHaveBeenCalledTimes(1)
+    expect(setPermission).toHaveBeenCalledTimes(1)
+    expect(session.append).not.toHaveBeenCalled()
     await service.dispose()
     const restored = new HarnessService(ctx, options)
     cleanups.push(() => restored.dispose())
@@ -338,6 +528,36 @@ describe('native conversation combinations', () => {
     changeModel()
     expect((await restored.modelSelection(session.id)).combination).toBeUndefined()
   })
+  it.each(['read-only', 'workspace-write', 'danger-full-access'])(
+    'preserves the selected %s preset when switching to a generated native combination',
+    async (mode) => {
+      const { service, ctx, session, options } = await nativeSetup([
+        { id: 'deepseek-flash', name: 'DeepSeek' },
+        { id: 'codex::deepseek-flash', name: 'DeepSeek OpenAI' },
+      ])
+      const setPermission = vi.fn()
+      ctx.get = ((name: string) =>
+        name === 'permissionPresets' ? { set: setPermission } : undefined) as typeof ctx.get
+      ctx.agents.get = (() => ({
+        status: 'idle',
+        ctx: { get: () => ({ resolve: () => ({ mode }) }) },
+      })) as typeof ctx.agents.get
+      const catalog = await service.executionCatalog()
+      const combination = catalog.combinations.find(
+        (item) => item.generated && item.modelRef.model === 'codex::deepseek-flash',
+      )!
+      expect(combination.permissionPolicy).toBe('read-only')
+      await service.selectCombination({ sessionId: session.id, combination: combination.id })
+      expect(setPermission).not.toHaveBeenCalled()
+      expect(session.append).not.toHaveBeenCalled()
+      await service.dispose()
+      const restored = new HarnessService(ctx, options)
+      cleanups.push(() => restored.dispose())
+      expect((await restored.modelSelection(session.id)).combination).toBe(combination.id)
+      expect(setPermission).not.toHaveBeenCalled()
+      expect(session.append).not.toHaveBeenCalled()
+    },
+  )
   it('preserves a disabled automatic combination instead of generating a duplicate', async () => {
     const { service } = await nativeSetup(),
       catalog = await service.executionCatalog()
@@ -354,7 +574,7 @@ describe('native conversation combinations', () => {
     const { service } = await nativeSetup()
     expect(
       (await service.list()).combinations.find((item) => item.id === GROK_COMBINATION),
-    ).toMatchObject({ available: false, reason: '模型未配置或凭据未就绪' })
+    ).toMatchObject({ available: false, reason: '模型未配置或分组未授权' })
   })
 })
 describe('external Harness production transport', () => {
@@ -396,6 +616,7 @@ describe('external Harness production transport', () => {
       ),
     ).toBe(false)
     const ask = pending.approvals[0]!
+    expect(ask.command).toBe('printf approved > controlled.txt')
     await expect(
       service.answer({ sessionId: a.id, approvalId: ask.id, optionId: 'invalid' }),
     ).rejects.toThrow()
@@ -430,7 +651,9 @@ describe('external Harness production transport', () => {
     ).rejects.toThrow('不一致')
   })
   it('fails closed without a Grok key and never falls back to machine credentials', async () => {
-    const { root, ctx, options } = await setup()
+    const { root, ctx, options, service: initial } = await setup()
+    await initial.executionCatalog()
+    await initial.dispose()
     const service = new HarnessService(ctx, { ...options, resolveKey: async () => undefined })
     cleanups.push(() => service.dispose())
     await expect(start(service, root)).rejects.toThrow('渠道凭据')
@@ -663,6 +886,95 @@ describe('durable collaboration delivery', () => {
     expect((await wait(service, reader.id)).state).toBe('completed')
     await service.cancel({ sessionId: writer.id })
   })
+  it('runs declared disjoint writers concurrently while overlapping and undeclared writers wait', async () => {
+    const { root, service } = await setup()
+    const a = await start(service, root, 'scoped-a'),
+      b = await start(service, root, 'scoped-b')
+    const overlap = await start(service, root, 'scoped-overlap'),
+      legacy = await start(service, root, 'unscoped')
+    const request = {
+      sessionId: a.id,
+      text: 'wait',
+      operationId: 'hold',
+      writeScope: ['src/client'],
+    }
+    await service.prompt(request)
+    await service.prompt({
+      sessionId: b.id,
+      text: 'wait',
+      operationId: 'hold',
+      writeScope: ['src/host'],
+    })
+    await vi.waitFor(async () => {
+      const lines = (await readFile(join(root, 'calls.txt'), 'utf8')).trim().split('\n')
+      expect(lines).toEqual(['wait', 'wait'])
+    })
+    expect((await service.snapshot({ sessionId: a.id })).state).toBe('running')
+    expect((await service.snapshot({ sessionId: b.id })).state).toBe('running')
+    await service.prompt({
+      sessionId: overlap.id,
+      text: 'overlap',
+      operationId: 'one',
+      writeScope: ['src/client/a.ts'],
+    })
+    await service.prompt({ sessionId: legacy.id, text: 'legacy', operationId: 'one' })
+    expect((await service.snapshot({ sessionId: overlap.id })).state).toBe('queued')
+    expect((await service.snapshot({ sessionId: legacy.id })).state).toBe('queued')
+    await service.prompt(request)
+    await expect(service.prompt({ ...request, writeScope: ['src/different'] })).rejects.toThrow(
+      'operation',
+    )
+    await service.cancel({ sessionId: a.id })
+    expect((await wait(service, overlap.id)).state).toBe('completed')
+    expect((await service.snapshot({ sessionId: legacy.id })).state).toBe('queued')
+    await service.cancel({ sessionId: b.id })
+    expect((await wait(service, legacy.id)).state).toBe('completed')
+    const lines = (await readFile(join(root, 'calls.txt'), 'utf8')).trim().split('\n')
+    expect(lines).toEqual(['wait', 'wait', 'overlap', 'legacy'])
+  })
+  it('persists operation ownership and restores cancellation without replay', async () => {
+    const { root, service, ctx, options } = await setup()
+    const a = await start(service, root, 'restored-scope')
+    const request = {
+      sessionId: a.id,
+      text: 'wait',
+      operationId: 'one',
+      writeScope: ['src/file.ts'],
+    }
+    await service.prompt(request)
+    await vi.waitFor(async () =>
+      expect(await readFile(join(root, 'calls.txt'), 'utf8')).toBe('wait\n'),
+    )
+    await service.cancel({ sessionId: a.id })
+    await service.dispose()
+    const restored = new HarnessService(ctx, options)
+    cleanups.push(() => restored.dispose())
+    expect((await restored.snapshot({ sessionId: a.id })).turns[0]?.writeScope).toHaveLength(1)
+    await restored.prompt(request)
+    expect(await readFile(join(root, 'calls.txt'), 'utf8')).toBe('wait\n')
+    await restored.prompt({ ...request, operationId: 'two', text: 'next' })
+    expect((await wait(restored, a.id)).state).toBe('completed')
+  })
+  it('does not cancel or launch another scoped writer when a queued writer is cancelled', async () => {
+    const { root, service } = await setup()
+    const a = await start(service, root, 'lock-holder'),
+      b = await start(service, root, 'cancel-pending')
+    await service.prompt({ sessionId: a.id, text: 'wait', operationId: 'one', writeScope: ['src'] })
+    await vi.waitFor(async () =>
+      expect(await readFile(join(root, 'calls.txt'), 'utf8')).toBe('wait\n'),
+    )
+    await service.prompt({
+      sessionId: b.id,
+      text: 'never-executed',
+      operationId: 'one',
+      writeScope: ['src/a.ts'],
+    })
+    await service.cancel({ sessionId: b.id })
+    expect((await service.snapshot({ sessionId: b.id })).state).toBe('cancelled')
+    expect((await service.snapshot({ sessionId: a.id })).state).toBe('running')
+    await service.cancel({ sessionId: a.id })
+    expect(await readFile(join(root, 'calls.txt'), 'utf8')).toBe('wait\n')
+  })
 })
 
 describe('restart and cancellation boundaries', () => {
@@ -700,5 +1012,202 @@ describe('restart and cancellation boundaries', () => {
       ),
     )
     expect((await service.snapshot({ sessionId: parent.id })).turns).toHaveLength(1)
+  })
+})
+
+/** Generated catalog defaults preserve explicit authorization; declared restrictions stay binding. */
+describe('generated combination permission policy', () => {
+  const CODEX_REF = { provider: 'opl-gateway', model: 'codex::gpt-5-codex' },
+    CODEX_MODELS = [
+      { id: CODEX_REF.model, name: 'Codex' },
+      { id: 'deepseek-flash', name: 'DeepSeek' },
+    ],
+    codexOrigin = { kind: 'codex', sessionId: 'parent' } as const
+
+  /** Launch the Node ACP fixture for Codex and report the profile the service actually used. */
+  async function useCodexFixture(root: string, reported: string[]) {
+    const adapter = adapterFor('codex', CODEX_REF)
+    if (!adapter) throw Error('fixture seam requires the Codex adapter entry')
+    vi.spyOn(adapter, 'prepare').mockImplementation(async (_ctx, record) => {
+      reported.push(record.sandbox)
+      const home = join(root, 'harnesses', 'codex')
+      await mkdir(home, { recursive: true, mode: 0o700 })
+      return {
+        home,
+        command: process.execPath,
+        args: [resolve('tests/fixtures/acp-agent.mjs')],
+        env: { ...systemEnvironment(), OPL_FIXTURE_MODEL: CODEX_REF.model.split('::').at(-1) },
+      }
+    })
+  }
+  const generated = async (service: HarnessService) => {
+    const automatic = (await service.executionCatalog()).combinations.find(
+      (item) => item.generated && item.modelRef.model === CODEX_REF.model,
+    )
+    expect(automatic).toBeDefined()
+    return automatic!
+  }
+
+  it('keeps an explicitly authorized full-access CLI task on a generated combination', async () => {
+    const reported: string[] = []
+    const { service, root } = await nativeSetup(CODEX_MODELS)
+    await useCodexFixture(root, reported)
+    const automatic = await generated(service)
+    // The generator's conservative default is still there; it is simply not an authorization.
+    expect(automatic.permissionPolicy).toBe('read-only')
+    const session = await service.delegateFrom(codexOrigin, {
+      combination: automatic.id,
+      cwd: root,
+      task: 'run the delegated task',
+      taskId: 'delegated',
+      operationId: 'one',
+      sandbox: 'full-access',
+      wait: false,
+    })
+    expect(session.sandbox).toBe('full-access')
+    // The launched Harness received the granted profile, and the task actually ran under it.
+    expect(reported).toEqual(['full-access'])
+    expect((await wait(service, session.id)).state).toBe('completed')
+    expect(await readFile(join(root, 'calls.txt'), 'utf8')).toContain('run the delegated task')
+  })
+
+  it('maps that authorization onto the official Codex full-access preset', async () => {
+    const { service, root, ctx } = await nativeSetup(CODEX_MODELS)
+    Object.assign(ctx, { credentials: { resolve: async () => ({ value: 'test-codex-key' }) } })
+    const automatic = await generated(service)
+    const session = await service.start(
+      {
+        combination: automatic.id,
+        cwd: root,
+        taskId: 'preset',
+        origin: codexOrigin,
+        sandbox: 'full-access',
+      },
+      true,
+    )
+    expect(session.sandbox).toBe('full-access')
+    // The real Codex launch step, so this asserts the environment a running bridge would read.
+    const launch = await adapterFor('codex', CODEX_REF)!.prepare!(ctx, session, {
+      home: join(root, 'state'),
+      command: process.execPath,
+      grokCommand: '',
+      nativeBridgePath: '',
+    })
+    expect(launch.env.OPL_NATIVE_PERMISSION).toBe('full-access')
+    // The bridge turns that profile into Codex's official app-server sandbox mode, and the same
+    // three-way profile is the official permission preset used for native combination sessions.
+    expect(codexSandboxMode(launch.env.OPL_NATIVE_PERMISSION as 'full-access')).toBe(
+      'danger-full-access',
+    )
+    expect(harnessPermissionPreset('full-access')).toBe('danger-full-access')
+  })
+
+  it('still starts a generated combination read-only when the caller states no permission', async () => {
+    const { service, root } = await nativeSetup(CODEX_MODELS)
+    const automatic = await generated(service)
+    const session = await service.start(
+      { combination: automatic.id, cwd: root, taskId: 'unstated', origin: codexOrigin },
+      true,
+    )
+    expect(session.sandbox).toBe('read-only')
+  })
+
+  it('keeps a declared read-only combination restricted for a CLI caller', async () => {
+    const { service, root } = await nativeSetup(CODEX_MODELS),
+      catalog = await service.executionCatalog()
+    await service.saveExecutionCatalog({
+      ...catalog,
+      combinations: [
+        ...catalog.combinations,
+        {
+          id: 'declared-read-only',
+          name: 'Declared read-only',
+          modelRef: CODEX_REF,
+          harnessRef: 'codex',
+          permissionPolicy: 'read-only',
+          isDefault: false,
+          enabled: true,
+        },
+      ],
+    })
+    // A policy a person declared keeps its boundary: the request cannot widen it.
+    const session = await service.start(
+      {
+        combination: 'declared-read-only',
+        cwd: root,
+        taskId: 'declared',
+        origin: codexOrigin,
+        sandbox: 'full-access',
+      },
+      true,
+    )
+    expect(session.sandbox).toBe('read-only')
+  })
+
+  it('refuses a full-access request for a harness without a verified official path', async () => {
+    const { service, root } = await nativeSetup(CODEX_MODELS),
+      catalog = await service.executionCatalog()
+    await service.saveExecutionCatalog({
+      ...catalog,
+      combinations: [
+        ...catalog.combinations,
+        {
+          id: 'dsh-workspace',
+          name: 'DSH workspace',
+          modelRef: { provider: 'opl-gateway', model: 'deepseek-flash' },
+          harnessRef: 'dsh',
+          permissionPolicy: 'workspace',
+          isDefault: false,
+          enabled: true,
+        },
+      ],
+    })
+    // Refused, not downgraded to the workspace boundary the combination declares.
+    await expect(
+      service.start(
+        {
+          combination: 'dsh-workspace',
+          cwd: root,
+          taskId: 'unsupported',
+          origin: codexOrigin,
+          sandbox: 'full-access',
+        },
+        true,
+      ),
+    ).rejects.toThrow('没有经过验证的官方 full-access 路径')
+  })
+
+  it('does not upgrade a stored restricted session when it is continued', async () => {
+    const first = await nativeSetup(CODEX_MODELS),
+      automatic = await generated(first.service),
+      created = await first.service.start(
+        {
+          combination: automatic.id,
+          cwd: first.root,
+          taskId: 'stored',
+          origin: codexOrigin,
+          sandbox: 'read-only',
+        },
+        true,
+      )
+    await first.service.dispose()
+    // A stored record carries no `generated` flag, so its own profile is the declared one after a
+    // restart: continuing it cannot reach a profile its record never held.
+    const restored = new HarnessService(first.ctx, first.options)
+    cleanups.push(() => restored.dispose())
+    await expect(
+      restored.start(
+        {
+          combination: automatic.id,
+          cwd: first.root,
+          taskId: 'stored',
+          origin: codexOrigin,
+          existingSessionId: created.id,
+          sandbox: 'full-access',
+        },
+        true,
+      ),
+    ).rejects.toThrow('不能通过继续会话扩大权限')
+    expect((await restored.snapshot({ sessionId: created.id })).sandbox).toBe('read-only')
   })
 })

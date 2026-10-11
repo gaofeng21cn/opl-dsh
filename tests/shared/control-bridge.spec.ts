@@ -68,6 +68,37 @@ it('authenticates localhost control, rejects browser origins and unlisted APIs, 
   }
 })
 
+it('routes candidate selection to the execution owner without granting arbitrary methods', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'opl-candidate-control-'))
+  const invoke = vi.fn(async () => ({ command: 'verified-candidate' }))
+  const stop = await startControlBridge(
+    { invoke } as unknown as TypertGateway,
+    join(dir, 'control.json'),
+  )
+  try {
+    const binding = readBinding(join(dir, 'control.json'))
+    const args = { version: '0.6.3-opl-bash.20261010.2' }
+    expect(
+      await rpc(binding, { namespace: 'harness', method: 'select-minimax-candidate', args }),
+    ).toMatchObject({ status: 200, json: { ok: true } })
+    expect(invoke).toHaveBeenCalledWith(
+      expect.objectContaining({
+        namespace: 'harness',
+        method: 'select-minimax-candidate',
+        args,
+        signal: expect.any(AbortSignal),
+      }),
+    )
+    expect(
+      (await rpc(binding, { namespace: 'harness', method: 'delete-candidate', args })).status,
+    ).toBe(403)
+    expect(invoke).toHaveBeenCalledTimes(1)
+  } finally {
+    await stop()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 it('allows the event-driven session wait through the method allowlist', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'opl-control-wait-'))
   const file = join(dir, 'control.json')

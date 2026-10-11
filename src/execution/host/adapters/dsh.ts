@@ -1,7 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
-import { setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
+import { setHarnessPermissions } from '../permissions.ts'
 import type { HarnessSession } from '../../contracts/sessions.ts'
 import type { HarnessAdapter } from './types.ts'
 export const dshAdapter: HarnessAdapter = {
@@ -27,7 +26,6 @@ export async function connectDsh(
   await native('selectModel', { sessionId: id, ...record.modelRef })
   const session = ctx.sessions.get(id as SessionId)
   if (!session) throw Error('DSH 子会话未创建')
-  setSandboxMode(session, record.sandbox === 'read-only' ? 'read-only' : 'workspace-write')
-  setApprovalPolicy(session, 'ask')
+  if (isNew) setHarnessPermissions(ctx, session, record.sandbox)
   if (isNew) await native('rename', { sessionId: id, title: record.title + ' · 组合协作' })
 }

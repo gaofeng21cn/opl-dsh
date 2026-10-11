@@ -59,7 +59,7 @@ export interface Config {
   models?: DeepSeekCatalogModel[]
   /** Deployment thinking policy; `disabled` limits every conversation request to `off`. */
   thinking?: 'enabled' | 'disabled'
-  /** Default thinking effort; omitted uses the provider default. */
+  /** Default thinking effort; omitted uses max. Explicit choices remain unchanged. */
   reasoningEffort?: 'off' | 'low' | 'high' | 'max'
   /** Default per-request output cap; a model's own cap and explicit request values win. */
   maxTokens?: number
@@ -88,7 +88,7 @@ export const Config: z<Config> = z.object({
   baseURL: z.string(),
   models: z.array(catalogModel).default(DEFAULT_MODELS),
   thinking: z.union(['enabled', 'disabled']),
-  reasoningEffort: z.union(['off', 'low', 'high', 'max']),
+  reasoningEffort: z.union(['off', 'low', 'high', 'max']).default('max'),
   maxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS),
   defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
   streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
