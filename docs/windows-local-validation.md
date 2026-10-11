@@ -1,6 +1,6 @@
 # Windows 官方 Desktop 本地验证
 
-本地增强补丁基于 OPL 轻量增强套件 0.2.18，复用未修改的官方 DeepSeek Harness Desktop 0.2.0-rc.2。控制桥将显式权限请求交给官方 preset 服务，读取实际 sandbox 与 approval 值；运行中的 Session 拒绝权限变更。按 cwd 创建任务时先解析官方 Workspace，再将新 Session 绑定该项目。
+本地增强补丁基于 OPL 轻量增强套件 0.2.20，复用未修改的官方 DeepSeek Harness Desktop 0.2.0-rc.2。控制桥将显式权限请求交给官方 preset 服务，读取实际 sandbox 与 approval 值；运行中的 Session 拒绝权限变更。按 cwd 创建任务时先解析官方 Workspace，再将新 Session 绑定该项目。
 
 Windows 启动器为 EXE 路径加引号，安装器通过 Electron 读取 ASAR 内版本。构建与原生启动器由 Windows runner 验证。
 
