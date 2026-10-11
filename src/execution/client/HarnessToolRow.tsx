@@ -16,6 +16,7 @@ import {
 import css from './HarnessToolRow.module.css'
 
 const terminalLabels = {
+  commandLine: (line: number) => `命令第 ${line} 行`,
   signal: (value: string) => `信号 ${value}`,
   exitCode: (value: number) => `退出码 ${value}`,
   noExitCode: '未返回退出码',

@@ -155,6 +155,75 @@ const accepting = () => ({
 })
 
 describe('feedback service durable lifecycle', () => {
+  it('withdraws an obsolete combination pause without dropping its completion', async () => {
+    const first = await (await fixture()).mount()
+    const { task } = await first.service.registerHarnessOperation({
+      execution: {
+        kind: 'harness-session',
+        harnessSessionId: 'harness-test',
+        harnessRef: 'minimax-code',
+        combination: 'minimax-code/M3.1',
+        taskId: 'external',
+        operationId: 'initial',
+      },
+      target: { kind: 'codex-thread', threadId: 'target-thread' },
+      acceptance: 'verified outcome',
+    })
+    await first.service.reportHarnessState({
+      taskId: task.taskId,
+      state: 'waiting_approval',
+      summary: 'pending',
+      pause: {
+        kind: 'approval',
+        pauseId: 'approval:a',
+        approval: { approvalId: 'a', toolName: 'Bash' },
+      },
+    })
+    await first.service.reportHarnessState({
+      taskId: task.taskId,
+      state: 'completed',
+      summary: 'done',
+    })
+    const transport = accepting()
+    first.service.setWakeAdapter(transport)
+    await first.service.flush()
+    expect(transport.send).toHaveBeenCalledOnce()
+    expect(transport.send.mock.calls[0]?.[0].deliveryId).toBe(task.taskId + '@completed')
+    expect(first.service.deliveries().find((x) => x.payload.needsInput !== null)?.retired).toBe(
+      true,
+    )
+  })
+
+  it('does not retire a transport-owned pause when another flush observes resolution', async () => {
+    const first = await (await fixture()).mount()
+    await first.start()
+    await first.emit({
+      type: 'approval/asked',
+      seq: 2,
+      data: { id: 'a', toolName: 'Bash' },
+    } as SessionEvent)
+    const entered = Promise.withResolvers<void>(),
+      result = Promise.withResolvers<{ accepted: boolean }>()
+    const transport = accepting()
+    transport.send.mockImplementationOnce(async () => {
+      entered.resolve()
+      return result.promise
+    })
+    first.service.setWakeAdapter(transport)
+    const flush = first.service.flush()
+    await entered.promise
+    await first.emit({
+      type: 'approval/decided',
+      seq: 3,
+      data: { id: 'a', outcome: 'allowed-once' },
+    } as SessionEvent)
+    const again = first.service.flush()
+    result.resolve({ accepted: true })
+    await Promise.all([flush, again])
+    expect(first.service.deliveries()[0]).toMatchObject({ retired: false, stage: 'delivered' })
+    expect(transport.send).toHaveBeenCalledOnce()
+  })
+
   it('skips an acknowledgment received while an earlier delivery is in flight', async () => {
     const first = await (await fixture()).mount()
     await first.complete('first')
