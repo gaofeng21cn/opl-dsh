@@ -20,6 +20,7 @@
  * every source structurally for the same reason.
  */
 import { Context } from '@deepseek-ai/cordis'
+import { resolve } from 'node:path'
 import {
   ToolCallId,
   createAssistantMessage,
@@ -319,7 +320,7 @@ function createLedger(): LedgerStub {
   } as unknown as LedgerStub
 }
 
-function createSession(id: string, cwd = 'C:/work'): Session {
+function createSession(id: string, cwd = resolve('test-workspace')): Session {
   return Session.create(SessionId(id), [], {
     version: SESSION_FORMAT_VERSION,
     id: SessionId(id),
