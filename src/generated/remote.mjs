@@ -4417,7 +4417,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskAckValue',
         create: _one_person_lab_dsh_opl_taskFeedback_ack_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":839,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":880,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/consume',
@@ -4442,7 +4442,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskConsumeValue',
         create: _one_person_lab_dsh_opl_taskFeedback_consume_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":896,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":937,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/flush',
@@ -4457,7 +4457,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskFlushValue',
         create: _one_person_lab_dsh_opl_taskFeedback_flush_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":1589,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":1630,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/outbox',
@@ -4473,7 +4473,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#taskFeedback/outbox:result',
         create: _one_person_lab_dsh_opl_taskFeedback_outbox_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":790,"column":3},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":831,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/receipts',
@@ -4488,7 +4488,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#taskFeedback/receipts:result',
         create: _one_person_lab_dsh_opl_taskFeedback_receipts_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":880,"column":3},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":921,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/receive',
@@ -4513,7 +4513,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskReceiveValue',
         create: _one_person_lab_dsh_opl_taskFeedback_receive_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":867,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":908,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/register',
@@ -4538,7 +4538,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskRegistrationValue',
         create: _one_person_lab_dsh_opl_taskFeedback_register_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":459,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":500,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/resumeFailed',
@@ -4563,7 +4563,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskResumeValue',
         create: _one_person_lab_dsh_opl_taskFeedback_resumeFailed_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":915,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":956,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/task',
@@ -4588,7 +4588,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskRecord',
         create: _one_person_lab_dsh_opl_taskFeedback_task_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":772,"column":3},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":813,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/tasks',
@@ -4603,7 +4603,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#taskFeedback/tasks:result',
         create: _one_person_lab_dsh_opl_taskFeedback_tasks_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":781,"column":3},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":822,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/wake',
@@ -4618,7 +4618,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#WakeStatus',
         create: _one_person_lab_dsh_opl_taskFeedback_wake_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":805,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":846,"column":9},
     },
   ],
 }
