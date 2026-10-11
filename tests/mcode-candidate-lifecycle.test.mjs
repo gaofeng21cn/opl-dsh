@@ -423,7 +423,10 @@ test('Store 根目录的写入闸门：官方位置拒写，套件外位置要�
     const outside = join(base, 'elsewhere', 'store')
     mkdirSync(outside, { recursive: true })
     assert.throws(() => assertStoreRoot(outside, { env }), /--allow-root/)
-    assert.equal(assertStoreRoot(outside, { env, allowRoots: [base] }), resolve(outside))
+    assert.equal(
+      assertStoreRoot(outside, { env, allowRoots: [base] }),
+      resolveThroughExistingAncestors(outside),
+    )
     const suiteStore = defaultStoreRoot(env)
     assert.equal(assertStoreRoot(suiteStore, { env }), resolveThroughExistingAncestors(suiteStore))
   } finally {

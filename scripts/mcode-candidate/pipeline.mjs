@@ -23,6 +23,7 @@ import {
   mkdirp,
   plan,
   run,
+  resolveThroughExistingAncestors,
   scriptDir,
   sha256,
   sha256File,
@@ -483,7 +484,7 @@ export function copyExternalModules(sourceRoot, candidateDir, names) {
  * 且真实路径不得落在构建树或仓库 node_modules 里。
  */
 export function verifyExternalModuleClosure(candidateDir, names) {
-  const base = resolve(candidateDir)
+  const base = resolveThroughExistingAncestors(candidateDir)
   const { modules, missing } = resolveModuleClosure(base, names)
   const escaped = []
   for (const module of modules.values()) {
