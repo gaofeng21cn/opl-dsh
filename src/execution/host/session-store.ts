@@ -47,6 +47,10 @@ function parseRecord(raw: unknown): HarnessSession {
     !['read-only', 'workspace', 'full-access'].includes(item.sandbox)
   )
     throw Error('组合会话权限记录无效，原文件已保留')
+  if (item.externalAutoReview !== undefined && typeof item.externalAutoReview !== 'boolean')
+    throw Error('官方审核模式记录无效，原文件已保留')
+  if (item.zcodeMode !== undefined && !['build', 'yolo'].includes(item.zcodeMode))
+    throw Error('ZCode 审批模式记录无效，原文件已保留')
   if (item.sandbox === 'full-access' && !harnessAllowsFullAccess(item.harnessRef))
     throw Error('组合会话权限与 Harness 不一致，原文件已保留')
   if (

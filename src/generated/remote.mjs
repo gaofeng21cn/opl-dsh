@@ -9,6 +9,141 @@ let ModelConfigValueRemoteCodec$schema3$value
 const ModelConfigValueRemoteCodec$schema3 = () => (ModelConfigValueRemoteCodec$schema3$value ??= z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => ModelConfigValueRemoteCodec$schema3())), z.record(z.string(), z.lazy(() => ModelConfigValueRemoteCodec$schema3()))]))
 let ModelConfigValueRemoteCodec$schema4$value
 const ModelConfigValueRemoteCodec$schema4 = () => (ModelConfigValueRemoteCodec$schema4$value ??= z.union([z.literal(null), z.string(), z.number(), z.literal(false), z.literal(true), z.array(z.lazy(() => ModelConfigValueRemoteCodec$schema4())), z.record(z.string(), z.lazy(() => ModelConfigValueRemoteCodec$schema4()))]))
+let _one_person_lab_dsh_opl_oplAutoReview_read_result$schema$value
+const _one_person_lab_dsh_opl_oplAutoReview_read_result$schema = () => (_one_person_lab_dsh_opl_oplAutoReview_read_result$schema$value ??= z.object({
+  'preferences': z.object({
+  'enabled': z.boolean(),
+  'reviewer': z.union([z.object({
+  'mode': z.literal("current"),
+}), z.object({
+  'mode': z.literal("fixed"),
+  'route': z.object({
+  'provider': z.string(),
+  'model': z.string(),
+  'reasoningEffort': z.string().optional(),
+}),
+})]),
+  'timeoutMs': z.number(),
+  'maxOutputTokens': z.number(),
+}),
+  'revision': z.string(),
+  'state': z.union([z.literal("disabled"), z.literal("ready"), z.literal("unavailable"), z.literal("draining")]),
+  'routes': z.array(z.object({
+  'provider': z.string(),
+  'providerName': z.string(),
+  'model': z.string(),
+  'modelName': z.string(),
+  'efforts': z.array(z.string()),
+  'defaultEffort': z.union([z.literal(null), z.string()]),
+})),
+  'activeReviews': z.number(),
+  'autoSessions': z.number(),
+  'failure': z.union([z.literal(null), z.literal("unavailable"), z.literal("invalid-settings"), z.literal("stale-settings"), z.literal("sessions-active"), z.literal("auto-sessions-remain"), z.literal("save-failed")]),
+}))
+let _one_person_lab_dsh_opl_oplAutoReview_save_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplAutoReview_save_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplAutoReview_save_parameter_0$schema$value ??= z.object({
+  'expectedRevision': z.string(),
+  'preferences': z.object({
+  'enabled': z.boolean(),
+  'reviewer': z.union([z.object({
+  'mode': z.literal("current"),
+}), z.object({
+  'mode': z.literal("fixed"),
+  'route': z.object({
+  'provider': z.string(),
+  'model': z.string(),
+  'reasoningEffort': z.string().optional(),
+}),
+})]),
+  'timeoutMs': z.number(),
+  'maxOutputTokens': z.number(),
+}),
+}))
+let _one_person_lab_dsh_opl_oplAutoReview_save_result$schema$value
+const _one_person_lab_dsh_opl_oplAutoReview_save_result$schema = () => (_one_person_lab_dsh_opl_oplAutoReview_save_result$schema$value ??= z.union([z.object({
+  'ok': z.literal(true),
+  'status': z.object({
+  'preferences': z.object({
+  'enabled': z.boolean(),
+  'reviewer': z.union([z.object({
+  'mode': z.literal("current"),
+}), z.object({
+  'mode': z.literal("fixed"),
+  'route': z.object({
+  'provider': z.string(),
+  'model': z.string(),
+  'reasoningEffort': z.string().optional(),
+}),
+})]),
+  'timeoutMs': z.number(),
+  'maxOutputTokens': z.number(),
+}),
+  'revision': z.string(),
+  'state': z.union([z.literal("disabled"), z.literal("ready"), z.literal("unavailable"), z.literal("draining")]),
+  'routes': z.array(z.object({
+  'provider': z.string(),
+  'providerName': z.string(),
+  'model': z.string(),
+  'modelName': z.string(),
+  'efforts': z.array(z.string()),
+  'defaultEffort': z.union([z.literal(null), z.string()]),
+})),
+  'activeReviews': z.number(),
+  'autoSessions': z.number(),
+  'failure': z.union([z.literal(null), z.literal("unavailable"), z.literal("invalid-settings"), z.literal("stale-settings"), z.literal("sessions-active"), z.literal("auto-sessions-remain"), z.literal("save-failed")]),
+}),
+}), z.object({
+  'ok': z.literal(false),
+  'failure': z.union([z.literal("unavailable"), z.literal("invalid-settings"), z.literal("stale-settings"), z.literal("sessions-active"), z.literal("auto-sessions-remain"), z.literal("save-failed")]),
+  'status': z.object({
+  'preferences': z.object({
+  'enabled': z.boolean(),
+  'reviewer': z.union([z.object({
+  'mode': z.literal("current"),
+}), z.object({
+  'mode': z.literal("fixed"),
+  'route': z.object({
+  'provider': z.string(),
+  'model': z.string(),
+  'reasoningEffort': z.string().optional(),
+}),
+})]),
+  'timeoutMs': z.number(),
+  'maxOutputTokens': z.number(),
+}),
+  'revision': z.string(),
+  'state': z.union([z.literal("disabled"), z.literal("ready"), z.literal("unavailable"), z.literal("draining")]),
+  'routes': z.array(z.object({
+  'provider': z.string(),
+  'providerName': z.string(),
+  'model': z.string(),
+  'modelName': z.string(),
+  'efforts': z.array(z.string()),
+  'defaultEffort': z.union([z.literal(null), z.string()]),
+})),
+  'activeReviews': z.number(),
+  'autoSessions': z.number(),
+  'failure': z.union([z.literal(null), z.literal("unavailable"), z.literal("invalid-settings"), z.literal("stale-settings"), z.literal("sessions-active"), z.literal("auto-sessions-remain"), z.literal("save-failed")]),
+}),
+})]))
+let _one_person_lab_dsh_opl_oplContextBudget_read_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplContextBudget_read_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplContextBudget_read_parameter_0$schema$value ??= z.object({
+  'sessionId': z.string(),
+}))
+let _one_person_lab_dsh_opl_oplContextBudget_read_result$schema$value
+const _one_person_lab_dsh_opl_oplContextBudget_read_result$schema = () => (_one_person_lab_dsh_opl_oplContextBudget_read_result$schema$value ??= z.object({
+  'sessionId': z.string(),
+  'observedAt': z.string(),
+  'execution': z.union([z.literal("native"), z.literal("harness"), z.literal("unknown")]),
+  'provider': z.union([z.literal(null), z.string()]),
+  'model': z.union([z.literal(null), z.string()]),
+  'metrics': z.array(z.object({
+  'key': z.union([z.literal("context-window"), z.literal("request-output-limit"), z.literal("declared-output-limit"), z.literal("projected-input"), z.literal("pressure"), z.literal("compaction-threshold"), z.literal("compaction-retain")]),
+  'value': z.union([z.literal(null), z.number()]),
+  'source': z.union([z.literal("unavailable"), z.literal("adapter-declaration"), z.literal("request-header"), z.literal("session-projection"), z.literal("runtime")]),
+})),
+  'warnings': z.array(z.union([z.literal("declaration-only"), z.literal("harness-managed"), z.literal("policy-unknown"), z.literal("read-unavailable")])),
+}))
 let _one_person_lab_dsh_opl_oplCoordination_auto_start_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplCoordination_auto_start_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplCoordination_auto_start_parameter_0$schema$value ??= z.boolean())
 let _one_person_lab_dsh_opl_oplCoordination_auto_start_result$schema$value
@@ -88,12 +223,14 @@ const _one_person_lab_dsh_opl_oplExecution_answer_result$schema = () => (_one_pe
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -194,12 +331,14 @@ const _one_person_lab_dsh_opl_oplExecution_cancel_result$schema = () => (_one_pe
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -263,7 +402,7 @@ const _one_person_lab_dsh_opl_oplExecution_cancel_result$schema = () => (_one_pe
 let _one_person_lab_dsh_opl_oplExecution_cancel_task_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_cancel_task_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_cancel_task_parameter_0$schema$value ??= z.object({
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'sessionId': z.string(),
@@ -304,12 +443,14 @@ const _one_person_lab_dsh_opl_oplExecution_cancel_task_result$schema = () => (_o
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -434,7 +575,7 @@ let _one_person_lab_dsh_opl_oplExecution_delegate_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_delegate_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_delegate_parameter_0$schema$value ??= z.object({
   'cwd': z.string().optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'combination': z.string().optional(),
@@ -483,12 +624,14 @@ const _one_person_lab_dsh_opl_oplExecution_delegate_result$schema = () => (_one_
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -595,12 +738,14 @@ const _one_person_lab_dsh_opl_oplExecution_detail_result$schema = () => (_one_pe
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -738,12 +883,14 @@ const _one_person_lab_dsh_opl_oplExecution_list_result$schema = () => (_one_pers
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -878,12 +1025,14 @@ const _one_person_lab_dsh_opl_oplExecution_prompt_result$schema = () => (_one_pe
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -947,7 +1096,7 @@ const _one_person_lab_dsh_opl_oplExecution_prompt_result$schema = () => (_one_pe
 let _one_person_lab_dsh_opl_oplExecution_report_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_report_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_report_parameter_0$schema$value ??= z.object({
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'summary': z.string(),
@@ -963,7 +1112,7 @@ const _one_person_lab_dsh_opl_oplExecution_report_result$schema = () => (_one_pe
 let _one_person_lab_dsh_opl_oplExecution_result_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_result_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_result_parameter_0$schema$value ??= z.object({
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'sessionId': z.string(),
@@ -1006,12 +1155,14 @@ const _one_person_lab_dsh_opl_oplExecution_result_result$schema = () => (_one_pe
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -1112,12 +1263,14 @@ const _one_person_lab_dsh_opl_oplExecution_retry_delivery_result$schema = () => 
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -1181,7 +1334,7 @@ const _one_person_lab_dsh_opl_oplExecution_retry_delivery_result$schema = () => 
 let _one_person_lab_dsh_opl_oplExecution_review_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_review_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_review_parameter_0$schema$value ??= z.object({
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'sessionId': z.string(),
@@ -1225,12 +1378,14 @@ const _one_person_lab_dsh_opl_oplExecution_review_result$schema = () => (_one_pe
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -1513,12 +1668,14 @@ const _one_person_lab_dsh_opl_oplExecution_sessions_result$schema = () => (_one_
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'stopEdit': z.object({
@@ -1579,12 +1736,14 @@ const _one_person_lab_dsh_opl_oplExecution_snapshot_result$schema = () => (_one_
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -1652,7 +1811,7 @@ const _one_person_lab_dsh_opl_oplExecution_start_parameter_0$schema = () => (_on
   'existingSessionId': z.string().optional(),
   'taskId': z.string().optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }).optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]).optional(),
@@ -1693,12 +1852,14 @@ const _one_person_lab_dsh_opl_oplExecution_start_result$schema = () => (_one_per
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -1842,13 +2003,14 @@ const _one_person_lab_dsh_opl_oplExecution_stop_edit_state_result$schema = () =>
   'sessionId': z.string(),
   'title': z.string(),
 }).optional(),
+  'editSourceSessionId': z.string().optional(),
   'filesRestored': z.literal(false),
   'version': z.number(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_task_summaries_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_task_summaries_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_task_summaries_parameter_0$schema$value ??= z.object({
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
 }))
@@ -1878,12 +2040,14 @@ const _one_person_lab_dsh_opl_oplExecution_task_summaries_result$schema = () => 
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'stopEdit': z.object({
@@ -1918,7 +2082,7 @@ const _one_person_lab_dsh_opl_oplExecution_task_summaries_result$schema = () => 
 let _one_person_lab_dsh_opl_oplExecution_tasks_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_tasks_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_tasks_parameter_0$schema$value ??= z.object({
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
 }))
@@ -1958,12 +2122,14 @@ const _one_person_lab_dsh_opl_oplExecution_tasks_result$schema = () => (_one_per
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -2065,12 +2231,14 @@ const _one_person_lab_dsh_opl_oplExecution_wait_result$schema = () => (_one_pers
   'createdAt': z.string(),
 }).optional(),
   'origin': z.object({
-  'kind': z.union([z.literal("dsh"), z.literal("codex"), z.literal("harness"), z.literal("desktop")]),
+  'kind': z.union([z.literal("harness"), z.literal("dsh"), z.literal("codex"), z.literal("desktop")]),
   'sessionId': z.string(),
 }),
   'title': z.string(),
   'titleFromHarness': z.boolean().optional(),
   'sandbox': z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")]),
+  'zcodeMode': z.union([z.literal("build"), z.literal("yolo")]).optional(),
+  'externalAutoReview': z.boolean().optional(),
   'createdAt': z.string(),
   'updatedAt': z.string(),
   'turns': z.array(z.object({
@@ -2133,7 +2301,7 @@ const _one_person_lab_dsh_opl_oplExecution_wait_result$schema = () => (_one_pers
 }))
 let _one_person_lab_dsh_opl_oplGatewayAccount_refresh_result$schema$value
 const _one_person_lab_dsh_opl_oplGatewayAccount_refresh_result$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_refresh_result$schema$value ??= z.object({
-  'phase': z.union([z.literal("connected"), z.literal("signed-out"), z.literal("unavailable")]).readonly(),
+  'phase': z.union([z.literal("unavailable"), z.literal("connected"), z.literal("signed-out")]).readonly(),
   'groups': z.array(z.object({
   'id': z.union([z.literal("codex"), z.literal("deepseek"), z.literal("grok"), z.literal("gemini"), z.literal("kiro"), z.literal("aws")]).readonly(),
   'name': z.string().readonly(),
@@ -2183,7 +2351,7 @@ const _one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_1$schema = () =
 let _one_person_lab_dsh_opl_oplGatewayAccount_signIn_result$schema$value
 const _one_person_lab_dsh_opl_oplGatewayAccount_signIn_result$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_signIn_result$schema$value ??= z.object({
   'status': z.object({
-  'phase': z.union([z.literal("connected"), z.literal("signed-out"), z.literal("unavailable")]).readonly(),
+  'phase': z.union([z.literal("unavailable"), z.literal("connected"), z.literal("signed-out")]).readonly(),
   'groups': z.array(z.object({
   'id': z.union([z.literal("codex"), z.literal("deepseek"), z.literal("grok"), z.literal("gemini"), z.literal("kiro"), z.literal("aws")]).readonly(),
   'name': z.string().readonly(),
@@ -2230,7 +2398,7 @@ const _one_person_lab_dsh_opl_oplGatewayAccount_signIn_result$schema = () => (_o
 }))
 let _one_person_lab_dsh_opl_oplGatewayAccount_signOut_result$schema$value
 const _one_person_lab_dsh_opl_oplGatewayAccount_signOut_result$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_signOut_result$schema$value ??= z.object({
-  'phase': z.union([z.literal("connected"), z.literal("signed-out"), z.literal("unavailable")]).readonly(),
+  'phase': z.union([z.literal("unavailable"), z.literal("connected"), z.literal("signed-out")]).readonly(),
   'groups': z.array(z.object({
   'id': z.union([z.literal("codex"), z.literal("deepseek"), z.literal("grok"), z.literal("gemini"), z.literal("kiro"), z.literal("aws")]).readonly(),
   'name': z.string().readonly(),
@@ -2275,7 +2443,7 @@ const _one_person_lab_dsh_opl_oplGatewayAccount_signOut_result$schema = () => (_
 }))
 let _one_person_lab_dsh_opl_oplGatewayAccount_status_result$schema$value
 const _one_person_lab_dsh_opl_oplGatewayAccount_status_result$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_status_result$schema$value ??= z.object({
-  'phase': z.union([z.literal("connected"), z.literal("signed-out"), z.literal("unavailable")]).readonly(),
+  'phase': z.union([z.literal("unavailable"), z.literal("connected"), z.literal("signed-out")]).readonly(),
   'groups': z.array(z.object({
   'id': z.union([z.literal("codex"), z.literal("deepseek"), z.literal("grok"), z.literal("gemini"), z.literal("kiro"), z.literal("aws")]).readonly(),
   'name': z.string().readonly(),
@@ -2325,7 +2493,7 @@ const _one_person_lab_dsh_opl_oplGatewayModels_activate_parameter_0$schema = () 
 }))
 let _one_person_lab_dsh_opl_oplGatewayModels_activate_result$schema$value
 const _one_person_lab_dsh_opl_oplGatewayModels_activate_result$schema = () => (_one_person_lab_dsh_opl_oplGatewayModels_activate_result$schema$value ??= z.object({
-  'phase': z.union([z.literal("connected"), z.literal("signed-out"), z.literal("unavailable")]).readonly(),
+  'phase': z.union([z.literal("unavailable"), z.literal("connected"), z.literal("signed-out")]).readonly(),
   'groups': z.array(z.object({
   'id': z.union([z.literal("codex"), z.literal("deepseek"), z.literal("grok"), z.literal("gemini"), z.literal("kiro"), z.literal("aws")]).readonly(),
   'name': z.string().readonly(),
@@ -2985,6 +3153,71 @@ const _one_person_lab_dsh_opl_taskFeedback_wake_result$schema = () => (_one_pers
 export const TYPERT_REMOTE = {
   package: '@one-person-lab/dsh-opl',
   descriptors: [
+    {
+      id: '@one-person-lab/dsh-opl#oplAutoReview/read',
+      service: 'oplAutoReview',
+      namespace: 'oplAutoReview',
+      method: 'read',
+      invocation: { kind: 'direct' },
+      parameters: [
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#AutoReviewStatus',
+        create: _one_person_lab_dsh_opl_oplAutoReview_read_result$schema,
+      },
+      sourceLocation: {"file":"src/auto-review/host/service.ts","line":481,"column":9},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplAutoReview/save',
+      service: 'oplAutoReview',
+      namespace: 'oplAutoReview',
+      method: 'save',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'request',
+          wire: 'request',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl/types#AutoReviewSaveRequest',
+            create: _one_person_lab_dsh_opl_oplAutoReview_save_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#AutoReviewSaveResult',
+        create: _one_person_lab_dsh_opl_oplAutoReview_save_result$schema,
+      },
+      sourceLocation: {"file":"src/auto-review/host/service.ts","line":500,"column":9},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplContextBudget/read',
+      service: 'oplContextBudget',
+      namespace: 'oplContextBudget',
+      method: 'read',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'request',
+          wire: 'request',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl/types#ContextBudgetRequest',
+            create: _one_person_lab_dsh_opl_oplContextBudget_read_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#ContextBudgetSnapshot',
+        create: _one_person_lab_dsh_opl_oplContextBudget_read_result$schema,
+      },
+      sourceLocation: {"file":"src/context-budget/host/service.ts","line":92,"column":9},
+    },
     {
       id: '@one-person-lab/dsh-opl#oplCoordination/auto-start',
       service: 'oplCoordination',

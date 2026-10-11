@@ -3,9 +3,16 @@ import type {
   RemoteResult,
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, HuaweiMaaSKeyResult, HuaweiMaaSStatus, LoginChoice, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
+import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, ContextBudgetRequest, ContextBudgetSnapshot, CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, HuaweiMaaSKeyResult, HuaweiMaaSStatus, LoginChoice, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface TypertRemoteNamespace$6f706c4175746f526576696577 {
+    read: () => Promise<RemoteResult<AutoReviewStatus>>
+    save: (request: AutoReviewSaveRequest) => Promise<RemoteResult<AutoReviewSaveResult>>
+  }
+  interface TypertRemoteNamespace$6f706c436f6e74657874427564676574 {
+    read: (request: ContextBudgetRequest) => Promise<RemoteResult<ContextBudgetSnapshot>>
+  }
   interface TypertRemoteNamespace$6f706c436f6f7264696e6174696f6e {
     'auto-start': (enabled: boolean) => Promise<RemoteResult<null>>
     'coordination-status': () => Promise<RemoteResult<CoordinationStatus>>
@@ -84,6 +91,9 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     wake: () => Promise<RemoteResult<WakeStatus>>
   }
   interface TypertRemoteMap {
+    'oplAutoReview/read': () => Promise<RemoteResult<AutoReviewStatus>>
+    'oplAutoReview/save': (request: AutoReviewSaveRequest) => Promise<RemoteResult<AutoReviewSaveResult>>
+    'oplContextBudget/read': (request: ContextBudgetRequest) => Promise<RemoteResult<ContextBudgetSnapshot>>
     'oplCoordination/auto-start': (enabled: boolean) => Promise<RemoteResult<null>>
     'oplCoordination/coordination-status': () => Promise<RemoteResult<CoordinationStatus>>
     'oplCoordination/skill-install': () => Promise<RemoteResult<null>>
@@ -149,6 +159,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'taskFeedback/wake': () => Promise<RemoteResult<WakeStatus>>
   }
   interface TypertRemoteNamespaceMap {
+    'oplAutoReview': TypertRemoteNamespace$6f706c4175746f526576696577
+    'oplContextBudget': TypertRemoteNamespace$6f706c436f6e74657874427564676574
     'oplCoordination': TypertRemoteNamespace$6f706c436f6f7264696e6174696f6e
     'oplExecution': TypertRemoteNamespace$6f706c457865637574696f6e
     'oplGatewayAccount': TypertRemoteNamespace$6f706c476174657761794163636f756e74

@@ -31,6 +31,28 @@ const record = (id: string): HarnessSession => ({
 })
 
 describe('per-session durable storage', () => {
+  it('restores frozen external review modes without rewriting legacy records', async () => {
+    const { root, store } = await fixture()
+    const old = record('legacy')
+    const current = {
+      ...record('auto'),
+      harnessRef: 'zcode',
+      zcodeMode: 'build' as const,
+      externalAutoReview: true,
+    }
+    await store.saveChanged([old, current])
+    const restored = await new HarnessSessionStore(root).load()
+    expect(restored).toContainEqual(current)
+    expect(restored.find((item) => item.id === 'legacy')).not.toHaveProperty('zcodeMode')
+    await writeFile(store.filename('auto'), JSON.stringify({ ...current, zcodeMode: 'auto' }))
+    await expect(new HarnessSessionStore(root).load()).rejects.toThrow()
+    await writeFile(
+      store.filename('auto'),
+      JSON.stringify({ ...current, externalAutoReview: 'yes' }),
+    )
+    await expect(new HarnessSessionStore(root).load()).rejects.toThrow()
+  })
+
   it('preserves an opaque official conversation id across reloads and rejects empty references', async () => {
     const { root, store } = await fixture()
     const session = { ...record('ordinary'), nativeSessionId: 'native-session' }

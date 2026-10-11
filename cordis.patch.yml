@@ -32,6 +32,14 @@
 - id: llm-pi-ai
   config:
     providers:
+      opl-gateway-auto-review:
+        displayName: OPL Gateway · Auto Review
+        api: openai-responses
+        baseURL: https://gateway.medopl.com/v1
+        apiKeyEnv: OPL_GATEWAY_CODEX_API_KEY
+        models:
+          - id: codex-auto-review
+            name: Codex Auto Review
       opl-gateway-openai:
         displayName: OPL Gateway · Codex
         api: openai-responses

@@ -45,7 +45,8 @@ async function prepareZcodeLaunch(
   record: HarnessSession,
   options: AdapterOptions,
 ): Promise<AdapterLaunch> {
-  const mode = zcodeModeForSandbox(record.sandbox)
+  zcodeModeForSandbox(record.sandbox)
+  const mode = record.zcodeMode ?? ZCODE_FULL_ACCESS_MODE
   // Fail loudly rather than falling back to the Codex bridge.
   const bridgePath = options.zcodeBridgePath
   if (!bridgePath) throw Error('未配置 ZCode 桥接器入口（AdapterOptions.zcodeBridgePath）')

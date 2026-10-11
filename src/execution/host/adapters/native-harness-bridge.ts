@@ -29,6 +29,25 @@ const taskPermission = (process.env.OPL_NATIVE_PERMISSION ?? 'read-only') as Nat
   model = process.env.OPL_NATIVE_MODEL!,
   cwd = process.cwd(),
   readonly = taskPermission === 'read-only'
+/**
+ * The Auto permission session's official-review opt-in, carried from the adapter.
+ *
+ * Only the literal `1` turns the route on. A value that is neither absent, `0` nor `1` is a
+ * wiring fault and is refused in `initialize`: a session that asked for the official Auto
+ * route must never fall back to an ordinary full / never-ask profile, because the profile it
+ * would silently get is more permissive than the one it asked for.
+ */
+const autoReviewSetting = process.env.OPL_NATIVE_AUTO_REVIEW,
+  autoReview = autoReviewSetting === '1'
+/**
+ * Codex's official auto-review value, as published by `approvalsReviewer`.
+ *
+ * The installed app-server builds this enum as `user | auto_review | guardian_subagent`;
+ * `guardian_subagent` is documented as the legacy spelling of the same feature and the
+ * server normalises it to `auto_review` in its own response. Both spellings therefore mean
+ * "the official reviewer", and nothing else does.
+ */
+const CODEX_AUTO_REVIEWERS = ['auto_review', 'guardian_subagent'] as const
 const send = (value: object) =>
   process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...value }) + '\n')
 const emit = (update: object) => send({ method: 'session/update', params: { sessionId, update } })
@@ -247,6 +266,39 @@ async function confirmCodexGitBash(threadId: string): Promise<void> {
   )
 }
 
+/**
+ * Refuse a Codex thread that did not really adopt the official auto reviewer.
+ *
+ * `thread/start` and `thread/resume` echo the reviewer and approval policy that are now in
+ * force on the thread, so the answer is the installed build's own report rather than a
+ * restatement of the request. That matters for two independent reasons:
+ *
+ *  - a build that ignores `approvalsReviewer` would otherwise keep the request's own
+ *    approval policy and quietly run the session as an ordinary never-ask task; and
+ *  - `approvalPolicy: never` never raises an approval request, so the reviewer would be
+ *    configured but unreachable. Codex's own tool layer rejects an escalation outright in
+ *    that state, which is a silent downgrade from "officially reviewed" to "never asked".
+ *
+ * Both are refusals, never fallbacks: there is no path here that runs the session with a
+ * weaker guarantee than the one the record asked for.
+ * @param answer - the `thread/start` or `thread/resume` result.
+ * @throws when the effective reviewer or approval policy is not the official Auto route.
+ */
+function confirmCodexAutoReview(answer: object): void {
+  const report = answer as { approvalsReviewer?: unknown; approvalPolicy?: unknown }
+  const reviewer = report.approvalsReviewer
+  if (typeof reviewer !== 'string' || !CODEX_AUTO_REVIEWERS.includes(reviewer as never))
+    throw Error(
+      '已请求 Codex 官方 Auto Review，但当前 Codex 进程回报的审批审核者是 ' +
+        `${typeof reviewer === 'string' ? reviewer : '未知（未收到回读）'}；` +
+        '该构建没有采用 approvalsReviewer，不能把普通审批策略当成官方 Auto。',
+    )
+  if (report.approvalPolicy === 'never')
+    throw Error(
+      '已请求 Codex 官方 Auto Review，但当前 Codex 进程的审批策略是 never，' +
+        '官方 auto_review 不会收到任何审批请求；拒绝以 never 冒充官方 Auto。',
+    )
+}
 async function pathInProject(path: unknown): Promise<boolean> {
   if (typeof path !== 'string') return false
   const target = resolve(cwd, path)
@@ -304,8 +356,18 @@ async function claudePrompt(text: string, effort?: string) {
       ...(hasHistory ? { resume: sessionId } : { sessionId }),
       // `bypassPermissions` is the official SDK mode for a task the user already authorized at full
       // access; it does not answer anyone else's pending approval, it only stops Claude Code
-      // from asking again about a decision this task was granted.
-      permissionMode: fullAccess ? 'bypassPermissions' : 'default',
+      // from asking again about a decision this task was granted. An Auto session instead runs
+      // the official `auto` mode, whose own model classifier answers the permission prompts the
+      // mode raises.
+      permissionMode: autoReview ? 'auto' : fullAccess ? 'bypassPermissions' : 'default',
+      // An Auto session has no host approval surface at all. The official SDK documents `none`
+      // as "nobody answers permission prompts: the permission mode (including auto mode's
+      // classifier), rules and hooks still decide, and anything that would otherwise prompt is
+      // denied immediately". That is what keeps Auto honest: the classifier's own decisions
+      // stand, and a prompt it declined to decide is refused rather than escalated to this
+      // bridge — which is not an approval authority and must never act as the reviewer of
+      // record. Ordinary sessions keep the host surface they have always had.
+      ...(autoReview ? { permissionPrompts: 'none' as const } : {}),
       includePartialMessages: true,
       disallowedTools: disallowed,
       // A restricted task keeps the isolated sandbox and refuses to run without a Windows
@@ -330,6 +392,14 @@ async function claudePrompt(text: string, effort?: string) {
       // Such a task is bounded by the user's own explicit authorization, not by anything here.
       canUseTool: async (name, input) => {
         if (cancelled) return { behavior: 'deny', message: '任务已取消' }
+        // Fail closed for an Auto session. Reaching this callback means the official auto
+        // classifier did not decide the prompt, so there is no official review behind an
+        // allow: the bridge is not the reviewer of record, it has no authorization from the
+        // record for this call, and it must not fall back to the ordinary allow-list, to the
+        // full-access `Bash`/write rules or to asking the operator. A build that ignores
+        // `permissionPrompts: 'none'` therefore still cannot get an allow out of this bridge.
+        if (autoReview)
+          return { behavior: 'deny', message: '官方 Auto Review 未决出该操作，已按失败关闭拒绝' }
         if (name.startsWith('mcp__opl-harness__')) return { behavior: 'allow', updatedInput: input }
         if (['Read', 'Glob', 'Grep', 'LS', 'TodoWrite'].includes(name))
           return { behavior: 'allow', updatedInput: input }
@@ -351,8 +421,24 @@ async function claudePrompt(text: string, effort?: string) {
     },
   })
   let result: any
+  // The CLI's own `system`/`init` message reports the permission mode it really took, so an
+  // Auto session is never trusted on the strength of the request alone.
+  let reportedPermissionMode: unknown
+  let sawInit = false
   try {
     for await (const event of claude) {
+      if (event.type === 'system' && event.subtype === 'init') {
+        sawInit = true
+        reportedPermissionMode = (event as { permissionMode?: unknown }).permissionMode
+        // Refused at init, which the CLI emits before it runs any tool, rather than after a
+        // turn that already executed under the wrong mode.
+        if (autoReview && reportedPermissionMode !== 'auto')
+          throw Error(
+            '已请求 Claude Code 官方 Auto Review，但当前进程回报的 permission mode 是 ' +
+              `${typeof reportedPermissionMode === 'string' ? reportedPermissionMode : '未知'}；` +
+              '拒绝把普通 permission mode 当成官方 Auto。',
+          )
+      }
       if (event.type === 'system' && event.subtype === 'api_retry' && event.error_status === null)
         networkRetry = true
       if (event.type === 'assistant' || event.type === 'result' || event.type === 'stream_event')
@@ -370,6 +456,12 @@ async function claudePrompt(text: string, effort?: string) {
     claude = undefined
   }
   if (responseTimedOut) throw Error(networkRetry ? 'HARNESS_NETWORK' : 'HARNESS_TIMEOUT')
+  // A build that never reports its permission mode cannot be shown to be running the
+  // official auto reviewer, so the Auto session is refused instead of assumed.
+  if (autoReview && !sawInit)
+    throw Error(
+      '已请求 Claude Code 官方 Auto Review，但当前进程没有回报 permission mode；拒绝在无法确认时继续。',
+    )
   if (cancelled) return { stopReason: 'cancelled' }
   if (!result || result.is_error || result.subtype !== 'success') {
     const status = result?.api_error_status
@@ -383,6 +475,10 @@ async function claudePrompt(text: string, effort?: string) {
 }
 async function invoke(method: string, p: any) {
   if (method === 'initialize') {
+    // Refused before any process is spawned: an unreadable Auto opt-in must not resolve to
+    // an ordinary session, because the ordinary session is the more permissive of the two.
+    if (autoReviewSetting !== undefined && autoReviewSetting !== '0' && autoReviewSetting !== '1')
+      throw Error('OPL_NATIVE_AUTO_REVIEW 不是受支持的取值')
     if (kind === 'codex') await openCodex()
     return {
       protocolVersion: 1,
@@ -430,7 +526,12 @@ async function invoke(method: string, p: any) {
         // Codex refuses to start a thread under a restricted profile once
         // CODEX_NATIVE_GIT_BASH_PATH is set, so the mode and the Bash path have to agree.
         sandbox: codexSandboxMode(taskPermission),
-        approvalPolicy: 'never',
+        // An ordinary session keeps `never`: Codex runs to completion without ever asking,
+        // and the bridge declines any request that still reaches it. An Auto session asks
+        // Codex to route those requests to its official reviewer instead of the user, which
+        // is only possible under a policy that raises them at all.
+        approvalPolicy: autoReview ? 'on-request' : 'never',
+        ...(autoReview ? { approvalsReviewer: 'auto_review' } : {}),
         config,
       }
       const r = await codexRequest(method === 'session/load' ? 'thread/resume' : 'thread/start', {
@@ -439,6 +540,9 @@ async function invoke(method: string, p: any) {
       })
       sessionId = r.thread.id
       if (r.model && r.model !== model) throw Error('Codex 返回不同模型')
+      // Verified after the thread exists but before any turn, so a thread that did not take
+      // the official reviewer is refused instead of being used.
+      if (autoReview) confirmCodexAutoReview(r)
       if (codexGitBashRequested) await confirmCodexGitBash(sessionId)
     } else {
       sessionId = p.sessionId ?? randomUUID()

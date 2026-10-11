@@ -4,6 +4,8 @@ import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepse
 import type { GatewayGroupId } from '../contracts/groups.ts'
 import { modelDefaultEffort } from '../../shared/model-reasoning.ts'
 export const OPENAI_PROVIDER = 'opl-gateway-openai'
+export const AUTO_REVIEW_PROVIDER = 'opl-gateway-auto-review'
+export const AUTO_REVIEW_MODEL = 'codex-auto-review'
 export interface GatewayModelRoute {
   group: GatewayGroupId
   provider: string
@@ -41,6 +43,7 @@ export class GatewayModelAdapter extends LlmAdapter {
   constructor(
     private readonly routes: readonly GatewayModelRoute[],
     private readonly onGroup: (group: GatewayGroupId) => void,
+    private readonly reviewerRoute?: GatewayModelRoute,
   ) {
     super()
   }
@@ -70,14 +73,27 @@ export class GatewayModelAdapter extends LlmAdapter {
         }))
       }),
     )
-    return lists.flat()
+    const dedicatedId = gatewayModelId('codex', AUTO_REVIEW_MODEL)
+    const models = lists.flat().filter((model) => !this.reviewerRoute || model.id !== dedicatedId)
+    const reviewer = this.reviewerRoute
+    if (reviewer && (await reviewer.available())) {
+      const registered = await reviewer.adapter.listModels(reviewer.provider)
+      const dedicated = registered.find((model) => model.id === AUTO_REVIEW_MODEL)
+      if (dedicated) {
+        return [...models, { ...dedicated, provider, id: dedicatedId }]
+      }
+    }
+    return models
   }
   private async selection(model: string) {
     // Never infer a group from a model brand or from which request failed.
     const separator = model.indexOf('::')
     const group = separator < 0 ? 'deepseek' : model.slice(0, separator)
     const wireModel = separator < 0 ? model : model.slice(separator + 2)
-    const route = this.routes.find((route) => route.group === group)
+    const route =
+      group === 'codex' && wireModel === AUTO_REVIEW_MODEL && this.reviewerRoute
+        ? this.reviewerRoute
+        : this.routes.find((route) => route.group === group)
     if (!route) throw new LlmError('未知模型分组', 'UNKNOWN_MODEL')
     if (!(await route.available()))
       throw new LlmError(`${group} 分组凭据未就绪`, 'MISSING_CREDENTIAL')

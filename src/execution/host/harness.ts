@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import { startControlBridge } from '../../shared/host/control-bridge.ts'
 import { homedir } from 'node:os'
 import { EventEmitter } from 'node:events'
-import { LlmError, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, LlmError, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { Context } from '@deepseek-ai/cordis'
 import type { HarnessStartRequest } from '../../contracts/types.ts'
 import { STOP_EDIT_VERSION } from '../contracts/stop-edit.ts'
@@ -25,6 +25,7 @@ import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { ModelCatalog, ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-workspace'
 import type {} from '@deepseek-ai/dsh-user-questions'
+import type {} from '@deepseek-ai/dsh-permission-presets'
 import type { AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
 import type TaskFeedbackService from '../../collaboration/host/feedback/index.ts'
 import type {
@@ -35,6 +36,11 @@ import type {
 import { NO_SESSION_TARGET_THREAD_ID } from '../../collaboration/host/feedback/types.ts'
 import { harnessTaskIdOf, harnessTaskStateOf } from '../../collaboration/host/feedback/state.ts'
 import { AcpProcess, HarnessConfigurationError, HarnessTransportError, object } from './acp.ts'
+import {
+  externalAskFromToolCall,
+  type HarnessExternalApprovalBinding,
+  type HarnessExternalAsk,
+} from './external-binding.ts'
 import { waitForSession } from './session-wait.ts'
 import {
   DSH_COMBINATION,
@@ -169,8 +175,21 @@ interface Active {
   turn: HarnessTurn | undefined
   done: Promise<void> | undefined
   cancelled: boolean
+  /**
+   * Monotonic generation of this connection, assigned when the connection is
+   * opened. A reconnected Harness gets a new generation, so an approval binding
+   * taken on one connection can never authorize an action on another.
+   */
+  generation: number
   bridgeStop?: (() => Promise<void>) | undefined
-  approvals: Map<string, HarnessApproval & { rpcId: string | number }>
+  approvals: Map<
+    string,
+    HarnessApproval & {
+      rpcId: string | number
+      external?: HarnessExternalAsk
+      reviewCallId?: string
+    }
+  >
   /** `initialize` result, kept for adapter capability and version diagnostics. */
   agentInfo?: Record<string, any>
   /** Latest config options the agent advertised for this ACP session. */
@@ -210,6 +229,8 @@ export class HarnessService {
   private readonly revisionEpoch = randomUUID()
   private revisionCounter = 0
   private readonly runtimeConnections = new Map<string, boolean>()
+  /** Monotonic source of {@link Active.generation}; never reused within a process. */
+  private connectionGeneration = 0
   private readonly catalogStore: ExecutionCatalogStore
   private readonly modelResolver: ExecutionModelResolver
   private readonly stopEdits: StopEditService
@@ -305,6 +326,12 @@ export class HarnessService {
     // model as the deployment default during restart.
     if (this.selections[record.nativeSessionId!] === undefined)
       await this.bindSelection(record.nativeSessionId!, record.combination)
+  }
+  private zcodeModeForOrigin(origin: HarnessOrigin): 'build' | 'yolo' {
+    if (origin.kind !== 'dsh') return 'yolo'
+    const session = this.ctx.sessions.get(asSessionId<SessionId>(origin.sessionId))
+    if (!session) throw Error('ZCode 的原生会话已不存在')
+    return this.ctx.permissionPresets.current(session) === 'auto' ? 'build' : 'yolo'
   }
   private conversationBinding(session: Session, definition: CombinationDefinition) {
     if (!session.header.cwd) throw Error('请先选择项目目录')
@@ -647,6 +674,21 @@ export class HarnessService {
   assertRuntimeAvailable(): void {
     this.runtimeMaintenance.assertAvailable()
   }
+  /**
+   * Exclude reviewer settings changes from CLI admission and native model requests.
+   * @param operation - Validation and durable settings publication owned by Auto Review.
+   * @returns The publication result after all visible projects were checked for activity.
+   */
+  async changeReviewerSettings<T>(operation: () => Promise<T>): Promise<T> {
+    await this.ready
+    return this.runtimeMaintenance.change(
+      () => this.runtimeBusy(),
+      async () => {
+        await this.assertNoGlobalActivity()
+        return await operation()
+      },
+    )
+  }
   private runtimeBusy(): boolean {
     return (
       this.disposed ||
@@ -712,7 +754,11 @@ export class HarnessService {
           ? !!this.ctx.agents?.get(asSessionId<SessionId>(record.acpSessionId))
           : !!active?.acp && !active.acp.closed,
       state: record.turns.at(-1)?.state ?? 'idle',
-      approvals: [...(active?.approvals.values() ?? [])].map(({ rpcId: _, ...a }) => a),
+      // `external` is host-internal binding data; the public approval DTO is a
+      // generated wire contract, so it is stripped here rather than published.
+      approvals: [...(active?.approvals.values() ?? [])].map(
+        ({ rpcId: _, external: __, reviewCallId: ___, ...a }) => a,
+      ),
     })
   }
   async snapshot(input: { sessionId: string }): Promise<HarnessSnapshot> {
@@ -806,6 +852,11 @@ export class HarnessService {
       throw new HarnessConfigurationError(
         `Harness ${definition.harnessRef} 没有经过验证的官方 full-access 路径，已拒绝启动该受限任务；不会自动降级为工作区权限。`,
       )
+    const autoReview = origin.kind === 'dsh' && this.zcodeModeForOrigin(origin) === 'build'
+    if (autoReview && !['codex', 'claude', 'zcode'].includes(definition.harnessRef))
+      throw new HarnessConfigurationError(
+        '此 Harness 尚无已验证的官方 Auto Review 接口，请选择其他权限模式。',
+      )
     const record: HarnessSession = prior ?? {
       id,
       combination: input.combination,
@@ -814,6 +865,10 @@ export class HarnessService {
       cwd,
       origin,
       sandbox,
+      ...(['codex', 'claude'].includes(definition.harnessRef) && origin.kind === 'dsh'
+        ? { externalAutoReview: autoReview }
+        : {}),
+      ...(definition.harnessRef === 'zcode' ? { zcodeMode: this.zcodeModeForOrigin(origin) } : {}),
       acpSessionId: '',
       title: definition.name,
       createdAt: now(),
@@ -886,6 +941,7 @@ export class HarnessService {
         cancelled: false,
         turn: undefined,
         done: undefined,
+        generation: ++this.connectionGeneration,
         approvals: new Map(),
       })
       this.changed(record)
@@ -901,6 +957,7 @@ export class HarnessService {
       cancelled: false,
       turn: undefined,
       done: undefined,
+      generation: ++this.connectionGeneration,
       approvals: new Map(),
       launchSettings,
     }
@@ -1139,12 +1196,22 @@ export class HarnessService {
       }))
     const id = randomUUID()
     const command = object(object(p.toolCall).rawInput).command
+    // The structured action of an ask that carries one. An ask without an
+    // explicit tool name and `rawInput` stays unbindable, so its display text is
+    // never decoded into an authorization decision.
+    const external = externalAskFromToolCall(p.toolCall)
+    const nativeCallId =
+      typeof object(p.toolCall).toolCallId === 'string' && this.conversations
+        ? this.conversations.toolId(record, active.turn, object(p.toolCall).toolCallId)
+        : ToolCallId('external:' + id)
     active.approvals.set(id, {
+      ...(nativeCallId === undefined ? {} : { reviewCallId: nativeCallId }),
       id,
       rpcId,
       title: String(object(p.toolCall).title ?? 'Harness 工具权限请求').slice(0, 4000),
       ...(typeof command === 'string' ? { command } : {}),
       options,
+      ...(external === undefined ? {} : { external }),
     })
     active.turn.state = 'waiting_approval'
     this.changed(record)
@@ -1161,15 +1228,7 @@ export class HarnessService {
           toolName: record.harnessRef,
           reason:
             active.approvals.get(id)!.title + (typeof command === 'string' ? '\n\n' + command : ''),
-          ...(typeof object(p.toolCall).toolCallId === 'string' && this.conversations
-            ? {
-                callId: this.conversations.toolId(
-                  record,
-                  active.turn!,
-                  object(p.toolCall).toolCallId,
-                ),
-              }
-            : {}),
+          ...(nativeCallId === undefined ? {} : { callId: nativeCallId }),
           ...(owner.signal ? { signal: owner.signal } : {}),
         })
         if (!active.approvals.has(id)) return
@@ -1211,6 +1270,72 @@ export class HarnessService {
     }
     return this.view(record)
   }
+  /**
+   * Bind the one pending external-Harness permission ask of a native Session.
+   *
+   * The approval waterfall only carries the ask's tool reference and display
+   * text, so the exact facts are read here, from the live connection record:
+   * the ACP session and its connection generation, the owning Harness turn, the
+   * structured action the ask declared, and the authorization the task runs
+   * under. Nothing is derived from the ask's prose.
+   *
+   * This is deliberately all-or-nothing. Zero pending external asks means there
+   * is nothing to bind; more than one means the pending approval request cannot
+   * be attributed to an exact ask; a missing turn, an unknown record, an
+   * unreadable preset or an ask without a structured action all return `null`.
+   * Every `null` leaves the ask to the ordinary human approval chain.
+   * @param sessionId - the native Session that owns the Harness conversation.
+   * @param callId - the exact native approval request identity.
+   * @returns the exact binding, or null when it cannot be proven.
+   */
+  externalApprovalBinding(
+    sessionId: string,
+    callId?: string,
+  ): HarnessExternalApprovalBinding | null {
+    const session = this.ctx.sessions?.get(asSessionId<SessionId>(sessionId))
+    if (!session || !callId) return null
+    const matches: {
+      record: HarnessSession
+      active: Active
+      external: HarnessExternalAsk
+    }[] = []
+    for (const [recordId, active] of this.active) {
+      if (this.conversationOwners.get(recordId)?.sessionId !== sessionId) continue
+      const record = this.records.get(recordId)
+      if (!record) continue
+      for (const ask of active.approvals.values())
+        if (ask.external !== undefined && ask.reviewCallId === callId)
+          matches.push({ record, active, external: ask.external })
+    }
+    if (matches.length !== 1) return null
+    const { record, active, external } = matches[0]!
+    const turn = active.turn
+    if (!turn) return null
+    const index = record.turns.findIndex((item) => item.operationId === turn.operationId)
+    if (index < 0) return null
+    let preset: string
+    try {
+      preset = this.ctx.permissionPresets.current(session)
+    } catch {
+      return null
+    }
+    return {
+      harness: record.harnessRef,
+      callId,
+      acpSessionId: record.acpSessionId,
+      generation: active.generation,
+      turn: index + 1,
+      turnId: turn.operationId,
+      action: { name: external.name, parameters: external.parameters },
+      authorization: {
+        sessionId,
+        preset,
+        sandbox: record.sandbox,
+        combination: record.combination,
+      },
+    }
+  }
+
   async prompt(input: HarnessPromptRequest, reasoningEffort?: string): Promise<HarnessSnapshot> {
     return this.runtimeMaintenance.admit(() => this.promptAdmitted(input, reasoningEffort))
   }
@@ -3008,11 +3133,36 @@ export class HarnessService {
     }
     const session = this.ctx.sessions.get(asSessionId<SessionId>(options.sessionId))
     if (!session) throw new LlmError('原会话已不存在', 'HARNESS_BINDING')
+    if (
+      this.zcodeModeForOrigin({ kind: 'dsh', sessionId: options.sessionId }) === 'build' &&
+      !['codex', 'claude', 'zcode'].includes(definition.harnessRef)
+    )
+      throw new LlmError(
+        '此 Harness 尚无已验证的官方 Auto Review 接口，请选择其他权限模式。',
+        'HARNESS_PERMISSION',
+      )
     const binding = this.conversationBinding(session, definition)
     const bound = [...this.records.values()].find(
       (record) =>
         record.nativeSessionId === options.sessionId && record.combination === definition.id,
     )
+    if (
+      bound &&
+      ['codex', 'claude'].includes(bound.harnessRef) &&
+      (bound.externalAutoReview ?? false) !== (this.zcodeModeForOrigin(bound.origin) === 'build')
+    )
+      throw new LlmError(
+        '官方审核模式已改变，请新建对话；原会话不会绕过审批。',
+        'HARNESS_PERMISSION',
+      )
+    if (
+      bound?.harnessRef === 'zcode' &&
+      (bound.zcodeMode ?? 'yolo') !== this.zcodeModeForOrigin(bound.origin)
+    )
+      throw new LlmError(
+        'ZCode 审批模式已改变，请新建对话；原会话不会绕过审批。',
+        'HARNESS_PERMISSION',
+      )
     if (bound && bound.sandbox !== binding.sandbox)
       throw new LlmError(
         '官方会话权限与原外部任务不一致，请恢复原权限后继续；不会自动扩大权限。',

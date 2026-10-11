@@ -1,10 +1,12 @@
 /** First-run account choice; authentication stays in its provider service. */
 import { Config as GatewayConfig } from '../gateway/host/config.ts'
+import { Config as AutoReviewConfig } from '../auto-review/host/settings.ts'
 import z from '@deepseek-ai/schemastery'
 import type { Volatile } from '@deepseek-ai/cordis'
 import type { LoginChoice } from '../setup/contracts.ts'
 export type { LoginChoice } from '../setup/contracts.ts'
 export interface Config {
+  toolAutoReview: Volatile<import('../auto-review/host/settings.ts').Config>
   cooperation: Volatile<{ autoReview: boolean; maxRevisions: number; externalCodex: boolean }>
   gatewayGroups: Volatile<Record<string, boolean>>
   gatewayCatalogHashes: Volatile<Record<string, string>>
@@ -17,6 +19,7 @@ export interface Config {
   wakeDistro: Volatile<string>
 }
 export const Config = z.object({
+  toolAutoReview: AutoReviewConfig.default({}).volatile(),
   cooperation: z
     .object({
       autoReview: z.boolean().default(true),

@@ -15,6 +15,7 @@ import { liveTranscriptDefinition, LIVE_TRANSCRIPT_KIND } from './live-transcrip
 import { DeliverAssetsRow } from './DeliverAssetsRow.tsx'
 import { deliverAssetsDefinition, DELIVER_ASSETS_KIND } from './deliver-assets.ts'
 import { StopEditControl } from './StopEditControl.tsx'
+import { protectEditBranchesFromNewSession } from './fresh-session.ts'
 import { HARNESS_TRANSCRIPT_TOOL } from '../contracts/tool-display.ts'
 import { remoteCall } from '../../shared/client/remote-call.ts'
 export const inject = ['slots', 'sessions', 'uiConversation', 'uiWorkspace', 'remote.oplExecution']
@@ -54,6 +55,11 @@ function sessionChanges(ctx: Context, sessionId: string, listener: () => void): 
 
 export function apply(ctx: Context): void {
   const call = remoteCall(ctx.remote.oplExecution)
+  ctx.effect(() =>
+    protectEditBranchesFromNewSession(ctx.uiWorkspace, ctx.sessions, (sessionId) =>
+      call('stop-edit-state', { sessionId }),
+    ),
+  )
   const sessionChangesFor = (sessionId: string, listener: () => void) =>
     sessionChanges(ctx, sessionId, listener)
   ctx.effect(() => ctx.uiConversation.events.register(liveTranscriptDefinition))
@@ -91,15 +97,11 @@ export function apply(ctx: Context): void {
       CombinationSelect,
     ),
   )
-  // 公开的会话级列表插槽：composer 左侧的紧凑控件，不替换任何官方部件。
-  // `inputActions` 与 `useInput` 由官方会话级标准 prop 提供；这里只注入本套件的调用句柄，
-  // 以及一个真正由官方会话控制流驱动的刷新订阅，让新会话首轮之后入口自动更新。
-  ctx.slots.inject('conversation.input.left', () =>
+  // 官方 activity 插槽在编辑时让出工具栏宽度，收起附件、权限和模型等普通控件。
+  ctx.slots.inject('conversation.input.activity', () =>
     ctx.slots.register(
       {
-        name: 'conversation.input.left',
-        id: 'opl-stop-edit',
-        order: 20,
+        name: 'conversation.input.activity',
         inject: (sessionId) => ({
           sessionId,
           call,

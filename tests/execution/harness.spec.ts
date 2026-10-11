@@ -151,6 +151,7 @@ async function nativeSetup(
     agents: { get: () => undefined, list: () => [] },
     waterfall: async (_event, _request, next) => next(),
     sessions: { list: () => [], get: () => session },
+    permissionPresets: { current: () => 'danger-full-access' },
     llm: {
       listProviders: () => providers,
       listConfigurableProviders: () => [],

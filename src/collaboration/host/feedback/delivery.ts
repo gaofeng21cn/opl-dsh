@@ -21,6 +21,7 @@ export class DeliveryPump {
   private timer: ReturnType<typeof setTimeout> | undefined
   private timerDueMs: number | undefined
   private closed = false
+  private sending: string | undefined
   private readonly stopping = new AbortController()
 
   constructor(
@@ -35,6 +36,11 @@ export class DeliveryPump {
   setAdapter(adapter: WakeAdapter): void {
     this.adapter = adapter
     this.schedule(0)
+  }
+
+  /** Whether transport currently owns this delivery attempt. */
+  isSending(deliveryId: string): boolean {
+    return this.sending === deliveryId
   }
 
   async flush(): Promise<TaskFlushValue> {
@@ -142,8 +148,11 @@ export class DeliveryPump {
     let attempted = 0
     let delivered = 0
     let exhausted = 0
-    for (const [deliveryId, stored] of [...outbox.entries()]) {
+    for (const [deliveryId] of [...outbox.entries()]) {
+      await this.beforePass()
       if (this.closed) break
+      const stored = outbox.get(deliveryId)
+      if (stored === undefined) continue
       if (stored.acknowledged || stored.retired) continue
       // A successful transport handoff is terminal for the sender. The Codex
       // queue owns the message from here; retrying before its receiver claims
@@ -155,26 +164,35 @@ export class DeliveryPump {
       }
       if (stored.nextAttemptAt !== null && Date.parse(stored.nextAttemptAt) > now) continue
       attempted += 1
-      const result = await this.sendBounded(stored)
-      // oxlint-disable-next-line typescript/no-unnecessary-condition -- disposal can set `closed` while the send is awaited.
-      if (this.closed) break
-      const attempts = stored.attempts + 1
-      if (result.accepted) delivered += 1
-      await this.commit(async () => {
-        // oxlint-disable-next-line typescript/no-non-null-assertion -- the entry was read above and only the attempt below rewrites it.
-        const latest = outbox.get(deliveryId)!
-        await outbox.put(deliveryId, {
-          ...latest,
-          stage: latest.acknowledged ? latest.stage : result.accepted ? 'delivered' : latest.stage,
-          attempts,
-          nextAttemptAt:
-            latest.acknowledged || result.accepted || attempts >= this.config.maxDeliveryAttempts
-              ? null
-              : new Date(Date.now() + this.retryDelayMs(attempts)).toISOString(),
-          updatedAt: this.now(),
+      this.sending = deliveryId
+      try {
+        const result = await this.sendBounded(stored)
+        // oxlint-disable-next-line typescript/no-unnecessary-condition -- disposal can set `closed` while the send is awaited.
+        if (this.closed) break
+        const attempts = stored.attempts + 1
+        if (result.accepted) delivered += 1
+        await this.commit(async () => {
+          // oxlint-disable-next-line typescript/no-non-null-assertion -- the entry was read above and only the attempt below rewrites it.
+          const latest = outbox.get(deliveryId)!
+          await outbox.put(deliveryId, {
+            ...latest,
+            stage: latest.acknowledged
+              ? latest.stage
+              : result.accepted
+                ? 'delivered'
+                : latest.stage,
+            attempts,
+            nextAttemptAt:
+              latest.acknowledged || result.accepted || attempts >= this.config.maxDeliveryAttempts
+                ? null
+                : new Date(Date.now() + this.retryDelayMs(attempts)).toISOString(),
+            updatedAt: this.now(),
+          })
         })
-      })
-      if (!result.accepted && attempts >= this.config.maxDeliveryAttempts) exhausted += 1
+        if (!result.accepted && attempts >= this.config.maxDeliveryAttempts) exhausted += 1
+      } finally {
+        this.sending = undefined
+      }
     }
     let pending = 0
     let nextDueAt: number | null = null

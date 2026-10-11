@@ -20,6 +20,8 @@ import { installCollaborationTools } from '../collaboration/host/tools.ts'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { modelDefaultEffort } from '../shared/model-reasoning.ts'
+import type { AutoReviewMaintenance } from '../auto-review/contracts/maintenance.ts'
+import { EXTERNAL_REVIEW_BINDING_SERVICE } from '../auto-review/host/index.ts'
 
 export const inject = [
   'llm',
@@ -43,6 +45,18 @@ export const inject = [
  */
 export function apply(ctx: Context, _config: Record<string, never>): void {
   const harness = createHarnessService(ctx)
+  const reviewerMaintenance: AutoReviewMaintenance = {
+    change: (operation) => harness.changeReviewerSettings(operation),
+  }
+  ctx.provide('oplAutoReviewMaintenance', reviewerMaintenance)
+  // Bind an external-Harness permission ask to the live ACP connection record.
+  // The binding is all-or-nothing: without the exact action, turn, connection
+  // generation and authorization the port returns null, and the Auto Review
+  // bridge then leaves the ask to the ordinary human approval chain.
+  ctx.provide(EXTERNAL_REVIEW_BINDING_SERVICE, {
+    bind: (agent: { session: { id: string } }, request: { callId?: string }) =>
+      harness.externalApprovalBinding(agent.session.id, request.callId),
+  })
   // Apply model defaults on official/custom routes before the request is logged.
   ctx.on('agent/request', async (payload, next) => {
     harness.assertRuntimeAvailable()

@@ -59,6 +59,8 @@ interface FeedbackSessionFacts {
     Record<string, { readonly seq: number; readonly turn: number | null }>
   >
   readonly finalToolSyntax: Readonly<Record<string, readonly string[]>>
+  readonly pendingApprovals: Readonly<Record<string, true>>
+  readonly lastApprovalSeq: number
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
@@ -70,7 +72,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 export const feedbackSessionFacts: ProjectionDefinition<'taskFeedbackFacts', FeedbackSessionFacts> =
   {
     key: 'taskFeedbackFacts',
-    stateVersion: 1,
+    stateVersion: 2,
     stateSchema: stateSchema.object({
       openTurn: stateSchema.number().int().nonnegative().nullable(),
       pendingInstructions: stateSchema.array(stateSchema.string()),
@@ -85,12 +87,16 @@ export const feedbackSessionFacts: ProjectionDefinition<'taskFeedbackFacts', Fee
         stateSchema.string(),
         stateSchema.array(stateSchema.string()),
       ),
+      pendingApprovals: stateSchema.record(stateSchema.string(), stateSchema.literal(true)),
+      lastApprovalSeq: stateSchema.number().int().nonnegative(),
     }),
     init: (): FeedbackSessionFacts => ({
       openTurn: null,
       pendingInstructions: [],
       instructions: {},
       finalToolSyntax: {},
+      pendingApprovals: {},
+      lastApprovalSeq: 0,
     }),
     apply: (state: FeedbackSessionFacts, event: SessionEvent): FeedbackSessionFacts => {
       switch (event.type) {
@@ -104,7 +110,18 @@ export const feedbackSessionFacts: ProjectionDefinition<'taskFeedbackFacts', Fee
           return { ...state, openTurn: event.data.turn, instructions, pendingInstructions: [] }
         }
         case 'turn/end':
-          return { ...state, openTurn: null }
+          return { ...state, openTurn: null, pendingApprovals: {} }
+        case 'approval/asked':
+          return {
+            ...state,
+            pendingApprovals: { ...state.pendingApprovals, [event.data.id]: true },
+            lastApprovalSeq: Number(event.seq),
+          }
+        case 'approval/decided': {
+          const pendingApprovals = { ...state.pendingApprovals }
+          delete pendingApprovals[event.data.id]
+          return { ...state, pendingApprovals, lastApprovalSeq: Number(event.seq) }
+        }
         case 'user/message': {
           const source = event.data.source
           if (

@@ -1,0 +1,5 @@
+/* Conversation margins remain ordinary space; panel separators keep their own handles. */
+:global([data-width-handle='left']),
+:global([data-width-handle='right']) {
+  display: none !important;
+}

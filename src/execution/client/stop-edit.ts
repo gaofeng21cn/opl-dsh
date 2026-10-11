@@ -45,6 +45,8 @@ export interface StopEditView {
   /** 上一次回退留下的原文，等客户端放回普通输入框。 */
   pendingDraft?: { text: string; clientRequestId: string }
   editBranch?: { sessionId: string; title: string }
+  /** 已提交结果中保存的原会话导航身份。 */
+  editSourceSessionId?: string
   /** 正在飞行的请求；状态刷新不会解除它，重复点击也只会得到同一个身份。 */
   inFlight?: { clientRequestId: string; boundaryId: string }
   /** 本次视图所属的会话；迟到的结果必须与它一致才允许落地。 */
@@ -257,6 +259,9 @@ export class StopEditStateStore {
         ...(still ? { inFlight: still } : {}),
         ...(state.pendingDraft === undefined ? {} : { pendingDraft: state.pendingDraft }),
         ...(state.editBranch === undefined ? {} : { editBranch: state.editBranch }),
+        ...(state.editSourceSessionId === undefined
+          ? {}
+          : { editSourceSessionId: state.editSourceSessionId }),
       })
     } catch {
       if (generation !== this.generation || this.sessionId !== sessionId) return

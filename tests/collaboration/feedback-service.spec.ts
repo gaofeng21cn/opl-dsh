@@ -8,6 +8,7 @@ import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import TaskFeedbackService from '../../src/collaboration/host/feedback/index.ts'
 import { feedbackSessionFacts } from '../../src/collaboration/host/feedback/session-facts.ts'
+import type { WakeDelivery } from '../../src/collaboration/host/feedback/types.ts'
 
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
@@ -91,7 +92,14 @@ async function fixture() {
     ctx.set('sessionProjections', {
       register: () => {},
       stateOf: (_session: Session, key: string) =>
-        key === 'taskFeedbackFacts' ? facts : undefined,
+        key === 'taskFeedbackFacts'
+          ? facts
+          : key === 'turnBoundary'
+            ? {
+                lastTurn: facts.openTurn ?? 1,
+                openTurnStartSeq: facts.openTurn === null ? null : 1,
+              }
+            : undefined,
     } as unknown as Context['sessionProjections'])
     await ctx.plugin(TaskFeedbackService, { autoDeliver, claimLeaseMs: 10_000, retryBaseMs: 1 })
     cleanups.push(() => ctx.fiber.dispose())
@@ -114,7 +122,23 @@ async function fixture() {
       await service.settled()
       return service.deliveries()[0]!
     }
-    return { ctx, service, complete }
+    async function emit(event: SessionEvent) {
+      facts = feedbackSessionFacts.apply(facts, event)
+      session.seq = event.seq
+      ctx.emit('session/event', session, event)
+      await service.settled()
+    }
+    async function start(taskId = 'task') {
+      await service.register({
+        taskId,
+        sessionId: session.id,
+        turn: 1,
+        target: { kind: 'codex-thread', threadId: 'target-thread' },
+        acceptance: 'verified outcome',
+      })
+      await emit({ type: 'turn/start', seq: 1, data: { turn: 1 } } as SessionEvent)
+    }
+    return { ctx, service, complete, emit, start }
   }
   return {
     mount,
@@ -127,10 +151,123 @@ async function fixture() {
 const accepting = () => ({
   id: 'test-transport',
   probe: async () => ({ started: true, detail: 'test' }),
-  send: vi.fn(async () => ({ accepted: true })),
+  send: vi.fn(async (_delivery: WakeDelivery) => ({ accepted: true })),
 })
 
 describe('feedback service durable lifecycle', () => {
+  it('skips an acknowledgment received while an earlier delivery is in flight', async () => {
+    const first = await (await fixture()).mount()
+    await first.complete('first')
+    await first.complete('second')
+    const entered = Promise.withResolvers<void>()
+    const result = Promise.withResolvers<{ accepted: boolean }>()
+    const transport = accepting()
+    transport.send.mockImplementationOnce(async () => {
+      entered.resolve()
+      return result.promise
+    })
+    first.service.setWakeAdapter(transport)
+    const flush = first.service.flush()
+    await entered.promise
+    const claim = await first.service.receive({
+      taskId: 'second',
+      deliveryId: 'second@completed',
+      consumerId: 'reviewer',
+    })
+    await first.service.consume({
+      taskId: 'second',
+      deliveryId: 'second@completed',
+      consumerId: 'reviewer',
+      claimEpoch: claim.receipt.claimEpoch,
+    })
+    result.resolve({ accepted: true })
+    await flush
+    expect(transport.send).toHaveBeenCalledOnce()
+  })
+
+  it('retires only the decided approval and keeps other simultaneous approvals deliverable', async () => {
+    const first = await (await fixture()).mount()
+    await first.start()
+    await first.emit({
+      type: 'approval/asked',
+      seq: 2,
+      data: { id: 'a', toolName: 'Bash' },
+    } as SessionEvent)
+    await first.emit({
+      type: 'approval/asked',
+      seq: 3,
+      data: { id: 'b', toolName: 'Read' },
+    } as SessionEvent)
+    await first.emit({
+      type: 'approval/decided',
+      seq: 4,
+      data: { id: 'a', outcome: 'allowed-once' },
+    } as SessionEvent)
+    const transport = accepting()
+    first.service.setWakeAdapter(transport)
+    await first.service.flush()
+    expect(transport.send).toHaveBeenCalledOnce()
+    expect(transport.send.mock.calls[0]?.[0]).toMatchObject({
+      deliveryId: 'task@waiting_approval@3',
+    })
+    expect(
+      first.service.deliveries().find((x) => x.deliveryId === 'task@waiting_approval@2'),
+    ).toMatchObject({ retired: true, attempts: 0 })
+  })
+
+  it('retires unsent pauses after completion and preserves retirement across restart', async () => {
+    const disk = await fixture(),
+      first = await disk.mount()
+    await first.start()
+    await first.emit({
+      type: 'approval/asked',
+      seq: 2,
+      data: { id: 'a', toolName: 'Bash' },
+    } as SessionEvent)
+    await first.emit({
+      type: 'turn/end',
+      seq: 3,
+      data: { turn: 1, reason: { kind: 'completed' } },
+    } as SessionEvent)
+    const transport = accepting()
+    first.service.setWakeAdapter(transport)
+    await first.service.flush()
+    expect(transport.send).toHaveBeenCalledOnce()
+    expect(transport.send.mock.calls[0]?.[0]).toMatchObject({ deliveryId: 'task@completed' })
+    await first.ctx.fiber.dispose()
+    const restarted = await disk.mount()
+    restarted.service.setWakeAdapter(transport)
+    expect(await restarted.service.flush()).toMatchObject({ attempted: 0 })
+    expect(
+      restarted.service.deliveries().find((x) => x.payload.state === 'waiting_approval')?.retired,
+    ).toBe(true)
+  })
+
+  it('keeps an accepted pause claimable after it resolves', async () => {
+    const first = await (await fixture()).mount()
+    await first.start()
+    await first.emit({
+      type: 'approval/asked',
+      seq: 2,
+      data: { id: 'a', toolName: 'Bash' },
+    } as SessionEvent)
+    first.service.setWakeAdapter(accepting())
+    await first.service.flush()
+    await first.emit({
+      type: 'approval/decided',
+      seq: 3,
+      data: { id: 'a', outcome: 'allowed-once' },
+    } as SessionEvent)
+    await first.service.flush()
+    expect(
+      await first.service.receive({
+        taskId: 'task',
+        deliveryId: 'task@waiting_approval@2',
+        consumerId: 'reviewer',
+      }),
+    ).toMatchObject({ action: 'review', delivery: { retired: false } })
+  })
+
   it('repairs the task/outbox split write on restart without registering or executing work again', async () => {
     const disk = await fixture(),
       first = await disk.mount()

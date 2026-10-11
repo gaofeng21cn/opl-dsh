@@ -90,6 +90,8 @@ export interface StopEditState {
   pendingDraft?: { text: string; clientRequestId: string }
   /** 已提交回退的分支入口；原会话重载后仍可打开尚无消息的分支。 */
   editBranch?: { sessionId: string; title: string }
+  /** 编辑分支对应的原会话，取自已提交结果；返回只导航，不撤销回退或清除草稿。 */
+  editSourceSessionId?: string
   /** 恒为 false：本流程从不撤销或恢复磁盘文件。 */
   filesRestored: false
   version: number

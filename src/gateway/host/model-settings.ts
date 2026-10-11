@@ -11,6 +11,24 @@ import type { ModelDraft, GatewayModelSettings } from '../contracts/models.ts'
 import { isRetiredModel } from '../../shared/models.ts'
 const record = (value: unknown): Record<string, any> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : {}
+
+/** Add the OPL-owned reviewer without replacing any existing chat provider. */
+export async function ensureAutoReviewProvider(ctx: Context): Promise<void> {
+  const descriptor = ctx.settings
+    .describe({ redactSecrets: true })
+    .find((item) => item.ns === 'llm-pi-ai')
+  if (!descriptor) throw Error('Auto Review requires the official pi-ai settings instance')
+  const provider = record(record(descriptor.value).providers)['opl-gateway-auto-review']
+  if (provider) return
+  const base = record(record(descriptor.base).providers)['opl-gateway-auto-review']
+  if (!base) throw Error('Auto Review provider is absent from the installed bundle')
+  await ctx.settings.mutate(
+    'llm-pi-ai',
+    [{ op: 'set', path: ['providers', 'opl-gateway-auto-review'], value: base }],
+    descriptor.revision,
+  )
+}
+
 export async function gatewayModelSettings(ctx: Context): Promise<GatewayModelSettings> {
   const settings = ctx.settings.describe({ redactSecrets: true })
   const account = await ctx.get('oplGatewayAccount')?.status()

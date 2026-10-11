@@ -108,13 +108,13 @@ function needsInputLines(notice: NeedsInputNotice, harness: HarnessExecution | n
           ...(notice.seq === null ? [] : [`log cursor ${String(notice.seq)}`]),
         ].join(', ')
   const lines = [
-    `needs-input: ${waitingFor} is paused for its human (${kind}) and is not finished. It keeps waiting until that human answers.`,
+    `needs-input observation: ${waitingFor} requested ${kind} at the recorded event. This queued notice does not establish that it is still waiting.`,
     `answer location: ${location}; the human answers there, and this service never submits an answer.`,
-    'do not answer: relay the question to your operator. Never submit a prompt as the answer, never decide an approval, and never resume this Session automatically.',
+    'do not answer: receive this delivery first. If the action is skip or busy, do not relay it. For review or resume, read the latest Session and verify this exact approval or question is still pending before asking your operator; otherwise record it as resolved and consume the claim. Never decide an approval or resume this Session automatically.',
   ]
   if (notice.approval !== null) {
     lines.push(
-      `approval: tool ${JSON.stringify(notice.approval.toolName)} (approval ${notice.approval.approvalId}) is waiting for its decision.`,
+      `approval observation: tool ${JSON.stringify(notice.approval.toolName)} (approval ${notice.approval.approvalId}) requested a decision at that event.`,
     )
   }
   for (const question of notice.questions) {

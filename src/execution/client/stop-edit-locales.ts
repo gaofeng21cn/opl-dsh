@@ -27,7 +27,14 @@ export const STOP_EDIT_COPY = {
   busyNote: '当前正在运行，将先停止并等待真正静止。',
   firstMessage: '首条消息',
   emptyMessage: '（空消息）',
-  branchOpen: '打开编辑分支',
+  returnToEdit: '回到上次编辑',
+  cancel: '取消编辑',
+  close: '关闭',
+  showNotice: '查看提示',
+  returnSource: '返回原对话',
+  returnHint: '返回原对话浏览；编辑分支和草稿会保留。',
+  editing: '正在编辑消息',
+  done: '原文已填回输入框',
   /** 支持的首批 Harness，首轮还没有任何已发送消息。 */
   waitingEmpty: '暂无可编辑的消息；发送一条消息后即可停止后编辑。',
   /** 支持的首批 Harness，当前仍有轮次在运行。busy 来自 Host，不来自本地推断。 */

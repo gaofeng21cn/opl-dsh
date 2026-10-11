@@ -321,7 +321,7 @@ export default class TaskFeedbackService extends TypertRemoteService {
       this.requireOutbox(),
       this.config,
       this.adapter,
-      () => this.settled(),
+      () => this.prepareDeliveries(),
       (operation) => this.commit(operation),
       (message, error) => this.ctx.logger.warn(message, error),
     )
@@ -421,6 +421,47 @@ export default class TaskFeedbackService extends TypertRemoteService {
         })
       })
     }
+  }
+
+  /** Retire resolved pauses before transport, retaining accepted handoffs and receipts. */
+  private async prepareDeliveries(): Promise<void> {
+    await this.settled()
+    await this.commit(async () => {
+      const outbox = this.requireOutbox()
+      for (const [deliveryId, stored] of outbox.entries()) {
+        if (
+          stored.stage !== 'enqueued' ||
+          stored.acknowledged ||
+          stored.retired ||
+          this.deliveryPump.isSending(deliveryId)
+        )
+          continue
+        const notice = stored.payload.needsInput
+        if (notice === null) continue
+        const task = this.live.get(stored.taskId)
+        if (task === undefined) continue
+        let resolved = ['completed', 'failed', 'cancelled'].includes(task.state)
+        if (task.execution.kind === 'harness-session') {
+          if (task.state !== 'disconnected')
+            resolved ||= task.needsInput?.pauseId !== notice.pauseId
+        } else {
+          const session = this.boundSession(task)
+          if (session !== undefined && notice.approval !== null && notice.seq !== null) {
+            const facts = this.ctx.sessionProjections.stateOf(session, 'taskFeedbackFacts')
+            if (facts !== undefined && facts.lastApprovalSeq >= notice.seq) {
+              resolved ||= !Object.hasOwn(facts.pendingApprovals, notice.approval.approvalId)
+            }
+          }
+        }
+        if (!resolved) continue
+        await outbox.put(deliveryId, {
+          ...stored,
+          retired: true,
+          nextAttemptAt: null,
+          updatedAt: this.now(),
+        })
+      }
+    })
   }
 
   /**

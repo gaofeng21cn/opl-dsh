@@ -89,6 +89,7 @@ export class ExecutionModelResolver {
       }
       try {
         for (const model of await this.ctx.llm.listModels(provider.id)) {
+          if (provider.id === 'opl-gateway' && model.id === 'codex::codex-auto-review') continue
           const ref = { provider: provider.id, model: model.id }
           if (isRetiredModel(ref)) continue
           const external =

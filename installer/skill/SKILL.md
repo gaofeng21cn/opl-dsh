@@ -9,6 +9,12 @@ description: 在同项目关联子对话中，用 DSH、Codex CLI、Claude Code�
 
 Windows 自动启动通过 WMI 的 `Win32_Process.Create` 创建套件启动器，使官方桌面不继承调用方的 Windows Job；安装后自动启动和 Skill 自动启动都使用同一 `launch.vbs → setup.mjs` 入口。该方式无需提权或安装服务，profile 和应用路径由套件启动器显式设置，不传递 Codex 进程的自定义环境变量。启动器按安装配置显式设置 `CODEX_HOME`，使通知 CLI 使用同一 Codex 状态目录；代理配置应保存在各 Harness 的运行配置中。WMI 被系统策略禁用或启动失败时明确报错，改由用户打开 OPL DSH 快捷方式；不回退成共享 Job 的自动启动。Windows 父 PID、不同 PID 或 `detached/unref` 不能代替独立生命周期验收。
 
+## 调试与安装时退出 Desktop
+
+用户已授权调试和安装时，代理负责正常退出为该工作启动的 Desktop、安装并独立启动，无需反复要求用户手动退出。先通过公开接口重新核验所有项目的 Session、原生与外部任务均无活动轮次或人工等待，再使用公开退出接口或 Computer Use 操作“应用 → 退出”。只有窗口关闭不足以确认退出；核对目标安装路径的 Desktop、Host 和启动器进程均已结束，再运行安装器。安装器拒绝更新运行中 Desktop 的检查仍须保留。不要强杀进程、停止活动任务或丢弃未保存内容来完成安装。
+
+正常退出被未保存内容对话框、系统策略或实际自动操作拒绝阻止时，说明具体阻塞和所需用户操作；不能仅因安装器要求先退出就转交用户。退出后的检查不要调用会自动启动 Desktop 的 helper；安装完成后沿用独立启动入口，核对安装清单与公开运行状态，并完成本轮回归。
+
 新任务未指定模型或 Harness 时，先读取 `config.json` 的 `preferredDelegation`（`harness`、`model`、`reasoningEffort`），按该偏好选择组合入口；用户明确指定时以用户选择为准。先查询 `delegate-list` 确认实际组合 ID、可用状态与固定参数，再使用 `delegate`。偏好为 MiniMax M3.1-Flash-Preview/max 时走官方 mcode 账号和 ACP，未显式选择时默认 max；权限仍须符合下文完整访问授权要求。偏好模型不可用时报告具体原因，不自动回退 DeepSeek 或其他模型。现有 Session 和 operation 的重试保留原模型与身份；此偏好只决定新任务。赞助或免费额度不代替任务权限，也不授权自动向厂商发送仓库、对话或诊断。
 
 派发前，为任务选择绝对工作目录，把提示词保存为 UTF-8 文件。提示词引用工作目录之外的审查报告、负例或交付目录时，写明绝对路径；不要用“本目录”混指仓库和报告目录。使用稳定的 task 与 operation ID；对同一次失败重试必须沿用原 ID，不得换 ID重复执行。
@@ -117,7 +123,7 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' del
 
 Huawei MaaS 的 `glm-5.2` 只通过官方 ZCode Harness 组合执行，端点固定为 `https://api.modelarts-maas.com/openai/v1`。Key 由设置页写入当前 Windows 用户的 Credential Manager（目标 `OPLDSH:HuaweiMaaS:ApiKey`）；配置文件只保存引用和 loopback 转发占位值，不回退到 `.env`、`credentials.yml` 或命令行参数。真实模型调用前必须由用户在本机配置 Key；没有 Key 时只允许运行不联网的协议和配置检查。
 
-ZCode 进程使用独立 loopback 转发按请求读取 Key，并由 Node.js 24.5 或更高版本的 `https.Agent({ proxyEnv })` 继承该 Harness 的代理；不得修改 Desktop 全局代理。GLM-5.2 的默认思考开关为启用，映射到 `chat_template_kwargs.thinking`；模型目录不添加未经华为官方文档确认的推理档位。ZCode 只接受用户明确授权的 full-access，并映射为官方 `yolo` 模式；任何受限权限在启动前拒绝。
+ZCode 进程使用独立 loopback 转发按请求读取 Key，并由 Node.js 24.5 或更高版本的 `https.Agent({ proxyEnv })` 继承该 Harness 的代理；不得修改 Desktop 全局代理。GLM-5.2 的默认思考开关为启用，映射到 `chat_template_kwargs.thinking`；模型目录不添加未经华为官方文档确认的推理档位。ZCode 只接受用户明确授权的 full-access；完整权限映射官方 `yolo`，原生会话显式选择 Auto 时新建官方 `build` 对话并通过精确权限询问绑定调用 codex-auto-review。模式创建后固定，切换模式需要新对话；任何受限权限在启动前拒绝。
 
 ## 外部 Harness 的 Windows Bash 派发
 
@@ -164,3 +170,7 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' rep
 已明确授权的旧完整访问任务若显示 `custom`，先确认对应普通 DSH 会话已空闲，再执行 `permissions --session <nativeSessionId> --preset danger-full-access`；随后读取 `permissions --session <nativeSessionId>`，核对 preset、sandbox、approval 分别为 `danger-full-access`、`danger-full-access`、`never`。该操作不发送模型 prompt，不批准挂起的工具请求，也不改动其他会话。
 
 MiniMax 候选的 Host 选择命令为 `minimax-candidate-select --version <候选版本> [--source <候选目录>]`。它通过公开 `oplExecution/select-minimax-candidate` 检查同一 Host 所有项目活动并持有维护互斥，把已校验启动器写入实际运行配置；不读取离线 `selection.json` 作为当前选择。省略来源可切回已导入版本，不覆盖已有版本或改官方账号。返回 `validation: static` 仅代表文件校验，仍须核对真实 ACP Shell、模型和 Bash。生产安装前按当前全局任务重新核验空闲；不能凭上一次审计或回执断言可切换。
+
+Auto Review 工具审批默认关闭；启用不自动改变现有会话权限。DSH 原生所有聊天模型和 ZCode 默认使用独立注册的 codex-auto-review，不继承聊天推理档位；显式固定审查模型仍优先。Codex、Claude 使用官方审核接口；其他未验证的外部 Auto 模式拒绝启动。审查模型只使用 Host 注册并广告的原生无工具 LLM 路线，不能把外部 MiniMax ACP 或其他 CLI 组合当作纯 LLM。已有完整访问授权的协作任务继续显式使用 danger-full-access/never，不为了测试审查而修改活动任务的权限。保存回执未知时先读取生效状态，不重发不确定保存；停用前由用户切换空闲 Auto 会话的权限，不自动放宽为完全权限或代答人工审批。
+
+Todo 面板只读取官方记录的 todos 投影。停止后未完成项静态显示，不能把会话或子会话结束解释为项目已完成；父与子会话活动独立，读不到状态时保留未知。不从正文解析清单，不按项目文字关联子会话，不为展示修改历史或发送模型请求。

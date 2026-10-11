@@ -1,5 +1,5 @@
 import { gatewayGroupEnabled } from './group-settings.ts'
-import { syncGatewayModels } from './model-settings.ts'
+import { ensureAutoReviewProvider, syncGatewayModels } from './model-settings.ts'
 /** OPL-owned credentials and model-group routing over official DSH adapters. */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -21,7 +21,7 @@ import type { ResolvedDeepSeekOptions } from '@deepseek-ai/dsh-llm-deepseek-api-
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/dsh-settings'
 import { OplGatewayAccountService } from './account-service.ts'
-import { GatewayModelAdapter, OPENAI_PROVIDER } from './model-router.ts'
+import { GatewayModelAdapter, OPENAI_PROVIDER, AUTO_REVIEW_PROVIDER } from './model-router.ts'
 import { GATEWAY_GROUPS, type GatewayGroupId } from '../contracts/groups.ts'
 import { Config, CODEX_API_KEY_REF, toAdapterConfig } from './config.ts'
 import { OPL_GATEWAY_INFERENCE_BASE_URL } from './opl-credentials.ts'
@@ -266,6 +266,14 @@ export function apply(ctx: Context, config: Config): void {
       (group) => {
         activeChannel = group
       },
+      {
+        group: 'codex',
+        provider: AUTO_REVIEW_PROVIDER,
+        adapter: delegated,
+        available: async () =>
+          gatewayGroupEnabled(ctx, 'codex') &&
+          !!(await ctx.get('credentials')?.resolve(credentialRef(CODEX_API_KEY_REF)))?.value,
+      },
     ),
   )
 
@@ -304,9 +312,26 @@ export function apply(ctx: Context, config: Config): void {
 
   // Non-volatile Config is remounted by the Loader when its profile patch changes.
   ctx.inject(['settings'], (child) => {
-    child.effect(() => child.settings.configure({ auto: false }, ctx.fiber))
+    child.effect(() => {
+      const dispose = child.settings.configure({ auto: false }, ctx.fiber)
+      return dispose
+    })
+    let restored = false
+    let closed = false
+    child.effect(() => () => {
+      closed = true
+    })
+    const restore = () => {
+      if (closed || restored || !child.settings.describe().some((item) => item.ns === 'llm-pi-ai'))
+        return
+      restored = true
+      void ensureAutoReviewProvider(child).catch(() => {
+        child.logger.warn('llm-opl-gateway: Auto Review provider could not be restored')
+      })
+    }
+    child.on('internal/status', () => queueMicrotask(restore))
+    queueMicrotask(restore)
   })
-
   // Search uses the account's Codex-group credential; fetching stays in the
   // official HTTP provider. No separate preferences, Remote or accounting store.
   ctx.inject(['web'], (webCtx) => {

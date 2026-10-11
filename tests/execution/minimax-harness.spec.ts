@@ -78,6 +78,7 @@ async function setup(
 
   const current = { provider: MINIMAX_CODE_PROVIDER, model: options.nativeModel ?? 'MiniMax-M3' }
   const ctx = {
+    permissionPresets: { current: () => options.nativeMode ?? 'danger-full-access' },
     sessions: { list: () => [] },
     waterfall: async (_name: unknown, _request: unknown, next: () => Promise<unknown[]>) => next(),
     get: () => undefined,

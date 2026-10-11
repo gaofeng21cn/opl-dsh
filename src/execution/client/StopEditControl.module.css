@@ -1,6 +1,11 @@
 /** 停止后编辑入口：普通侧栏对话内选择一条已发送的消息，把原文放回输入框。 */
 .root {
   position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
 }
 .trigger {
   display: inline-flex;
@@ -26,7 +31,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: 320px;
+  width: min(360px, calc(100vw - 64px));
+  box-sizing: border-box;
   max-height: 320px;
   padding: 8px;
   overflow: auto;
