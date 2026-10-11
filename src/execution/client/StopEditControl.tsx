@@ -26,6 +26,9 @@ interface ControlProps {
   /** 官方 Workspace 导航动作；打开分支但不发送消息。 */
   openSession: (sessionId: string) => void
   call: ExecutionCall
+  locked?: boolean
+  /** 官方 toolbar activity 的展开与释放。 */
+  onActiveChange?: (active: boolean) => void
 }
 
 /**
@@ -46,11 +49,14 @@ export function StopEditControl({
   subscribeSession,
   openSession,
   call,
+  locked = false,
+  onActiveChange,
 }: ControlProps) {
   const latest = useRef({ sessionId, inputActions, call, draft: '' })
   latest.current = { sessionId, inputActions, call, draft: '' }
   const mounted = useRef(true)
   const applied = useRef('')
+  const root = useRef<HTMLDivElement>(null)
   /**
    * 当前这段界面真正拥有的 store 身份，以及最近一次创建的 store。
    *
@@ -60,6 +66,12 @@ export function StopEditControl({
   const owner = useRef<object>({})
   const active = useRef<StopEditStateStore | undefined>(undefined)
   const [notice, setNotice] = useState('')
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const [noticeError, setNoticeError] = useState(false)
+  const [draftDismissed, setDraftDismissed] = useState(false)
+  const [editingFinished, setEditingFinished] = useState(false)
+  const [editingDismissed, setEditingDismissed] = useState(false)
+  const editDraftObserved = useRef(false)
   const [placedDraft, setPlacedDraft] = useState('')
   const [createdBranch, setCreatedBranch] = useState<{ sessionId: string; title: string }>()
   const store = useMemo(() => {
@@ -76,6 +88,8 @@ export function StopEditControl({
         if (owner.current !== token) return
         if (failedSession !== latest.current.sessionId) return
         setNotice(message)
+        setNoticeError(true)
+        setDetailsOpen(true)
       },
     })
     active.current = instance
@@ -102,6 +116,12 @@ export function StopEditControl({
     applied.current = ''
     setPlacedDraft('')
     setNotice('')
+    setDetailsOpen(false)
+    setNoticeError(false)
+    setDraftDismissed(false)
+    setEditingFinished(false)
+    setEditingDismissed(false)
+    editDraftObserved.current = false
     setCreatedBranch(undefined)
     const off = subscribeSession?.(sessionId, () => void store.load(sessionId))
     void store.load(sessionId)
@@ -125,12 +145,72 @@ export function StopEditControl({
   const waiting = waitingStatus(view)
   const unavailable = unavailableReason(view)
   const branch = createdBranch ?? view.editBranch
+  const menuAvailable = visible || branch !== undefined
   const pending = view.pendingDraft
   // 已经填回输入框的原文不再当作“待回填”；Host 的持久草稿仍在，直到确认成功才清除。
   const showDraft =
     pending !== undefined && pending.text !== '' && pending.clientRequestId !== placedDraft
   const recovery = recoveryReadVisible(view)
-  if (!visible && !waiting && !unavailable && !notice && !recovery && !branch && !showDraft)
+  const working = view.phase === 'stopping' || view.phase === 'rewinding'
+  const editableDraft =
+    !!view.editSourceSessionId && !editingFinished && currentDraft !== '' && !view.busy
+  const editing = editableDraft && !editingDismissed
+  useEffect(() => {
+    if (!view.editSourceSessionId) return
+    if (currentDraft !== '') editDraftObserved.current = true
+    if (view.busy || (editDraftObserved.current && !view.pendingDraft && currentDraft === ''))
+      setEditingFinished(true)
+  }, [view.editSourceSessionId, view.busy, view.pendingDraft, currentDraft])
+  const expanded =
+    view.phase === 'choosing' || working || (showDraft && !draftDismissed) || editing || detailsOpen
+  useEffect(() => {
+    onActiveChange?.(expanded)
+    return () => onActiveChange?.(false)
+  }, [expanded, onActiveChange])
+  useEffect(() => {
+    if (view.error) setDetailsOpen(true)
+  }, [view.error])
+  useEffect(() => {
+    if (!expanded || working || typeof document.addEventListener !== 'function') return
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      if (editing && view.editSourceSessionId) openSession(view.editSourceSessionId)
+      else {
+        store.close()
+        setDetailsOpen(false)
+        setDraftDismissed(true)
+      }
+    }
+    document.addEventListener('keydown', escape, true)
+    return () => document.removeEventListener('keydown', escape, true)
+  }, [expanded, working, editing, view.editSourceSessionId, openSession, store])
+  useEffect(() => {
+    if (!expanded || working) return
+    const outside = (event: PointerEvent) => {
+      const inside = editing
+        ? (root.current?.closest('[data-composer-card]') ?? root.current)
+        : root.current
+      if (inside?.contains(event.target as Node)) return
+      store.close()
+      setDetailsOpen(false)
+      setDraftDismissed(true)
+      setEditingDismissed(true)
+    }
+    document.addEventListener('pointerdown', outside, true)
+    return () => document.removeEventListener('pointerdown', outside, true)
+  }, [expanded, working, editing, store])
+  if (
+    !visible &&
+    !waiting &&
+    !unavailable &&
+    !notice &&
+    !recovery &&
+    !branch &&
+    !showDraft &&
+    !view.editSourceSessionId
+  )
     return null
 
   /** 用户主动把待填原文放回输入框；只有输入框为空时才允许，避免覆盖正在写的内容。 */
@@ -158,7 +238,11 @@ export function StopEditControl({
     if (now.sessionId !== from) return
     // 措辞按这一刻的事实：输入框里已经有草稿时，原文并没有被放回去。
     setNotice(describeOutcome(result, !result.moved && now.draft !== '' ? 'kept' : 'input'))
-    if (result.moved) setCreatedBranch({ sessionId: result.sessionId, title: result.branchTitle })
+    setNoticeError(false)
+    if (result.moved) {
+      setCreatedBranch({ sessionId: result.sessionId, title: result.branchTitle })
+      openSession(result.sessionId)
+    }
     if (!result.moved && now.draft === '') {
       applied.current = result.clientRequestId
       setPlacedDraft(result.clientRequestId)
@@ -169,35 +253,64 @@ export function StopEditControl({
     void store.load(from)
   }
 
-  const working = view.phase === 'stopping' || view.phase === 'rewinding'
+  const close = () => {
+    if (working) return
+    store.close()
+    setDetailsOpen(false)
+    setDraftDismissed(true)
+  }
   return (
-    <div data-opl-stop-edit="" className={css.root}>
-      {visible ? (
+    <div
+      ref={root}
+      data-opl-stop-edit=""
+      data-editing={editing || undefined}
+      className={css.root}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || working) return
+        event.stopPropagation()
+        if (editing && view.editSourceSessionId) openSession(view.editSourceSessionId)
+        else close()
+      }}
+    >
+      {editing ? <span className={css.status}>{STOP_EDIT_COPY.editing}</span> : null}
+      {editableDraft && editingDismissed ? (
+        <button type="button" className={css.trigger} onClick={() => setEditingDismissed(false)}>
+          {STOP_EDIT_PHASE_LABEL.idle}
+        </button>
+      ) : null}
+      {menuAvailable && !editing ? (
         <button
           type="button"
           className={css.trigger}
           aria-expanded={view.phase === 'choosing'}
           aria-busy={working}
-          disabled={working}
-          onClick={() => (view.phase === 'choosing' ? store.close() : store.open())}
+          disabled={working || locked}
+          title={STOP_EDIT_COPY.panelHint}
+          onClick={() => (view.phase === 'choosing' ? close() : store.open())}
         >
-          {STOP_EDIT_PHASE_LABEL[view.phase]}
+          {view.phase === 'choosing'
+            ? STOP_EDIT_PHASE_LABEL.idle
+            : STOP_EDIT_PHASE_LABEL[view.phase]}
         </button>
       ) : null}
-      {waiting ? <div className={css.status}>{waiting}</div> : null}
-      {unavailable ? <div className={css.status}>{unavailable}</div> : null}
-      {visible && view.phase === 'choosing' ? (
+      {!menuAvailable && !editableDraft && ((waiting && view.busy) || unavailable) ? (
+        <button type="button" className={css.trigger} disabled title={waiting ?? unavailable}>
+          {STOP_EDIT_PHASE_LABEL.idle}
+        </button>
+      ) : null}
+      {menuAvailable && view.phase === 'choosing' ? (
         <div className={css.panel} role="menu">
-          <div className={css.title}>{STOP_EDIT_COPY.panelTitle}</div>
-          <div className={css.hint}>{STOP_EDIT_COPY.panelHint}</div>
+          <div className={css.title} title={STOP_EDIT_COPY.panelHint}>
+            {STOP_EDIT_COPY.panelTitle}
+          </div>
           {view.busy ? <div className={css.busy}>{STOP_EDIT_COPY.busyNote}</div> : null}
-          {[...view.boundaries].reverse().map((boundary) => (
+          {(visible ? [...view.boundaries].reverse() : []).map((boundary) => (
             <button
               key={boundary.id}
               type="button"
               role="menuitem"
               className={css.row}
-              disabled={working || boundary.blocked === true}
+              disabled={working || locked || boundary.blocked === true}
               title={boundary.blocked ? boundary.blockedReason : boundary.contentHead}
               onClick={() => void choose(boundary.id)}
             >
@@ -215,10 +328,25 @@ export function StopEditControl({
               ) : null}
             </button>
           ))}
+          {branch ? (
+            <button
+              type="button"
+              role="menuitem"
+              className={css.trigger}
+              title={branch.title}
+              disabled={working || locked}
+              onClick={() => openSession(branch.sessionId)}
+            >
+              {STOP_EDIT_COPY.returnToEdit}
+            </button>
+          ) : null}
+          <button type="button" className={css.trigger} onClick={close}>
+            {STOP_EDIT_COPY.cancel}
+          </button>
         </div>
       ) : null}
-      {showDraft && pending ? (
-        <div className={css.draft}>
+      {showDraft && pending && !draftDismissed ? (
+        <div className={css.panel}>
           <div className={css.draftTitle}>{STOP_EDIT_COPY.draftTitle}</div>
           <div className={css.draftText}>{pending.text}</div>
           {currentDraft !== '' ? <div className={css.hint}>{STOP_EDIT_COPY.draftKept}</div> : null}
@@ -231,26 +359,68 @@ export function StopEditControl({
           >
             {STOP_EDIT_COPY.draftRefill}
           </button>
+          <button type="button" className={css.trigger} onClick={close}>
+            {STOP_EDIT_COPY.close}
+          </button>
         </div>
       ) : null}
-      {notice ? <div className={css.result}>{notice}</div> : null}
-      {branch ? (
+      {showDraft && draftDismissed ? (
+        <button type="button" className={css.trigger} onClick={() => setDraftDismissed(false)}>
+          {STOP_EDIT_COPY.draftTitle}
+        </button>
+      ) : null}
+      {notice && !noticeError && !detailsOpen && !branch && !editing && !showDraft ? (
+        <span className={css.status} title={notice}>
+          {STOP_EDIT_COPY.done}
+        </span>
+      ) : null}
+      {noticeError && !detailsOpen ? (
+        <button type="button" className={css.recovery} onClick={() => setDetailsOpen(true)}>
+          {STOP_EDIT_COPY.showNotice}
+        </button>
+      ) : null}
+      {view.editSourceSessionId && !editingDismissed ? (
         <button
           type="button"
           className={css.trigger}
-          title={branch.title}
-          onClick={() => openSession(branch.sessionId)}
+          title={STOP_EDIT_COPY.returnHint}
+          disabled={working}
+          onClick={() => openSession(view.editSourceSessionId!)}
         >
-          {STOP_EDIT_COPY.branchOpen}
+          {STOP_EDIT_COPY.returnSource}
         </button>
       ) : null}
       {recovery ? (
-        <div className={view.error ? css.error : css.status}>
-          {view.error ? <div>{view.error}</div> : null}
-          <button type="button" className={css.recovery} onClick={() => void store.load(sessionId)}>
-            {STOP_EDIT_COPY.recoveryRead}
+        <div className={detailsOpen ? css.panel : undefined}>
+          {detailsOpen ? (
+            <>
+              {view.error ? <div>{view.error}</div> : null}
+              {unavailable ? <div>{unavailable}</div> : null}
+              <button
+                type="button"
+                className={css.recovery}
+                title={STOP_EDIT_COPY.recoveryReadHint}
+                onClick={() => void store.load(sessionId)}
+              >
+                {STOP_EDIT_COPY.recoveryRead}
+              </button>
+              <button type="button" className={css.trigger} onClick={close}>
+                {STOP_EDIT_COPY.close}
+              </button>
+            </>
+          ) : (
+            <button type="button" className={css.recovery} onClick={() => setDetailsOpen(true)}>
+              {STOP_EDIT_COPY.recoveryRead}
+            </button>
+          )}
+        </div>
+      ) : null}
+      {notice && detailsOpen && !recovery ? (
+        <div className={css.panel}>
+          <div className={css.error}>{notice}</div>
+          <button type="button" className={css.trigger} onClick={close}>
+            {STOP_EDIT_COPY.close}
           </button>
-          <div className={css.hint}>{STOP_EDIT_COPY.recoveryReadHint}</div>
         </div>
       ) : null}
     </div>

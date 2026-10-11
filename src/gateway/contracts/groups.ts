@@ -59,4 +59,5 @@ export const GATEWAY_GROUPS = [
 export type GatewayGroupId = (typeof GATEWAY_GROUPS)[number]['id']
 export type GatewayGroupName = (typeof GATEWAY_GROUPS)[number]['name']
 export const internalGatewayProvider = (id: string) =>
+  id === 'opl-gateway-auto-review' ||
   GATEWAY_GROUPS.some((group) => group.id !== 'deepseek' && group.provider === id)

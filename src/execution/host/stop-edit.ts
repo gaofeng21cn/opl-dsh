@@ -241,7 +241,16 @@ export class StopEditService {
       intent.result.preservedSessionId === request.sessionId
         ? { sessionId: intent.result.sessionId, title: intent.result.branchTitle }
         : undefined
-    const branch = editBranch ? { editBranch } : {}
+    const editSourceSessionId =
+      intent?.phase === 'committed' &&
+      intent.result?.moved &&
+      intent.result.sessionId === request.sessionId
+        ? intent.result.preservedSessionId
+        : undefined
+    const branch = {
+      ...(editBranch ? { editBranch } : {}),
+      ...(editSourceSessionId ? { editSourceSessionId } : {}),
+    }
     const denied = (reason: string, extra: Partial<StopEditState> = {}): StopEditState => ({
       sessionId: request.sessionId,
       supported: false,

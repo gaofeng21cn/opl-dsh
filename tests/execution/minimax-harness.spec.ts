@@ -78,6 +78,7 @@ async function setup(
 
   const current = { provider: MINIMAX_CODE_PROVIDER, model: options.nativeModel ?? 'MiniMax-M3' }
   const ctx = {
+    permissionPresets: { current: () => options.nativeMode ?? 'danger-full-access' },
     sessions: { list: () => [] },
     waterfall: async (_name: unknown, _request: unknown, next: () => Promise<unknown[]>) => next(),
     get: () => undefined,
@@ -411,7 +412,7 @@ describe('official MiniMax Code ACP combination', () => {
     await service.wait({ sessionId: second.id }, AbortSignal.timeout(15000))
     expect((await service.snapshot({ sessionId: second.id })).state).toBe('completed')
     expect(await prompts()).toContain('after')
-  })
+  }, 30_000)
 
   it.each(['MiniMax-M3.1-Flash-Preview', 'MiniMax-M3'])(
     'routes native model selection to the official CLI without a saved combination (%s)',

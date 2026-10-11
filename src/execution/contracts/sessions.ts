@@ -90,6 +90,10 @@ export interface HarnessSession {
   /** True when the official Harness supplied the title rather than the prompt fallback. */
   titleFromHarness?: boolean
   sandbox: 'read-only' | 'workspace' | 'full-access'
+  /** Official ZCode mode frozen at creation; absent legacy records use yolo. */
+  zcodeMode?: 'build' | 'yolo'
+  /** Official reviewer enabled at creation; absent legacy records retain direct mode. */
+  externalAutoReview?: boolean
   createdAt: string
   updatedAt: string
   turns: HarnessTurn[]

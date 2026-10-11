@@ -10,6 +10,8 @@ export type * from '../collaboration/host/feedback/types.ts'
 export type * from '../setup/contracts.ts'
 export type * from '../credentials/contracts/huawei-maas.ts'
 export type * from '../credentials/contracts/windows-keyring.ts'
+export type * from '../context-budget/contracts/budget.ts'
+export type * from '../auto-review/contracts/settings.ts'
 export interface GatewayModelEdit {
   group: string
   revision: number

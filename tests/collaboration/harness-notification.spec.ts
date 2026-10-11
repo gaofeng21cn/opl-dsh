@@ -529,7 +529,7 @@ describe('combination notification path', () => {
     const waiting = messagesOf(kit.transport)[0]!
     expect(waiting).toContain('reached state "waiting_approval"')
     expect(waiting).toContain(
-      'needs-input: this combination session is paused for its human (a tool approval)',
+      'needs-input observation: this combination session requested a tool approval at the recorded event',
     )
     expect(waiting).toContain(`approval ${approval.id}`)
     expect(waiting).toContain('answer location: combination session')

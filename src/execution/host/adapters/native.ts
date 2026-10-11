@@ -12,6 +12,29 @@ export async function nativeAvailable(name: string, id: string, options: Adapter
     ? { available: true }
     : { available: false, reason: `未找到官方 ${name}，请在 Harness 页检查安装` }
 }
+/**
+ * Whether this record asks the official Harness for its own Auto Review route.
+ *
+ * The Auto permission preset is published as the `externalAutoReview` flag on the frozen
+ * `HarnessSession` record. Only the literal `true` enables the route; absent and `false`
+ * both mean "not an Auto session", which keeps every read-only / workspace / full-access
+ * session on its current path.
+ *
+ * A value that is present but not a boolean is a wiring fault, not a permission decision, so
+ * it refuses the launch. The persisted form is re-validated here even though the store also
+ * checks it on read: quietly treating it as `false` could run an Auto session as an ordinary
+ * full-access or never-ask session, which is exactly the silent downgrade this flag exists
+ * to prevent.
+ * @param record - the persisted session record being launched.
+ * @returns true only when the record explicitly asks for the official Auto Review route.
+ * @throws when the flag is present and is not a boolean.
+ */
+export function externalAutoReviewRequested(record: HarnessSession): boolean {
+  const value: unknown = record.externalAutoReview
+  if (value === undefined) return false
+  if (typeof value !== 'boolean') throw Error('Auto Review 标记不是布尔值，拒绝启动官方 Harness')
+  return value
+}
 export async function prepareNative(
   ctx: Context,
   record: HarnessSession,
@@ -29,6 +52,9 @@ export async function prepareNative(
   // resolve Git Bash here where the full environment is visible and hand the path down. An
   // explicit but unusable OPL_GIT_BASH_PATH is rejected before a session is ever launched.
   const gitBash = resolveNativeGitBash()
+  // Read before building the environment: a malformed flag must refuse the launch rather
+  // than start a session whose permission mode nobody can name.
+  const autoReview = externalAutoReviewRequested(record)
   return {
     home,
     command: process.execPath,
@@ -46,6 +72,10 @@ export async function prepareNative(
       // Codex has no upstream Git Bash interface, so the opt-in is carried explicitly and the
       // bridge verifies the real shell instead of assuming the request took effect.
       ...(codexGitBashOptIn() ? { OPL_NATIVE_CODEX_GIT_BASH: '1' } : {}),
+      // Only an explicit Auto record sets this. The bridge owns the per-Harness evidence
+      // that the installed CLI really reports its official auto reviewer, and refuses the
+      // session when it cannot. It is never derived from the sandbox profile.
+      ...(autoReview ? { OPL_NATIVE_AUTO_REVIEW: '1' } : {}),
       ...environment(home, base, key),
     },
   }

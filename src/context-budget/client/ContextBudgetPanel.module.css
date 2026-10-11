@@ -1,0 +1,115 @@
+/** 上下文预算只读面板：输入框上方的紧凑浮层，不进入对话正文。 */
+.root {
+  position: relative;
+}
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--opl-border, rgb(0 0 0 / 12%));
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.trigger[aria-expanded='true'] {
+  background: var(--opl-surface-hover, rgb(0 0 0 / 6%));
+}
+.trigger:focus-visible {
+  outline: 2px solid var(--opl-focus, rgb(0 0 0 / 45%));
+  outline-offset: 1px;
+}
+.panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 340px;
+  max-height: 60vh;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--opl-border, rgb(0 0 0 / 12%));
+  border-radius: 8px;
+  background: var(--opl-surface, #fff);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.title {
+  font-size: 12px;
+  font-weight: 600;
+}
+.status {
+  color: var(--opl-text-muted, rgb(0 0 0 / 60%));
+  font-size: 11px;
+  line-height: 1.5;
+}
+.error {
+  color: var(--opl-danger, #b3261e);
+  font-size: 12px;
+}
+.failure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+.actions {
+  display: flex;
+  justify-content: flex-start;
+}
+.retry {
+  padding: 2px 8px;
+  border: 1px solid var(--opl-border, rgb(0 0 0 / 12%));
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.retry:focus-visible {
+  outline: 2px solid var(--opl-focus, rgb(0 0 0 / 45%));
+  outline-offset: 1px;
+}
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 6px 0;
+  border-top: 1px solid var(--opl-border, rgb(0 0 0 / 8%));
+}
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.term {
+  flex: none;
+  max-width: 45%;
+  color: var(--opl-text-muted, rgb(0 0 0 / 60%));
+}
+.value {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+.figure {
+  font-weight: 500;
+}
+.unit {
+  color: var(--opl-text-muted, rgb(0 0 0 / 60%));
+  font-size: 11px;
+}

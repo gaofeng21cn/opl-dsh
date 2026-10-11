@@ -207,3 +207,67 @@ describe('explicit group routing', () => {
     await expect(collect(adapter)).rejects.toMatchObject({ code: 'MISSING_CREDENTIAL' })
   })
 })
+
+describe('dedicated reviewer routing', () => {
+  it('keeps the reviewer independent from a user-owned chat model list', async () => {
+    const run = vi.fn(async function* (options: GenerateOptions): AsyncGenerator<StreamChunk> {
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    })
+    const ordinary = vi.fn(async function* (): AsyncGenerator<StreamChunk> {
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    })
+    const adapter = new GatewayModelAdapter(
+      [
+        {
+          group: 'codex',
+          provider: 'chat',
+          adapter: new Adapter(ordinary, ['gpt-6-sol']),
+          available: async () => true,
+        },
+      ],
+      () => {},
+      {
+        group: 'codex',
+        provider: 'opl-gateway-auto-review',
+        adapter: new Adapter(run, ['codex-auto-review']),
+        available: async () => true,
+      },
+    )
+    expect((await adapter.listModels('opl-gateway')).map((model) => model.id)).toEqual([
+      'codex::gpt-6-sol',
+      'codex::codex-auto-review',
+    ])
+    await collect(adapter, { ...request, model: 'codex::codex-auto-review' })
+    expect(run.mock.calls[0]?.[0]).toMatchObject({
+      provider: 'opl-gateway-auto-review',
+      model: 'codex-auto-review',
+    })
+    expect(ordinary).not.toHaveBeenCalled()
+  })
+  it('does not borrow a chat route when the dedicated provider is unavailable', async () => {
+    const run = async function* (): AsyncGenerator<StreamChunk> {
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    }
+    const adapter = new GatewayModelAdapter(
+      [
+        {
+          group: 'codex',
+          provider: 'chat',
+          adapter: new Adapter(run, ['codex-auto-review']),
+          available: async () => true,
+        },
+      ],
+      () => {},
+      {
+        group: 'codex',
+        provider: 'dedicated',
+        adapter: new Adapter(run, ['codex-auto-review']),
+        available: async () => false,
+      },
+    )
+    expect(await adapter.listModels('opl-gateway')).toEqual([])
+    await expect(
+      collect(adapter, { ...request, model: 'codex::codex-auto-review' }),
+    ).rejects.toThrow('凭据未就绪')
+  })
+})

@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { editGatewayModels, syncGatewayModels } from '../../src/gateway/host/model-settings.ts'
+import {
+  editGatewayModels,
+  ensureAutoReviewProvider,
+  syncGatewayModels,
+} from '../../src/gateway/host/model-settings.ts'
 function fixture() {
   const state: any = {
     'opl-suite': {
@@ -22,6 +26,19 @@ function fixture() {
       Object.entries(state).map(([ns, value]) => ({
         ns,
         value,
+        base:
+          ns === 'llm-pi-ai'
+            ? {
+                providers: {
+                  'opl-gateway-auto-review': {
+                    api: 'openai-responses',
+                    baseURL: 'https://gateway.medopl.com/v1',
+                    apiKeyEnv: 'OPL_GATEWAY_CODEX_API_KEY',
+                    models: [{ id: 'codex-auto-review' }],
+                  },
+                },
+              }
+            : {},
         user: users[ns],
         revision: revisions[ns],
       })),
@@ -112,6 +129,29 @@ describe('native model settings authority', () => {
     f.discover.mockResolvedValue([{ id: 'deepseek-flash' }, { id: 'gpt-new' }])
     await syncGatewayModels(f.ctx)
     expect(f.state['llm-pi-ai'].providers['opl-gateway-openai'].models).toEqual([{ id: 'gpt-new' }])
+  })
+
+  it('upgrades only the hidden reviewer when user providers replace bundle providers', async () => {
+    const f = fixture()
+    const chat = structuredClone(f.state['llm-pi-ai'].providers)
+    await ensureAutoReviewProvider(f.ctx)
+    expect(f.state['llm-pi-ai'].providers['opl-gateway-openai']).toEqual(chat['opl-gateway-openai'])
+    expect(f.users['llm-pi-ai'].providers['opl-gateway-auto-review'].models).toEqual([
+      { id: 'codex-auto-review' },
+    ])
+    await ensureAutoReviewProvider(f.ctx)
+    expect(f.settings.mutate).toHaveBeenCalledTimes(1)
+    expect(f.settings.mutate.mock.calls[0]?.[2]).toBe(0)
+  })
+  it('preserves an existing hidden provider and refuses stale upgrade writes', async () => {
+    const f = fixture()
+    f.state['llm-pi-ai'].providers['opl-gateway-auto-review'] = { models: [] }
+    await ensureAutoReviewProvider(f.ctx)
+    expect(f.settings.mutate).not.toHaveBeenCalled()
+    delete f.state['llm-pi-ai'].providers['opl-gateway-auto-review']
+    f.settings.mutate.mockRejectedValueOnce(Error('conflict'))
+    await expect(ensureAutoReviewProvider(f.ctx)).rejects.toThrow('conflict')
+    expect(f.state['llm-pi-ai'].providers['opl-gateway-auto-review']).toBeUndefined()
   })
 })
 

@@ -4,6 +4,10 @@
 
 已实现同项目委派、同步等待与异步交付、报告与验收分离、要求修改后继续原子对话、取消后代、项目写队列、只读并行、重启不重发，以及持久交付去重。主界面保持官方 DSH 会话列表、消息流和输入框；外部任务的组合、父子关系、交付与验收由后台 `HarnessService` 持久化，设置页只保留运行配置与外部接入维护。
 
+发送每条协作通知前重新读取回执；已领取的通知不再投递。尚未送出的审批或问题通知在确认解决后退役，记录保留在 outbox；并行审批按各自的审批 ID 核对。已经交给 Codex 队列的消息无法撤回，因此等待通知描述的是记录时的事件。接收方先 `receive`，仅在 `review` 或 `resume` 时读取最新会话，确认对应审批或问题仍待处理后才请用户操作；`skip` 或 `busy` 不再转述。
+
+`taskFeedbackFacts` 投影缓存版本为 2，新增待处理审批 ID 和最后审批事件位置；旧缓存从原始会话日志重新投影，不修改会话日志或 task/outbox/receipt 格式。
+
 ## 验收
 
 2026-09-27，在未改资源和签名的官方 macOS 桌面 0.1.7-rc.2、隔离 profile 中，GPT-6 Sol＋Codex 自主调用工具委派 DeepSeek＋DSH。DeepSeek 读取 input.txt、执行复制生成 output.txt，并调用 report_harness_task。Sol 独立读取和比较两文件，再调用 review_harness_task，结果 accepted。两个文件均为 21 字节，逐字节一致；完整摘要见 [验收记录](evidence/collaboration-20260927.json)。

@@ -678,6 +678,10 @@ describe('幂等、请求身份与恢复', () => {
       title: result.branchTitle,
     })
     expect((await h.service.state({ sessionId: result.sessionId })).editBranch).toBeUndefined()
+    expect((await h.service.state({ sessionId: result.sessionId })).editSourceSessionId).toBe(
+      'session-1',
+    )
+    expect((await h.service.state({ sessionId: 'session-1' })).editSourceSessionId).toBeUndefined()
     expect(
       await h.service.acknowledge({
         sessionId: result.sessionId,
@@ -685,6 +689,9 @@ describe('幂等、请求身份与恢复', () => {
       }),
     ).toBe(true)
     expect((await h.service.state({ sessionId: result.sessionId })).pendingDraft).toBeUndefined()
+    expect((await h.service.state({ sessionId: result.sessionId })).editSourceSessionId).toBe(
+      'session-1',
+    )
     // 重复确认幂等，不报错也不改动别的身份。
     expect(
       await h.service.acknowledge({

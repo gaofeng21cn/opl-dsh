@@ -58,6 +58,26 @@ enableClick(dom)
 let root: ReturnType<typeof createRoot>
 afterEach(async () => {
   await React.act(async () => root?.unmount())
+  vi.restoreAllMocks()
+})
+
+it('点击消息选择浮层内部保持展开，外部收起且不回退或改草稿', async () => {
+  let press!: (event: PointerEvent) => void
+  vi.spyOn(document, 'addEventListener').mockImplementation((type, listener) => {
+    if (type === 'pointerdown') press = listener as (event: PointerEvent) => void
+  })
+  const call = vi.fn(async () => state())
+  const onDraft = vi.fn()
+  const openSession = vi.fn()
+  const { container } = await mount({ sessionId: 'session-1', call, onDraft, openSession })
+  await React.act(async () => buttonsOf(container)[0]!.click!())
+  await React.act(async () => press({ target: buttonsOf(container)[1] } as unknown as PointerEvent))
+  expect(container.textContent).toContain('第一条消息')
+  await React.act(async () => press({ target: document.body } as unknown as PointerEvent))
+  expect(container.textContent).not.toContain('第一条消息')
+  expect(callCount(call, 'stop-edit')).toBe(0)
+  expect(onDraft).not.toHaveBeenCalled()
+  expect(openSession).not.toHaveBeenCalled()
 })
 
 function walk(node: ShimNode, visit: (node: ShimNode) => void) {
@@ -181,19 +201,17 @@ it('首批 Harness 能力未就绪时给出 Host 的原因，而不是无解释�
     outsideScope: false,
     answer: { harness: 'minimax-code', supported: false, boundaries: [], reason },
   })
-  expect(container.textContent).toContain(reason)
-  // 未就绪不是“可以点一下试试”：没有任何按钮，也不会发出回退请求。
-  expect(buttonsOf(container)).toHaveLength(0)
+  expect(buttonsOf(container)[0]!.getAttribute!('title')).toBe(reason)
+  expect(buttonsOf(container)[0]!.getAttribute!('disabled')).not.toBeNull()
   expect(run).not.toHaveBeenCalled()
 })
 
-it('支持的首批 Harness 首轮没有消息时显示暂无消息状态，而不是无解释消失', async () => {
+it('空白新对话不显示编辑入口，也不导航或写草稿', async () => {
   const { container, run } = await render({
     answer: { supported: true, boundaries: [] },
   })
-  expect(container.textContent).toContain('暂无可编辑的消息')
-  // 还没有可回退消息，就没有空入口可点，也不会自动发出任何请求。
   expect(buttonsOf(container)).toHaveLength(0)
+  expect(container.textContent).toBe('')
   expect(run).not.toHaveBeenCalled()
 })
 
@@ -201,7 +219,7 @@ it('支持的首批 Harness 仍在运行时按 Host 的 busy 说清楚，而不�
   const { container, run } = await render({
     answer: { supported: true, boundaries: [], busy: true },
   })
-  expect(container.textContent).toContain('正在运行')
+  expect(buttonsOf(container)[0]!.getAttribute!('title')).toContain('正在运行')
   expect(container.textContent).not.toContain('正在回退')
   expect(container.textContent).not.toContain('暂无')
   expect(run).not.toHaveBeenCalled()
@@ -221,7 +239,7 @@ it('入口展开后列出已发送的消息，并标明首条与附件不可编�
   expect(text).toContain('第一条消息')
   expect(text).toContain('首条消息')
   expect(text).toContain('2 个附件（无法还原，不能编辑）')
-  expect(text).toContain('磁盘上的文件保持原样')
+  expect(buttonsOf(container)[0]!.getAttribute!('title')).toContain('磁盘上的文件保持原样')
 })
 
 it('没有精确映射的消息被禁用，并把原因显示出来', async () => {
@@ -238,12 +256,12 @@ it('没有精确映射的消息被禁用，并把原因显示出来', async () =
   })
   await React.act(async () => buttonsOf(container)[0]!.click!())
   expect(container.textContent).toContain('这条消息缺少精确映射')
-  const rows = buttonsOf(container).slice(1)
+  const rows = buttonsOf(container).filter((button) => button.getAttribute!('role') === 'menuitem')
   await React.act(async () => rows[0]!.click!())
   expect(container.textContent).toContain('这条消息缺少精确映射')
 })
 
-it('分支回退不直接改写输入框，而是给出可读的分支标题', async () => {
+it('分支回退直接打开精确目标，不改原输入框或再次发请求', async () => {
   const { container, drafts, run, openSession } = await render({
     rewound: outcome({ sessionId: 'empty-branch' }),
   })
@@ -251,13 +269,7 @@ it('分支回退不直接改写输入框，而是给出可读的分支标题', a
   await React.act(async () => buttonsOf(container)[1]!.click!())
   expect(run).toHaveBeenCalledTimes(1)
   expect(drafts).toEqual([])
-  const text = container.textContent ?? ''
-  expect(text).toContain('第二条消息 · 编辑分支')
-  expect(text).toContain('原会话已保留')
-  expect(openSession).not.toHaveBeenCalled()
-  await React.act(async () =>
-    buttonsOf(container).find((button) => button.textContent === '打开编辑分支')!.click!(),
-  )
+  expect(container.textContent).not.toContain('C:/work')
   expect(openSession).toHaveBeenCalledExactlyOnceWith('empty-branch')
   expect(run).toHaveBeenCalledTimes(1)
   expect(drafts).toEqual([])
@@ -272,7 +284,16 @@ it('原会话重载后仍能通过持久入口打开空分支，不调用回退�
     },
   })
   expect(buttonsOf(container)).toHaveLength(1)
+  expect(buttonsOf(container)[0]!.textContent).toBe('编辑消息')
+  expect(container.textContent).not.toContain('回到上次编辑')
+  expect(container.textContent).not.toContain('打开编辑分支')
   await React.act(async () => buttonsOf(container)[0]!.click!())
+  expect(buttonsOf(container).map((button) => button.textContent)).toEqual([
+    '编辑消息',
+    '回到上次编辑',
+    '取消编辑',
+  ])
+  await React.act(async () => buttonsOf(container)[1]!.click!())
   expect(openSession).toHaveBeenCalledExactlyOnceWith('blank-branch')
   expect(run).not.toHaveBeenCalled()
   expect(drafts).toEqual([])
@@ -285,7 +306,28 @@ it('原地回退才把原文放回官方输入框', async () => {
   await React.act(async () => buttonsOf(container)[0]!.click!())
   await React.act(async () => buttonsOf(container)[1]!.click!())
   expect(drafts).toEqual(['第二条原文'])
-  expect(container.textContent).toContain('原文已放回输入框')
+  expect(container.textContent).toContain('原文已填回输入框')
+})
+
+it('历史恢复动作排在消息列表之后、取消编辑之前，取消不导航或改草稿', async () => {
+  const { container, run, openSession, drafts } = await render({
+    answer: { editBranch: { sessionId: 'prior-branch', title: '上次编辑' } },
+  })
+  expect(buttonsOf(container).map((button) => button.textContent)).toEqual(['编辑消息'])
+  await React.act(async () => buttonsOf(container)[0]!.click!())
+  const buttons = buttonsOf(container)
+  expect(buttons.map((button) => button.textContent)).toEqual([
+    '编辑消息',
+    '第二条消息',
+    '第一条消息首条消息',
+    '回到上次编辑',
+    '取消编辑',
+  ])
+  await React.act(async () => buttons.at(-1)!.click!())
+  expect(buttonsOf(container).map((button) => button.textContent)).toEqual(['编辑消息'])
+  expect(openSession).not.toHaveBeenCalled()
+  expect(run).not.toHaveBeenCalled()
+  expect(drafts).toEqual([])
 })
 
 it('输入框里已经有内容时不覆盖用户自己的草稿', async () => {
@@ -356,8 +398,6 @@ it('会话控制流推送后入口会重新读取，新会话首轮之后按钮�
     ),
   )
   await React.act(async () => {})
-  // 首轮之前没有可回退消息：入口按钮不出现，但状态必须说明为什么。
-  expect(container.textContent).toContain('暂无可编辑的消息')
   expect(buttonsOf(container as unknown as ShimNode)).toHaveLength(0)
   first = state({
     boundaries: [boundary('u1', { contentHead: '首轮之后的消息' })],
@@ -386,6 +426,7 @@ interface MountProps {
   onDraft?: (text: string) => void
   subscribeSession?: (sessionId: string, listener: () => void) => () => void
   openSession?: (sessionId: string) => void
+  onActiveChange?: (active: boolean) => void
 }
 
 /** 真实挂载一次，之后可以带着新属性反复重渲染同一个 root。 */
@@ -404,6 +445,7 @@ async function mount(initial: MountProps) {
             selector({ draft: merged.draftText ?? '' })) as never,
           subscribeSession: merged.subscribeSession,
           openSession: merged.openSession ?? (() => {}),
+          onActiveChange: merged.onActiveChange,
           call: merged.call as never,
         } as never),
       ),
@@ -418,7 +460,93 @@ const callCount = (call: unknown, method: string) =>
   (call as { mock: { calls: unknown[][] } }).mock.calls.filter((entry) => entry[0] === method)
     .length
 
-it('MiniMax 回退后原会话入口消失，编辑分支提示与原因仍保留', async () => {
+it('取消选择释放官方工具栏，不回退、不导航或覆盖草稿', async () => {
+  const call = vi.fn(async () => state())
+  const openSession = vi.fn()
+  const onDraft = vi.fn()
+  const onActiveChange = vi.fn()
+  const { container } = await mount({
+    sessionId: 'session-1',
+    call,
+    openSession,
+    onDraft,
+    onActiveChange,
+  })
+  await React.act(async () => buttonsOf(container)[0]!.click!())
+  expect(onActiveChange).toHaveBeenLastCalledWith(true)
+  await React.act(async () =>
+    buttonsOf(container).find((button) => button.textContent === '取消编辑')!.click!(),
+  )
+  expect(onActiveChange).toHaveBeenLastCalledWith(false)
+  expect(container.textContent).not.toContain('第一条消息')
+  expect(callCount(call, 'stop-edit')).toBe(0)
+  expect(openSession).not.toHaveBeenCalled()
+  expect(onDraft).not.toHaveBeenCalled()
+})
+
+it('编辑分支返回精确原会话，保留输入草稿并在卸载时释放工具栏', async () => {
+  const call = vi.fn(async () =>
+    state({ sessionId: 'branch', boundaries: [], editSourceSessionId: 'source' }),
+  )
+  const openSession = vi.fn()
+  const onDraft = vi.fn()
+  const onActiveChange = vi.fn()
+  const { container } = await mount({
+    sessionId: 'branch',
+    draftText: '编辑中的草稿',
+    call,
+    openSession,
+    onDraft,
+    onActiveChange,
+  })
+  expect(container.textContent).toBe('正在编辑消息返回原对话')
+  expect(onActiveChange).toHaveBeenLastCalledWith(true)
+  await React.act(async () => buttonsOf(container)[0]!.click!())
+  expect(openSession).toHaveBeenCalledExactlyOnceWith('source')
+  expect(onDraft).not.toHaveBeenCalled()
+  expect(callCount(call, 'stop-edit')).toBe(0)
+  await React.act(async () => root.unmount())
+  expect(onActiveChange).toHaveBeenLastCalledWith(false)
+})
+
+it('已确认的编辑草稿晚于分支状态恢复，仍收起辅助按钮', async () => {
+  const call = vi.fn(async () =>
+    state({ sessionId: 'branch', boundaries: [], editSourceSessionId: 'source' }),
+  )
+  const onActiveChange = vi.fn()
+  const { render, container } = await mount({
+    sessionId: 'branch',
+    draftText: '',
+    call,
+    onActiveChange,
+  })
+  await render({ draftText: '晚到的编辑草稿' })
+  expect(container.textContent).toBe('正在编辑消息返回原对话')
+  expect(onActiveChange).toHaveBeenLastCalledWith(true)
+  expect(callCount(call, 'stop-edit')).toBe(0)
+  expect(callCount(call, 'stop-edit-acknowledge')).toBe(0)
+})
+
+it('编辑草稿发送后再写普通消息，不会再次隐藏工具栏', async () => {
+  const call = vi.fn(async () =>
+    state({ sessionId: 'branch', boundaries: [], editSourceSessionId: 'source' }),
+  )
+  const onActiveChange = vi.fn()
+  const { render, container } = await mount({
+    sessionId: 'branch',
+    draftText: '编辑草稿',
+    call,
+    onActiveChange,
+  })
+  expect(onActiveChange).toHaveBeenLastCalledWith(true)
+  await render({ draftText: '' })
+  await render({ draftText: '下一条普通消息' })
+  expect(onActiveChange).toHaveBeenLastCalledWith(false)
+  expect(container.textContent).not.toContain('正在编辑消息')
+  expect(callCount(call, 'stop-edit')).toBe(0)
+})
+
+it('MiniMax 回退后只有编辑入口，菜单中的恢复动作不再次回退', async () => {
   let moved = false
   const call = vi.fn(async (method: string) => {
     if (method === 'stop-edit-state')
@@ -438,14 +566,22 @@ it('MiniMax 回退后原会话入口消失，编辑分支提示与原因仍保�
     }
     return { acknowledged: true }
   })
-  const { container } = await mount({ sessionId: 'session-1', call })
+  const openSession = vi.fn()
+  const { container } = await mount({ sessionId: 'session-1', call, openSession })
   await React.act(async () => buttonsOf(container)[0]!.click!())
   await React.act(async () => buttonsOf(container)[1]!.click!())
   await React.act(async () => {})
-  expect(container.textContent).toContain('测试 · 编辑分支')
-  // 入口消失要有解释，而不是无解释地空掉。
-  expect(container.textContent).toContain('这是编辑前保留的会话')
-  expect(buttonsOf(container).map((button) => button.textContent)).toEqual(['打开编辑分支'])
+  expect(buttonsOf(container).map((button) => button.textContent)).toEqual(['编辑消息'])
+  await React.act(async () => buttonsOf(container)[0]!.click!())
+  expect(buttonsOf(container).map((button) => button.textContent)).toEqual([
+    '编辑消息',
+    '回到上次编辑',
+    '取消编辑',
+  ])
+  expect(buttonsOf(container)[1]!.getAttribute!('title')).toContain('测试 · 编辑分支')
+  await React.act(async () => buttonsOf(container)[1]!.click!())
+  expect(callCount(call, 'stop-edit')).toBe(1)
+  expect(openSession).toHaveBeenLastCalledWith('session-1')
 })
 
 it('等待回退期间输入框里打的字不会被旧原文盖掉', async () => {
@@ -585,7 +721,7 @@ it('缺精确映射或带附件的边界在点击之前就被禁用，并把原�
   const text = container.textContent ?? ''
   expect(text).toContain('这条消息缺少精确映射')
   expect(text).toContain('这条消息带有无法回填的附件，不能编辑')
-  const rows = buttonsOf(container).slice(1)
+  const rows = buttonsOf(container).filter((button) => button.getAttribute!('role') === 'menuitem')
   expect(rows).toHaveLength(2)
   const disabled = (node: ShimNode) =>
     (node as ShimNode & { getAttribute(name: string): string | null }).getAttribute('disabled')
@@ -685,15 +821,21 @@ it('回退失败后先重读 Host 持久状态：只给阻断原因与只读恢�
   // 不确定的回退绝不能被说成“没有发生过”。
   expect(text).not.toContain('会话没有被改动')
   // 入口收起，剩下的唯一动作是只读的重新读取。
-  expect(buttonsOf(container).map((button) => button.textContent)).toEqual(['重新读取会话历史'])
+  expect(
+    buttonsOf(container).filter((button) => button.textContent === '重新读取会话历史'),
+  ).toHaveLength(1)
   // 仍然被阻断时再读一次：依然不会重发回退，原因照旧显示。
-  await React.act(async () => buttonsOf(container)[0]!.click!())
+  await React.act(async () =>
+    buttonsOf(container).find((button) => button.textContent === '重新读取会话历史')!.click!(),
+  )
   await React.act(async () => {})
   expect(callCount(call, 'stop-edit')).toBe(1)
   expect(container.textContent).toContain('结果不确定')
   // 核对真实历史之后，重新读取才拿回可回退入口；整个过程没有第二次回退。
   blocked = undefined
-  await React.act(async () => buttonsOf(container)[0]!.click!())
+  await React.act(async () =>
+    buttonsOf(container).find((button) => button.textContent === '重新读取会话历史')!.click!(),
+  )
   await React.act(async () => {})
   expect(callCount(call, 'stop-edit')).toBe(1)
   expect(callCount(call, 'stop-edit-state')).toBeGreaterThanOrEqual(3)

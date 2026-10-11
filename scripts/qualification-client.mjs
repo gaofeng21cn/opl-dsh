@@ -155,6 +155,18 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
     `(() => { const labels=${JSON.stringify(labels)}; const root=${scope}; if(!root)return false; const node=Array.from(root.querySelectorAll('button,[role=menuitem]')).find(x=>x.getClientRects().length && !x.disabled && (labels.includes((x.getAttribute('aria-label')||x.textContent||'').trim()) || x.matches('[role=menuitem]') && labels.some(label => (x.textContent||'').trim().startsWith(label)))); if(!node)return false; node.click(); return true })()`
   await waitFor("document.body.innerText.includes('OPL')", 'OPL Client 未挂载')
   result.clientMounted = true
+  // rc.2's preview dialog traps focus above the setup and account menus.
+  await pipe.evaluate(
+    session,
+    clickLabel(
+      ['继续', 'Continue'],
+      "Array.from(document.querySelectorAll('[role=dialog]')).find(x=>/预览版说明|Preview release|Preview notice/i.test(x.innerText))",
+    ),
+  )
+  await waitFor(
+    "!Array.from(document.querySelectorAll('[role=dialog]')).some(x=>x.getClientRects().length && /预览版说明|Preview release|Preview notice/i.test(x.innerText))",
+    '官方预览版说明尚未关闭',
+  )
   // Fresh profile onboarding uses its real button and real setup RPC.
   await pipe.evaluate(session, clickLabel(['稍后登录', 'Sign in later']))
   await waitFor(

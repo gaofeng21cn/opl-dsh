@@ -55,6 +55,10 @@ Windows · x64，在 PowerShell 中运行：
 - **Codex ↔ DSH 协作**：自动安装 `opl-dsh-official` Skill，可启动 DSH、连续派发任务、等待结果、读取持久化反馈。设置中可修复 Skill、调整自动启动和可选通知桥。
 - **任务系统通知**：DSH 在后台时，原生与已接入外部 Harness 的运行结束或失败会发送系统通知。设置中的 **系统通知** 提供开关和测试按钮；通知只显示对话标题与结束状态，手动停止也属于运行结束。详见[任务系统通知](docs/desktop-notifications.md)。
 - **停止后编辑**：原生 DSH 和具有会话历史扩展的 MiniMax 对话可回退到所选用户消息之前，在正常侧栏打开编辑分支并修改原文本。磁盘文件保留，其他 Harness 隐藏入口。详见[停止后编辑](docs/stop-edit.md)。
+- **对话空白区域**：隐藏对话两侧的隐形宽度拖动区，空白处不显示横向缩放光标；侧栏与面板分隔条仍可拖动。
+- **上下文预算观测**：设置中可选开启（默认关闭），输入栏只展示有值的预算项目；来源与说明放在悬停提示中，不自动调整参数或压缩策略。详见[上下文预算观测](docs/context-budget.md)。
+- **Auto Review 工具审批**：默认关闭；DSH 与 ZCode 默认使用专用 codex-auto-review，也可显式选择独立审查模型。会话选择 Auto 后送审，失败不执行工具，保存审核输入与结果。Codex、Claude 使用官方审核接口。详见[Auto Review 工具审批](docs/auto-review.md)。
+- **Todo 状态展示**：会话停止后，未完成的记录项静态显示，不自动标记完成；父会话与子会话活动分别显示，未知状态明确保留。详见[Todo 状态展示](docs/todo-status.md)。
 - **模型 + Harness 组合**：DSH 原生会话继续使用官方会话列表、消息流和输入框；所有已就绪的模型 + Harness 组合都在同一个模型选择器中显示。选择 Codex CLI、Claude Code 或 Grok Build 后，当前官方会话仍使用同一输入框和消息流，后台将本轮请求转发给绑定的官方 Harness 并把结果回写；组合、权限和恢复记录由后台维护。支持的组合沿用该菜单的推理强度选择，已提供的档位统一显示为低、中、高、极高、最大、超高，实际可选档位仍由模型决定；切换时显示目标组合与等待状态，首次发送时启动对应 Harness。自动生成的外部组合继承当前 DSH 会话的读写权限；显式设置为只读的组合仍保持只读。Claude Code 的受限任务依赖官方 sandbox 后端；显式完整访问使用官方 bypassPermissions，允许工作目录外访问。外部任务可按每轮 `writeScope` 的精确文件或目录范围并行；重叠写入、未声明范围的项目写入、构建和安装保持串行。该声明用于调度，不改变工具权限。从 Codex 或对话内协作工具 `delegate` 派出的外部任务绑定一个真实的官方 DSH 会话：它出现在对应项目的官方会话列表侧栏，按普通会话查看、续作和人工审批；设置中不再有独立的“外部任务”页面。
 - **MiniMax 官方账号组合**：接入官方 MiniMax CLI `mcode` 的 ACP 模式并使用官方账号登录；只提供两个模型组合（M3.1-Flash-Preview 默认 `max`、M3 默认开启思考），推理设置按官方能力可选，不需要 MiniMax Code 图形界面自动化，也不使用 OPL Gateway 的 MiniMax 密钥。Windows Git Bash 固定后端需支持 Shell 回读的 mcode 候选版；官方 0.6.3 默认 PowerShell，不能仅靠 SHELL 环境变量切换。详见[官方 MiniMax 账号与 mcode](docs/minimax-code.md)。
 

@@ -422,9 +422,8 @@ export interface DeliveryRecord {
   /**
    * Whether this delivery was retired without ever reaching its target.
    *
-   * Retirement is how an upgrade stops owing a notification for a state the
-   * current policy no longer notifies, such as the `running` entries an older
-   * build enqueued. A retired delivery is never sent again and never claimed as
+   * Retirement suppresses unsent resolved pauses and states the current policy
+   * does not notify. Accepted transport handoffs remain claimable. A retired delivery is never sent again and never claimed as
    * acknowledged.
    */
   readonly retired: boolean

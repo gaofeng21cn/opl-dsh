@@ -18,6 +18,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname } from 'node:path'
 import { commandLaunch } from '../harness-registry.ts'
+import { EXTERNAL_TOOL_NAME_META } from '../external-binding.ts'
 import {
   describeHuaweiMaaSApiKey,
   readHuaweiMaaSApiKey,
@@ -115,6 +116,11 @@ function permission(request: ZcodePermissionRequest): Promise<string | undefined
       params: {
         sessionId,
         toolCall: {
+          // The official request's tool name and structured input are passed
+          // through verbatim, in the ACP extension slot and `rawInput`. The host
+          // never decodes the display title into an authorization decision, and
+          // `toolCallId` keeps one ask addressable while it is pending.
+          toolCallId: id,
           title:
             'ZCode · ' +
             request.toolName +
@@ -122,6 +128,9 @@ function permission(request: ZcodePermissionRequest): Promise<string | undefined
             request.reason +
             '\n' +
             JSON.stringify(request.input ?? {}).slice(0, 2000),
+          kind: 'other',
+          rawInput: request.input ?? {},
+          _meta: { [EXTERNAL_TOOL_NAME_META]: request.toolName },
         },
         options:
           options.length > 0
