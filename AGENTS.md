@@ -11,3 +11,4 @@
 - 安装器只写套件拥有的文件；保留用户修改和旧数据。运行中的 profile 不可更新。
 - 核心服务保留为 runtime peer。升级公开 API 后同时验证 Client 注册、RPC 参数、模型流和官方工具执行。
 - `main` 是唯一长期维护主线；旧 fork 仅保留在 Git 历史及 `opl-baseline-20260925` 标签。
+- 发布遵循 `docs/release-policy.md` 与 `docs/release-sop.md`：GitHub Actions 每日发现主线有未发布的增强层更新或修复时自动准备并发布新版，沿用用户持续授权，不等待手动触发；保留既有源码、双平台隔离资格与公开回读门禁。

@@ -65,9 +65,13 @@ export async function publishStableRelease(root) {
   await mkdir(audit, { recursive: true })
   const version = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version
   const tag = `opl-dsh-v${version}`
-  if (!/^\d+\.\d+\.\d+$/.test(version) || process.env.GITHUB_REF !== `refs/tags/${tag}`)
+  const selectedTag =
+    process.env.OPL_RELEASE_TAG ?? process.env.GITHUB_REF?.replace(/^refs\/tags\//, '')
+  if (!/^\d+\.\d+\.\d+$/.test(version) || selectedTag !== tag)
     throw Error('Publishing requires the canonical stable tag')
   const sourceCommit = command('git', ['rev-parse', 'HEAD'])
+  if (command('git', ['rev-parse', `${tag}^{commit}`]) !== sourceCommit)
+    throw Error('Release tag does not match the frozen source')
   if (command('git', ['status', '--porcelain'])) throw Error('Candidate source is dirty')
   const manifestFile = join(dist, 'release-manifest.json')
   const manifestBytes = await readFile(manifestFile)

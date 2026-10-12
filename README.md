@@ -2,7 +2,7 @@
 
 **官方 DeepSeek Harness 桌面 + OPL 增强，一次安装即可使用。**
 
-OPL DSH 提供 OPL Gateway 登录、分组模型管理、搜索、Codex 协作和模型 + Harness 执行组合。桌面、Agent 循环、工具执行及权限管理均由官方 DSH 或所选官方 Harness 提供；增强能力在同一个插件包中按模块维护，统一安装与更新。发布规则见[发布约定](docs/release-policy.md)，执行流程见[稳定发布 SOP](docs/release-sop.md)。
+OPL DSH 提供 OPL Gateway 登录、分组模型管理、搜索、Codex 协作和模型 + Harness 执行组合。桌面、Agent 循环、工具执行及权限管理均由官方 DSH 或所选官方 Harness 提供；增强能力在同一个插件包中按模块维护，统一安装与更新。GitHub Actions 每日检查主线，有未发布的增强更新或修复时自动发布新版，无需手动触发。发布规则见[发布约定](docs/release-policy.md)，执行流程见[稳定发布 SOP](docs/release-sop.md)。
 
 ## 下载安装
 

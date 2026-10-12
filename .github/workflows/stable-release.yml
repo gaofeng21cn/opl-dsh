@@ -1,6 +1,8 @@
 name: Stable release
 
 on:
+  schedule:
+    - cron: '37 18 * * *'
   push:
     tags: ['opl-dsh-v*']
   workflow_dispatch:
@@ -13,23 +15,54 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.candidate.outputs.tag }}
+      source_commit: ${{ steps.candidate.outputs.source_commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Detect unpublished enhancement changes or resume a frozen tag
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPL_RELEASE_NOTES_CODEX_API_KEY: ${{ secrets.OPL_RELEASE_NOTES_CODEX_API_KEY }}
+        run: node scripts/prepare-daily-release.mjs
+
   package:
+    needs: prepare
+    if: needs.prepare.outputs.tag != ''
     runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.source_commit }}
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
       - name: Require a frozen canonical tag and native arm64 packaging
+        env:
+          OPL_RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           node --input-type=module - <<'NODE'
           import { readFileSync } from 'node:fs'
           import { execFileSync } from 'node:child_process'
           const { version } = JSON.parse(readFileSync('package.json'))
           if (process.arch !== 'arm64') throw Error('Official macOS packaging requires arm64')
-          if (process.env.GITHUB_REF !== `refs/tags/opl-dsh-v${version}`) throw Error('Select the canonical release tag when rerunning this workflow')
+          if (process.env.OPL_RELEASE_TAG !== `opl-dsh-v${version}`) throw Error('Invalid canonical release tag')
+          const tagged = execFileSync('git', ['rev-parse', `${process.env.OPL_RELEASE_TAG}^{commit}`], { encoding: 'utf8' }).trim()
+          if (tagged !== execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()) throw Error('Release tag moved')
           if (execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim()) throw Error('Dirty source candidate')
           NODE
       - name: Install Windows installer compiler
@@ -76,7 +109,7 @@ jobs:
           if-no-files-found: error
 
   qualify:
-    needs: package
+    needs: [prepare, package]
     strategy:
       fail-fast: false
       matrix:
@@ -85,6 +118,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.source_commit }}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -132,7 +167,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [package, qualify]
+    needs: [prepare, package, qualify]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -140,6 +175,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.prepare.outputs.source_commit }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
@@ -159,6 +195,7 @@ jobs:
       - name: Verify provenance, publish, and read back all public assets
         env:
           GH_TOKEN: ${{ github.token }}
+          OPL_RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: node scripts/publish-stable-release.mjs
       - name: Retain publication and previous-release audit records
         if: always()

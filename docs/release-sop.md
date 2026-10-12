@@ -8,9 +8,11 @@
 
 ### GitHub Actions 发布环境
 
-`.github/workflows/stable-release.yml` 为稳定发布提供临时 macOS arm64 打包环境（Node 24、Python、Apple 工具及 NSIS）、临时 Windows 桌面验收环境和 Ubuntu 公开发布环境。发布 job 使用 GitHub 为本仓库签发的临时 `GITHUB_TOKEN`，仅该 job 具有 `contents: write`；不需要把个人访问令牌写入仓库或云环境。
+`.github/workflows/stable-release.yml` 每日北京时间 02:37 自动检查主线，并为稳定发布提供临时 macOS arm64 打包环境（Node 24、Python、Apple 工具及 NSIS）、临时 Windows 桌面验收环境和 Ubuntu 公开发布环境。准备与发布 job 使用 GitHub 为本仓库签发的临时 `GITHUB_TOKEN`，仅这两个 job 具有 `contents: write`；不需要把个人访问令牌写入仓库或云环境。
 
-先在 `main` 完成源码、版本与 `docs/release-notes-<版本>.md`，再推送 canonical tag 即可启动流程。Release Note 中的 `{{VERSION}}`、`{{OFFICIAL_VERSION}}`、`{{SOURCE_COMMIT}}` 由已核验清单替换。手动重试必须选择同一个 canonical tag，不能选择 `main`。
+日常更新只需让可接受改动进入 `main`。每日准备 job 通过 `scripts/prepare-daily-release.mjs` 比较公开稳定 tag 与主线的真实产品路径；有未发布增强改动就自动准备递增版本、`docs/release-notes-<版本>.md` 和 canonical tag，没有改动则跳过。`scripts/daily-release-notes.mjs` 优先通过现有 Gateway 调用 `gpt-6-luna`，按本次公开 Git 证据撰写中文用户说明；模型不可用时改用原始提交及链接生成机械说明，不阻断发布、不把提交标题加工成已验证的功能承诺。两种正文均记录生成方式，维护者已准备的说明保持原样。准备后的源码提交作为后续所有 job 的 checkout ref，各阶段重新核对 tag 与实际源码。
+
+GitHub 的临时 token 推送 tag 不会触发另一轮 push 工作流，因此本轮准备 job 直接将 tag 与源码提交传给既有打包、验收和发布 job，不依赖第二次事件或本机调度。人工推送 canonical tag 仍可启动同一流程。Release Note 中的 `{{VERSION}}`、`{{OFFICIAL_VERSION}}`、`{{SOURCE_COMMIT}}` 由已核验清单替换。手动选择 `main` 立即执行一次每日检查；恢复已冻结候选时选择同一个 canonical tag。
 
 打包 job 执行源码门禁，生成 macOS DMG、Windows EXE、增强 ZIP 和联合清单；两个验收 job 解压同一 ZIP，用其实际 payload 验收官方桌面，不用各自重建的字节代替。发布 job 检查清洁源码、清单与两平台证据的源提交、套件摘要和官方版本，重新读取官方 feed，然后生成联合资格 JSON 和 `SHA256SUMS`。只有全部通过才创建并公开稳定 Release。
 
