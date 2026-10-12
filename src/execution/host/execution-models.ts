@@ -47,7 +47,8 @@ export class ExecutionModelResolver {
     if (retired.length || legacyDefault) {
       catalog = await this.store.cleanLegacyCombinations()
     }
-    for (const provider of this.ctx.llm?.listProviders() ?? []) {
+    const providers = this.ctx.llm?.listProviders() ?? []
+    for (const provider of providers) {
       if (internalGatewayProvider(provider.id)) continue
       const directory = this.ctx.llm
         .listConfigurableProviders()
@@ -59,7 +60,9 @@ export class ExecutionModelResolver {
           ?.describe()
           .find((item) => item.ns === directory.settingsNs)?.value as any
         for (const key of directory.settingsPath) profile = profile?.[key]
-        if (profile?.apiKeyEnv)
+        // ZCode owns Huawei readiness and only needs credential presence here;
+        // resolving its secret is reserved for the actual request bridge.
+        if (profile?.apiKeyEnv && provider.id !== HUAWEI_ZCODE_MODEL.provider)
           configured = !!(
             await this.ctx.get('credentials')?.resolve(credentialRef(profile.apiKeyEnv))
           )?.value
@@ -171,19 +174,10 @@ export class ExecutionModelResolver {
           isDefault: true,
           enabled: true,
         })
-    if (!catalog.models.some((item) => modelRefKey(item.ref) === modelRefKey(HUAWEI_ZCODE_MODEL))) {
-      const status = (await this.probeExternal?.(HUAWEI_ZCODE_MODEL)) ?? {
-        available: false,
-        reason: '华为云 Key 或官方 ZCode 未就绪',
-      }
-      catalog.models.push({
-        ref: HUAWEI_ZCODE_MODEL,
-        name: 'GLM-5.2',
-        source: '华为云 MaaS',
-        ...status,
-      })
-    }
-    if (!catalog.combinations.some((item) => item.id === HUAWEI_ZCODE_COMBINATION))
+    if (
+      providers.some((provider) => provider.id === HUAWEI_ZCODE_MODEL.provider) &&
+      !catalog.combinations.some((item) => item.id === HUAWEI_ZCODE_COMBINATION)
+    )
       catalog.combinations.push({
         id: HUAWEI_ZCODE_COMBINATION,
         name: 'GLM-5.2 · ZCode',
@@ -192,6 +186,7 @@ export class ExecutionModelResolver {
         permissionPolicy: 'full-access',
         isDefault: true,
         enabled: true,
+        generated: true,
       })
     for (const combination of catalog.combinations)
       if (

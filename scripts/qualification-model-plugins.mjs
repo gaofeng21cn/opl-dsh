@@ -130,6 +130,10 @@ export async function verifyModelPlugins({ root, origin, cookie, wire, harness }
     ],
   })
   const catalog = await harness('catalog')
+  assert(
+    !catalog.models.some((model) => model.ref.provider === 'huawei-maas'),
+    'Deleted native Huawei provider returned in the execution catalog',
+  )
   for (const model of [MODEL_PLUGIN_FIXTURE, combo]) {
     const combination = catalog.combinations.find(
       (item) => item.modelRef.provider === 'our-free-model' && item.modelRef.model === model,
@@ -146,7 +150,18 @@ export async function verifyModelPlugins({ root, origin, cookie, wire, harness }
       operationId: 'model-plugin-' + model,
       text: 'List the available combinations once, then reply MODEL_PLUGIN_VERIFIED.',
     })
-    const done = await harness('wait', { sessionId: run.id })
+    const done = await harness('wait', { sessionId: run.id }).catch(async (error) => {
+      const snapshot = await harness('snapshot', { sessionId: run.id }).catch(() => null)
+      const diagnostic = snapshot && {
+        state: snapshot.state,
+        turns: snapshot.turns.map((turn) => ({
+          state: turn.state,
+          error: turn.error,
+          tools: turn.tools.map(({ title, status }) => ({ title, status })),
+        })),
+      }
+      throw new Error('OFM 任务等待失败：' + JSON.stringify(diagnostic), { cause: error })
+    })
     assert.equal(done.state, 'completed', JSON.stringify(done.turns.map((turn) => turn.error)))
     assert.match(done.turns.at(-1).text, /MODEL_PLUGIN_VERIFIED/)
   }

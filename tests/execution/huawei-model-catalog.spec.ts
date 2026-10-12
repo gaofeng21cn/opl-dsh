@@ -83,9 +83,34 @@ describe('Huawei ZCode model selection', () => {
       const home = await mkdtemp(join(tmpdir(), 'opl-huawei-catalog-'))
       roots.push(home)
       const store = new ExecutionCatalogStore(home)
+      const resolveCredential = vi.fn()
+      const settings = {
+        describe: () => [
+          {
+            ns: 'llm-pi-ai',
+            value: { huaweiProviders: { 'huawei-maas': { apiKeyEnv: 'HUAWEI_MAAS_API_KEY' } } },
+          },
+        ],
+      }
       const ctx = {
-        llm: { listProviders: () => [] },
-        get: () => undefined,
+        settings,
+        llm: {
+          listProviders: () => [{ id: 'huawei-maas', name: '华为云 MaaS' }],
+          listConfigurableProviders: () => [
+            {
+              provider: 'huawei-maas',
+              settingsNs: 'llm-pi-ai',
+              settingsPath: ['huaweiProviders', 'huawei-maas'],
+            },
+          ],
+          listModels: () => new HuaweiZcodeModelAdapter().listModels('huawei-maas'),
+        },
+        get: (name: string) =>
+          name === 'settings'
+            ? settings
+            : name === 'credentials'
+              ? { resolve: resolveCredential }
+              : undefined,
       } as unknown as Context
       const catalog = await new ExecutionModelResolver(ctx, store, async (ref) => ({
         available: ref.provider === 'huawei-maas' && available,
@@ -100,11 +125,51 @@ describe('Huawei ZCode model selection', () => {
           id: 'zcode/glm-5.2',
           harnessRef: 'zcode',
           permissionPolicy: 'full-access',
+          generated: true,
         }),
       ])
+      expect(resolveCredential).not.toHaveBeenCalled()
       await store.dispose()
     },
   )
+
+  it('removes automatic Huawei models and combinations with the provider, preserving saved user references without probing the keyring', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'opl-huawei-remove-'))
+    roots.push(home)
+    const store = new ExecutionCatalogStore(home)
+    let enabled = true
+    const ctx = {
+      llm: {
+        listProviders: () => (enabled ? [{ id: 'huawei-maas', name: '华为云 MaaS' }] : []),
+        listConfigurableProviders: () => [],
+        listModels: () => new HuaweiZcodeModelAdapter().listModels('huawei-maas'),
+      },
+      get: () => undefined,
+    } as unknown as Context
+    const probe = vi.fn(async (_ref: { provider: string }) => ({ available: false }))
+    const resolver = new ExecutionModelResolver(ctx, store, probe)
+    const added = await resolver.resolve()
+    added.combinations.push({
+      id: 'user-huawei',
+      name: '用户组合',
+      modelRef: { provider: 'huawei-maas', model: 'glm-5.2' },
+      harnessRef: 'zcode',
+      permissionPolicy: 'full-access',
+      isDefault: false,
+      enabled: true,
+    })
+    await store.set(added)
+    enabled = false
+    probe.mockClear()
+    const removed = await resolver.resolve()
+    expect(removed.combinations.some((item) => item.id === 'zcode/glm-5.2')).toBe(false)
+    expect(removed.combinations.some((item) => item.id === 'user-huawei')).toBe(true)
+    expect(removed.models.find((item) => item.ref.provider === 'huawei-maas')).toMatchObject({
+      available: false,
+    })
+    expect(probe.mock.calls.some(([ref]) => ref.provider === 'huawei-maas')).toBe(false)
+    await store.dispose()
+  })
 
   it('refuses restricted access before launching the official CLI', async () => {
     const prepare = vi.fn()
