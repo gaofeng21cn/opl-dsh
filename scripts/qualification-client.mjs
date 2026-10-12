@@ -155,6 +155,12 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
       session,
       "Array.from(document.querySelectorAll('button,[role=menuitem]')).filter(x=>x.getClientRects().length).map(x=>x.getAttribute('aria-label')||x.textContent?.trim()).filter(Boolean)",
     )
+    // Read copy from the isolated fixture only; innerText never reads the
+    // password input value and retains failures below the modal's viewport.
+    result.failureDialogText = await pipe.evaluate(
+      session,
+      "Array.from(document.querySelectorAll('[role=dialog]')).map(node=>node.innerText).join('\\n').slice(-8000)",
+    )
     await captureFailureScreenshot()
     throw new Error(description + '；当前入口：' + JSON.stringify(buttons))
   }
@@ -369,7 +375,8 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
       const providerScreenshot = await captureScreenshot('huawei-provider-add')
       if (providerScreenshot) screenshots.push(providerScreenshot)
       else result.screenshotFailures.push('huawei-provider-add')
-      await pipe.evaluate(session, clickLabel(['保存', 'Apply'], dialog))
+      await waitFor(clickLabel(['保存', 'Apply'], dialog), '原生提供商保存按钮未就绪')
+      source.nativeSaveClicked = true
       await waitFor(
         clickLabel(editLabels, dialog),
         '华为云原生提供商未保存或未显示普通编辑入口',
