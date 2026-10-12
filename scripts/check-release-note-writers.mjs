@@ -34,7 +34,7 @@ const results = []
 for (const [name, overrides] of [
   ['copilot-live', {}],
   [
-    'copilot-failure-to-gateway',
+    'copilot-failure-to-flash',
     {
       copilot: async () => {
         throw Error('Injected quota failure')
@@ -42,7 +42,19 @@ for (const [name, overrides] of [
     },
   ],
   [
-    'both-fail-to-mechanical',
+    'copilot-and-flash-failure-to-luna',
+    {
+      copilot: async () => {
+        throw Error('Injected quota failure')
+      },
+      request: async (url, options) =>
+        JSON.parse(options.body).model === 'deepseek-flash'
+          ? new Response('', { status: 429 })
+          : fetch(url, options),
+    },
+  ],
+  [
+    'all-fail-to-mechanical',
     {
       copilot: async () => {
         throw Error('Injected quota failure')
@@ -63,5 +75,10 @@ for (const [name, overrides] of [
 }
 await writeFile(`${output}/result.json`, JSON.stringify(results, null, 2) + '\n')
 console.log(JSON.stringify(results, null, 2))
-if (results[1].model !== 'gpt-6-luna' || results[2].mode !== 'mechanical')
+if (
+  results[0].model !== 'copilot-auto' ||
+  results[1].model !== 'deepseek-flash' ||
+  results[2].model !== 'gpt-6-luna' ||
+  results[3].mode !== 'mechanical'
+)
   throw Error('The required fallback chain did not pass')

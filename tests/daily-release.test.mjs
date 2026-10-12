@@ -97,7 +97,7 @@ const notesEvidence = {
   diff: '- overwrite draft\n+ preserve draft',
 }
 
-test('online writer uses the requested gpt-6-luna and separates user copy from qualification facts', async () => {
+test('online writer uses the requested deepseek-flash and separates user copy from qualification facts', async () => {
   let calls = 0
   const result = await writeDailyReleaseNotes(notesEvidence, {
     apiKey: 'secret-fixture-key',
@@ -105,7 +105,7 @@ test('online writer uses the requested gpt-6-luna and separates user copy from q
       calls++
       assert.equal(url, 'https://gateway.medopl.com/v1/chat/completions')
       const body = JSON.parse(options.body)
-      assert.equal(body.model, 'gpt-6-luna')
+      assert.equal(body.model, 'deepseek-flash')
       assert.equal(JSON.parse(body.messages[1].content).diff, notesEvidence.diff)
       return Response.json({
         choices: [
@@ -126,7 +126,7 @@ test('online writer uses the requested gpt-6-luna and separates user copy from q
   assert.equal(calls, 1)
   assert.equal(result.mode, 'online-ai')
   assert.ok(result.notes.includes('已有草稿不再被回填覆盖'))
-  assert.ok(result.notes.includes('OPL_DSH_RELEASE_NOTES:online-ai:gpt-6-luna'))
+  assert.ok(result.notes.includes('OPL_DSH_RELEASE_NOTES:online-ai:deepseek-flash'))
   assert.ok(!result.notes.includes('secret-fixture-key'))
 })
 
@@ -200,12 +200,12 @@ test('Copilot auto succeeds before Gateway, and quota or invalid replies fall th
     async () => 'invalid JSON',
   ]) {
     const second = await writeDailyReleaseNotes(notesEvidence, { ...options, copilot })
-    assert.equal(second.model, 'gpt-6-luna')
+    assert.equal(second.model, 'deepseek-flash')
     assert.deepEqual(
       second.attempts.map(({ provider, status }) => [provider, status]),
       [
         ['copilot-auto', 'failed'],
-        ['gpt-6-luna', 'passed'],
+        ['deepseek-flash', 'passed'],
       ],
     )
     assert.ok(!JSON.stringify(second).includes('copilot-secret'))
@@ -220,6 +220,7 @@ test('Copilot auto succeeds before Gateway, and quota or invalid replies fall th
     third.attempts.map(({ provider, status }) => [provider, status]),
     [
       ['copilot-auto', 'failed'],
+      ['deepseek-flash', 'failed'],
       ['gpt-6-luna', 'failed'],
     ],
   )
@@ -304,3 +305,32 @@ test(
     assert.equal(git('status', '--porcelain'), '')
   },
 )
+
+test('Gateway flash failure falls through to luna before mechanical notes', async () => {
+  const models = []
+  const result = await writeDailyReleaseNotes(notesEvidence, {
+    apiKey: 'gateway-secret',
+    copilotToken: 'copilot-secret',
+    copilot: async () => 'invalid',
+    request: async (_url, options) => {
+      const model = JSON.parse(options.body).model
+      models.push(model)
+      if (model === 'deepseek-flash') return new Response('', { status: 429 })
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                overview: '保留草稿。',
+                changes: ['草稿不会被覆盖。'],
+                limitations: [],
+              }),
+            },
+          },
+        ],
+      })
+    },
+  })
+  assert.equal(result.model, 'gpt-6-luna')
+  assert.deepEqual(models, ['deepseek-flash', 'gpt-6-luna'])
+})
