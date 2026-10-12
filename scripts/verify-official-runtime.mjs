@@ -33,7 +33,9 @@ async function request(method, payload) {
     method: 'POST',
     headers: { 'content-type': 'application/json', cookie },
     body: JSON.stringify({ type: 'client-request', rpcId: crypto.randomUUID(), method, payload }),
-    signal: AbortSignal.timeout(30000),
+    // wait returns the completed task, including official tools and Windows
+    // credential probes; ordinary RPC reads keep their shorter deadline.
+    signal: AbortSignal.timeout(method === 'oplExecution/wait' ? 180000 : 30000),
   }).catch((error) => {
     throw new Error('隔离 Client 请求未完成：' + method, { cause: error })
   })
