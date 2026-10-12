@@ -1,3 +1,4 @@
+import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
 /** Gateway account and model settings mount independently of execution. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -70,7 +71,7 @@ export function apply(ctx: Context, navigation: { openModels?: () => void } = {}
         {
           name: 'settings.section',
           id: 'opl-gateway',
-          order: 9,
+          order: SETTINGS_ORDER['opl-gateway'],
           label: () => ctx.locale.bind(NS)('nav'),
           locale: NS,
           inject: injected,

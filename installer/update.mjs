@@ -169,6 +169,7 @@ export async function refreshEnhancements(root, application) {
     for (const required of [
       'install.mjs',
       'profile.cjs',
+      'model-plugins.cjs',
       'setup.mjs',
       'update.mjs',
       'skill-install.mjs',

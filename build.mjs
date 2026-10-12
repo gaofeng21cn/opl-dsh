@@ -134,6 +134,7 @@ for (const file of [
   'install.ps1',
   'install.mjs',
   'profile.cjs',
+  'model-plugins.cjs',
   'migrate.cjs',
   'setup.mjs',
   'desktop-platform.mjs',

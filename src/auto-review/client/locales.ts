@@ -17,7 +17,7 @@
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 
 export const zh = {
-  sectionLabel: 'Auto Review（工具审批）',
+  sectionLabel: '工具审批',
   title: 'Auto Review（工具执行前审查）',
   intro:
     '在 DSH 原生工具执行之前，用一次独立的模型请求裁决该次调用是否放行。审查请求不携带任何工具，只输出放行或拒绝。',
@@ -109,7 +109,7 @@ export const zh = {
 export type AutoReviewLocaleKey = keyof typeof zh
 
 export const en: Record<AutoReviewLocaleKey, string> = {
-  sectionLabel: 'Auto Review (tool approval)',
+  sectionLabel: 'Tool approval',
   title: 'Auto Review (pre-execution tool review)',
   intro:
     'Before a native DSH tool runs, one independent model request decides whether that call is allowed. The review request carries no tools and returns only allow or deny.',

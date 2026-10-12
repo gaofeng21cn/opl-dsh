@@ -1,0 +1,183 @@
+/** Original model plugin, isolated upstream fixtures, and the real OPL/DSH callers. */
+import assert from 'node:assert/strict'
+import { createServer } from 'node:http'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
+
+export const MODEL_PLUGIN_FIXTURE = 'opl-qualification-free'
+
+export async function startModelPluginFixture() {
+  const requests = []
+  const server = createServer(async (req, res) => {
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          data: req.url === '/zen/v1/models' ? [{ id: MODEL_PLUGIN_FIXTURE }] : [],
+        }),
+      )
+      return
+    }
+    try {
+      let bytes = ''
+      for await (const part of req) bytes += part
+      const body = JSON.parse(bytes)
+      const usedTool = body.messages?.some((message) => message.role === 'tool')
+      const hasTool = body.tools?.some(
+        (tool) => tool.function?.name === 'list_harness_combinations',
+      )
+      requests.push({ model: body.model, usedTool: !!usedTool, hasTool: !!hasTool })
+      const tool = !usedTool && hasTool
+      const delta = tool
+        ? {
+            tool_calls: [
+              {
+                index: 0,
+                id: 'ofm-fixture-call',
+                type: 'function',
+                function: { name: 'list_harness_combinations', arguments: '{}' },
+              },
+            ],
+          }
+        : { content: 'MODEL_PLUGIN_VERIFIED' }
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      res.end(
+        'data: ' +
+          JSON.stringify({ choices: [{ index: 0, delta, finish_reason: null }] }) +
+          '\n\n' +
+          'data: ' +
+          JSON.stringify({
+            choices: [{ index: 0, delta: {}, finish_reason: tool ? 'tool_calls' : 'stop' }],
+            usage: { prompt_tokens: 8, completion_tokens: 6, total_tokens: 14 },
+          }) +
+          '\n\ndata: [DONE]\n\n',
+      )
+    } catch {
+      res.writeHead(400)
+      res.end()
+    }
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const base = `http://127.0.0.1:${server.address().port}`
+  // The channel pack's own gateway needs a separate port from a user's live DSH.
+  const reservation = createServer()
+  await new Promise((resolve) => reservation.listen(0, '127.0.0.1', resolve))
+  const gatewayPort = reservation.address().port
+  await new Promise((resolve) => reservation.close(resolve))
+  return {
+    environment: {
+      OUR_FREE_MODEL_BASE: base,
+      OUR_FREE_MODEL_KILO_BASE: base + '/kilo',
+      DSH_OPENAI_GATEWAY_PORT: String(gatewayPort),
+    },
+    close: async () => {
+      server.closeAllConnections()
+      await new Promise((resolve) => server.close(resolve))
+    },
+    requests,
+  }
+}
+
+export async function verifyModelPlugins({ root, origin, cookie, wire, harness }) {
+  const profile = JSON.parse(await readFile(join(root, 'profiles/desktop/package.json'), 'utf8'))
+  const pkg = JSON.parse(
+    await readFile(
+      join(root, 'profiles/desktop/node_modules/dsh-our-free-model/package.json'),
+      'utf8',
+    ),
+  )
+  assert.equal(pkg.name, 'dsh-our-free-model')
+  assert(
+    profile.dsh.profile.bundles.includes(pkg.name),
+    'Original model plugin bundle is not enabled',
+  )
+  const api = async (path, body) => {
+    const response = await fetch(origin + '/api/our-free-model' + path, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { cookie, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      signal: AbortSignal.timeout(30000),
+    }).catch((error) => {
+      throw new Error('隔离模型插件请求未完成：' + path, { cause: error })
+    })
+    assert.equal(response.status, 200, 'Original model plugin API failed: ' + path)
+    return response.json()
+  }
+  let summary
+  for (let attempt = 0; attempt < 90; attempt++) {
+    summary = await api('/summary')
+    if (
+      summary.catalog.some((model) => model.id === MODEL_PLUGIN_FIXTURE) &&
+      summary.channels?.state === 'ready'
+    )
+      break
+    await delay(500)
+  }
+  assert(summary.catalog.some((model) => model.id === MODEL_PLUGIN_FIXTURE))
+  assert.equal(summary.channels?.state, 'ready', 'Original account channel pack did not mount')
+  // The route is created via the original plugin API, never in an OPL routing table.
+  const combo = 'combo:qualification-route'
+  await api('/combos', {
+    combos: [
+      {
+        id: combo,
+        name: 'Qualification route',
+        models: [MODEL_PLUGIN_FIXTURE],
+        strategy: 'fallback',
+        enabled: true,
+      },
+    ],
+  })
+  const catalog = await harness('catalog')
+  for (const model of [MODEL_PLUGIN_FIXTURE, combo]) {
+    const combination = catalog.combinations.find(
+      (item) => item.modelRef.provider === 'our-free-model' && item.modelRef.model === model,
+    )
+    assert(combination, 'Plugin model missing from OPL combinations: ' + model)
+    assert.equal(combination.harnessRef, 'dsh')
+    const run = await harness('start', {
+      combination: combination.id,
+      cwd: join(root, 'test-project'),
+      origin: { kind: 'desktop', sessionId: 'isolated-model-plugin' },
+    })
+    await harness('prompt', {
+      sessionId: run.id,
+      operationId: 'model-plugin-' + model,
+      text: 'List the available combinations once, then reply MODEL_PLUGIN_VERIFIED.',
+    })
+    const done = await harness('wait', { sessionId: run.id })
+    assert.equal(done.state, 'completed', JSON.stringify(done.turns.map((turn) => turn.error)))
+    assert.match(done.turns.at(-1).text, /MODEL_PLUGIN_VERIFIED/)
+  }
+  const providers = await wire('llm/listProviders')
+  const channelProviders = [
+    'codearts',
+    'buddy',
+    'workbuddy',
+    'lobsterai',
+    'qoder',
+    'qodercn',
+    'trae',
+    'cline',
+    'loomy',
+    'raccoon',
+    'minimax',
+    'zcode',
+    'gemini',
+  ]
+  for (const provider of channelProviders)
+    assert(
+      providers.some((item) => item.id === provider),
+      'Original channel provider missing: ' + provider,
+    )
+  return {
+    package: pkg.name,
+    version: pkg.version,
+    originalBundle: true,
+    accountChannelProviders: channelProviders,
+    nativeModel: true,
+    virtualModel: true,
+    officialToolFlow: true,
+  }
+}

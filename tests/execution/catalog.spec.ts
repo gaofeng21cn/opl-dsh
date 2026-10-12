@@ -75,6 +75,56 @@ describe('combination authority', () => {
 })
 
 describe('user model choices', () => {
+  it('projects all third-party routes and virtual models while preserving custom defaults', async () => {
+    const { ExecutionModelResolver } = await import('../../src/execution/host/execution-models.ts')
+    const providers = [
+      { id: 'our-free-model', name: 'Our Free Model' },
+      { id: 'our-free-model-region', name: 'Our Free Model · region-limited' },
+      { id: 'minimax', name: 'MiniMax' },
+      { id: 'zcode', name: 'ZCode' },
+    ]
+    const models = ['plugin-model', 'combo:my-route']
+    const catalog = defaultExecutionCatalog()
+    catalog.combinations.push({
+      id: 'user-default',
+      name: 'My route',
+      modelRef: { provider: 'our-free-model', model: 'combo:my-route' },
+      harnessRef: 'dsh',
+      permissionPolicy: 'workspace',
+      isDefault: true,
+      enabled: true,
+    })
+    const ctx = {
+      get: () => undefined,
+      llm: {
+        listProviders: () => providers,
+        listConfigurableProviders: () => [],
+        listModels: async () => models.map((id) => ({ id, name: id })),
+      },
+    }
+    const projected = await new ExecutionModelResolver(
+      ctx as never,
+      {
+        get: async () => catalog,
+      } as never,
+    ).resolve()
+    for (const provider of providers)
+      for (const model of models) {
+        const ref = { provider: provider.id, model }
+        expect(
+          projected.models.find((item) => JSON.stringify(item.ref) === JSON.stringify(ref)),
+        ).toMatchObject({ ref, available: true, source: provider.name })
+        const combinations = projected.combinations.filter(
+          (item) => JSON.stringify(item.modelRef) === JSON.stringify(ref),
+        )
+        expect(combinations).toHaveLength(1)
+        expect(combinations[0]?.harnessRef).toBe('dsh')
+      }
+    expect(
+      projected.combinations.find((item) => item.id === 'user-default')?.permissionPolicy,
+    ).toBe('workspace')
+  })
+
   it('excludes unconfigured providers and preserves explicit same-model channels', async () => {
     const { selectableModels } = await import('../../src/execution/contracts/catalog.ts')
     const model = (provider: string, id: string, available = true) => ({

@@ -1034,7 +1034,7 @@ describe('auto-review plugin wiring contract', () => {
     const entry = registrations[0]!
     expect(entry.name).toBe('settings.section')
     expect(entry.id).toBe('opl-auto-review')
-    expect(entry.order).toBe(14)
+    expect(entry.order).toBe(80)
     expect(entry.locale).toBe(AUTO_REVIEW_NAMESPACE)
     expect(entry.label?.()).toBe(zh.sectionLabel)
     expect(entry.inject?.()).toEqual({ api })

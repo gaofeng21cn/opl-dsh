@@ -6,7 +6,7 @@
 
 交付准备分两段：`build-candidate.mjs` / `verify-candidate.mjs` 负责**产出与校验**候选目录；`lifecycle.mjs` 负责**导入、版本目录、显式选择、升级、切回官方**，全程离线、可 dry-run、不自动更新、不读凭据与用户配置。生命周期复用既有的套件 Harness 根目录布局与 `pipeline.mjs` 的清单/许可/能力原语，不自建安装体系。
 
-离线生命周期脚本写自己的审计回执；DSH Host 的 `oplExecution/select-minimax-candidate` 则在校验后发布真实运行配置，并检查该 Host 所有项目的活动任务。两者的保证范围不同，详见「选择性使用（不覆盖官方安装）」。
+离线生命周期脚本写自己的审计回执；DSH Host 的 `oplExecution/select-minimax-candidate` 则在校验后发布真实执行组合，并检查该 Host 所有项目的活动任务。两者的保证范围不同，详见「选择性使用（不覆盖官方安装）」。
 
 ## 固定事实
 
@@ -140,7 +140,7 @@ node scripts/mcode-candidate/lifecycle.mjs official --active-tasks <N>
 1. 用官方安装器安装 `mcode` 并完成官方登录（`mcode login` 或 `mcode login --region global`）。
 2. **导入候选**（可校验、可 dry-run）：`lifecycle.mjs import` 会先只读校验版本、逐文件摘要、能力标记与许可，全部通过才把候选复制进**版本目录** `%APPDATA%/OPL DSH Suite/harnesses/MiniMax Code/<candidateVersion>/`；同一位置的旧候选目录从不删除。可与 `--select` 组合，一次完成导入 + 记录选择。
 3. **记录显式选择**：`lifecycle.mjs select --version <candidateVersion> --active-tasks <调用方注入的活动数>` 写入选择回执 `selection.json`（套件自有位置），并在输出里给出要填进“可执行文件路径”的绝对路径。这一步只写回执。
-4. **让选择真正生效**：人工在设置 → Harness 卡片里展开 MiniMax Code 的“可执行文件路径”，填入该绝对路径（该输入框接受绝对路径或 PATH 中的命令，失焦即保存；绝对路径按“来自运行配置”识别，含空格可用）。也可使用下面的 Host 选择命令，导入校验和运行配置发布在同一维护操作中完成。
+4. **让选择真正生效**：人工在设置 → 执行引擎 卡片里展开 MiniMax Code 的“可执行文件路径”，填入该绝对路径（该输入框接受绝对路径或 PATH 中的命令，失焦即保存；绝对路径按“来自执行组合”识别，含空格可用）。也可使用下面的 Host 选择命令，导入校验和执行组合发布在同一维护操作中完成。
 5. 候选与官方共用官方登录状态：不要设置 `MINIMAX_DATA_DIR`/`MAVIS_DATA_DIR` 指向副本，也不要复制 `~/.minimax`。
 
 ### 由 DSH Host 导入并选择
@@ -202,7 +202,7 @@ Host 检查同一运行实例所有项目的运行 Agent、组合轮次和公开
 
 ### 切回官方
 
-`lifecycle.mjs official --active-tasks <注入值>` 只把选择回执改成官方（`selection.kind = "official"`），候选目录、`preserved`、历史全部保留，官方安装与账号数据自始至终未被修改；真实切回要把“可执行文件路径”改回官方 `mcode.cmd` 或官方安装目录里的绝对路径（通过 `save-catalog` 保存实际运行配置）。
+`lifecycle.mjs official --active-tasks <注入值>` 只把选择回执改成官方（`selection.kind = "official"`），候选目录、`preserved`、历史全部保留，官方安装与账号数据自始至终未被修改；真实切回要把“可执行文件路径”改回官方 `mcode.cmd` 或官方安装目录里的绝对路径（通过 `save-catalog` 保存实际执行组合）。
 
 需要预先知道的是：当前适配器在 Windows 上要求 ACP 回读 `_meta["minimax-code/shell"]` 与会话历史接口，官方 0.6.3 不提供这些接口，所以切回官方后 MiniMax 组合会在发送前按设计被拒绝，不会悄悄退回 PowerShell、CMD 或 WSL。命令的输出里也会带这条提醒。只有官方提供等价接口并通过真实回读与真实工具执行验证后，才适合切回或换用新候选。
 
@@ -229,7 +229,7 @@ Host 检查同一运行实例所有项目的运行 Agent、组合轮次和公开
 - 真实工具执行：真实 Bash 身份与中文/emoji/含空格路径参数、非零退出码、stdout/stderr、取消后清理所属后代进程、超时输出。
 - 两个固定模型各自独立进程的 new/load 固定模型参数与 Shell。
 - 未改动的官方 Desktop 在隔离数据目录下的安装、五设置插槽加载与重启恢复。
-- 生命周期交付还须验证：权威构建到便携目录的精确转换、真实 Host 导入与运行配置、活动任务拒绝、失败保留与显式回切、代理和模型权限保留。单独写回执或注入活动数不能替代这些检查。
+- 生命周期交付还须验证：权威构建到便携目录的精确转换、真实 Host 导入与执行组合、活动任务拒绝、失败保留与显式回切、代理和模型权限保留。单独写回执或注入活动数不能替代这些检查。
 - 切回官方的兼容性必须按实际版本验证；当前官方 0.6.3 不满足此适配器所需的 ACP 扩展。
   未做过的检查照实写"未做"，不用固定值或离线结果冒充实机结果。
 
@@ -239,6 +239,6 @@ Host 检查同一运行实例所有项目的运行 Agent、组合轮次和公开
 
 便携目录按原构建清单逐文件比对后转换：把已核验的 Node 放进目录、改写启动器并为最终 2041 个文件生成分发清单。没有用重算未知安装目录的摘要替代原构建来源。离线生命周期的 27 项检查覆盖包版本、启动器额外命令、junction 写出 Store、报告硬链接、失败保留与原子发布。
 
-隔离数据目录中的未修改官方 Desktop 已通过 Host 真实导入、运行配置发布、另一项目的原生任务活动拒绝以及无效升级后原选择保留。选择便携目录后，M3.1/max 和 M3/on 各完成一次真实 Bash 新建验收；关闭该隔离 Desktop 后，两者恢复同一 ACP Session，并再次完成内置 Bash 的 sort、Bash 版本和 uname 命令，退出码均为 0。权限为 full-access，项目路径含中文和空格。该验证没有修改官方安装、登录文件或生产 profile。
+隔离数据目录中的未修改官方 Desktop 已通过 Host 真实导入、执行组合发布、另一项目的原生任务活动拒绝以及无效升级后原选择保留。选择便携目录后，M3.1/max 和 M3/on 各完成一次真实 Bash 新建验收；关闭该隔离 Desktop 后，两者恢复同一 ACP Session，并再次完成内置 Bash 的 sort、Bash 版本和 uname 命令，退出码均为 0。权限为 full-access，项目路径含中文和空格。该验证没有修改官方安装、登录文件或生产 profile。
 
 当前 Host 接线已构建并完成隔离验证，尚未安装到生产 Desktop。不同候选版本的真实模型升级仍需要另一份经过验收的候选；合成版本的行为检查不能替代这一项。现有候选不自动更新，Shell 验收不替代实时界面或通知验收。

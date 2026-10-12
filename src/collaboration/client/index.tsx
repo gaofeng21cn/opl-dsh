@@ -1,3 +1,4 @@
+import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import { CoordinationSection } from './CoordinationSection.tsx'
 import { remoteCall, optionalRemote } from '../../shared/client/remote-call.ts'
@@ -9,7 +10,7 @@ export function apply(ctx: Context): void {
       {
         name: 'settings.section',
         id: 'opl-codex',
-        order: 13,
+        order: SETTINGS_ORDER['opl-codex'],
         label: () => '协作与自动化',
         inject: () => {
           // Optional execution settings must not block Skill/install settings.

@@ -140,6 +140,13 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
   }
   async function waitFor(expression, description, recover) {
     for (let attempt = 0; attempt < 80; attempt++) {
+      // Original plugin onboarding can arrive after the shell/setup is ready.
+      // Dismiss its real deferred button whenever it appears, rather than
+      // assuming a single early check has acknowledged the asynchronous gate.
+      await pipe.evaluate(
+        session,
+        `(() => {const dialog=document.querySelector('.ofm_ann');const node=dialog && Array.from(dialog.querySelectorAll('button')).find(x=>x.getClientRects().length && ['稍后再说','Later'].includes(x.textContent?.trim()));node?.click()})()`,
+      )
       if (await pipe.evaluate(session, expression)) return
       if (recover) await recover()
       await delay(250)
@@ -168,6 +175,10 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
     '官方预览版说明尚未关闭',
   )
   // Fresh profile onboarding uses its real button and real setup RPC.
+  await pipe.evaluate(
+    session,
+    clickLabel(['稍后再说', 'Later'], "document.querySelector('.ofm_ann')"),
+  )
   await pipe.evaluate(session, clickLabel(['稍后登录', 'Sign in later']))
   await waitFor(
     "!Array.from(document.querySelectorAll('[data-opl-panel=setup]')).some(x=>x.getClientRects().length)",
@@ -195,12 +206,40 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
   }
   await openSettings()
   const panels = [
-    { label: ['Harness'], marker: 'execution-settings' },
-    { label: ['运行配置'], marker: 'catalog' },
+    { label: ['执行引擎', 'Harnesses'], marker: 'execution-settings' },
+    { label: ['执行组合', 'Combinations'], marker: 'catalog' },
     { label: ['协作与自动化'], marker: 'collaboration' },
-    { label: ['模型', 'Models'], marker: 'gateway-models' },
+    { label: ['模型供应商', 'Model providers'], marker: 'gateway-models' },
   ]
   const screenshots = result.screenshots
+  const expectedNavigation = [
+    '通用设置',
+    '网关账户',
+    '模型供应商',
+    'OFM 模型服务',
+    '执行引擎',
+    '执行组合',
+    'Agent 预设',
+    '协作与自动化',
+    '工具审批',
+    '上下文预算',
+    '系统通知',
+    '插件管理',
+  ]
+  await waitFor(
+    `JSON.stringify(Array.from(${settingsNav}.querySelectorAll('button')).map(x=>x.textContent.trim())) === ${JSON.stringify(JSON.stringify(expectedNavigation))}`,
+    '设置导航名称或顺序与统一目录不一致',
+  )
+  result.settingsNavigation = await pipe.evaluate(
+    session,
+    `Array.from(${settingsNav}.querySelectorAll('button')).map(x=>x.textContent.trim())`,
+  )
+  result.clippedNavigationLabels = await pipe.evaluate(
+    session,
+    `Array.from(${settingsNav}.querySelectorAll('button span')).filter(x=>x.getClientRects().length && x.scrollWidth>x.clientWidth+1).map(x=>x.textContent.trim()).filter(Boolean)`,
+  )
+  if (result.clippedNavigationLabels.length)
+    throw new Error('设置导航标签被截断：' + result.clippedNavigationLabels.join('、'))
   async function recoverClosedSettings() {
     if (result.settingsReopens || (await pipe.evaluate(session, `Boolean(${settingsNav})`))) return
     result.settingsReopens++
@@ -259,11 +298,51 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
       )
       result.harnessProxySaved = true
     }
+    if (panel.marker === 'gateway-models') {
+      await waitFor(
+        `(() => {const node=document.querySelector('[data-opl-provider="huawei-maas"]');return Boolean(node && node.getClientRects().length && node.getAttribute('aria-busy')==='false' && node.innerText.includes('GLM-5.2'))})()`,
+        '华为云模型来源未挂载到供应商页',
+      )
+      await pipe.evaluate(
+        session,
+        `(() => {const node=document.querySelector('[data-opl-provider="huawei-maas"]');node.querySelector('summary').click();node.scrollIntoView({block:'center'})})()`,
+      )
+      result.huaweiProvider = await pipe.evaluate(
+        session,
+        `(() => {const node=document.querySelector('[data-opl-provider="huawei-maas"]');const input=node.querySelector('input');return {count:document.querySelectorAll('[data-opl-provider="huawei-maas"]').length,expanded:node.querySelector('details').open,keyInputType:input.type,keyInputEmpty:input.value==='',keyInputDisabled:input.disabled,hasEndpoint:node.innerText.includes('https://api.modelarts-maas.com/openai/v1'),independentPage:document.querySelector('[data-opl-panel="huawei-maas"]')!==null}})()`,
+      )
+      const source = result.huaweiProvider
+      if (
+        source.count !== 1 ||
+        !source.expanded ||
+        source.keyInputType !== 'password' ||
+        !source.keyInputEmpty ||
+        !source.hasEndpoint ||
+        source.independentPage ||
+        (process.platform !== 'win32' && !source.keyInputDisabled)
+      )
+        throw new Error('华为云供应商卡片的配置或凭据状态错误')
+      const providerScreenshot = await captureScreenshot('huawei-provider')
+      if (providerScreenshot) screenshots.push(providerScreenshot)
+      else result.screenshotFailures.push('huawei-provider')
+    }
     const file = await captureScreenshot(panel.marker)
     if (file) screenshots.push(file)
     else result.screenshotFailures.push(panel.marker)
     result.settingsSlots.push(panel.marker)
   }
+  await waitFor(
+    clickLabel(['OFM 模型服务', 'OFM services'], settingsNav),
+    '原版模型插件设置入口未注册',
+  )
+  await waitFor(
+    "Boolean(document.querySelector('.ofm_root')?.getClientRects().length)",
+    '原版模型插件设置页未加载',
+  )
+  result.settingsSlots.push('our-free-model')
+  const modelPluginScreenshot = await captureScreenshot('our-free-model')
+  if (modelPluginScreenshot) screenshots.push(modelPluginScreenshot)
+  else result.screenshotFailures.push('our-free-model')
   result.runtimeExceptions = errors().length
   if (errors().length)
     throw new Error(

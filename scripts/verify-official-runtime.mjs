@@ -2,6 +2,7 @@ import { createServer } from 'node:http'
 import { readFile, readdir, mkdir, writeFile, access } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { assertIsolatedRoot, safeBinding } from './qualification-support.mjs'
+import { verifyModelPlugins } from './qualification-model-plugins.mjs'
 // Run against an already booted, isolated official Desktop. Never target a user's profile.
 const root = await assertIsolatedRoot(process.argv[2] ?? '')
 const binding = safeBinding(
@@ -13,6 +14,8 @@ async function rpc(namespace, method, args = {}) {
     headers: { authorization: 'Bearer ' + binding.token, 'content-type': 'application/json' },
     body: JSON.stringify({ namespace, method, args }),
     signal: AbortSignal.timeout(30000),
+  }).catch((error) => {
+    throw new Error('隔离 control 请求未完成：' + namespace + '/' + method, { cause: error })
   })
   const out = await response.json()
   if (!out.ok) throw Error(out.error)
@@ -31,6 +34,8 @@ async function request(method, payload) {
     headers: { 'content-type': 'application/json', cookie },
     body: JSON.stringify({ type: 'client-request', rpcId: crypto.randomUUID(), method, payload }),
     signal: AbortSignal.timeout(30000),
+  }).catch((error) => {
+    throw new Error('隔离 Client 请求未完成：' + method, { cause: error })
   })
   const out = await response.json()
   if (!out.result?.ok) throw Error(out.result?.error?.message ?? '调用失败')
@@ -94,6 +99,7 @@ if (process.argv.includes('--readback-selections')) {
 const project = join(root, 'test-project')
 await mkdir(project, { recursive: true })
 import assert from 'node:assert/strict'
+const modelPlugins = await verifyModelPlugins({ root, origin, cookie, wire, harness })
 // Exercise the OPL control adapter against the official permission and Workspace owners.
 const permissionSession = await rpc('session', 'create', {
   request: { cwd: project, permissionPreset: 'danger-full-access' },
@@ -553,14 +559,15 @@ try {
     operationId: 'hold',
     writeScope: ['src/host'],
   })
-  // Bounded transport readiness: wait for the two fixture admissions, not model progress.
-  for (let attempt = 0; attempt < 60; attempt++) {
+  // Full model plugins also initialize their channel services at startup. Use
+  // the same bounded 30-second admission window as the control requests.
+  for (let attempt = 0; attempt < 300; attempt++) {
     const calls = await readFile(join(concurrentProject, 'calls.txt'), 'utf8').catch((error) => {
       if (error.code !== 'ENOENT') throw error
       return ''
     })
     if (calls === 'wait\nwait\n') break
-    if (attempt === 59) throw Error('two scoped Harness prompts did not run together')
+    if (attempt === 299) throw Error('two scoped Harness prompts did not run together')
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
   assert.equal((await harness('snapshot', { sessionId: a.id })).state, 'running')
@@ -602,6 +609,7 @@ try {
         controlProjectAttribution: true,
         groupedModels: models.map((m) => m.id),
         officialTools: true,
+        modelPlugins,
         externalOrdinaryConversation: {
           historyWithoutExecution: true,
           exactAcpResume: true,

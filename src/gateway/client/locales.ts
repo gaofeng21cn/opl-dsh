@@ -7,7 +7,7 @@ export const zh = {
   accountMore: '更多',
   accountSettings: '设置',
   accountClose: '关闭',
-  nav: 'OPL Gateway',
+  nav: '网关账户',
   title: 'OPL Gateway 账号',
   intro: '登录后即可使用模型，无需手动配置密钥。',
   provides: '本页提供的模型：{names}',
@@ -63,7 +63,7 @@ export const zh = {
   updated: '更新时间',
   advanced: '连接详情与账户操作',
   managedHint:
-    'OPL Gateway 只管理账号、分组权限和密钥。模型与协议配置统一使用 DSH 的“模型”页面；组合和 Harness 使用各自的管理页面。',
+    'OPL Gateway 只管理账号、分组权限和密钥。模型与协议配置统一使用 DSH 的“模型供应商”页面；组合和 Harness 使用各自的管理页面。',
   primaryChannel: 'DeepSeek 分组密钥',
   backupChannel: 'OpenAI 协议密钥',
   harnessChannel: 'Grok 分组密钥',

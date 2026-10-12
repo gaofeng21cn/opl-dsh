@@ -1,6 +1,7 @@
 /** Huawei key configuration labels belong to the settings locale. */
 export const zh = {
-  nav: '华为云 MaaS',
+  providerName: '华为云 MaaS',
+  configure: '配置 API Key',
   intro: '使用自己的华为云 API Key，通过官方 ZCode 运行 GLM-5.2。',
   endpoint: 'API 地址',
   model: '模型',
@@ -24,7 +25,8 @@ export const zh = {
 export type HuaweiMaaSLocaleKey = keyof typeof zh
 
 export const en: Record<HuaweiMaaSLocaleKey, string> = {
-  nav: 'Huawei Cloud MaaS',
+  providerName: 'Huawei Cloud MaaS',
+  configure: 'Configure API Key',
   intro: 'Run GLM-5.2 through official ZCode with your Huawei Cloud API Key.',
   endpoint: 'API URL',
   model: 'Model',

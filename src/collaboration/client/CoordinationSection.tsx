@@ -46,7 +46,7 @@ export function CoordinationSection({
     >
       <h2 className={css.title}>协作与自动化</h2>
       <p className={css.intro}>
-        在当前项目委派其他运行配置。子任务独立执行，发起对话负责监督和验收。
+        在当前项目委派其他执行组合。子任务独立执行，发起对话负责监督和验收。
       </p>
       <div className={css.card}>
         <h3 className={css.name}>项目内协作</h3>
@@ -106,7 +106,7 @@ export function CoordinationSection({
               />
             </div>
           )}
-          <p className={css.muted}>此开关不影响项目内 Codex CLI 运行配置。</p>
+          <p className={css.muted}>此开关不影响项目内 Codex CLI 执行组合。</p>
           <div className={css.card}>
             <h3 className={css.name}>
               {!status

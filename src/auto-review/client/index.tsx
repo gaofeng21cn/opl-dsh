@@ -1,3 +1,4 @@
+import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
 /**
  * Client plugin of the Auto Review settings section.
  *
@@ -38,7 +39,7 @@ export function apply(ctx: Context, config: Config): void {
       {
         name: 'settings.section',
         id: 'opl-auto-review',
-        order: 14,
+        order: SETTINGS_ORDER['opl-auto-review'],
         label: () => t('sectionLabel'),
         locale: AUTO_REVIEW_NAMESPACE,
         inject: () => ({

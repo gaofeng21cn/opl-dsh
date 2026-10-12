@@ -15,11 +15,13 @@ import * as notifications from '../notifications/client/index.tsx'
 import * as contextBudget from '../context-budget/client/index.tsx'
 import * as autoReview from '../auto-review/client/index.tsx'
 import * as todoStatus from '../todo-status/client/index.tsx'
+import * as settingsNavigation from '../compat/client/settings-navigation.ts'
 import { remoteCall } from '../shared/client/remote-call.ts'
 export const inject = ['remote', 'slots', 'locale']
 export async function apply(ctx: Context): Promise<void> {
   const dispose = await ctx.remote.$mount(remote)
   ctx.effect(() => dispose)
+  ctx.plugin(settingsNavigation)
   let openModels: (() => void) | undefined
   ctx.plugin(gateway, { openModels: () => openModels?.() })
   ctx.plugin(execution)

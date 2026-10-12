@@ -1,3 +1,4 @@
+import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import { watchStopEditSession } from './stop-edit-session-watch.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -117,8 +118,8 @@ export function apply(ctx: Context): void {
       {
         name: 'settings.section',
         id: 'opl-harness-settings',
-        order: 11,
-        label: () => 'Harness',
+        order: SETTINGS_ORDER['opl-harness-settings'],
+        label: () => '执行引擎',
         inject: () => ({ call }),
       },
       HarnessSettings,
@@ -129,8 +130,8 @@ export function apply(ctx: Context): void {
       {
         name: 'settings.section',
         id: 'opl-execution',
-        order: 12,
-        label: () => '运行配置',
+        order: SETTINGS_ORDER['opl-execution'],
+        label: () => '执行组合',
         inject: () => ({ call }),
       },
       ExecutionCatalogSection,

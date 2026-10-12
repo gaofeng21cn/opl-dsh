@@ -7,7 +7,7 @@ description: 在同项目关联子对话中，用 DSH、Codex CLI、Claude Code�
 
 配置位于本 Skill 的 `config.json`。运行 `control.mjs` 时使用配置中的 `executable`，并设置 `ELECTRON_RUN_AS_NODE=1`；helper 会在需要时启动官方桌面。不得直接读取或回显 Desktop 的 `control.json`、Harness 的 `*.control.json` 或私人凭据文件；运行身份、状态和配置通过受控 CLI 的公开结果核对，不能先输出整个私有文件再脱敏。helper 内部用于已授权 IPC 的鉴权不将 token 返回给模型。
 
-Windows 自动启动通过 WMI 的 `Win32_Process.Create` 创建套件启动器，使官方桌面不继承调用方的 Windows Job；安装后自动启动和 Skill 自动启动都使用同一 `launch.vbs → setup.mjs` 入口。该方式无需提权或安装服务，profile 和应用路径由套件启动器显式设置，不传递 Codex 进程的自定义环境变量。启动器按安装配置显式设置 `CODEX_HOME`，使通知 CLI 使用同一 Codex 状态目录；代理配置应保存在各 Harness 的运行配置中。WMI 被系统策略禁用或启动失败时明确报错，改由用户打开 OPL DSH 快捷方式；不回退成共享 Job 的自动启动。Windows 父 PID、不同 PID 或 `detached/unref` 不能代替独立生命周期验收。
+Windows 自动启动通过 WMI 的 `Win32_Process.Create` 创建套件启动器，使官方桌面不继承调用方的 Windows Job；安装后自动启动和 Skill 自动启动都使用同一 `launch.vbs → setup.mjs` 入口。该方式无需提权或安装服务，profile 和应用路径由套件启动器显式设置，不传递 Codex 进程的自定义环境变量。启动器按安装配置显式设置 `CODEX_HOME`，使通知 CLI 使用同一 Codex 状态目录；代理配置应保存在各 Harness 的执行组合中。WMI 被系统策略禁用或启动失败时明确报错，改由用户打开 OPL DSH 快捷方式；不回退成共享 Job 的自动启动。Windows 父 PID、不同 PID 或 `detached/unref` 不能代替独立生命周期验收。
 
 ## 调试与安装时退出 Desktop
 
@@ -115,7 +115,7 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' del
 
 ## 外部 Harness 独立代理
 
-外部 CLI 的独立代理位于设置 → 运行配置 → Harness 网络代理，按 Harness 保存 `proxy.mode=inherit|direct|custom`；custom 的 `url` 只接受无账号密码的 HTTP/HTTPS 地址。缺省继承 Desktop 环境；直连清除 CLI 子进程的代理环境变量，不能覆盖 CLI 自己的其它网络配置。指定代理自动绕过本地 ACP/MCP。内置 DSH 同进程模型不使用该选项，终端单独执行的登录命令也不读取它。用户授权修改某个 Harness 时保留其它配置、模型和权限，不改 Desktop 全局代理，不读取或输出凭据。
+外部 CLI 的独立代理位于设置 → 执行组合 → Harness 网络代理，按 Harness 保存 `proxy.mode=inherit|direct|custom`；custom 的 `url` 只接受无账号密码的 HTTP/HTTPS 地址。缺省继承 Desktop 环境；直连清除 CLI 子进程的代理环境变量，不能覆盖 CLI 自己的其它网络配置。指定代理自动绕过本地 ACP/MCP。内置 DSH 同进程模型不使用该选项，终端单独执行的登录命令也不读取它。用户授权修改某个 Harness 时保留其它配置、模型和权限，不改 Desktop 全局代理，不读取或输出凭据。
 
 保存不打断当前轮次；下一轮在新 CLI 进程中恢复同一会话并应用当前代理。临时启动器仍连接着的旧进程不能作为代理生效证据。网络失败先读原 operation，修正配置后同 Session/task、新 operation 续作；不重发原 operation。验证代理须包含真实 Harness 请求结果，端口监听、公开网站连通或环境变量回读不足以宣称账号/模型可用。
 
@@ -169,7 +169,7 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' rep
 
 已明确授权的旧完整访问任务若显示 `custom`，先确认对应普通 DSH 会话已空闲，再执行 `permissions --session <nativeSessionId> --preset danger-full-access`；随后读取 `permissions --session <nativeSessionId>`，核对 preset、sandbox、approval 分别为 `danger-full-access`、`danger-full-access`、`never`。该操作不发送模型 prompt，不批准挂起的工具请求，也不改动其他会话。
 
-MiniMax 候选的 Host 选择命令为 `minimax-candidate-select --version <候选版本> [--source <候选目录>]`。它通过公开 `oplExecution/select-minimax-candidate` 检查同一 Host 所有项目活动并持有维护互斥，把已校验启动器写入实际运行配置；不读取离线 `selection.json` 作为当前选择。省略来源可切回已导入版本，不覆盖已有版本或改官方账号。返回 `validation: static` 仅代表文件校验，仍须核对真实 ACP Shell、模型和 Bash。生产安装前按当前全局任务重新核验空闲；不能凭上一次审计或回执断言可切换。
+MiniMax 候选的 Host 选择命令为 `minimax-candidate-select --version <候选版本> [--source <候选目录>]`。它通过公开 `oplExecution/select-minimax-candidate` 检查同一 Host 所有项目活动并持有维护互斥，把已校验启动器写入实际执行组合；不读取离线 `selection.json` 作为当前选择。省略来源可切回已导入版本，不覆盖已有版本或改官方账号。返回 `validation: static` 仅代表文件校验，仍须核对真实 ACP Shell、模型和 Bash。生产安装前按当前全局任务重新核验空闲；不能凭上一次审计或回执断言可切换。
 
 Auto Review 工具审批默认关闭；启用不自动改变现有会话权限。DSH 原生所有聊天模型和 ZCode 默认使用独立注册的 codex-auto-review，不继承聊天推理档位；显式固定审查模型仍优先。Codex、Claude 使用官方审核接口；其他未验证的外部 Auto 模式拒绝启动。审查模型只使用 Host 注册并广告的原生无工具 LLM 路线，不能把外部 MiniMax ACP 或其他 CLI 组合当作纯 LLM。已有完整访问授权的协作任务继续显式使用 danger-full-access/never，不为了测试审查而修改活动任务的权限。保存回执未知时先读取生效状态，不重发不确定保存；停用前由用户切换空闲 Auto 会话的权限，不自动放宽为完全权限或代答人工审批。
 

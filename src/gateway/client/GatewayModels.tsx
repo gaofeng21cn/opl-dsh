@@ -148,7 +148,7 @@ export function GatewayModels({ call }: { call: Call }) {
             <p className={css.muted}>
               {data.groups.some((group) => group.ready)
                 ? '尚未添加模型。展开编辑后获取可用模型或手动添加。'
-                : '请先在“OPL Gateway”登录并同步凭据。'}
+                : '请先在“网关账户”登录并同步凭据。'}
             </p>
           )}
           {candidates && (

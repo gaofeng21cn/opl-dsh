@@ -72,7 +72,7 @@ mcode login --region global
 
 ## 独立网络代理
 
-Global 账号所在网络需要代理时，在设置 → 运行配置 → Harness 网络代理中给 MiniMax Code 选择“指定代理”，填写例如 `http://127.0.0.1:7897`，再保存。该代理仅用于 DSH 启动的 mcode 及其子进程，其他 Harness 的代理和 Desktop 全局环境不变。地址只支持无账号密码的 HTTP/HTTPS 代理；本地监听端口须可用，设置本身不会启动代理或保证海外出口。
+Global 账号所在网络需要代理时，在设置 → 执行组合 → Harness 网络代理中给 MiniMax Code 选择“指定代理”，填写例如 `http://127.0.0.1:7897`，再保存。该代理仅用于 DSH 启动的 mcode 及其子进程，其他 Harness 的代理和 Desktop 全局环境不变。地址只支持无账号密码的 HTTP/HTTPS 代理；本地监听端口须可用，设置本身不会启动代理或保证海外出口。
 
 已运行的轮次不被保存操作打断，下一轮重连时恢复原 MiniMax 会话并使用新设置。选择“继承环境”恢复 Desktop 环境，选择“直连”清除 mcode 子进程的代理环境变量。CLI 另有配置时由其官方实现决定实际路由；本地 ACP/MCP 桥自动绕过指定代理。失败的旧 operation 不重发，应检查原因后以同 Session、同 task、新 operation 继续。终端中单独执行的 `mcode login` 不读取此设置，需要在那个终端自行设置代理环境。
 

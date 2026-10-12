@@ -64,7 +64,7 @@ export function HarnessProxySection({
       <p className={css.intro}>
         为每个外部 Harness
         单独设置它启动子进程时使用的网络代理。每一项先在本地修改，再各自保存；其它
-        Harness、模型和运行配置不受影响。保存后，正在运行的任务保持当前连接，后续轮次重连时才会使用新设置。
+        Harness、模型和执行组合不受影响。保存后，正在运行的任务保持当前连接，后续轮次重连时才会使用新设置。
       </p>
       {harnesses.map((harness) => {
         const builtIn = harness.kind === 'dsh'

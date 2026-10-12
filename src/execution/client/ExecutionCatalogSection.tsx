@@ -26,7 +26,7 @@ export function ExecutionCatalogSection({ call }: { call: Call }) {
   } = useExecutionCatalog(call)
   return (
     <div className={css.section} data-opl-panel="catalog" aria-busy={busy || (!catalog && !notice)}>
-      <h2 className={css.title}>运行配置</h2>
+      <h2 className={css.title}>执行组合</h2>
       <p className={css.intro}>
         保存模型、渠道、Harness
         与权限的搭配。已启用的组合显示在官方会话输入框中，未就绪项显示原因；委派任务和交付由后台保存。模型在“模型”页管理，账号与凭据在“OPL
@@ -45,7 +45,7 @@ export function ExecutionCatalogSection({ call }: { call: Call }) {
       {!catalog && notice && <Button onClick={retry}>重试</Button>}
       {catalog && (
         <details className={css.details}>
-          <summary>添加运行配置</summary>
+          <summary>添加执行组合</summary>
           <div className={css.detailsBody}>
             <label className={css.field}>
               名称
@@ -89,7 +89,7 @@ export function ExecutionCatalogSection({ call }: { call: Call }) {
               disabled={busy || !draft.name.trim() || !draft.model}
               onClick={() => void add()}
             >
-              保存运行配置
+              保存执行组合
             </Button>
           </div>
         </details>
@@ -112,7 +112,7 @@ export function ExecutionCatalogSection({ call }: { call: Call }) {
               <span className={css.identity}>
                 <strong>{item.name}</strong>
                 {item.isDefault && item.enabled && (
-                  <span className={css.muted}>此模型的默认运行配置</span>
+                  <span className={css.muted}>此模型的默认执行组合</span>
                 )}
                 <span className={css.muted}>
                   {displayModelSource(item.modelRef, model?.source)} ·{' '}
@@ -149,12 +149,12 @@ export function ExecutionCatalogSection({ call }: { call: Call }) {
               </label>
               <div className={css.row}>
                 <Switch
-                  label="作为此模型的默认运行配置"
+                  label="作为此模型的默认执行组合"
                   disabled={busy || !item.enabled}
                   checked={item.isDefault}
                   onChange={(isDefault) => update(item.id, { isDefault })}
                 />
-                <span className={css.muted}>默认运行配置</span>
+                <span className={css.muted}>默认执行组合</span>
               </div>
               <label className={css.field}>
                 权限

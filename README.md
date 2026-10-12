@@ -46,10 +46,11 @@ Windows · x64，在 PowerShell 中运行：
 
 这是在线安装器：内含 OPL 增强，安装时自动下载约 300 MB 的官方桌面。Mac 打开 DMG 中的安装应用；Windows 直接运行 EXE。OPL 安装器未签名，首次需按系统提示允许打开；下载的官方桌面会校验 SHA-512 和 DeepSeek 发布者签名。
 
-安装或升级前请退出已打开的 DeepSeek Harness。安装器会复用现有官方桌面和 profile；登录、会话、运行配置、协作设置和用户修改过的 Skill 会保留。安装完成后日常只需打开官方 **DeepSeek Harness**，不需要打开兼容维护入口。
+安装或升级前请退出已打开的 DeepSeek Harness。安装器会复用现有官方桌面和 profile；登录、会话、执行组合、协作设置和用户修改过的 Skill 会保留。安装完成后日常只需打开官方 **DeepSeek Harness**，不需要打开兼容维护入口。
 
 ## 增强能力
 
+- **Our Free Model 模型插件**：一键安装时通过官方插件管理器原样接入 [dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model)，保留上游全部渠道、登录、模型发现、路由、设置页面和更新能力。插件公开的模型和虚拟路由自动进入 OPL 组合目录，默认使用 DSH；账号与模型仍在插件原生页面管理。OPL 重新安装保留已有插件版本、来源和停用状态，不维护上游源码副本。详见[第三方模型插件](docs/model-plugins.md)。
 - **OPL Gateway**：应用内登录，统一管理账户、余额、连接状态和 DeepSeek、OpenAI 协议、Grok、Gemini、AWS、Kiro 分组权限、密钥和本机激活状态。Gateway 页面不维护模型目录；登录后把可用路由注册为 DSH 原生模型页面中的 **OPL Gateway** Provider。默认模型 ID 为 `deepseek-flash`，对话选择器显示 **模型 · Harness**；模型来源显示在展开列表的分组标题中。
 - **分组模型路由**：按账号权限自动管理各分组密钥，并保留每个模型的明确分组归属。模型归属决定实际协议：DeepSeek 模型通过官方 DeepSeek adapter 使用 Messages，GPT 等 OpenAI 协议模型通过官方 `dsh-llm-pi-ai` 协议库使用 OpenAI。两组不会因为请求失败而互相回退，仍由 DSH 执行工具和管理会话。
 - **Codex ↔ DSH 协作**：自动安装 `opl-dsh-official` Skill，可启动 DSH、连续派发任务、等待结果、读取持久化反馈。设置中可修复 Skill、调整自动启动和可选通知桥。
@@ -67,7 +68,7 @@ Windows · x64，在 PowerShell 中运行：
 
 推理菜单只列具体档位，不提供“默认”：GPT-6 Astra/Sol/Luna 与 Claude Opus 5.5 为 `low/medium/high/xhigh/max`（GPT 不提供 `ultra`）；Grok 4.7 为 `low/medium/high/xhigh`；MiniMax M3.1 为 `low/medium/high/xhigh/max`，M3 为思考开关。选项按实际 Harness 核对，Grok 通过 ACP 设置并回读。所有 DeepSeek-V4.1-Flash 渠道未指定档位时使用 `max`；已明确选择的档位和每模型会话记忆保留。
 
-设置分为 **OPL Gateway、模型、Harness、运行配置、协作与自动化**。Gateway 账号页负责凭据和权限；模型页复用 DSH 原生设置，OPL Gateway 作为一个来源按分组展开。Harness 页检测本机程序、版本与路径，提供官方安装更新入口。运行配置只引用模型、Harness 和权限，不再重复保存连接和协议；协作与自动化管理任务验收、外部接入和 Skill。外部任务不单列设置页，按官方会话在对应项目侧栏查看和处理。
+设置按账户与模型来源、执行与组合、协作与行为、插件管理排列。**网关账户** 管理 OPL Gateway 凭据和权限；**模型供应商** 复用 DSH 原生设置，OPL Gateway 按分组展开，华为云 MaaS 的 GLM-5.2 与 API Key 在此配置。**OFM 模型服务** 保留原版 Our Free Model 的全部设置与更新功能。**执行引擎** 管理 Harness 程序、版本与路径，提供官方安装更新入口。执行组合只引用模型、Harness 和权限，不再重复保存连接和协议；协作与自动化管理任务验收、外部接入和 Skill。外部任务不单列设置页，按官方会话在对应项目侧栏查看和处理。
 
 对话输入栏直接使用官方 DSH 的会话 UI，并在模型选择器中显示“模型 · Harness”。所有已就绪组合都可在当前会话选择；官方 DSH 组合直接切换模型，外部 Harness 组合由 Host 在同一官方会话的模型请求阶段转发。切换到外部 Harness 时，已有会话的文本、工具调用和结果会作为上下文交接；历史推理内容不会交接，直接附件暂不支持。未配置官方凭据的 DeepSeek 模型不会作为可用选项；未登录 DeepSeek 官方账号时不请求远端模型目录，已保存的组合仍显示为不可用。默认 DeepSeek Flash 只走 DeepSeek 分组，不要求 OpenAI 协议权限；用户在模型页显式启用后，才会加入 OpenAI 协议渠道。同名模型的渠道分别保留；Claude Opus 5.5 可选 AWS/Kiro。账号页展示上游返回的分组倍率，组合始终绑定所选渠道。GPT 使用 OpenAI 协议分组。
 
@@ -87,7 +88,7 @@ MiniMax 组合使用官方 MiniMax 账号，凭据由官方 `mcode` CLI 自己�
 
 例如，在 Codex 或 DSH 中说：“让 Grok + Grok Build 在当前项目检查这个模块，把结果返回这里。”派发方会建立关联子对话，继承项目目录，并用指定组合执行；组合详情会显示模型为 Grok 4.7。Grok 对话也能通过内置协作工具把任务交给 DeepSeek + DSH。
 
-“运行配置”设置页负责绑定管理；外部 Harness 的子任务由后台按项目记录工具过程、结果、权限和验收状态。需要继续追问或“交给另一组合”时，在当前 DSH/Codex 对话中使用委派工具。各 Harness 保留自己的上下文、工具和持久会话；交接时提供明确任务说明。
+“执行组合”设置页负责绑定管理；外部 Harness 的子任务由后台按项目记录工具过程、结果、权限和验收状态。需要继续追问或“交给另一组合”时，在当前 DSH/Codex 对话中使用委派工具。各 Harness 保留自己的上下文、工具和持久会话；交接时提供明确任务说明。
 
 Codex Skill 的 `delegate` 返回组合会话 `id`，用它继续、等待或取消；稳定的 task/operation ID 避免断线重试造成重复执行。从 Codex 派发的外部组合会话绑定一个普通 DSH 会话，其会话 id 只对应官方会话列表中的那一个；委派命令与通知核验仍使用组合 id 和 `execution` 中的 Harness 身份，三类标识不可互换。显式委派任务的完成、失败和观察到的人工等待可共用 DSH taskFeedback 通知发起 Codex 对话；需要启用自动回传及配置真实队列桥，并在升级后用真实外部任务验证主动投递。未配置时，交付仍持久保存，可等待或读取。模型选择器触发的同会话转发直接回到官方消息流，后台记录仍可用于恢复和验收。
 通过 Skill 或对话内协作工具按 `claude-opus-5-5` 委派且未指定组合时，默认选 Kiro 分组；指定 AWS 组合 ID 仍可使用 AWS。Kiro 未就绪时不会自动改走 AWS。
@@ -96,7 +97,7 @@ Codex Skill 的 `delegate` 返回组合会话 `id`，用它继续、等待或取
 
 ### 外部 Harness 独立代理
 
-设置 → 运行配置 → Harness 网络代理可分别为 MiniMax Code、Codex CLI、Claude Code、Grok Build 等外部 CLI 选择“继承环境”“直连”或“指定代理”。指定代理填写无账号密码的 HTTP/HTTPS 地址，例如 `http://127.0.0.1:7897`；本地代理程序须已启动。缺省继承 Desktop 的代理环境。直连清除该 CLI 子进程的代理环境变量；CLI 自己另外配置的网络选项仍由其官方实现管理。
+设置 → 执行组合 → Harness 网络代理可分别为 MiniMax Code、Codex CLI、Claude Code、Grok Build 等外部 CLI 选择“继承环境”“直连”或“指定代理”。指定代理填写无账号密码的 HTTP/HTTPS 地址，例如 `http://127.0.0.1:7897`；本地代理程序须已启动。缺省继承 Desktop 的代理环境。直连清除该 CLI 子进程的代理环境变量；CLI 自己另外配置的网络选项仍由其官方实现管理。
 
 代理保存到官方 profile 的组合目录，按 Harness 共用，不更换账号、模型、权限或可执行文件。正在执行的轮次保留原连接，下一轮使用新的 CLI 进程恢复同一会话并应用新设置；已结束的 operation 不重发。指定代理自动绕过 localhost、127.0.0.1 和 ::1，保证本地 ACP/MCP 桥仍可用。此设置作用于外部 CLI 及其子进程，不修改 Desktop 的全局网络，也不控制内置 DSH 模型或单独从终端启动的 CLI。只支持 HTTP/HTTPS 代理，不接收带用户名密码的 URL。
 
@@ -124,7 +125,7 @@ Homebrew 用户可用 `brew upgrade --cask gaofeng21cn/opl-dsh/opl-dsh` 更新�
 
 ### 项目内协作
 
-在官方 DSH 对话中直接提出“请另一模型完成这个子任务”，当前运行配置可委派已就绪的 DSH、Codex CLI、Claude Code 或 Grok Build 配置。子任务继承项目与权限边界，保留精确模型和渠道。发起对话可等待、查询、取消、核验交付和要求继续修改；这些状态由后台记录，主界面保持官方会话 UI。
+在官方 DSH 对话中直接提出“请另一模型完成这个子任务”，当前执行组合可委派已就绪的 DSH、Codex CLI、Claude Code 或 Grok Build 配置。子任务继承项目与权限边界，保留精确模型和渠道。发起对话可等待、查询、取消、核验交付和要求继续修改；这些状态由后台记录，主界面保持官方会话 UI。
 
 “协作与自动化”可设置交付后自动回传与修改次数上限。相同项目内由 OPL 托管的写任务排队，只读任务可并行；这不锁定项目外部编辑器或独立启动的进程。中断任务保留原记录，不自动重发。
 

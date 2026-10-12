@@ -21,7 +21,7 @@ export async function resolveGatewayExecution(
   const key = resolveKey
     ? await resolveKey()
     : (await ctx.credentials.resolve(credentialRef(group.credential)))?.value
-  if (!key) throw Error('所选渠道凭据未就绪，请在 OPL Gateway 页面刷新账号')
+  if (!key) throw Error('所选渠道凭据未就绪，请在网关账户（OPL Gateway）页面刷新账号')
   const settings = ctx.get('settings')?.describe()
   const suite = settings?.find((item) => item.ns === 'opl-suite')?.value as
     | { gateway?: { baseURL?: string } }

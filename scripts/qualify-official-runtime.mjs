@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
 import { assertIsolatedRoot, verifyPayload, safeBinding, sha256 } from './qualification-support.mjs'
 import { DesktopPipe, verifyDesktopClient } from './qualification-client.mjs'
+import { startModelPluginFixture } from './qualification-model-plugins.mjs'
 import {
   verifyHarnessTranscriptClient,
   verifyHarnessLiveTranscriptClient,
@@ -63,6 +64,7 @@ const evidence = {
   checks: {},
 }
 let desktop
+let modelPluginFixture
 let desktopPipe
 let desktopWindow
 let interrupted
@@ -492,6 +494,8 @@ try {
       env: { ...environment, ELECTRON_RUN_AS_NODE: '1' },
     })
   evidence.checks.isolatedInstallation = true
+  modelPluginFixture = await startModelPluginFixture()
+  Object.assign(environment, modelPluginFixture.environment)
   const historyProject = join(root, 'test-project')
   await mkdir(historyProject, { recursive: true })
   await writeFile(
@@ -535,6 +539,9 @@ try {
   evidence.checks.runtime = JSON.parse(
     await run(process.execPath, [join(repo, 'scripts/verify-official-runtime.mjs'), root]),
   )
+  if (!modelPluginFixture.requests.some((request) => request.usedTool))
+    throw new Error('原版模型插件未完成官方工具调用后的模型回复')
+  evidence.checks.modelPluginRequests = modelPluginFixture.requests
   if (evidence.checks.runtime.harnessTranscript)
     evidence.checks.transcriptClient = await verifyHarnessTranscriptClient(
       desktopPipe,
@@ -567,6 +574,7 @@ try {
   evidence.failure = String(error.message).replace(/Bearer\s+[^\s"']+/g, 'Bearer [REDACTED]')
   process.exitCode = 1
 } finally {
+  if (modelPluginFixture) await modelPluginFixture.close()
   try {
     await stopDesktop()
   } catch (error) {

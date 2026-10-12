@@ -8,14 +8,14 @@ export function HarnessSettings({ call }: { call: Call }) {
   return (
     <div className={css.section} data-opl-panel="execution-settings" aria-busy={busy}>
       <div className={css.header}>
-        <h2 className={css.title}>Harness</h2>
+        <h2 className={css.title}>执行引擎</h2>
         <Button variant="outline" disabled={busy} onClick={() => void load()}>
           {busy ? '检测中…' : '重新检测'}
         </Button>
       </div>
       <p className={css.intro}>
         查看本机已安装的执行程序、版本和官方更新入口。可用的模型 + Harness
-        组合在“运行配置”页中管理。
+        组合在“执行组合”页中管理。
       </p>
       {error && <p role="alert">{error}</p>}
       {busy && !items.length && (
@@ -48,7 +48,7 @@ export function HarnessSettings({ call }: { call: Call }) {
                 : item.detectedBy === 'shell-path'
                   ? '（来自登录 Shell PATH）'
                   : item.detectedBy === 'configured-path'
-                    ? '（来自运行配置）'
+                    ? '（来自执行组合）'
                     : ''}
             </p>
           )}

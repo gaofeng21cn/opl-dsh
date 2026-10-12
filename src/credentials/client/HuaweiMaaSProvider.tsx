@@ -5,19 +5,19 @@ import type { HuaweiMaaSKeyResult, HuaweiMaaSStatus } from '../contracts/huawei-
 import css from '../../shared/client/SettingsSection.module.css'
 
 /** Local credential edits use write-only methods; status never returns a key. */
-export interface HuaweiMaaSSectionInjected {
+export interface HuaweiMaaSProviderInjected {
   readStatus: () => Promise<HuaweiMaaSStatus>
   saveKey: (key: string) => Promise<HuaweiMaaSKeyResult>
   clearKey: () => Promise<HuaweiMaaSKeyResult>
 }
 
 /** Configure the Huawei credential without restoring its value into the input. */
-export function HuaweiMaaSSection({
+export function HuaweiMaaSProvider({
   t,
   readStatus,
   saveKey,
   clearKey,
-}: PropsLocale<'settings.oplHuaweiMaas'> & HuaweiMaaSSectionInjected) {
+}: PropsLocale<'settings.oplHuaweiMaas'> & HuaweiMaaSProviderInjected) {
   const [status, setStatus] = useState<HuaweiMaaSStatus>()
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(true)
@@ -80,11 +80,15 @@ export function HuaweiMaaSSection({
   }
 
   return (
-    <section className={css.section} data-opl-panel="huawei-maas" aria-busy={busy}>
+    <section
+      className={`${css.section} ${css.card}`}
+      data-opl-provider="huawei-maas"
+      aria-busy={busy}
+    >
       <header className={css.header}>
         <div>
-          <h2 className={css.title}>{t('nav')}</h2>
-          <p className={css.intro}>{t('intro')}</p>
+          <h3 className={css.name}>{t('providerName')}</h3>
+          <p className={css.muted}>GLM-5.2 · ZCode</p>
         </div>
         <Button variant="outline" disabled={busy} onClick={() => void act('refresh')}>
           {t('refresh')}
@@ -104,12 +108,6 @@ export function HuaweiMaaSSection({
         <p className={css.muted}>{t('loading')}</p>
       ) : (
         <>
-          <dl className={css.facts}>
-            <dt className={css.factLabel}>{t('endpoint')}</dt>
-            <dd className={css.factValue}>{status.baseUrl}</dd>
-            <dt className={css.factLabel}>{t('model')}</dt>
-            <dd className={css.factValue}>{status.model}</dd>
-          </dl>
           <p role="status">
             {t(
               !status.credential.supported
@@ -121,42 +119,54 @@ export function HuaweiMaaSSection({
                     : 'missing',
             )}
           </p>
-          <p className={css.muted}>{t('storage')}</p>
-          <form
-            className={css.form}
-            onSubmit={(event) => {
-              event.preventDefault()
-              void act('save')
-            }}
-          >
-            <label className={css.field}>
-              <span className={css.label}>{t('key')}</span>
-              <input
-                className={css.input}
-                type="password"
-                autoComplete="off"
-                spellCheck={false}
-                placeholder={t('placeholder')}
-                value={key}
-                disabled={busy || !status.credential.available}
-                onChange={(event) => setKey(event.target.value)}
-              />
-            </label>
-            <Button
-              variant="primary"
-              type="submit"
-              disabled={busy || !status.credential.available || !key.trim()}
-            >
-              {t('save')}
-            </Button>
-            <Button
-              variant="outline"
-              disabled={busy || !status.credential.available || !status.credential.configured}
-              onClick={() => void act('clear')}
-            >
-              {t('clear')}
-            </Button>
-          </form>
+          <details className={css.details}>
+            <summary>{t('configure')}</summary>
+            <div className={css.detailsBody}>
+              <p className={css.muted}>{t('intro')}</p>
+              <dl className={css.facts}>
+                <div className={css.wide}>
+                  <dt className={css.factLabel}>{t('endpoint')}</dt>
+                  <dd className={css.factValue}>{status.baseUrl}</dd>
+                </div>
+              </dl>
+              <p className={css.muted}>{t('storage')}</p>
+              <form
+                className={css.form}
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void act('save')
+                }}
+              >
+                <label className={css.field}>
+                  <span className={css.label}>{t('key')}</span>
+                  <input
+                    className={css.input}
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder={t('placeholder')}
+                    value={key}
+                    disabled={busy || !status.credential.available}
+                    onChange={(event) => setKey(event.target.value)}
+                  />
+                </label>
+                <Button
+                  variant="primary"
+                  type="submit"
+                  disabled={busy || !status.credential.available || !key.trim()}
+                >
+                  {t('save')}
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={busy || !status.credential.available || !status.credential.configured}
+                  onClick={() => void act('clear')}
+                >
+                  {t('clear')}
+                </Button>
+              </form>
+            </div>
+          </details>
         </>
       )}
     </section>
