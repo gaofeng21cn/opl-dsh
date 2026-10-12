@@ -8,12 +8,19 @@ const root = await assertIsolatedRoot(process.argv[2] ?? '')
 const binding = safeBinding(
   JSON.parse(await readFile(join(root, 'profiles/desktop/control.json'), 'utf8')),
 )
+function requestDeadline(method) {
+  const discovery = ['oplExecution/catalog', 'oplExecution/save-catalog', 'session/modelCatalog']
+  return method === 'oplExecution/wait' ||
+    (process.platform === 'win32' && discovery.includes(method))
+    ? 180000
+    : 30000
+}
 async function rpc(namespace, method, args = {}) {
   const response = await fetch(binding.endpoint, {
     method: 'POST',
     headers: { authorization: 'Bearer ' + binding.token, 'content-type': 'application/json' },
     body: JSON.stringify({ namespace, method, args }),
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(requestDeadline(namespace + '/' + method)),
   }).catch((error) => {
     throw new Error('隔离 control 请求未完成：' + namespace + '/' + method, { cause: error })
   })
@@ -35,7 +42,7 @@ async function request(method, payload) {
     body: JSON.stringify({ type: 'client-request', rpcId: crypto.randomUUID(), method, payload }),
     // wait returns the completed task, including official tools and Windows
     // credential probes; ordinary RPC reads keep their shorter deadline.
-    signal: AbortSignal.timeout(method === 'oplExecution/wait' ? 180000 : 30000),
+    signal: AbortSignal.timeout(requestDeadline(method)),
   }).catch((error) => {
     throw new Error('隔离 Client 请求未完成：' + method, { cause: error })
   })

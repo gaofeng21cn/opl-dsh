@@ -542,7 +542,11 @@ try {
     },
   )
   evidence.checks.runtime = JSON.parse(
-    await run(process.execPath, [join(repo, 'scripts/verify-official-runtime.mjs'), root]),
+    await run(process.execPath, [join(repo, 'scripts/verify-official-runtime.mjs'), root], {
+      // Windows discovery runs real CLI and credential helpers. Keep a finite
+      // overall bound without preempting their per-request completion budgets.
+      timeout: process.platform === 'win32' ? 900000 : 300000,
+    }),
   )
   if (!modelPluginFixture.requests.some((request) => request.usedTool))
     throw new Error('原版模型插件未完成官方工具调用后的模型回复')
