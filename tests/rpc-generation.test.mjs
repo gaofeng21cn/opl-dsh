@@ -72,6 +72,7 @@ test('official generator derives source contracts, rejects drift, and preserves 
     await mkdir(join(root, 'src'))
     await mkdir(join(root, 'installer'))
     await mkdir(join(root, 'scripts/mcode-candidate'), { recursive: true })
+    await mkdir(join(root, 'scripts/codex-candidate'), { recursive: true })
     await symlink(join(repository, 'node_modules'), join(root, 'node_modules'), 'junction')
     await writeFile(
       join(root, 'package.json'),

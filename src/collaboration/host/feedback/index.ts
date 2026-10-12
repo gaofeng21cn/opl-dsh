@@ -65,7 +65,7 @@ import {
   type ReceiptRecordState,
   type TaskRecordState,
 } from './spec.ts'
-import { codexQueueWakeAdapter, unconnectedWakeAdapter } from './wake.ts'
+import { codexQueueWakeAdapter, composeDeliveryReview, unconnectedWakeAdapter } from './wake.ts'
 import { DeliveryPump } from './delivery.ts'
 import { ReceiptLedger } from './receipts.ts'
 import { feedbackSessionFacts } from './session-facts.ts'
@@ -130,6 +130,7 @@ const STAGE_ORDER: readonly DeliveryStage[] = [
 export type * from './types.ts'
 export {
   codexQueueWakeAdapter,
+  composeDeliveryReview,
   composeWakeMessage,
   unconnectedWakeAdapter,
   WAKE_UNCONNECTED_REASON,
@@ -971,7 +972,16 @@ export default class TaskFeedbackService extends TypertRemoteService {
         deliveryId: request.deliveryId,
         stage: 'received',
       })
-      return { action: 'review', receipt: projectReceipt(receipt), delivery: acknowledged.delivery }
+      return {
+        action: 'review',
+        receipt: projectReceipt(receipt),
+        delivery: acknowledged.delivery,
+        reviewInstructions: composeDeliveryReview(
+          stored.payload,
+          stored.deliveryId,
+          this.config.summaryMaxChars,
+        ),
+      }
     }
     if (existing.status === 'consumed') {
       const acknowledged = await this.acknowledge({
@@ -979,7 +989,12 @@ export default class TaskFeedbackService extends TypertRemoteService {
         deliveryId: request.deliveryId,
         stage: 'review-started',
       })
-      return { action: 'skip', receipt: projectReceipt(existing), delivery: acknowledged.delivery }
+      return {
+        action: 'skip',
+        receipt: projectReceipt(existing),
+        delivery: acknowledged.delivery,
+        reviewInstructions: null,
+      }
     }
     // An ownerless receipt is one an `ack` path wrote; the first `receive`
     // adopts it instead of leaving the review unowned forever.
@@ -996,7 +1011,16 @@ export default class TaskFeedbackService extends TypertRemoteService {
         deliveryId: request.deliveryId,
         stage: existing.status === 'received' ? 'received' : 'review-started',
       })
-      return { action: 'resume', receipt: projectReceipt(receipt), delivery: acknowledged.delivery }
+      return {
+        action: 'resume',
+        receipt: projectReceipt(receipt),
+        delivery: acknowledged.delivery,
+        reviewInstructions: composeDeliveryReview(
+          stored.payload,
+          stored.deliveryId,
+          this.config.summaryMaxChars,
+        ),
+      }
     }
     // Another consumer holds a live claim: repair the delivery stage only, and
     // never hand this message permission to work.
@@ -1005,7 +1029,12 @@ export default class TaskFeedbackService extends TypertRemoteService {
       deliveryId: request.deliveryId,
       stage: 'received',
     })
-    return { action: 'busy', receipt: projectReceipt(existing), delivery: acknowledged.delivery }
+    return {
+      action: 'busy',
+      receipt: projectReceipt(existing),
+      delivery: acknowledged.delivery,
+      reviewInstructions: null,
+    }
   }
 
   /** An owner identity for a consumer that did not name one. */

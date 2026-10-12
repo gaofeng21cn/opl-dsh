@@ -1,0 +1,2 @@
+# Unified diff blank context lines retain their required space prefix.
+scripts/codex-candidate/patches/*.patch whitespace=-blank-at-eol

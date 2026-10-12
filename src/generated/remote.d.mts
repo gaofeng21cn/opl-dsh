@@ -3,7 +3,7 @@ import type {
   RemoteResult,
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, ContextBudgetRequest, ContextBudgetSnapshot, CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
+import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, CodexRuntimeRequest, CodexRuntimeResult, ContextBudgetRequest, ContextBudgetSnapshot, CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, MessageEditSend, MessageEditState, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$6f706c4175746f526576696577 {
@@ -31,6 +31,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'harness-installations': () => Promise<RemoteResult<HarnessInstallation[]>>
     'harness-update': (request: { id: string; }) => Promise<RemoteResult<null>>
     list: () => Promise<RemoteResult<HarnessCatalog>>
+    'message-edit-send': (request: MessageEditSend) => Promise<RemoteResult<SessionPromptValue>>
+    'message-edit-state': (request: { sessionId: string; }) => Promise<RemoteResult<MessageEditState>>
     'model-selection': (request: SessionRequest) => Promise<RemoteResult<HarnessSelection>>
     prompt: (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
     report: (request: ReportRequest) => Promise<RemoteResult<{ saved: boolean; operationId: string; }>>
@@ -40,6 +42,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'save-catalog': (request: { catalog: ExecutionCatalog; }) => Promise<RemoteResult<ExecutionCatalog>>
     'save-cooperation-settings': (request: CooperationSettings) => Promise<RemoteResult<CooperationSettings>>
     'save-harness-proxy': (request: { harnessId: string; proxy: HarnessProxy; }) => Promise<RemoteResult<ExecutionCatalog>>
+    'select-codex-runtime': (request: CodexRuntimeRequest) => Promise<RemoteResult<CodexRuntimeResult>>
     'select-combination': (request: { sessionId: string; combination: string; }) => Promise<RemoteResult<{ kind: string; sessionId: string; }>>
     'select-effort': (request: { sessionId: string; provider: string; model: string; reasoningEffort?: string; }) => Promise<RemoteResult<null>>
     'select-minimax-candidate': (request: MiniMaxCandidateRequest) => Promise<RemoteResult<MiniMaxCandidateResult>>
@@ -104,6 +107,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/harness-installations': () => Promise<RemoteResult<HarnessInstallation[]>>
     'oplExecution/harness-update': (request: { id: string; }) => Promise<RemoteResult<null>>
     'oplExecution/list': () => Promise<RemoteResult<HarnessCatalog>>
+    'oplExecution/message-edit-send': (request: MessageEditSend) => Promise<RemoteResult<SessionPromptValue>>
+    'oplExecution/message-edit-state': (request: { sessionId: string; }) => Promise<RemoteResult<MessageEditState>>
     'oplExecution/model-selection': (request: SessionRequest) => Promise<RemoteResult<HarnessSelection>>
     'oplExecution/prompt': (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
     'oplExecution/report': (request: ReportRequest) => Promise<RemoteResult<{ saved: boolean; operationId: string; }>>
@@ -113,6 +118,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/save-catalog': (request: { catalog: ExecutionCatalog; }) => Promise<RemoteResult<ExecutionCatalog>>
     'oplExecution/save-cooperation-settings': (request: CooperationSettings) => Promise<RemoteResult<CooperationSettings>>
     'oplExecution/save-harness-proxy': (request: { harnessId: string; proxy: HarnessProxy; }) => Promise<RemoteResult<ExecutionCatalog>>
+    'oplExecution/select-codex-runtime': (request: CodexRuntimeRequest) => Promise<RemoteResult<CodexRuntimeResult>>
     'oplExecution/select-combination': (request: { sessionId: string; combination: string; }) => Promise<RemoteResult<{ kind: string; sessionId: string; }>>
     'oplExecution/select-effort': (request: { sessionId: string; provider: string; model: string; reasoningEffort?: string; }) => Promise<RemoteResult<null>>
     'oplExecution/select-minimax-candidate': (request: MiniMaxCandidateRequest) => Promise<RemoteResult<MiniMaxCandidateResult>>

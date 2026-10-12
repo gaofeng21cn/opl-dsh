@@ -1,10 +1,12 @@
 import type { HarnessDefinition } from './catalog.ts'
+import type { HarnessCapabilities } from './capabilities.ts'
 
 export interface HarnessInstallation {
   id: string
   name: string
   /** The same persisted Harness shown by detection; no model catalog is needed. */
   definition?: HarnessDefinition
+  capabilities?: HarnessCapabilities
   installed: boolean
   version?: string
   path?: string

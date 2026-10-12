@@ -3,6 +3,8 @@
 /** Simplified Chinese dictionary and key source of truth. */
 export const zh = {
   accountTitle: '账户与登录',
+  accountSignedOut: '未登录',
+  accountSignedIn: '已登录',
   accountMenu: '账户菜单',
   accountMore: '更多',
   accountSettings: '设置',
@@ -99,6 +101,8 @@ export type OplGatewayLocaleKey = keyof typeof zh
 /** English dictionary checked against the Chinese key set. */
 export const en = {
   accountTitle: 'Accounts and sign-in',
+  accountSignedOut: 'Not signed in',
+  accountSignedIn: 'Signed in',
   accountMenu: 'Account menu',
   accountMore: 'More',
   accountSettings: 'Settings',

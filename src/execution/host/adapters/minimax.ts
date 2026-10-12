@@ -377,6 +377,17 @@ function assertPinned(
 export const minimaxCodeAdapter: HarnessAdapter = {
   id: MINIMAX_CODE_HARNESS,
   transport: 'acp',
+  capabilities: {
+    transport: 'acp',
+    authentication: 'official-account',
+    protocols: [],
+    customEndpoint: false,
+    permissions: ['full-access'],
+    sessionLoad: true,
+    cancel: true,
+    reasoning: 'cli-advertised',
+    autoReview: 'unsupported',
+  },
   matches: isMinimaxCodeModel,
   async available(_ctx, options) {
     const path = await minimaxCodePath(options)

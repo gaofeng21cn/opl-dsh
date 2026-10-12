@@ -65,6 +65,37 @@ export async function apply(ctx: Context): Promise<void> {
   // Reparse the same raw config once, so the new fields have official volatile
   // references before settings reads them. No config or package bytes are rewritten.
   await entry.fiber.restart()
+  // The official editor probes by namespace and provider, without an endpoint.
+  // pi-ai owns this namespace but has no Huawei catalog or per-provider hook.
+  ctx.effect(() => {
+    const llm = ctx.llm
+    const previous = Object.getOwnPropertyDescriptor(llm, 'discoverModels')
+    const discover = llm.discoverModels
+    const catalog = new HuaweiZcodeModelAdapter()
+    const adapted: typeof discover = async function (
+      this: Context['llm'],
+      settingsNs,
+      request,
+      signal,
+    ) {
+      if (settingsNs !== ns || request.provider !== HUAWEI_ZCODE_MODEL.provider)
+        return discover.call(this, settingsNs, request, signal)
+      signal?.throwIfAborted()
+      const models = await catalog.listModels(HUAWEI_ZCODE_MODEL.provider)
+      signal?.throwIfAborted()
+      return models.map(({ id, name }) => ({ id, name }))
+    }
+    Object.defineProperty(llm, 'discoverModels', {
+      configurable: true,
+      writable: true,
+      value: adapted,
+    })
+    return () => {
+      if (Object.getOwnPropertyDescriptor(llm, 'discoverModels')?.value !== adapted) return
+      if (previous) Object.defineProperty(llm, 'discoverModels', previous)
+      else Reflect.deleteProperty(llm, 'discoverModels')
+    }
+  })
   const configuration = () => entry.fiber!.config as ExtraConfig
   // Finish the one-time owner write before exposing an editor. Otherwise a
   // slower Windows probe can change the namespace revision under an open draft.

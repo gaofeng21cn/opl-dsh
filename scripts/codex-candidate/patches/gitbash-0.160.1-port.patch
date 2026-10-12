@@ -1,0 +1,1373 @@
+diff --git a/codex-rs/core/src/lib.rs b/codex-rs/core/src/lib.rs
+--- a/codex-rs/core/src/lib.rs
++++ b/codex-rs/core/src/lib.rs
+@@ -89,6 +89,7 @@
+ pub mod exec;
+ pub mod exec_env;
+ mod exec_policy;
++pub(crate) mod git_bash;
+ #[cfg(test)]
+ mod git_info_tests;
+ mod guardian;
+diff --git a/codex-rs/core/src/session/session.rs b/codex-rs/core/src/session/session.rs
+--- a/codex-rs/core/src/session/session.rs
++++ b/codex-rs/core/src/session/session.rs
+@@ -1369,6 +1369,10 @@
+                         )
+                     })?
+                 }
++            } else if let Some(git_bash) = crate::git_bash::configured_shell(
++                &session_configuration.permission_profile(),
++            ).await? {
++                git_bash
+             } else {
+                 shell::default_user_shell()
+             };
+diff --git a/codex-rs/core/src/tools/handlers/unified_exec.rs b/codex-rs/core/src/tools/handlers/unified_exec.rs
+--- a/codex-rs/core/src/tools/handlers/unified_exec.rs
++++ b/codex-rs/core/src/tools/handlers/unified_exec.rs
+@@ -9,8 +9,10 @@
+ use crate::tools::registry::PostToolUsePayload;
+ use codex_exec_server::Environment;
+ use codex_protocol::models::AdditionalPermissionProfile;
++use codex_protocol::models::PermissionProfile;
+ use codex_tools::UnifiedExecShellMode;
+ use serde::Deserialize;
++use std::borrow::Cow;
+ use std::path::PathBuf;
+ use std::sync::Arc;
+ 
+@@ -96,11 +98,84 @@
+     })
+ }
+ 
++/// Whether the *selected* Bash is Codex's Windows Git Bash support.
++///
++/// Codex's Git Bash support is full-access only: no Windows sandbox backend
++/// isolates a Git Bash child. Other Bash shells (Linux, WSL, remote
++/// environments) keep their existing semantics and are never refused here.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub(crate) enum BashAdmission {
++    /// The refused case: Git for Windows Bash selected while the base profile is
++    /// restricted.
++    RefusedGitBash,
++    /// Every other case: no Git Bash involved, or full access was granted.
++    NotRefused,
++}
++
++impl BashAdmission {
++    /// Decide admission for the resolved shell.
++    ///
++    /// `is_remote` is the execution environment's own locality, not the host
++    /// platform: a remote Linux environment must stay unrestricted even when
++    /// Codex runs on a Windows host.
++    fn evaluate(shell: &Shell, is_remote: bool, base_policy: CommandShellPolicy) -> Self {
++        if shell.shell_type != ShellType::Bash {
++            return Self::NotRefused;
++        }
++        if base_policy == CommandShellPolicy::FullAccess {
++            return Self::NotRefused;
++        }
++        if is_remote {
++            return Self::NotRefused;
++        }
++        let is_git_for_windows_bash = crate::git_bash::classify_git_bash_path(&shell.shell_path)
++            .is_ok_and(|classified| classified.path == shell.shell_path);
++        if is_git_for_windows_bash {
++            Self::RefusedGitBash
++        } else {
++            Self::NotRefused
++        }
++    }
++}
++
++/// The environment's **base** permission profile, as far as Git Bash admission is
++/// concerned.
++///
++/// This deliberately reads only the environment's base profile.
++/// `apply_granted_turn_permissions` takes `&TurnEnvironment` and returns a separate
++/// value, so it does not change what this reads. The conservative contract of this
++/// version is therefore: only a base profile of [`PermissionProfile::Disabled`]
++/// ("no outer sandbox") admits Git Bash, and per-turn/per-call additional
++/// permissions can never escalate a restricted session into full access.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub(crate) enum CommandShellPolicy {
++    /// The base sandbox is disabled, so Git Bash may run unsandboxed.
++    FullAccess,
++    /// Any other base profile: Git Bash commands are refused.
++    Restricted,
++}
++
++impl CommandShellPolicy {
++    /// True only for [`PermissionProfile::Disabled`], which means "do not apply
++    /// an outer sandbox". Every managed or externally enforced profile is
++    /// restricted, regardless of how permissive its filesystem rules look.
++    pub(crate) fn for_base_permission_profile(profile: &PermissionProfile) -> Self {
++        match profile {
++            PermissionProfile::Disabled => Self::FullAccess,
++            PermissionProfile::Managed { .. } | PermissionProfile::External { .. } => {
++                Self::Restricted
++            }
++        }
++    }
++}
++
+ pub(crate) fn get_command(
+     args: &ExecCommandArgs,
+     session_shell: Arc<Shell>,
+     shell_mode: &UnifiedExecShellMode,
+     allow_login_shell: bool,
++    is_remote_environment: bool,
++    shell_policy: CommandShellPolicy,
+ ) -> Result<ResolvedCommand, String> {
+     let use_login_shell = match args.login {
+         Some(true) if !allow_login_shell => {
+@@ -114,11 +189,42 @@
+ 
+     match shell_mode {
+         UnifiedExecShellMode::Direct => {
+-            let model_shell = args
+-                .shell
+-                .as_ref()
+-                .map(|shell_str| get_shell_by_model_provided_path(&PathBuf::from(shell_str)));
+-            let shell = model_shell.as_ref().unwrap_or(session_shell.as_ref());
++            // Resolve the requested shell before any admission decision. A bare
++            // `bash`/`BASH.EXE` request is recognized case-insensitively and mapped to
++            // the configured Git for Windows Bash when one is active; an explicit
++            // `bash.exe` path must match that configured shell exactly. This must not
++            // go through `get_shell_by_model_provided_path`, whose case-sensitive
++            // PATH rediscovery can silently turn `BASH.EXE` into `cmd.exe`.
++            let configured_git_bash = cfg!(windows)
++                && !is_remote_environment
++                && session_shell.shell_type == ShellType::Bash
++                && crate::git_bash::classify_git_bash_path(&session_shell.shell_path).is_ok();
++            let shell: Cow<'_, Shell> = match args.shell.as_deref() {
++                Some(requested) if configured_git_bash => {
++                    crate::git_bash::validate_shell_request(requested, &session_shell.shell_path)?;
++                    Cow::Borrowed(session_shell.as_ref())
++                }
++                Some(requested) => {
++                    Cow::Owned(get_shell_by_model_provided_path(&PathBuf::from(requested)))
++                }
++                None => Cow::Borrowed(session_shell.as_ref()),
++            };
++            // Fail closed before any process is spawned. The admission check is
++            // scoped to the selected Git for Windows Bash in a local
++            // environment, so Linux and remote Bash keep working unchanged.
++            if BashAdmission::evaluate(shell.as_ref(), is_remote_environment, shell_policy)
++                == BashAdmission::RefusedGitBash
++            {
++                return Err(format!(
++                    "Git for Windows Bash (`{}`) is only supported when the base permission \
++                     profile disables the sandbox. This session's base profile is restricted, and \
++                     Codex will not run Bash unsandboxed. Re-run with the sandbox disabled \
++                     (`--dangerously-bypass-approvals-and-sandbox` or `sandbox_mode = \
++                     \"danger-full-access\"`), or omit `shell` to use the sandboxed default \
++                     shell.",
++                    shell.shell_path.display()
++                ));
++            }
+             Ok(ResolvedCommand {
+                 command: shell.derive_exec_args(&args.cmd, use_login_shell),
+                 shell_type: shell.shell_type,
+diff --git a/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs b/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs
+--- a/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs
++++ b/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs
+@@ -47,6 +47,7 @@
+ 
+ use super::super::shell_spec::CommandToolOptions;
+ use super::super::shell_spec::create_exec_command_tool_with_environment_id;
++use super::CommandShellPolicy;
+ use super::ExecCommandArgs;
+ use super::ExecCommandEnvironmentArgs;
+ use super::get_command;
+@@ -55,6 +56,41 @@
+ 
+ // A byte limit is a conservative hard token bound even for byte-fallback tokenizers.
+ const EXEC_COMMAND_REJECTION_MAX_BYTES: usize = 900;
++
++/// True only for the unambiguous WSL drive layout (`/mnt/c/...`, `/mnt/...`).
++///
++/// This is checked for Windows-local Git Bash commands so the model gets a clear
++/// error instead of a wrong path. Other `/x/...` roots are never reinterpreted.
++pub(crate) fn is_ambiguous_wsl_workdir(workdir: &str) -> bool {
++    let Some(rest) = workdir.strip_prefix('/') else {
++        return false;
++    };
++    let bytes = rest.as_bytes();
++    rest.eq_ignore_ascii_case("mnt")
++        || (bytes.len() >= 4 && bytes[..3].eq_ignore_ascii_case(b"mnt") && bytes[3] == b'/')
++}
++
++/// Convert a Git Bash style `/c/Users/me/dir` workdir into `C:\Users\me\dir`.
++///
++/// Returns `None` when the workdir is not an MSYS single-letter drive path, so the
++/// caller keeps the original value. Only the leading drive prefix is rewritten, so
++/// spaces, Unicode, and the rest of the path are preserved verbatim.
++pub(crate) fn convert_msys_drive_workdir(workdir: &str) -> Option<String> {
++    let rest = workdir.strip_prefix('/')?;
++    let bytes = rest.as_bytes();
++    // `/c/...` (single ASCII letter drive) is the MSYS drive form.
++    if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b'/' {
++        let drive = (bytes[0] as char).to_ascii_uppercase();
++        let remainder = rest[1..].replace('/', "\\");
++        return Some(format!("{drive}:{remainder}"));
++    }
++    // `/c` with no trailing separator is still a drive root.
++    if bytes.len() == 1 && bytes[0].is_ascii_alphabetic() {
++        let drive = (bytes[0] as char).to_ascii_uppercase();
++        return Some(format!("{drive}:\\"));
++    }
++    None
++}
+ 
+ #[derive(Clone, Copy)]
+ pub(crate) struct ExecCommandHandlerOptions {
+@@ -64,6 +100,7 @@
+     pub(crate) include_environment_id: bool,
+     pub(crate) include_shell_parameter: bool,
+     pub(crate) include_windows_shell_guidance: bool,
++    pub(crate) git_bash_guidance: bool,
+ }
+ 
+ #[derive(Clone, Copy)]
+@@ -88,6 +125,7 @@
+                 include_environment_id: false,
+                 include_shell_parameter: true,
+                 include_windows_shell_guidance: cfg!(windows),
++                git_bash_guidance: false,
+             },
+         }
+     }
+@@ -122,12 +160,19 @@
+             },
+             self.options.include_environment_id,
+             self.options.include_shell_parameter,
+-            self.options.include_windows_shell_guidance,
++            self.options.include_windows_shell_guidance && !self.options.git_bash_guidance,
+         );
+         let mut spec = match self.lifetime {
+             ExecCommandLifetime::Interactive => spec,
+             ExecCommandLifetime::OneShot => one_shot_exec_command_spec(spec),
+         };
++        if self.options.git_bash_guidance
++            && let ToolSpec::Function(function) = &mut spec
++        {
++            function
++                .description
++                .push_str(crate::git_bash::GIT_BASH_GUIDANCE);
++        }
+         if !self.options.allow_tty
+             && let ToolSpec::Function(spec) = &mut spec
+         {
+@@ -194,8 +239,41 @@
+             ));
+         };
+         let native_environment_cwd = turn_environment.cwd().clone();
+-        let cwd = environment_args
+-            .workdir
++        let environment = Arc::clone(&turn_environment.environment);
++        // The environment's own shell wins when it reports one; otherwise the session
++        // default shell applies. This is the same selection the command will use.
++        let selected_local_shell = turn_environment
++            .shell
++            .clone()
++            .unwrap_or_else(|| session.user_shell().as_ref().clone());
++        let selected_is_git_bash = selected_local_shell.shell_type == crate::shell::ShellType::Bash
++            && crate::git_bash::classify_git_bash_path(&selected_local_shell.shell_path)
++                .is_ok_and(|classified| classified.path == selected_local_shell.shell_path);
++        // Only a Git for Windows Bash command gets MSYS drive paths rewritten. The
++        // default PowerShell/Unix behavior is untouched. For selected Git Bash,
++        // unsupported POSIX roots are rejected instead of misresolving on Windows.
++        let normalized_workdir = match environment_args.workdir.clone() {
++            Some(workdir) if selected_is_git_bash && cfg!(windows) && !environment.is_remote() => {
++                if is_ambiguous_wsl_workdir(&workdir) {
++                    return Err(FunctionCallError::RespondToModel(format!(
++                        "working directory `{workdir}` uses a WSL `/mnt/...` path, which is \
++                         ambiguous from a native Windows process. Use a native path such as \
++                         `C:\\...` or a Git Bash drive path such as `/c/...`."
++                    )));
++                }
++                match convert_msys_drive_workdir(&workdir) {
++                    Some(converted) => Some(converted),
++                    None if workdir.starts_with('/') => {
++                        return Err(FunctionCallError::RespondToModel(format!(
++                            "Git Bash working directory `{workdir}` is not a supported drive path; use `/c/...` or a native Windows absolute path."
++                        )));
++                    }
++                    None => Some(workdir),
++                }
++            }
++            other => other,
++        };
++        let cwd = normalized_workdir
+             .as_deref()
+             .filter(|workdir| !workdir.is_empty())
+             .map_or_else(
+@@ -203,7 +281,6 @@
+                 |workdir| native_environment_cwd.join(workdir),
+             )
+             .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?;
+-        let environment = Arc::clone(&turn_environment.environment);
+         let fs = environment.get_filesystem();
+ 
+         // Remote executors enforce URI-native sandbox policy themselves. Only a host-local
+@@ -294,6 +371,8 @@
+             shell,
+             &shell_mode,
+             turn_environment.config().allow_login_shell,
++            environment.is_remote(),
++            CommandShellPolicy::for_base_permission_profile(turn_environment.permission_profile()),
+         )
+         .map_err(FunctionCallError::RespondToModel)?;
+         let command = resolved_command.command;
+diff --git a/codex-rs/core/src/tools/handlers/unified_exec_tests.rs b/codex-rs/core/src/tools/handlers/unified_exec_tests.rs
+--- a/codex-rs/core/src/tools/handlers/unified_exec_tests.rs
++++ b/codex-rs/core/src/tools/handlers/unified_exec_tests.rs
+@@ -1,3 +1,5 @@
++use super::exec_command::convert_msys_drive_workdir;
++use super::exec_command::is_ambiguous_wsl_workdir;
+ use super::*;
+ use crate::shell::ShellType;
+ use crate::shell::default_user_shell;
+@@ -59,6 +61,8 @@
+         Arc::new(default_user_shell()),
+         &UnifiedExecShellMode::Direct,
+         /*allow_login_shell*/ true,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::FullAccess,
+     )
+     .map_err(anyhow::Error::msg)?;
+     let command = resolved.command;
+@@ -81,6 +85,8 @@
+         Arc::new(default_user_shell()),
+         &UnifiedExecShellMode::Direct,
+         /*allow_login_shell*/ true,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::FullAccess,
+     )
+     .map_err(anyhow::Error::msg)?;
+     let command = resolved.command;
+@@ -122,6 +128,8 @@
+         Arc::new(default_user_shell()),
+         &UnifiedExecShellMode::Direct,
+         /*allow_login_shell*/ true,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::FullAccess,
+     )
+     .map_err(anyhow::Error::msg)?;
+     let expected_shell = get_shell(ShellType::PowerShell)
+@@ -147,6 +155,8 @@
+         Arc::new(default_user_shell()),
+         &UnifiedExecShellMode::Direct,
+         /*allow_login_shell*/ true,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::FullAccess,
+     )
+     .map_err(anyhow::Error::msg)?;
+     let command = resolved.command;
+@@ -165,6 +175,8 @@
+         Arc::new(default_user_shell()),
+         &UnifiedExecShellMode::Direct,
+         /*allow_login_shell*/ false,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::FullAccess,
+     )
+     .expect_err("explicit login should be rejected");
+ 
+@@ -238,6 +250,8 @@
+         Arc::new(default_user_shell()),
+         &shell_mode,
+         /*allow_login_shell*/ true,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::FullAccess,
+     )
+     .expect_err("explicit shell should be rejected");
+ 
+@@ -606,3 +620,240 @@
+         ]
+     );
+ }
++
++#[test]
++fn test_command_shell_policy_only_full_access_is_disabled_profile() {
++    assert_eq!(
++        CommandShellPolicy::for_base_permission_profile(&PermissionProfile::Disabled),
++        CommandShellPolicy::FullAccess
++    );
++    assert_eq!(
++        CommandShellPolicy::for_base_permission_profile(&PermissionProfile::read_only()),
++        CommandShellPolicy::Restricted
++    );
++}
++
++/// A POSIX Bash is unaffected by the Windows Git Bash admission rule.
++#[cfg(not(windows))]
++#[test]
++fn test_get_command_allows_local_unix_bash_under_restricted_policy() -> anyhow::Result<()> {
++    let json = r#"{"cmd": "echo hello", "shell": "bash"}"#;
++    let args: ExecCommandArgs = parse_arguments(json)?;
++    let bash = get_shell(ShellType::Bash).expect("bash should be discoverable on this host");
++
++    let resolved = get_command(
++        &args,
++        Arc::new(bash),
++        &UnifiedExecShellMode::Direct,
++        /*allow_login_shell*/ true,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::Restricted,
++    )
++    .expect("local Unix bash must keep working under a restricted base profile");
++
++    assert_eq!(resolved.shell_type, ShellType::Bash);
++    Ok(())
++}
++
++/// A Git for Windows Bash session is refused under a restricted base profile,
++/// both for the session default shell and for an explicit bare `bash` request.
++#[cfg(windows)]
++#[test]
++fn test_get_command_refuses_git_for_windows_bash_under_restricted_policy() -> anyhow::Result<()> {
++    let git_bash = Shell {
++        shell_type: ShellType::Bash,
++        shell_path: std::path::PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
++    };
++
++    for json in [
++        r#"{"cmd": "echo hello"}"#,
++        r#"{"cmd": "echo hello", "shell": "bash"}"#,
++    ] {
++        let args: ExecCommandArgs = parse_arguments(json)?;
++        let err = get_command(
++            &args,
++            Arc::new(git_bash.clone()),
++            &UnifiedExecShellMode::Direct,
++            /*allow_login_shell*/ true,
++            /*is_remote_environment*/ false,
++            CommandShellPolicy::Restricted,
++        )
++        .expect_err("Git for Windows Bash must be refused when the base profile is restricted");
++        assert!(err.contains("restricted"), "{err}");
++    }
++    Ok(())
++}
++
++#[test]
++fn test_get_command_allows_bash_under_full_access() -> anyhow::Result<()> {
++    let json = r#"{"cmd": "echo hello", "shell": "bash"}"#;
++    let args: ExecCommandArgs = parse_arguments(json)?;
++
++    let resolved = get_command(
++        &args,
++        Arc::new(default_user_shell()),
++        &UnifiedExecShellMode::Direct,
++        /*allow_login_shell*/ true,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::FullAccess,
++    )
++    .map_err(anyhow::Error::msg)?;
++
++    assert_eq!(resolved.shell_type, ShellType::Bash);
++    assert_eq!(resolved.command.last(), Some(&"echo hello".to_string()));
++    Ok(())
++}
++
++#[test]
++fn test_bash_admission_allows_unix_bash_under_restricted_policy() {
++    // A POSIX/local Bash that is not Git for Windows must never be refused, so
++    // Linux and WSL sessions keep their existing behaviour.
++    let unix_bash = Shell {
++        shell_type: ShellType::Bash,
++        shell_path: std::path::PathBuf::from("/bin/bash"),
++    };
++    assert_eq!(
++        BashAdmission::evaluate(
++            &unix_bash,
++            /*is_remote*/ false,
++            CommandShellPolicy::Restricted
++        ),
++        BashAdmission::NotRefused
++    );
++}
++
++#[test]
++fn test_bash_admission_allows_remote_bash_under_restricted_policy() {
++    // A remote environment keeps its own semantics even on a Windows host.
++    let git_bash = Shell {
++        shell_type: ShellType::Bash,
++        shell_path: std::path::PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
++    };
++    assert_eq!(
++        BashAdmission::evaluate(
++            &git_bash,
++            /*is_remote*/ true,
++            CommandShellPolicy::Restricted
++        ),
++        BashAdmission::NotRefused
++    );
++}
++
++#[cfg(windows)]
++#[test]
++fn test_bash_admission_refuses_local_git_for_windows_bash_when_restricted() {
++    let git_bash = Shell {
++        shell_type: ShellType::Bash,
++        shell_path: std::path::PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
++    };
++    assert_eq!(
++        BashAdmission::evaluate(
++            &git_bash,
++            /*is_remote*/ false,
++            CommandShellPolicy::Restricted
++        ),
++        BashAdmission::RefusedGitBash
++    );
++    // Full access is the documented supported mode for Git Bash.
++    assert_eq!(
++        BashAdmission::evaluate(
++            &git_bash,
++            /*is_remote*/ false,
++            CommandShellPolicy::FullAccess
++        ),
++        BashAdmission::NotRefused
++    );
++}
++
++#[test]
++fn test_convert_msys_drive_workdir_rewrites_only_drive_prefixes() {
++    assert_eq!(
++        convert_msys_drive_workdir("/c/Users/me/My Project"),
++        Some(r"C:\Users\me\My Project".to_string())
++    );
++    assert_eq!(
++        convert_msys_drive_workdir("/d/工作 目录"),
++        Some("D:\\工作 目录".to_string())
++    );
++    assert_eq!(convert_msys_drive_workdir("/c"), Some(r"C:\".to_string()));
++    // Already-native paths, unknown POSIX roots, and empty values are left alone so
++    // PowerShell and non-opt-in sessions keep the exact upstream behaviour.
++    for untouched in [r"C:\Users\me", "/usr/local/bin", "", "/", "/mnt/c/Users/me"] {
++        assert_eq!(
++            convert_msys_drive_workdir(untouched),
++            None,
++            "{untouched} must not be rewritten"
++        );
++    }
++}
++
++#[test]
++fn test_is_ambiguous_wsl_workdir_only_flags_mnt() {
++    assert!(is_ambiguous_wsl_workdir("/mnt/c/Users/me"));
++    assert!(is_ambiguous_wsl_workdir("/mnt/"));
++    for allowed in ["/c/Users/me", r"C:\Users\me", "/usr/local/bin", ""] {
++        assert!(
++            !is_ambiguous_wsl_workdir(allowed),
++            "{allowed} must not be treated as a WSL path"
++        );
++    }
++}
++
++#[cfg(windows)]
++#[test]
++fn configured_git_bash_preserves_bare_names_and_rejects_mismatched_path() -> anyhow::Result<()> {
++    let path = std::path::Path::new(r"C:\Program Files\Git\bin\bash.exe");
++    if !path.is_file() {
++        return Ok(());
++    }
++    let canonical = std::fs::canonicalize(path)?;
++    let shell = Arc::new(Shell {
++        shell_type: ShellType::Bash,
++        shell_path: canonical.clone(),
++    });
++    for requested in ["bash", "BASH.EXE"] {
++        let args: ExecCommandArgs = parse_arguments(
++            &serde_json::json!({
++                "cmd": "echo ok", "shell": requested, "login": false
++            })
++            .to_string(),
++        )?;
++        let resolved = get_command(
++            &args,
++            Arc::clone(&shell),
++            &UnifiedExecShellMode::Direct,
++            /*allow_login_shell*/ true,
++            /*is_remote_environment*/ false,
++            CommandShellPolicy::FullAccess,
++        )
++        .map_err(anyhow::Error::msg)?;
++        assert_eq!(
++            resolved.command,
++            vec![
++                canonical.to_string_lossy().into_owned(),
++                "-c".to_string(),
++                "echo ok".to_string()
++            ]
++        );
++    }
++    for requested in ["bash.cmd", r"C:\not-the-selected-install\bin\bash.exe"] {
++        let args: ExecCommandArgs = parse_arguments(
++            &serde_json::json!({
++                "cmd": "echo ok", "shell": requested
++            })
++            .to_string(),
++        )?;
++        assert!(
++            get_command(
++                &args,
++                Arc::clone(&shell),
++                &UnifiedExecShellMode::Direct,
++                /*allow_login_shell*/ true,
++                /*is_remote_environment*/ false,
++                CommandShellPolicy::FullAccess,
++            )
++            .is_err()
++        );
++    }
++    Ok(())
++}
+diff --git a/codex-rs/core/src/tools/spec_plan.rs b/codex-rs/core/src/tools/spec_plan.rs
+--- a/codex-rs/core/src/tools/spec_plan.rs
++++ b/codex-rs/core/src/tools/spec_plan.rs
+@@ -1104,6 +1104,18 @@
+             context.environments,
+         ),
+         include_windows_shell_guidance: should_include_windows_shell_guidance(context.environments),
++        git_bash_guidance: {
++            let mut environments = context.environments.turn_environments();
++            environments.next().is_some_and(|environment| {
++                environments.next().is_none()
++                    && cfg!(windows)
++                    && !environment.environment.is_remote()
++                    && environment.shell.as_ref().is_some_and(|shell| {
++                        shell.shell_type == crate::shell::ShellType::Bash
++                            && crate::git_bash::classify_git_bash_path(&shell.shell_path).is_ok()
++                    })
++            })
++        },
+     };
+     if features.enabled(Feature::UnifiedExec) {
+         registry.add(ExecCommandHandler::new(options));
+diff --git a/codex-rs/core/src/git_bash.rs b/codex-rs/core/src/git_bash.rs
+new file mode 100644
+--- /dev/null
++++ b/codex-rs/core/src/git_bash.rs
+@@ -0,0 +1,420 @@
++//! Opt-in selection of Git for Windows Bash as the Windows default shell.
++//!
++//! Codex's built-in Windows default is PowerShell: `shell_detect`'s
++//! `default_user_shell_from_path` ignores `$SHELL` and the passwd shell on
++//! Windows. A user who wants the model's `exec_command` to run in Git for
++//! Windows Bash opts in explicitly via `CODEX_NATIVE_GIT_BASH_PATH`.
++//!
++//! Design rules for this module:
++//!
++//! * Explicit opt-in only. No configuration means PowerShell, exactly as before.
++//! * Fail closed. A configured path that is not clearly Git for Windows Bash is
++//!   rejected with an error. We never guess, never fall back to PowerShell, and
++//!   never accept the WSL launcher, a WSL UNC path, or an MSYS-style path.
++//! * Layout and identity checks happen once per session start;
++//!   command execution reuses the validated canonical
++//!   path and never re-probes.
++//! * This is a sanity check against mixing up executables (a renamed `cmd.exe`,
++//!   a text file, the WSL launcher). It is **not** authentication of a hostile
++//!   binary.
++
++use std::path::Path;
++use std::path::PathBuf;
++use std::process::Stdio;
++use std::time::Duration;
++
++/// Candidate-only process setting. This is not an upstream TOML configuration key.
++/// Remote executors keep the shell reported by their own environment.
++pub(crate) async fn configured_shell(
++    base_profile: &codex_protocol::models::PermissionProfile,
++) -> anyhow::Result<Option<crate::shell::Shell>> {
++    if !cfg!(windows) {
++        return Ok(None);
++    }
++    let Some(path) = std::env::var_os("CODEX_NATIVE_GIT_BASH_PATH") else {
++        return Ok(None);
++    };
++    ensure_full_access_for_git_bash(matches!(
++        base_profile,
++        codex_protocol::models::PermissionProfile::Disabled
++    ))
++    .map_err(anyhow::Error::msg)?;
++    let shell_path = resolve_configured_git_bash(Path::new(&path)).map_err(anyhow::Error::msg)?;
++    verify_git_bash_identity(&shell_path)
++        .await
++        .map_err(anyhow::Error::msg)?;
++    Ok(Some(crate::shell::Shell {
++        shell_type: crate::shell::ShellType::Bash,
++        shell_path,
++    }))
++}
++
++/// Upper bound for the one-time Bash identity probe.
++const IDENTITY_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
++/// Upper bound for captured probe output.
++const IDENTITY_PROBE_MAX_OUTPUT_BYTES: usize = 8 * 1024;
++
++/// Why a configured `git_bash_path` cannot be used.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub(crate) enum GitBashPathError {
++    /// The path is not absolute, or uses an MSYS-style `/c/...` root.
++    NotAnAbsoluteWindowsPath(String),
++    /// The path points at the WSL launcher (`System32\bash.exe`), `wsl.exe`, or
++    /// a `\\wsl$\...` UNC path.
++    WslLauncher(String),
++    /// The executable name is not exactly `bash`/`bash.exe`.
++    NotBash(String),
++    /// The path does not look like a Git for Windows installation.
++    NotGitForWindows(String),
++    /// The file does not exist or is not a regular file.
++    Missing(String),
++    /// A Git for Windows install root was found but a required layout marker is
++    /// absent, so the installation looks incomplete.
++    IncompleteInstall(String),
++}
++
++impl GitBashPathError {
++    pub(crate) fn message(&self) -> String {
++        match self {
++            Self::NotAnAbsoluteWindowsPath(path) => format!(
++                "`CODEX_NATIVE_GIT_BASH_PATH` must be an absolute Windows path such as \
++                 `C:\\Program Files\\Git\\bin\\bash.exe`; got `{path}`. MSYS-style paths like \
++                 `/c/...` and `/mnt/c/...` are ambiguous and are not accepted."
++            ),
++            Self::WslLauncher(path) => format!(
++                "`CODEX_NATIVE_GIT_BASH_PATH` points at a WSL entry point (`{path}`). Codex requires \
++                 Git for Windows Bash here; use `C:\\Program Files\\Git\\bin\\bash.exe`."
++            ),
++            Self::NotBash(path) => format!(
++                "`CODEX_NATIVE_GIT_BASH_PATH` must point at a Bash executable named `bash.exe`; got \
++                 `{path}`."
++            ),
++            Self::NotGitForWindows(path) => format!(
++                "`CODEX_NATIVE_GIT_BASH_PATH` must point at a Git for Windows Bash installation (for \
++                 example `C:\\Program Files\\Git\\bin\\bash.exe`); got `{path}`. To use Bash under \
++                 WSL, run Codex inside that WSL distribution instead."
++            ),
++            Self::Missing(path) => {
++                format!("`CODEX_NATIVE_GIT_BASH_PATH` file does not exist: `{path}`.")
++            }
++            Self::IncompleteInstall(path) => format!(
++                "`CODEX_NATIVE_GIT_BASH_PATH` points into a Git for Windows installation without its \
++                 `cmd\\git.exe` layout marker (`{path}`); the installation \
++                 looks incomplete."
++            ),
++        }
++    }
++}
++
++impl std::fmt::Display for GitBashPathError {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        f.write_str(&self.message())
++    }
++}
++
++/// A Git for Windows Bash that passed layout checks.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub(crate) struct GitBashShell {
++    /// Canonical absolute path to the Bash executable.
++    pub(crate) path: PathBuf,
++    /// Git for Windows installation root, for example `C:\Program Files\Git`.
++    pub(crate) install_root: PathBuf,
++}
++
++/// True when the path is expressed as a native Windows absolute path.
++///
++/// Rejects MSYS-style `/c/...`, `/mnt/c/...`, and `\\wsl$\...` paths, which are
++/// not meaningful to a native Windows process.
++fn is_native_windows_absolute(path: &Path) -> bool {
++    let Some(text) = path.to_str() else {
++        return false;
++    };
++    let bytes = text.as_bytes();
++    let has_drive_prefix = bytes.len() >= 3
++        && bytes[0].is_ascii_alphabetic()
++        && bytes[1] == b':'
++        && (bytes[2] == b'\\' || bytes[2] == b'/');
++    // `\\?\C:\...` and `\\server\share` are native; `\\wsl$\...` is not.
++    let has_unc_prefix = text.starts_with("\\\\") && !is_wsl_unc(path);
++    has_drive_prefix || has_unc_prefix
++}
++
++/// True for `\\wsl$\<distro>\...` and `\\wsl.localhost\...` UNC paths.
++fn is_wsl_unc(path: &Path) -> bool {
++    let lowered = path.to_string_lossy().to_ascii_lowercase();
++    lowered.starts_with("\\\\wsl$\\")
++        || lowered.starts_with("\\\\wsl.localhost\\")
++        || lowered.starts_with("//wsl$/")
++        || lowered.starts_with("//wsl.localhost/")
++}
++
++/// True when the path targets the WSL Bash entry point rather than Git Bash.
++fn targets_wsl_launcher(path: &Path) -> bool {
++    if is_wsl_unc(path) {
++        return true;
++    }
++    let normalised = path
++        .to_string_lossy()
++        .to_ascii_lowercase()
++        .replace('/', "\\");
++    normalised.contains("\\windows\\system32\\bash.exe")
++        || normalised.ends_with("\\wsl.exe")
++        || normalised.contains("\\windowsapps\\") && normalised.ends_with("bash.exe")
++}
++
++/// True when the executable file name is exactly Bash (case-insensitive).
++///
++/// Requires an `.exe` extension (or no extension for MSYS-style callers); a
++/// `bash.cmd` or `bash.txt` file is rejected.
++fn is_bash_file_name(path: &Path) -> bool {
++    let Some(extension) = path.extension() else {
++        // Bare `bash` with no extension is accepted for callers that pass the
++        // MSYS-style name; it still has to pass the layout checks below.
++        return path
++            .file_name()
++            .and_then(|name| name.to_str())
++            .is_some_and(|name| name.eq_ignore_ascii_case("bash"));
++    };
++    if !extension.eq_ignore_ascii_case("exe") {
++        return false;
++    }
++    path.file_stem()
++        .and_then(|stem| stem.to_str())
++        .is_some_and(|stem| stem.eq_ignore_ascii_case("bash"))
++}
++
++/// Split a path into lowercase components.
++fn components_lowercase(path: &Path) -> Vec<String> {
++    path.components()
++        .filter_map(|component| component.as_os_str().to_str())
++        .map(str::to_ascii_lowercase)
++        .collect()
++}
++
++/// Derive the Git for Windows installation root from a `...\bin\bash.exe` or
++/// `...\usr\bin\bash.exe` path.
++///
++/// Returns `(install_root, under_usr_bin)`. The root directory name is **not**
++/// restricted: custom installation roots are accepted, and the real layout
++/// marker check happens in [`resolve_configured_git_bash`].
++fn split_git_install_root(path: &Path) -> Option<(PathBuf, bool)> {
++    let components = components_lowercase(path);
++    let (bin_depth, under_usr_bin) = if components.len() >= 3
++        && components[components.len() - 3] == "usr"
++        && components[components.len() - 2] == "bin"
++    {
++        (3usize, true)
++    } else if components.len() >= 2 && components[components.len() - 2] == "bin" {
++        (2usize, false)
++    } else {
++        return None;
++    };
++    let keep = components.len() - bin_depth;
++    if keep == 0 {
++        return None;
++    }
++    let mut root = PathBuf::new();
++    for component in path.components().take(keep) {
++        root.push(component);
++    }
++    Some((root, under_usr_bin))
++}
++
++/// Classify a configured path as Git for Windows Bash without touching disk.
++pub(crate) fn classify_git_bash_path(path: &Path) -> Result<GitBashShell, GitBashPathError> {
++    if targets_wsl_launcher(path) {
++        return Err(GitBashPathError::WslLauncher(path.display().to_string()));
++    }
++    if !is_native_windows_absolute(path) {
++        return Err(GitBashPathError::NotAnAbsoluteWindowsPath(
++            path.display().to_string(),
++        ));
++    }
++    if !is_bash_file_name(path) {
++        return Err(GitBashPathError::NotBash(path.display().to_string()));
++    }
++    let Some((install_root, _under_usr_bin)) = split_git_install_root(path) else {
++        return Err(GitBashPathError::NotGitForWindows(
++            path.display().to_string(),
++        ));
++    };
++    Ok(GitBashShell {
++        path: path.to_path_buf(),
++        install_root,
++    })
++}
++
++/// True when `dir` contains the Git for Windows layout marker.
++///
++/// The marker is the real Git executable, not a directory name: a custom
++/// installation root is fine as long as it is a Git for Windows layout.
++fn has_git_layout_marker(root: &Path) -> bool {
++    root.join("cmd").join("git.exe").is_file()
++}
++
++/// Validate a configured `CODEX_NATIVE_GIT_BASH_PATH` end to end.
++///
++/// Canonicalizes the path (so NTFS junctions and symlinks resolve to their real
++/// target before identity decisions), re-checks identity on the canonical path,
++/// and verifies the Git for Windows layout marker. Called once during session
++/// startup; the returned canonical path is reused for the whole session.
++pub(crate) fn resolve_configured_git_bash(path: &Path) -> Result<PathBuf, String> {
++    classify_git_bash_path(path).map_err(|err| err.message())?;
++    let canonical = std::fs::canonicalize(path)
++        .map_err(|_| GitBashPathError::Missing(path.display().to_string()).message())?;
++    let shell = classify_git_bash_path(&canonical).map_err(|err| err.message())?;
++    if !shell.path.is_file() {
++        return Err(GitBashPathError::Missing(shell.path.display().to_string()).message());
++    }
++    if !has_git_layout_marker(&shell.install_root) {
++        return Err(
++            GitBashPathError::IncompleteInstall(shell.install_root.display().to_string()).message(),
++        );
++    }
++    Ok(shell.path)
++}
++
++/// Reject an opt-in Git Bash shell when the session's **base** permission profile
++/// does not disable the sandbox.
++///
++/// Called before the identity probe spawns, so a restricted configuration never
++/// executes the configured shell's startup path at all. `base_profile_disables_sandbox`
++/// must be derived from the environment's base `PermissionProfile` (only
++/// `PermissionProfile::Disabled` is `true`). Per-turn and per-call additional
++/// permissions are never treated as an escalation into full access.
++pub(crate) fn ensure_full_access_for_git_bash(
++    base_profile_disables_sandbox: bool,
++) -> Result<(), String> {
++    if base_profile_disables_sandbox {
++        return Ok(());
++    }
++    Err(
++        "`CODEX_NATIVE_GIT_BASH_PATH` is set but this session's base permission profile is \
++         restricted. Git for Windows Bash has no sandbox backend on Windows, so Codex refuses \
++         to run it under a restricted profile rather than running it unsandboxed. Disable the \
++         sandbox (`--dangerously-bypass-approvals-and-sandbox` or `sandbox_mode = \
++         \"danger-full-access\"`) or unset `CODEX_NATIVE_GIT_BASH_PATH`."
++            .to_string(),
++    )
++}
++
++/// Model guidance follows the selected local shell without changing tool parameters.
++pub(crate) const GIT_BASH_GUIDANCE: &str = "\n\nCommands use Git for Windows Bash. Use POSIX shell syntax. The login option retains its documented behavior. Working directories may use `/c/...` or native Windows absolute paths; `/mnt/...` and other POSIX mount roots are unsupported. Keep destructive file operations in one shell and verify resolved targets before deleting or moving files.";
++
++/// Resolve an explicit request against the already-validated configured shell.
++pub(crate) fn validate_shell_request(requested: &str, configured: &Path) -> Result<(), String> {
++    if requested.eq_ignore_ascii_case("bash") || requested.eq_ignore_ascii_case("bash.exe") {
++        return Ok(());
++    }
++    let path = Path::new(requested);
++    if !path.is_absolute() || !is_bash_file_name(path) {
++        return Err(format!(
++            "shell `{requested}` must be bare bash/bash.exe or the configured absolute Git Bash path"
++        ));
++    }
++    let canonical = std::fs::canonicalize(path)
++        .map_err(|err| format!("cannot resolve requested shell `{requested}`: {err}"))?;
++    if canonical != configured {
++        return Err(format!(
++            "shell `{requested}` does not match CODEX_NATIVE_GIT_BASH_PATH; omit shell to use the configured executable"
++        ));
++    }
++    Ok(())
++}
++
++/// Drain while retaining a fixed-size prefix. Dropping this future closes the
++/// pipe, including when another process still holds an inherited writer.
++async fn drain_capped(mut reader: impl tokio::io::AsyncRead + Unpin) -> std::io::Result<Vec<u8>> {
++    use tokio::io::AsyncReadExt;
++    let mut kept = Vec::with_capacity(IDENTITY_PROBE_MAX_OUTPUT_BYTES);
++    let mut buffer = [0u8; 4096];
++    loop {
++        let read = reader.read(&mut buffer).await?;
++        if read == 0 {
++            return Ok(kept);
++        }
++        let remaining = IDENTITY_PROBE_MAX_OUTPUT_BYTES - kept.len();
++        kept.extend_from_slice(&buffer[..read.min(remaining)]);
++    }
++}
++
++/// Cancels the pipe reader if the probe future is cancelled or times out.
++struct ProbeReader(tokio::task::JoinHandle<std::io::Result<Vec<u8>>>);
++
++impl Drop for ProbeReader {
++    fn drop(&mut self) {
++        self.0.abort();
++    }
++}
++
++/// Probe one executable with a single deadline covering both exit and pipe EOF.
++/// Only the direct child is owned here; no descendant-cleanup guarantee is made.
++async fn probe_identity(
++    command: &mut tokio::process::Command,
++    timeout: Duration,
++) -> Result<(), String> {
++    command
++        .stdin(Stdio::null())
++        .stdout(Stdio::piped())
++        .stderr(Stdio::null())
++        .env_remove("BASH_ENV")
++        .env_remove("ENV")
++        .kill_on_drop(true);
++    #[cfg(windows)]
++    command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
++    let mut child = command
++        .spawn()
++        .map_err(|err| format!("identity probe spawn failed: {err}"))?;
++    let stdout = child
++        .stdout
++        .take()
++        .ok_or_else(|| "identity probe stdout unavailable".to_string())?;
++    let mut reader = ProbeReader(tokio::spawn(drain_capped(stdout)));
++    let result = tokio::time::timeout(timeout, async {
++        let status = child.wait().await?;
++        let output = (&mut reader.0).await.map_err(std::io::Error::other)??;
++        Ok::<_, std::io::Error>((status, output))
++    })
++    .await;
++    let (status, output) = match result {
++        Ok(Ok(result)) => result,
++        other => {
++            let _ = child.start_kill();
++            let _ = tokio::time::timeout(Duration::from_secs(1), child.wait()).await;
++            return Err(match other {
++                Err(_) => "identity probe timed out (process or inherited stdout remained open)"
++                    .to_string(),
++                _ => "identity probe failed while reading output or waiting for exit".to_string(),
++            });
++        }
++    };
++    if !status.success() {
++        return Err(format!("identity probe exited with {status}"));
++    }
++    if !String::from_utf8_lossy(&output)
++        .lines()
++        .any(|line| line.starts_with("GNU bash, version "))
++    {
++        return Err("identity probe did not report a GNU Bash version".to_string());
++    }
++    Ok(())
++}
++
++/// Run once after full-access admission, without Bash startup files or reliance
++/// on inherited MSYSTEM. This checks accidental executable mismatches, not trust.
++pub(crate) async fn verify_git_bash_identity(canonical_bash: &Path) -> Result<(), String> {
++    let mut command = tokio::process::Command::new(canonical_bash);
++    command.arg("--version");
++    probe_identity(&mut command, IDENTITY_PROBE_TIMEOUT)
++        .await
++        .map_err(|err| {
++            format!(
++                "CODEX_NATIVE_GIT_BASH_PATH `{}`: {err}",
++                canonical_bash.display()
++            )
++        })
++}
++
++#[cfg(test)]
++#[path = "git_bash_tests.rs"]
++mod tests;
+diff --git a/codex-rs/core/src/git_bash_tests.rs b/codex-rs/core/src/git_bash_tests.rs
+new file mode 100644
+--- /dev/null
++++ b/codex-rs/core/src/git_bash_tests.rs
+@@ -0,0 +1,294 @@
++use super::*;
++
++// `classify_git_bash_path` and `resolve_configured_git_bash` reason about native
++// Windows paths, so the Windows-path cases are compiled and asserted only on
++// Windows. The platform-neutral cases below run everywhere.
++
++#[cfg(windows)]
++#[test]
++fn accepts_git_for_windows_bash_under_spaced_and_cjk_roots() {
++    for (path, expected_root) in [
++        (
++            r"C:\Program Files\Git\bin\bash.exe",
++            r"C:\Program Files\Git",
++        ),
++        (
++            r"C:\Program Files\Git\usr\bin\bash.exe",
++            r"C:\Program Files\Git",
++        ),
++        (
++            r"C:\Program Files\Git\bin\BASH.EXE",
++            r"C:\Program Files\Git",
++        ),
++        (
++            r"C:\Users\dev\AppData\Local\Programs\Git\bin\bash.exe",
++            r"C:\Users\dev\AppData\Local\Programs\Git",
++        ),
++        (r"D:\工具 安装\Git\bin\bash.exe", r"D:\工具 安装\Git"),
++    ] {
++        let classified = classify_git_bash_path(std::path::Path::new(path))
++            .unwrap_or_else(|err| panic!("{path} should be accepted, got {err}"));
++        assert_eq!(classified.path, std::path::Path::new(path), "{path}");
++        assert_eq!(
++            classified.install_root,
++            std::path::Path::new(expected_root),
++            "install root for {path}"
++        );
++    }
++}
++
++/// The layout marker is the real `cmd\git.exe` file, not the directory name: a
++/// custom installation root is accepted once it has that layout, and rejected
++/// without it. Exercises the real resolver against a real filesystem tree.
++#[cfg(windows)]
++#[test]
++fn resolve_requires_the_real_git_layout_marker_in_custom_roots() {
++    let base = std::env::temp_dir().join(format!("codex-git-bash-layout-{}", std::process::id()));
++    let _ = std::fs::remove_dir_all(&base);
++
++    let complete = base.join("complete-root");
++    std::fs::create_dir_all(complete.join("cmd")).unwrap();
++    std::fs::create_dir_all(complete.join("bin")).unwrap();
++    std::fs::write(complete.join("cmd").join("git.exe"), b"").unwrap();
++    std::fs::write(complete.join("bin").join("bash.exe"), b"").unwrap();
++    let resolved = resolve_configured_git_bash(&complete.join("bin").join("bash.exe"))
++        .expect("a custom root with cmd\\git.exe is a valid Git layout");
++    assert_eq!(
++        resolved,
++        std::fs::canonicalize(complete.join("bin").join("bash.exe")).unwrap()
++    );
++
++    let incomplete = base.join("incomplete-root");
++    std::fs::create_dir_all(incomplete.join("bin")).unwrap();
++    std::fs::write(incomplete.join("bin").join("bash.exe"), b"").unwrap();
++    let err = resolve_configured_git_bash(&incomplete.join("bin").join("bash.exe"))
++        .expect_err("a bash.exe without cmd\\git.exe must not be accepted");
++    assert!(err.contains("cmd\\git.exe"), "{err}");
++
++    let _ = std::fs::remove_dir_all(&base);
++}
++
++#[test]
++fn rejects_wsl_launcher_paths() {
++    for path in [
++        r"C:\Windows\System32\bash.exe",
++        r"\\wsl$\Ubuntu\bin\bash.exe",
++        r"\\wsl.localhost\Ubuntu\bin\bash.exe",
++    ] {
++        let err = classify_git_bash_path(std::path::Path::new(path))
++            .expect_err("WSL launcher must be rejected");
++        assert!(
++            matches!(err, GitBashPathError::WslLauncher(_)),
++            "unexpected error for {path}: {err}"
++        );
++    }
++}
++
++#[test]
++fn rejects_msys_style_and_relative_paths() {
++    for path in [
++        "/c/Program Files/Git/bin/bash.exe",
++        "/mnt/c/Program Files/Git/bin/bash.exe",
++        "bash.exe",
++        r"Git\bin\bash.exe",
++        // A POSIX shell path must never be mistaken for a configured Git Bash
++        // executable; this keeps Unix sessions on their upstream behavior.
++        "/bin/bash",
++    ] {
++        let err = classify_git_bash_path(std::path::Path::new(path))
++            .expect_err("non-native absolute path must be rejected");
++        assert_eq!(
++            err,
++            GitBashPathError::NotAnAbsoluteWindowsPath(path.to_string())
++        );
++    }
++}
++
++#[test]
++fn rejects_non_bash_and_non_git_layouts() {
++    let not_bash =
++        classify_git_bash_path(std::path::Path::new(r"C:\Program Files\Git\bin\git.exe"))
++            .expect_err("git.exe is not bash");
++    assert_eq!(
++        not_bash,
++        GitBashPathError::NotBash(r"C:\Program Files\Git\bin\git.exe".to_string())
++    );
++
++    // A `bash.cmd` is not Bash either: the extension check is strict.
++    let not_exe =
++        classify_git_bash_path(std::path::Path::new(r"C:\Program Files\Git\bin\bash.cmd"))
++            .expect_err("bash.cmd must not be accepted");
++    assert_eq!(
++        not_exe,
++        GitBashPathError::NotBash(r"C:\Program Files\Git\bin\bash.cmd".to_string())
++    );
++
++    // `bin\bash.exe` without an install root one level up has no layout at all.
++    let no_root = classify_git_bash_path(std::path::Path::new(r"bin\bash.exe"))
++        .expect_err("a bare bin path must be rejected");
++    assert_eq!(
++        no_root,
++        GitBashPathError::NotAnAbsoluteWindowsPath(r"bin\bash.exe".to_string())
++    );
++}
++
++#[test]
++fn error_messages_name_the_config_key_and_the_problem() {
++    let err = classify_git_bash_path(std::path::Path::new(r"C:\Windows\System32\bash.exe"))
++        .expect_err("WSL launcher must be rejected");
++    let message = err.message();
++    assert!(message.contains("CODEX_NATIVE_GIT_BASH_PATH"), "{message}");
++    assert!(message.contains("WSL"), "{message}");
++}
++
++/// Windows-only: on a Unix host a `C:\...` string is a single path component, so
++/// it is classified as a non-Git layout before any disk access.
++#[cfg(windows)]
++#[test]
++fn resolve_reports_missing_file_without_falling_back() {
++    let missing = r"C:\definitely-missing-codex-stage2\Git\bin\bash.exe";
++    let err = resolve_configured_git_bash(std::path::Path::new(missing))
++        .expect_err("a missing file must be an error, never a fallback");
++    assert!(err.contains("CODEX_NATIVE_GIT_BASH_PATH"), "{err}");
++    // Canonicalization happens first, so a non-existent path is reported as
++    // missing rather than as a layout problem.
++    assert!(err.contains("does not exist"), "{err}");
++}
++
++#[test]
++fn resolve_rejects_relative_path_without_touching_disk() {
++    // A relative path cannot be canonicalized to a Windows installation.
++    let err = resolve_configured_git_bash(std::path::Path::new("bash"))
++        .expect_err("relative path must be rejected");
++    assert!(err.contains("CODEX_NATIVE_GIT_BASH_PATH"), "{err}");
++}
++
++#[test]
++fn restricted_base_profile_rejects_git_bash_before_any_spawn() {
++    let err = ensure_full_access_for_git_bash(/*base_profile_disables_sandbox*/ false)
++        .expect_err("a restricted base profile must be refused");
++    assert!(err.contains("CODEX_NATIVE_GIT_BASH_PATH"), "{err}");
++    assert!(err.contains("restricted"), "{err}");
++
++    // Only a base profile that disables the sandbox is admitted.
++    assert_eq!(
++        ensure_full_access_for_git_bash(/*base_profile_disables_sandbox*/ true),
++        Ok(())
++    );
++}
++
++/// Reproduce the reviewer's clean-environment probe with this implementation.
++///
++/// Both `Git\bin\bash.exe` and `Git\usr\bin\bash.exe` are genuine Git for Windows
++/// Bash entry points. In a clean Desktop environment `usr\bin\bash.exe` reports an
++/// empty `MSYSTEM`, which is why identity must not depend on that variable.
++#[cfg(windows)]
++#[test]
++fn identity_probe_accepts_real_git_for_windows_bash_variants() {
++    let mut checked = 0;
++    for candidate in [
++        r"C:\Program Files\Git\bin\bash.exe",
++        r"C:\Program Files\Git\usr\bin\bash.exe",
++    ] {
++        let path = std::path::Path::new(candidate);
++        if !path.is_file() {
++            continue;
++        }
++        checked += 1;
++        tokio::runtime::Builder::new_current_thread()
++            .enable_all()
++            .build()
++            .unwrap()
++            .block_on(verify_git_bash_identity(path))
++            .unwrap_or_else(|err| panic!("{candidate} is a real Git Bash and must pass: {err}"));
++        // The identity probe must not install or depend on MSYSTEM.
++        assert!(
++            !candidate.contains("msystem"),
++            "identity must not key off MSYSTEM"
++        );
++    }
++    if checked == 0 {
++        eprintln!("skipping: no Git for Windows installation on this machine");
++    }
++}
++
++#[test]
++fn capped_reader_limits_storage_and_remains_cancellable_with_open_writer() {
++    tokio::runtime::Builder::new_current_thread()
++        .enable_all()
++        .build()
++        .unwrap()
++        .block_on(async {
++            use tokio::io::AsyncWriteExt;
++            let (reader, mut writer) = tokio::io::duplex(1024);
++            let writer_task = tokio::spawn(async move {
++                writer
++                    .write_all(&vec![b'x'; IDENTITY_PROBE_MAX_OUTPUT_BYTES * 4])
++                    .await
++                    .unwrap();
++            });
++            let retained = drain_capped(reader).await.unwrap();
++            writer_task.await.unwrap();
++            assert_eq!(retained.len(), IDENTITY_PROBE_MAX_OUTPUT_BYTES);
++            let (reader, _inherited_writer) = tokio::io::duplex(64);
++            assert!(
++                tokio::time::timeout(Duration::from_millis(20), drain_capped(reader))
++                    .await
++                    .is_err()
++            );
++        });
++}
++
++#[cfg(windows)]
++#[test]
++fn configured_shell_request_rejects_wrong_path_and_extension() {
++    let path = Path::new(r"C:\Program Files\Git\bin\bash.exe");
++    if !path.is_file() {
++        return;
++    }
++    let canonical = std::fs::canonicalize(path).unwrap();
++    for name in ["bash", "BASH.EXE"] {
++        assert_eq!(validate_shell_request(name, &canonical), Ok(()));
++    }
++    assert_eq!(
++        validate_shell_request(path.to_str().unwrap(), &canonical),
++        Ok(())
++    );
++    for name in ["bash.cmd", r"C:\nonexistent\bin\bash.exe", r".\bash.exe"] {
++        assert!(validate_shell_request(name, &canonical).is_err());
++    }
++}
++
++#[cfg(windows)]
++#[test]
++fn probe_checks_nonzero_exit_and_deadline() {
++    tokio::runtime::Builder::new_current_thread()
++        .enable_all()
++        .build()
++        .unwrap()
++        .block_on(async {
++            let mut failure = tokio::process::Command::new("cmd.exe");
++            failure.args(["/d", "/c", "exit 7"]);
++            assert!(
++                probe_identity(&mut failure, Duration::from_secs(3))
++                    .await
++                    .unwrap_err()
++                    .contains("exited")
++            );
++            let mut blocked = tokio::process::Command::new("powershell.exe");
++            blocked.args([
++                "-NoProfile",
++                "-NonInteractive",
++                "-Command",
++                "Start-Sleep -Seconds 10",
++            ]);
++            let start = std::time::Instant::now();
++            assert!(
++                probe_identity(&mut blocked, Duration::from_millis(50))
++                    .await
++                    .unwrap_err()
++                    .contains("timed out")
++            );
++            assert!(start.elapsed() < Duration::from_secs(3));
++        });
++}

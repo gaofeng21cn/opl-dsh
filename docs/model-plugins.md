@@ -19,3 +19,5 @@ DSH 执行官方 Agent 循环和工具。外部 Codex、Claude、Grok、MiniMax 
 在设置中的 **OFM 模型服务** 页面管理免费模型、EAC、账号渠道、聚合来源、虚拟路由、用量和插件更新。OPL 的 **执行组合** 负责模型与 Harness 的绑定，对话选择器负责选择组合。
 
 第三方模型插件沿用这一条官方注册表接入路径；OPL 不另建每个供应商的模型列表、账号池或请求适配器。
+
+来源插件可以通过 Host 的显式路由注册接口适配已支持自定义端点的官方 Harness，详见[外部 Harness 适配准备](harness-adaptation.md)。该接口不会自动把 Our Free Model 绑定到外部 Harness。

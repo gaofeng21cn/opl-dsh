@@ -22,6 +22,15 @@
 .trigger:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
+.trigger > svg {
+  flex-shrink: 0;
+}
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .trigger:focus-visible {
   outline: 2px solid var(--dsw-focus-ring-color);
   outline-offset: -2px;

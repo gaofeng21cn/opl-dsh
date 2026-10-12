@@ -24,6 +24,9 @@ export async function generateRpc({
     await cp(join(root, 'scripts/mcode-candidate'), join(packageRoot, 'scripts/mcode-candidate'), {
       recursive: true,
     })
+    await cp(join(root, 'scripts/codex-candidate'), join(packageRoot, 'scripts/codex-candidate'), {
+      recursive: true,
+    })
     const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest))
     for (const name of await readdir(root)) {

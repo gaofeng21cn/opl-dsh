@@ -160,7 +160,9 @@ const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
 }).trim()
 const sourceDirty =
   execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim().length > 0
-const sourceFiles = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z'], {
+// Published source identity follows Git's tracked set, so new runtime files cannot
+// be omitted and local delivery evidence cannot enter the product source hash.
+const sourceFiles = execFileSync('git', ['ls-files', '--cached', '-z'], {
   cwd: root,
   encoding: 'utf8',
 })

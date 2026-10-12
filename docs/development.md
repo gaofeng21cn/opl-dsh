@@ -41,6 +41,8 @@ npm test
 
 `build.mjs` 先生成契约，再构建 Host、Client 和外部执行器协议桥。官方服务保持 runtime peer；peer 清单来自构建器依赖元数据。Client 样式跟随插件生命周期释放。增强清单记录官方目标版本、内部修订、源提交、dirty 状态、源树摘要及各发布文件摘要，避免将未提交构建误认为纯 HEAD 产物。
 
+源树摘要从 Git 已跟踪文件动态取集，排除派生的 Homebrew Cask，包含新增运行文件；本地未跟踪的审看资料不参与产品来源身份。未提交改动仍由 dirty 状态标明，不能作为清洁发布来源。
+
 `npm run format` 统一格式；生成文件不经过二次格式化。`npm run package` 创建分发入口。Mac 图形安装器需要系统工具，Windows 安装入口的打包需要 NSIS；用户安装无需自行准备 Node.js。
 
 ## 执行器与协作

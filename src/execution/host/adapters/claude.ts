@@ -3,6 +3,17 @@ import type { HarnessAdapter } from './types.ts'
 export const claudeAdapter: HarnessAdapter = {
   id: 'claude',
   transport: 'acp',
+  capabilities: {
+    transport: 'official-sdk',
+    authentication: 'api-source',
+    protocols: ['messages'],
+    customEndpoint: true,
+    permissions: ['read-only', 'workspace', 'full-access'],
+    sessionLoad: true,
+    cancel: true,
+    reasoning: 'model-declared',
+    autoReview: 'official',
+  },
   matches: (ref) => ref.provider === 'opl-gateway' && /^(aws|kiro)::claude-/.test(ref.model),
   available: (_ctx, options) => nativeAvailable('Claude Code', 'claude', options),
   prepare: (ctx, record, options) =>

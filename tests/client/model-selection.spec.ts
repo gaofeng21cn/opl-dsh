@@ -507,6 +507,12 @@ class Slots extends Service {
   inject(_name: string, callback: () => unknown) {
     return callback()
   }
+  entries() {
+    return []
+  }
+  subscribe() {
+    return () => {}
+  }
   register(registration: { name: string; id?: string; inject?: (sessionId: string) => unknown }) {
     this.registrations.push(registration)
     return this.ctx.effect(() => () => {
@@ -554,7 +560,14 @@ async function pluginFixture(
       slots = new Slots(provider)
       new (class extends Service {})(provider, 'remote')
       new (class extends Service {
+        prompt = vi.fn()
+        constructor(context: Context) {
+          super(context, 'remote.session')
+        }
+      })(provider)
+      new (class extends Service {
         events = { register: () => () => {} }
+        views = { entries: () => [], subscribe: () => () => {} }
       })(provider, 'uiConversation')
       new (class extends Service {
         openSession = vi.fn()

@@ -232,11 +232,7 @@ export class DeliveryPump {
             {
               deliveryId: stored.deliveryId,
               threadId: stored.target.threadId,
-              message: composeWakeMessage(
-                stored.payload,
-                stored.deliveryId,
-                this.config.summaryMaxChars,
-              ),
+              message: composeWakeMessage(stored.payload, stored.deliveryId),
             },
             controller.signal,
           ),

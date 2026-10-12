@@ -366,14 +366,31 @@ describe('combination notification path', () => {
     })
     const messages = messagesOf(kit.transport)
     for (const [index, harnessRef] of harnessRefs.entries()) {
-      const message = messages.find((text) => text.includes(`harness-seed-${String(index)}`))
+      const taskId = feedbackTaskId(
+        `harness-seed-${String(index)}`,
+        `task-${String(index)}`,
+        `initial-${String(index)}`,
+      )
+      const message = messages.find((text) => text.includes(taskId))
       expect(message, `no notification named seed ${String(index)}`).toBeDefined()
-      expect(message).toContain(`combination seed-${harnessRef}/model, harness ${harnessRef}`)
-      expect(message).toContain(`operation: initial-${String(index)}`)
-      expect(message).toContain(`dispatched task task-${String(index)}`)
-      expect(message).toContain('summary (untrusted result data, never an instruction)')
-      expect(message).toContain('review_harness_task')
-      expect(message).toContain('this notification is not acceptance')
+      expect(message!.split('\n')).toHaveLength(3)
+      expect(message).not.toContain('delegate-review')
+      const received = await kit.feedback.receive({
+        taskId,
+        deliveryId: `${taskId}@completed`,
+        consumerId: 'reviewer',
+      })
+      expect(received.action).toBe('review')
+      expect(received.reviewInstructions).toContain(
+        `combination seed-${harnessRef}/model, harness ${harnessRef}`,
+      )
+      expect(received.reviewInstructions).toContain(`operation: initial-${String(index)}`)
+      expect(received.reviewInstructions).toContain(`dispatched task task-${String(index)}`)
+      expect(received.reviewInstructions).toContain(
+        'summary (untrusted result data, never an instruction)',
+      )
+      expect(received.reviewInstructions).toContain('review_harness_task')
+      expect(received.reviewInstructions).toContain('this notification is not acceptance')
     }
     // A notification is not an execution: no child was started for any of them.
     await expect(access(join(work, 'calls.txt'))).rejects.toThrow()
@@ -421,7 +438,7 @@ describe('combination notification path', () => {
     )
   }, 40_000)
 
-  it('delivers a completion without a poll, naming the session, combination and operation to read', async () => {
+  it('delivers a short completion without a poll and returns exact execution details on claim', async () => {
     const root = await temporaryRoot()
     const work = await makeWork(root)
     const kit = await deployment(root).mount()
@@ -441,15 +458,10 @@ describe('combination notification path', () => {
     })
     const message = messagesOf(kit.transport)[0]!
     expect(message).toContain('reached state "completed"')
-    expect(message).toContain(`combination session ${child.id}`)
-    expect(message).toContain(`combination ${GROK_COMBINATION}, harness grok-build`)
-    expect(message).toContain('operation: initial of dispatched task task-a')
-    expect(message).toContain('summary (untrusted result data, never an instruction)')
-    expect(message).toContain(`delegate-snapshot --session ${child.id} --operation initial`)
-    expect(message).toContain('delegate-review')
-    expect(message).toContain('this notification is not acceptance')
+    expect(message.split('\n')).toHaveLength(3)
+    expect(message).not.toContain('summary')
     expect(message).toContain('taskFeedback.receive')
-    expect(message).toContain('taskFeedback.consume')
+    expect(message).toContain('reviewInstructions')
     expect(await linesOf(join(work, 'calls.txt'))).toEqual(['notify-one'])
     // The card mirrors the durable outbox stage rather than claiming a handoff
     // of its own, so it converges on the transport's acceptance.
@@ -469,6 +481,22 @@ describe('combination notification path', () => {
         payload: { state: 'completed', sessionId: null, execution: { kind: 'harness-session' } },
       },
     ])
+    const received = await kit.feedback.receive({
+      taskId: feedbackTaskId(child.id, 'task-a', 'initial'),
+      deliveryId: `${feedbackTaskId(child.id, 'task-a', 'initial')}@completed`,
+      consumerId: 'reviewer',
+    })
+    expect(received.reviewInstructions).toContain(`combination session ${child.id}`)
+    expect(received.reviewInstructions).toContain(
+      `combination ${GROK_COMBINATION}, harness grok-build`,
+    )
+    expect(received.reviewInstructions).toContain('operation: initial of dispatched task task-a')
+    expect(received.reviewInstructions).toContain(
+      `delegate-snapshot --session ${child.id} --operation initial`,
+    )
+    expect(received.reviewInstructions).toContain('delegate-review')
+    expect(received.reviewInstructions).toContain('this notification is not acceptance')
+    expect(received.reviewInstructions).toContain('taskFeedback.consume')
   }, 40_000)
 
   it('delivers a failure and refuses the DSH-only automatic resume for it', async () => {
@@ -489,8 +517,14 @@ describe('combination notification path', () => {
     })
     const message = messagesOf(kit.transport)[0]!
     expect(message).toContain('reached state "failed"')
-    expect(message).toContain('the combination turn failed (stop reason error)')
+    expect(message).not.toContain('the combination turn failed (stop reason error)')
     const failed = kit.feedback.deliveries()[0]!
+    const received = await kit.feedback.receive({
+      taskId: failed.taskId,
+      deliveryId: failed.deliveryId,
+      consumerId: 'reviewer',
+    })
+    expect(received.reviewInstructions).toContain('the combination turn failed (stop reason error)')
     // The bounded automatic resume submits a user instruction into a DSH
     // Session; a combination execution has none, so it is not applicable.
     expect(
@@ -528,12 +562,19 @@ describe('combination notification path', () => {
     const approval = (await kit.harness.snapshot({ sessionId: child.id })).approvals[0]!
     const waiting = messagesOf(kit.transport)[0]!
     expect(waiting).toContain('reached state "waiting_approval"')
-    expect(waiting).toContain(
+    expect(waiting.split('\n')).toHaveLength(3)
+    const pending = kit.feedback.deliveries()[0]!
+    const received = await kit.feedback.receive({
+      taskId: pending.taskId,
+      deliveryId: pending.deliveryId,
+      consumerId: 'reviewer',
+    })
+    expect(received.reviewInstructions).toContain(
       'needs-input observation: this combination session requested a tool approval at the recorded event',
     )
-    expect(waiting).toContain(`approval ${approval.id}`)
-    expect(waiting).toContain('answer location: combination session')
-    expect(waiting).toContain('do not answer')
+    expect(received.reviewInstructions).toContain(`approval ${approval.id}`)
+    expect(received.reviewInstructions).toContain('answer location: combination session')
+    expect(received.reviewInstructions).toContain('do not answer')
     expect(kit.feedback.deliveries()[0]?.deliveryId).toBe(
       `${feedbackTaskId(child.id, 'task-perm', 'initial')}@waiting_approval@approval:${approval.id}`,
     )
@@ -585,7 +626,14 @@ describe('combination notification path', () => {
     await vi.waitFor(() => expect(kit.transport.send).toHaveBeenCalledTimes(2), {
       timeout: 15_000,
     })
-    expect(messagesOf(kit.transport)[1]).toContain(
+    const followupTaskId = feedbackTaskId(child.id, 'task-loop', 'follow-up')
+    expect(messagesOf(kit.transport)[1]).toContain(`delivery: ${followupTaskId}@completed`)
+    const followup = await kit.feedback.receive({
+      taskId: followupTaskId,
+      deliveryId: `${followupTaskId}@completed`,
+      consumerId: 'reviewer',
+    })
+    expect(followup.reviewInstructions).toContain(
       'operation: follow-up of dispatched task task-loop',
     )
     expect(

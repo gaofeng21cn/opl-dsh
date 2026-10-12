@@ -121,6 +121,8 @@ export interface TaskReceiveValue {
   readonly action: TaskReceiveAction
   readonly receipt: TaskReceipt
   readonly delivery: DeliveryRecord
+  /** Full review instructions for `review`/`resume`; null for `busy`/`skip`. */
+  readonly reviewInstructions: string | null
 }
 
 /** Mark one claimed delivery consumed after the review finished. */

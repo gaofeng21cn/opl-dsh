@@ -26,7 +26,6 @@ type Choice = {
   harnessName: string
   source: string
   available: boolean
-  unavailableReason?: string
 }
 const measureStyle = { visibility: 'hidden', left: 0, top: 0 } as const
 const effortLabels: Record<string, string> = {
@@ -158,23 +157,14 @@ export function CombinationSelect({
     )
   const harnessFor = (combination: CombinationDefinition) =>
     catalog?.harnesses.find((harness) => harness.id === combination.harnessRef)
-  const visibleChoices = useMemo<Choice[]>(() => {
+  const choices = useMemo<Choice[]>(() => {
     if (!catalog) return []
-    const seen = new Set<string>()
     return catalog.combinations
       .filter((combination) => combination.enabled)
       .sort(
         (left, right) =>
           Number(!left.isDefault) - Number(!right.isDefault) || left.name.localeCompare(right.name),
       )
-      .filter((combination) => {
-        const model = modelFor(combination)
-        const harness = harnessFor(combination)
-        const label = `${sourceLabel(combination.modelRef.provider, model?.source ?? combination.modelRef.provider)} · ${model?.name ?? combination.modelRef.model} · ${harness?.name ?? combination.harnessRef}`
-        if (seen.has(label)) return false
-        seen.add(label)
-        return true
-      })
       .map((combination) => {
         const model = modelFor(combination)
         const harness = harnessFor(combination)
@@ -188,14 +178,24 @@ export function CombinationSelect({
             model?.source ?? combination.modelRef.provider,
           ),
           available: status?.available === true,
-          ...(status?.reason === undefined ? {} : { unavailableReason: status.reason }),
         }
       })
   }, [availability, catalog, selection.combination])
 
+  const visibleChoices = useMemo(() => {
+    const seen = new Set<string>()
+    return choices.filter((choice) => {
+      if (!choice.available) return false
+      const label = `${choice.source} · ${choiceLabel(choice)}`
+      if (seen.has(label)) return false
+      seen.add(label)
+      return true
+    })
+  }, [choices])
+
   const selected =
-    visibleChoices.find((choice) => choice.combination.id === selection.combination) ??
-    visibleChoices.find(
+    choices.find((choice) => choice.combination.id === selection.combination) ??
+    choices.find(
       (choice) =>
         selection.current &&
         choice.combination.modelRef.provider === selection.current.provider &&
@@ -284,7 +284,7 @@ export function CombinationSelect({
   }
 
   const selectChoice = async (choice: Choice) => {
-    if (busy) return
+    if (busy || !choice.available) return
     if (choice.combination.id === selection.combination) {
       close(true)
       return
@@ -548,25 +548,12 @@ export function CombinationSelect({
                             role="menuitemradio"
                             aria-checked={selectedChoice}
                             className={`${css.option} ${selectedChoice ? css.selected : ''}`}
-                            disabled={
-                              busy ||
-                              (choice.available === false &&
-                                choice.combination.id !== selection.combination)
-                            }
-                            title={
-                              choice.available
-                                ? `${source} · ${choiceLabel(choice)}`
-                                : `${source} · ${choiceLabel(choice)} · ${choice.unavailableReason ?? '未就绪'}`
-                            }
+                            disabled={busy}
+                            title={`${source} · ${choiceLabel(choice)}`}
                             onClick={() => void selectChoice(choice)}
                           >
                             <span className={css.optionCopy}>
                               <span className={css.modelName}>{choiceLabel(choice)}</span>
-                              {!choice.available && (
-                                <span className={css.unavailableReason}>
-                                  未就绪：{choice.unavailableReason ?? '当前组合不可用'}
-                                </span>
-                              )}
                             </span>
                             <span className={css.check}>
                               {busy && pendingChoice?.combination.id === choice.combination.id ? (

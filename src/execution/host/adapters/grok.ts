@@ -139,6 +139,18 @@ export function grokPermissionPlan(
 export const grokAdapter: HarnessAdapter = {
   id: 'grok-build',
   transport: 'acp',
+  capabilities: {
+    transport: 'acp',
+    authentication: 'api-source',
+    protocols: ['responses'],
+    customEndpoint: false,
+    permissions:
+      process.platform === 'win32' ? ['full-access'] : ['read-only', 'workspace', 'full-access'],
+    sessionLoad: true,
+    cancel: true,
+    reasoning: 'cli-advertised',
+    autoReview: 'unsupported',
+  },
   matches: (ref) => ref.provider === 'opl-gateway' && ref.model === 'grok::grok-4.7',
   async configureSession(acp, record, snapshot) {
     const effort = record.reasoningEffort ?? 'high'
@@ -176,7 +188,9 @@ export const grokAdapter: HarnessAdapter = {
     // written: a request this host cannot honour must leave no state behind and
     // must not touch the credential path at all.
     const permissions = grokPermissionPlan(record.sandbox)
-    const route = await resolveGatewayExecution(ctx, record.modelRef, options.resolveKey)
+    const route = options.modelSources
+      ? await options.modelSources.resolve('grok-build', record.modelRef, 'responses')
+      : await resolveGatewayExecution(ctx, record.modelRef, options.resolveKey)
     const key = route.apiKey
     const home = join(options.home, 'harnesses', 'grok-build')
     await mkdir(home, { recursive: true, mode: 0o700 })

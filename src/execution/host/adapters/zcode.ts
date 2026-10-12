@@ -120,6 +120,17 @@ async function prepareZcodeLaunch(
 export const zcodeAdapter: HarnessAdapter = {
   id: ZCODE_HARNESS,
   transport: 'acp',
+  capabilities: {
+    transport: 'app-server',
+    authentication: 'api-source',
+    protocols: ['chat'],
+    customEndpoint: false,
+    permissions: ['full-access'],
+    sessionLoad: true,
+    cancel: true,
+    reasoning: 'cli-advertised',
+    autoReview: 'codex-auto-review',
+  },
   matches: (ref) => ref.provider === HUAWEI_MAAS_PROVIDER_ID && ref.model === HUAWEI_MAAS_MODEL,
   available: (_ctx, options) =>
     executablePath(options.command || ZCODE_HARNESS).then((path) =>

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GatewayAccountStatus, GatewaySignInResult } from '../contracts/account.ts'
+import { notifyAccountChanged } from './account-changes.ts'
 import settingsCss from '../../shared/client/SettingsSection.module.css'
 import setupCss from '../../setup/client/SetupScreen.module.css'
 const css = settingsCss
@@ -117,6 +118,10 @@ export function OplGatewaySection(
   const [busy, setBusy] = useState<'idle' | 'loading' | 'signing-in' | 'signing-out'>('loading')
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (state) notifyAccountChanged()
+  }, [state])
 
   const load = useCallback(
     async (reload = false): Promise<void> => {

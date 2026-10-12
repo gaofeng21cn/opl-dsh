@@ -6,6 +6,17 @@ import type { HarnessAdapter } from './types.ts'
 export const dshAdapter: HarnessAdapter = {
   id: 'dsh',
   transport: 'dsh',
+  capabilities: {
+    transport: 'dsh',
+    authentication: 'dsh-provider',
+    protocols: [],
+    customEndpoint: false,
+    permissions: ['read-only', 'workspace', 'full-access'],
+    sessionLoad: true,
+    cancel: true,
+    reasoning: 'model-declared',
+    autoReview: 'codex-auto-review',
+  },
   matches: () => true,
   available: async () => ({ available: true }),
 }

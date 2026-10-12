@@ -357,58 +357,130 @@ describe('MiniMax Code model menu labels', () => {
       expect(open, `模型名仍带固定档位 ${tier}`).not.toContain(tier)
   })
 
-  it('keeps an unavailable registered combination visible with its reason', async () => {
-    const zcode = {
-      id: 'zcode/glm-5.2',
-      name: 'glm-5.2 + ZCode',
-      enabled: true,
-      isDefault: false,
-      modelRef: { provider: 'huawei-maas', model: 'glm-5.2' },
-      harnessRef: 'zcode',
-      permissionPolicy: 'full-access',
-    }
-    const call = (async (method: string) => {
-      if (method === 'catalog')
-        return {
-          ...catalog,
-          models: [
-            ...catalog.models,
-            {
-              ref: zcode.modelRef,
-              name: 'GLM-5.2',
-              source: 'Huawei MaaS',
-              available: false,
-            },
-          ],
-          harnesses: [...catalog.harnesses, { id: 'zcode', name: 'ZCode', available: false }],
-          combinations: [...catalog.combinations, zcode],
-        }
-      if (method === 'combinations')
-        return [
-          ...catalog.combinations.map((item) => ({ id: item.id, available: true })),
-          { id: zcode.id, available: false, reason: '未找到官方 ZCode CLI，请先安装' },
-        ]
-      if (method === 'model-selection')
-        return {
-          current: { provider: PROVIDER, model: M3_FLASH, reasoningEffort: 'max' },
-          groups,
-          combination: flashCombination.id,
-        }
-      throw new Error(`unexpected RPC ${method}`)
-    }) as unknown as ExecutionCall
-    const face = createFace({
-      lastUsed: null,
-      next: { provider: PROVIDER, model: M3_FLASH, reasoningEffort: 'max' },
-    })
-    const view = await mount({ call, source: () => Object.assign(face.face, { push: face.push }) })
+  it.each([false, true])(
+    'hides unavailable combinations while preserving an existing selection (%s)',
+    async (selectedUnavailable) => {
+      let zcodeAvailable = false
+      const zcode = {
+        id: 'zcode/glm-5.2',
+        name: 'glm-5.2 + ZCode',
+        enabled: true,
+        isDefault: false,
+        modelRef: { provider: 'huawei-maas', model: 'glm-5.2' },
+        harnessRef: 'zcode',
+        permissionPolicy: 'full-access',
+      }
+      const call = (async (method: string) => {
+        if (method === 'catalog')
+          return {
+            ...catalog,
+            models: [
+              ...catalog.models,
+              {
+                ref: zcode.modelRef,
+                name: 'GLM-5.2',
+                source: 'Huawei MaaS',
+                available: zcodeAvailable,
+              },
+            ],
+            harnesses: [
+              ...catalog.harnesses,
+              { id: 'zcode', name: 'ZCode', available: zcodeAvailable },
+            ],
+            combinations: [...catalog.combinations, zcode],
+          }
+        if (method === 'combinations')
+          return [
+            ...catalog.combinations.map((item) => ({ id: item.id, available: true })),
+            { id: zcode.id, available: zcodeAvailable, reason: '未找到官方 ZCode CLI，请先安装' },
+          ]
+        if (method === 'model-selection')
+          return {
+            current: selectedUnavailable
+              ? zcode.modelRef
+              : { provider: PROVIDER, model: M3_FLASH, reasoningEffort: 'max' },
+            groups,
+            combination: selectedUnavailable ? zcode.id : flashCombination.id,
+          }
+        throw new Error(`unexpected RPC ${method}`)
+      }) as unknown as ExecutionCall
+      const face = createFace({
+        lastUsed: null,
+        next: selectedUnavailable
+          ? zcode.modelRef
+          : { provider: PROVIDER, model: M3_FLASH, reasoningEffort: 'max' },
+      })
+      const view = await mount({
+        call,
+        source: () => Object.assign(face.face, { push: face.push }),
+      })
+      await view.open()
+      await view.click('模型')
+      expect(view.menuText()).not.toContain('Huawei MaaS')
+      expect(view.menuText()).not.toContain('未找到官方 ZCode CLI')
+      const modelRows = () =>
+        view.buttons().filter((button) => button.getAttribute('role') === 'menuitemradio')
+      expect(modelRows().some((button) => button.textContent?.includes('GLM-5.2'))).toBe(false)
+      if (selectedUnavailable) expect(view.trigger.textContent).toContain('GLM-5.2 · ZCode')
+
+      await view.open()
+      zcodeAvailable = true
+      await view.open()
+      await view.click('模型')
+      expect(modelRows().some((button) => button.textContent?.includes('GLM-5.2 · ZCode'))).toBe(
+        true,
+      )
+      await view.open()
+      zcodeAvailable = false
+      await view.open()
+      await view.click('模型')
+      expect(modelRows().some((button) => button.textContent?.includes('GLM-5.2'))).toBe(false)
+    },
+  )
+
+  it('shows the empty state when no combination is confirmed usable, without changing the stored model', async () => {
+    const original = fixture({ model: M3_FLASH, reasoningEffort: 'max' })
+    const call = (async (method: string, args?: unknown) =>
+      method === 'combinations'
+        ? []
+        : original.call(method as never, args as never)) as ExecutionCall
+    const face = createFace({ lastUsed: null, next: { provider: PROVIDER, model: M3_FLASH } })
+    const view = await mount({ call, source: () => face.face })
     await view.open()
     await view.click('模型')
-    expect(view.menuText()).toContain('GLM-5.2 · ZCode')
-    expect(view.menuText()).toContain('未就绪：未找到官方 ZCode CLI，请先安装')
-    const row = view
+    expect(view.menuText()).toContain('当前没有可用的模型组合')
+    expect(view.buttons().some((button) => button.getAttribute('role') === 'menuitemradio')).toBe(
+      false,
+    )
+    expect(view.trigger.textContent).toContain(`${M3_FLASH} · ${HARNESS_NAME}`)
+    expect(original.calls.some((call) => call.method.startsWith('select-'))).toBe(false)
+  })
+
+  it('keeps the usable choice when an unavailable combination has the same display label', async () => {
+    const duplicate = { ...flashCombination, id: 'unavailable-flash', isDefault: true }
+    const original = fixture({ model: M3_FLASH, reasoningEffort: 'max' })
+    const call = (async (method: string, args?: unknown) => {
+      if (method === 'catalog')
+        return { ...catalog, combinations: [duplicate, ...catalog.combinations] }
+      if (method === 'combinations')
+        return [
+          { id: duplicate.id, available: false },
+          ...catalog.combinations.map((item) => ({ id: item.id, available: true })),
+        ]
+      return original.call(method as never, args as never)
+    }) as ExecutionCall
+    const face = createFace({ lastUsed: null, next: { provider: PROVIDER, model: M3_FLASH } })
+    const view = await mount({ call, source: () => face.face })
+    await view.open()
+    await view.click('模型')
+    const rows = view
       .buttons()
-      .find((button) => (button.textContent ?? '').includes('GLM-5.2 · ZCode'))
-    expect(row?.getAttribute('disabled')).toBe('')
+      .filter(
+        (button) =>
+          button.getAttribute('role') === 'menuitemradio' && button.textContent?.includes(M3_FLASH),
+      )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.getAttribute('disabled')).toBeNull()
   })
 
   it('keeps the shared model name free of Harness and thinking text', () => {

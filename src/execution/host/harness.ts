@@ -6,9 +6,22 @@ import { modelRefKey } from '../contracts/catalog.ts'
 import type { MiniMaxCandidateRequest, MiniMaxCandidateResult } from '../contracts/candidate.ts'
 import { RuntimeMaintenance } from './runtime-maintenance.ts'
 import { prepareMiniMaxCandidate } from './minimax-candidate.ts'
+import { prepareCodexRuntime } from './codex-runtime.ts'
+import type {
+  CodexRuntimeRequest,
+  CodexRuntimeResult,
+  CodexGitBashRuntime,
+} from '../contracts/codex-runtime.ts'
+import { ExternalModelSources } from './model-sources.ts'
+import { harnessAdapters } from './adapters/index.ts'
 import { GATEWAY_GROUPS } from '../../gateway/contracts/groups.ts'
 /** Owns mappings and transport only; each official Harness owns its agent loop. */
 import { createHash, randomUUID } from 'node:crypto'
+import { messageEditState, MessageEditTransactions, unresolvedMessageEdit } from './message-edit.ts'
+import { MessageEditStore } from './message-edit-store.ts'
+import type { UserMessage } from '@deepseek-ai/dsh-llm'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { MessageEditSend, MessageEditState } from '../contracts/message-edit.ts'
 import { access, mkdir, readFile, writeFile, rename, realpath, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -225,6 +238,7 @@ export class HarnessService {
   private readonly pendingRuns = new Map<string, () => void>()
   private readonly tick: ReturnType<typeof setInterval>
   readonly directory: string
+  readonly modelSources: ExternalModelSources
   private readonly sessionStore: HarnessSessionStore
   private readonly revisionEpoch = randomUUID()
   private revisionCounter = 0
@@ -235,6 +249,8 @@ export class HarnessService {
   private readonly modelResolver: ExecutionModelResolver
   private readonly stopEdits: StopEditService
   private readonly stopEditIntents: StopEditIntentStore
+  private readonly messageEditStore: MessageEditStore
+  private readonly messageEdits: MessageEditTransactions
   constructor(
     private readonly ctx: Context,
     private readonly options: {
@@ -246,6 +262,7 @@ export class HarnessService {
     private readonly conversations?: NativeHarnessConversations,
   ) {
     this.directory = options.home ?? dshHomePath()
+    this.modelSources = new ExternalModelSources(ctx, () => this.events.emit('catalog'))
     this.sessionStore = new HarnessSessionStore(this.directory)
     this.catalogStore = new ExecutionCatalogStore(this.directory)
     this.modelResolver = new ExecutionModelResolver(ctx, this.catalogStore, (ref) =>
@@ -253,12 +270,15 @@ export class HarnessService {
     )
     this.events.setMaxListeners(100)
     this.stopEditIntents = new StopEditIntentStore(this.directory)
+    this.messageEditStore = new MessageEditStore(this.directory)
+    this.messageEdits = new MessageEditTransactions(this.messageEditStore)
     this.stopEdits = new StopEditService(this.stopEditHost())
     this.ready = Promise.all([
       this.load(),
       this.loadSelections(),
       // 编辑意图台账必须先恢复，否则一次未完成的编辑会被当成从未发生过。
       this.stopEditIntents.load(),
+      this.messageEditStore.load(),
     ]).then(async () => {
       if (!this.conversations) return
       for (const record of this.records.values()) {
@@ -416,10 +436,16 @@ export class HarnessService {
       join(homedir(), '.grok/bin/grok')
     )
   }
-  private adapterOptions(command?: string, prefix?: string[]): AdapterOptions {
+  private adapterOptions(
+    command?: string,
+    prefix?: string[],
+    codexRuntime?: CodexGitBashRuntime,
+  ): AdapterOptions {
     const launchPrefix = prefix ?? this.options.prefix
     return {
       home: this.directory,
+      modelSources: this.modelSources,
+      ...(codexRuntime ? { codexRuntime } : {}),
       grokCommand: this.command(),
       nativeBridgePath: fileURLToPath(new URL('./native-harness-bridge.mjs', import.meta.url)),
       zcodeBridgePath: fileURLToPath(new URL('./zcode-harness-bridge.mjs', import.meta.url)),
@@ -434,7 +460,29 @@ export class HarnessService {
       catalog.harnesses.map(async (harness) => {
         const item = await inspectHarness(harness, this.directory, this.command()),
           maintenance = this.maintenance.get(harness.id)
-        return { ...item, definition: harness, ...(maintenance ? { maintenance } : {}) }
+        const capabilities = harnessAdapters.find(
+          (adapter) => adapter.id === harness.id,
+        )?.capabilities
+        const result: HarnessInstallation = {
+          ...item,
+          definition: harness,
+          ...(capabilities
+            ? {
+                capabilities: harness.codexRuntime
+                  ? { ...capabilities, permissions: ['full-access'] as ['full-access'] }
+                  : capabilities,
+              }
+            : {}),
+          ...(harness.codexRuntime
+            ? {
+                installable: false,
+                instructions: 'OPL Git Bash 固定候选；升级与回切使用 Codex 运行时选择入口。',
+              }
+            : {}),
+          ...(maintenance ? { maintenance } : {}),
+        }
+        if (harness.codexRuntime) delete result.maintenanceAction
+        return result
       }),
     )
   }
@@ -454,6 +502,8 @@ export class HarnessService {
     const catalog = await this.catalogStore.get(),
       definition = catalog.harnesses.find((item) => item.id === id)
     if (!definition) throw Error('Harness 不存在')
+    if (definition.codexRuntime)
+      throw Error('Codex Git Bash 候选不使用官方更新器；请先回切官方或导入已验收新候选')
     const item = await inspectHarness(definition, this.directory, this.command())
     if (!item.maintenanceAction) throw Error('请使用此 Harness 的官方安装与更新入口')
     // Recheck after discovery so concurrent clicks cannot launch two updaters.
@@ -514,7 +564,7 @@ export class HarnessService {
         (item) => modelRefKey(item.ref) === modelRefKey(combination.modelRef),
       )
       const harness = catalog.harnesses.find((item) => item.id === combination.harnessRef)
-      const adapter = adapterFor(combination.harnessRef, combination.modelRef)
+      const adapter = adapterFor(combination.harnessRef, combination.modelRef, this.modelSources)
       if (!model?.available)
         availability.set(combination.id, {
           available: false,
@@ -529,7 +579,10 @@ export class HarnessService {
         if (!probes.has(adapter.id))
           probes.set(
             adapter.id,
-            adapter.available(this.ctx, this.adapterOptions(harness.command, harness.prefix)),
+            adapter.available(
+              this.ctx,
+              this.adapterOptions(harness.command, harness.prefix, harness?.codexRuntime),
+            ),
           )
         availability.set(combination.id, await probes.get(adapter.id)!)
       }
@@ -637,7 +690,7 @@ export class HarnessService {
   private async probeExternalModel(
     ref: ModelRef,
   ): Promise<{ available: boolean; reason?: string }> {
-    const adapter = adapterFor(defaultHarness(ref), ref)
+    const adapter = adapterFor(defaultHarness(ref), ref, this.modelSources)
     if (!adapter) return { available: false, reason: '该模型尚无兼容的官方 CLI 适配器' }
     try {
       const harness = (await this.catalogStore.get()).harnesses.find(
@@ -645,7 +698,7 @@ export class HarnessService {
       )
       return await adapter.available(
         this.ctx,
-        this.adapterOptions(harness?.command, harness?.prefix),
+        this.adapterOptions(harness?.command, harness?.prefix, harness?.codexRuntime),
       )
     } catch {
       return { available: false, reason: '官方 CLI 状态检测未完成，请重新打开此页' }
@@ -736,6 +789,29 @@ export class HarnessService {
       },
     )
   }
+  /** Select a pinned build or restore the previous official command while all projects are idle. */
+  async selectCodexRuntime(request: CodexRuntimeRequest): Promise<CodexRuntimeResult> {
+    await this.ready
+    return this.runtimeMaintenance.change(
+      () => this.runtimeBusy(),
+      async () => {
+        await this.assertNoGlobalActivity()
+        if (request.mode !== 'official' && request.mode !== 'git-bash')
+          throw Error('Codex 运行时选择无效')
+        const verified =
+          request.mode === 'git-bash' ? prepareCodexRuntime(this.directory, request) : null
+        await this.assertNoGlobalActivity()
+        const previous = await this.catalogStore.setCodexRuntime(verified)
+        this.events.emit('catalog')
+        return {
+          ...(verified ?? {}),
+          ...previous,
+          mode: request.mode,
+          validation: verified ? 'static' : 'launch-settings',
+        }
+      },
+    )
+  }
   async saveHarnessProxy(harnessId: string, proxy: unknown): Promise<ExecutionCatalog> {
     await this.ready
     return this.runtimeMaintenance.admit(async () => {
@@ -783,7 +859,7 @@ export class HarnessService {
       : catalog.combinations.find((x) => x.id === input?.combination && x.enabled)
     if (!definition) throw Error('未知或已停用的模型 + Harness 组合')
     const harness = catalog.harnesses.find((item) => item.id === definition.harnessRef)
-    if (!harness || !adapterFor(harness.id, definition.modelRef))
+    if (!harness || !adapterFor(harness.id, definition.modelRef, this.modelSources))
       throw Error('该组合已保存，但尚未安装对应 Harness 适配器')
     const supplied = required(input.cwd, 'cwd')
     if (!isAbsolute(supplied) || supplied.includes('\0')) throw Error('工作目录必须为绝对路径')
@@ -917,6 +993,7 @@ export class HarnessService {
     const launchSettings = hash([
       chosenHarness?.command,
       chosenHarness?.prefix,
+      chosenHarness?.codexRuntime,
       chosenHarness?.proxy?.mode === 'inherit' ? undefined : chosenHarness?.proxy,
     ])
     const existing = this.active.get(record.id)
@@ -933,7 +1010,7 @@ export class HarnessService {
       await existing.bridgeStop?.()
       this.active.delete(record.id)
     }
-    const adapter = adapterFor(record.harnessRef, record.modelRef)
+    const adapter = adapterFor(record.harnessRef, record.modelRef, this.modelSources)
     if (!adapter) throw Error('此组合没有兼容的 Harness 适配器')
     if (adapter.transport === 'dsh') {
       await connectDsh(this.ctx, record, () => this.save(record))
@@ -950,7 +1027,11 @@ export class HarnessService {
     const launch = await adapter.prepare!(
       this.ctx,
       record,
-      this.adapterOptions(chosenHarness?.command, chosenHarness?.prefix),
+      this.adapterOptions(
+        chosenHarness?.command,
+        chosenHarness?.prefix,
+        chosenHarness?.codexRuntime,
+      ),
     )
     const home = launch.home
     const active: Active = {
@@ -1502,7 +1583,7 @@ export class HarnessService {
    * with parameters the combination did not ask for.
    */
   private async pinSession(record: HarnessSession, active: Active, effort?: string) {
-    const adapter = adapterFor(record.harnessRef, record.modelRef)
+    const adapter = adapterFor(record.harnessRef, record.modelRef, this.modelSources)
     if (!adapter || (!adapter.configureSession && !adapter.verifySession)) return
     const acp = active.acp
     if (!acp) throw Error('Harness 连接已关闭，无法在发送任务前确认固定模型')
@@ -1727,11 +1808,88 @@ export class HarnessService {
   }
 
   /** Reject model requests while the addressed conversation's history is being changed or unresolved. */
-  async assertConversationEditable(sessionId: string): Promise<void> {
+  async assertConversationEditable(sessionId: string, admittedEdit = false): Promise<void> {
     await this.ready
+    const session = this.ctx.sessions.get(asSessionId<SessionId>(sessionId))
+    if (
+      !admittedEdit &&
+      (this.messageEdits.pending(sessionId) ||
+        (session && unresolvedMessageEdit(session.snapshotEvents())))
+    )
+      throw Error('编辑消息的发送结果尚未确认，请重新读取对话')
     if (this.stopEdits.editing(sessionId)) throw Error('此会话正在处理停止后编辑，请稍后再发送')
     const blocked = this.stopEditBlocked(sessionId)
     if (blocked) throw Error(blocked)
+  }
+
+  /** Read active editable inputs without stopping, forking, or changing history. */
+  async messageEditState(input: { sessionId: string }): Promise<MessageEditState> {
+    await this.ready
+    const session = this.ctx.sessions.get(
+      asSessionId<SessionId>(required(input.sessionId, 'sessionId')),
+    )
+    const target = this.stopEditTarget(input.sessionId)
+    const supported =
+      target?.harness === 'dsh' && !target.record && !this.stopEditBlocked(input.sessionId)
+    if (!session)
+      return {
+        sessionId: input.sessionId,
+        supported: false,
+        busy: false,
+        pending: false,
+        head: -1,
+        choices: [],
+      }
+    const agent = this.ctx.agents.get(session.id)
+    if (agent) await this.messageEdits.recoverUnadmitted(agent)
+    const state = messageEditState(session, agent?.status === 'running', supported)
+    const recovery = this.messageEdits.recovery(session)
+    return {
+      ...state,
+      pending: state.pending || this.messageEdits.pending(input.sessionId),
+      ...(recovery ? { recovery } : {}),
+    }
+  }
+
+  /** Normal composer send with an exact old message target; retains the Session identity. */
+  async messageEditSend(input: MessageEditSend) {
+    return this.runtimeMaintenance.admit(async () => {
+      const state = await this.messageEditState({ sessionId: input.prompt.sessionId })
+      if (!state.supported || state.busy) throw Error('请先停止当前对话，再编辑消息')
+      const resolved = await this.ctx.sessionController.resolveAgent(input.prompt.sessionId)
+      if ('error' in resolved) throw Error('对话暂时无法编辑，请重新打开')
+      const agent = resolved.agent
+      if (agent.inbox.nextTurn.length || agent.inbox.nextStep.length)
+        throw Error('请先处理待发送消息，再编辑对话')
+      return agent.runMaintenance((signal) =>
+        this.messageEdits.send(agent, input, () =>
+          this.ctx.sessionController.prompt(input.prompt, signal),
+        ),
+      )
+    })
+  }
+
+  /** Match only the official pre-step's exact admitted replacement input. */
+  async claimMessageEdit(
+    agent: Agent,
+    messages: readonly UserMessage[],
+    turn: number,
+    step: number,
+  ): Promise<void> {
+    await this.ready
+    this.messageEdits.claim(agent, messages, turn, step)
+  }
+  /** Commit in the official open step, before request message derivation. */
+  async commitMessageEdit(
+    agent: Agent,
+    turn: number,
+    step: number,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    await this.ready
+    return this.messageEdits.commit(agent, turn, step, signal, () =>
+      this.ctx.sessions.flush(agent.session),
+    )
   }
 
   /**
@@ -3085,11 +3243,11 @@ export class HarnessService {
     )
     if (!model?.available) throw Error('模型未配置或凭据未就绪')
     const harness = catalog.harnesses.find((item) => item.id === definition.harnessRef)
-    const adapter = adapterFor(definition.harnessRef, definition.modelRef)
+    const adapter = adapterFor(definition.harnessRef, definition.modelRef, this.modelSources)
     if (!harness || !adapter) throw Error('组合没有兼容适配器')
     const available = await adapter.available(
       this.ctx,
-      this.adapterOptions(harness.command, harness.prefix),
+      this.adapterOptions(harness.command, harness.prefix, harness?.codexRuntime),
     )
     if (!available.available) throw Error(available.reason ?? 'Harness 未就绪')
     const selection = await this.selectionForModel(session, definition.modelRef)
@@ -3356,6 +3514,8 @@ export class HarnessService {
         return this.saveExecutionCatalog(p.catalog)
       case 'save-harness-proxy':
         return this.saveHarnessProxy(p.harnessId, p.proxy)
+      case 'select-codex-runtime':
+        return this.selectCodexRuntime(p as CodexRuntimeRequest)
       case 'select-minimax-candidate':
         return this.selectMiniMaxCandidate(p as MiniMaxCandidateRequest)
       case 'start':
@@ -3403,6 +3563,7 @@ export class HarnessService {
       await this.flushRecords()
     await this.sessionStore.dispose()
     await this.catalogStore.dispose()
+    await this.messageEditStore.drain()
   }
 }
 export const createHarnessService = (ctx: Context) =>

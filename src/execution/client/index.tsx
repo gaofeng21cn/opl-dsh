@@ -15,11 +15,22 @@ import { LiveTranscriptRow } from './LiveTranscriptRow.tsx'
 import { liveTranscriptDefinition, LIVE_TRANSCRIPT_KIND } from './live-transcript.ts'
 import { DeliverAssetsRow } from './DeliverAssetsRow.tsx'
 import { deliverAssetsDefinition, DELIVER_ASSETS_KIND } from './deliver-assets.ts'
-import { StopEditControl } from './StopEditControl.tsx'
-import { protectEditBranchesFromNewSession } from './fresh-session.ts'
+import { MessageEditControl, type EditSelection } from './MessageEditControl.tsx'
+import {
+  installMessageEditViews,
+  installMessageEditNavigation,
+  messageEditDefinition,
+} from './message-edit-view.ts'
 import { HARNESS_TRANSCRIPT_TOOL } from '../contracts/tool-display.ts'
 import { remoteCall } from '../../shared/client/remote-call.ts'
-export const inject = ['slots', 'sessions', 'uiConversation', 'uiWorkspace', 'remote.oplExecution']
+export const inject = [
+  'slots',
+  'sessions',
+  'uiConversation',
+  'uiWorkspace',
+  'remote.oplExecution',
+  'remote.session',
+]
 /**
  * The official durable model selection of one Session.
  *
@@ -56,11 +67,60 @@ function sessionChanges(ctx: Context, sessionId: string, listener: () => void): 
 
 export function apply(ctx: Context): void {
   const call = remoteCall(ctx.remote.oplExecution)
-  ctx.effect(() =>
-    protectEditBranchesFromNewSession(ctx.uiWorkspace, ctx.sessions, (sessionId) =>
-      call('stop-edit-state', { sessionId }),
-    ),
-  )
+  ctx.effect(() => installMessageEditViews(ctx.uiConversation.views))
+  ctx.effect(() => installMessageEditNavigation(ctx))
+  ctx.effect(() => ctx.uiConversation.events.register(messageEditDefinition))
+  const editors = new Map<
+    string,
+    { selection: () => EditSelection | undefined; accepted: () => void }
+  >()
+  const remote = ctx.remote.session
+  ctx.effect(() => {
+    let owner: object | null = remote
+    while (owner && !Object.getOwnPropertyDescriptor(owner, 'prompt'))
+      owner = Object.getPrototypeOf(owner) as object | null
+    if (!owner) throw Error('Official Session prompt Remote is unavailable')
+    const previous = Object.getOwnPropertyDescriptor(owner, 'prompt')!
+    const wrapped = function (this: typeof remote) {
+      const original = previous.get
+        ? (previous.get.call(this) as typeof remote.prompt)
+        : (previous.value as typeof remote.prompt)
+      const route: typeof remote.prompt = async (prompt, signal) => {
+        const editor = editors.get(prompt.sessionId)
+        const target = editor?.selection()
+        if (!target) return original(prompt, signal)
+        if (signal?.aborted) return original(prompt, signal)
+        const result = await ctx.remote.oplExecution['message-edit-send']({
+          prompt,
+          targetSeq: target.seq,
+          head: target.head,
+        })
+        if (result.ok && editors.get(prompt.sessionId) === editor) editor!.accepted()
+        return result
+      }
+      return route
+    }
+    Object.defineProperty(owner, 'prompt', {
+      configurable: true,
+      enumerable: previous.enumerable ?? false,
+      get: wrapped,
+    })
+    return () => {
+      if (Object.getOwnPropertyDescriptor(owner!, 'prompt')?.get === wrapped)
+        Object.defineProperty(owner!, 'prompt', previous)
+    }
+  })
+  const bindPrompt = (
+    id: string,
+    selection: () => EditSelection | undefined,
+    accepted: () => void,
+  ) => {
+    const editor = { selection, accepted }
+    editors.set(id, editor)
+    return () => {
+      if (editors.get(id) === editor) editors.delete(id)
+    }
+  }
   const sessionChangesFor = (sessionId: string, listener: () => void) =>
     sessionChanges(ctx, sessionId, listener)
   ctx.effect(() => ctx.uiConversation.events.register(liveTranscriptDefinition))
@@ -107,10 +167,10 @@ export function apply(ctx: Context): void {
           sessionId,
           call,
           subscribeSession: sessionChangesFor,
-          openSession: (id: string) => ctx.uiWorkspace.openSession(id as SessionId),
+          bindPrompt,
         }),
       },
-      StopEditControl,
+      MessageEditControl,
     ),
   )
   ctx.slots.inject('settings.section', () =>

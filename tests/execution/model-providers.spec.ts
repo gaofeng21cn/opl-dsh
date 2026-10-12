@@ -154,9 +154,41 @@ describe('native Huawei provider profile', () => {
     ctx.provide('loader', { entries: () => [entry] })
     const schema = entry.fiber.runtime.Config as typeof official.Config
     const before = schema.dict?.huaweiProviders
+    const discoveryBefore = Object.getOwnPropertyDescriptor(ctx.llm, 'discoverModels')
     try {
+      await expect(
+        ctx.llm.discoverModels('llm-pi-ai', { provider: 'huawei-maas' }),
+      ).rejects.toThrow('pi-ai ships no catalog')
       const adaptation = ctx.plugin(providers)
       await adaptation
+      const migrationReads = keyring.read.mock.calls.length
+      const fetch = vi.spyOn(globalThis, 'fetch')
+      try {
+        expect(await ctx.llm.discoverModels('llm-pi-ai', { provider: 'huawei-maas' })).toEqual([
+          { id: 'glm-5.2', name: 'GLM-5.2' },
+        ])
+        expect(
+          await ctx.llm.remoteDiscoverModels(
+            'llm-pi-ai',
+            { provider: 'huawei-maas' },
+            new AbortController().signal,
+          ),
+        ).toEqual([{ id: 'glm-5.2', name: 'GLM-5.2' }])
+        expect(await ctx.llm.discoverModels('llm-pi-ai', { provider: 'openai' })).not.toHaveLength(
+          0,
+        )
+        await expect(
+          ctx.llm.discoverModels('llm-deepseek', { provider: 'huawei-maas' }),
+        ).rejects.toThrow('no model discovery is registered')
+        const aborted = AbortSignal.abort()
+        await expect(
+          ctx.llm.discoverModels('llm-pi-ai', { provider: 'huawei-maas' }, aborted),
+        ).rejects.toMatchObject({ name: 'AbortError' })
+        expect(fetch).not.toHaveBeenCalled()
+        expect(keyring.read).toHaveBeenCalledTimes(migrationReads)
+      } finally {
+        fetch.mockRestore()
+      }
       expect(
         ctx.llm.listConfigurableProviders().find((item) => item.provider === 'huawei-maas'),
       ).toMatchObject({ settingsNs: 'llm-pi-ai', settingsPath: ['huaweiProviders', 'huawei-maas'] })
@@ -177,6 +209,10 @@ describe('native Huawei provider profile', () => {
       ctx.emit('loader/volatile-update', [['huaweiProviders']])
       expect(ctx.llm.listProviders().some((item) => item.id === 'huawei-maas')).toBe(false)
       await adaptation.dispose()
+      expect(Object.getOwnPropertyDescriptor(ctx.llm, 'discoverModels')).toEqual(discoveryBefore)
+      await expect(
+        ctx.llm.discoverModels('llm-pi-ai', { provider: 'huawei-maas' }),
+      ).rejects.toThrow('pi-ai ships no catalog')
       expect(schema.dict?.huaweiProviders).toBe(before)
       expect(entry.options.name).toBe('@deepseek-ai/dsh-llm-pi-ai')
     } finally {

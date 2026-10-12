@@ -20,6 +20,19 @@ export const CODEX_API_KEY_REF = 'OPL_GATEWAY_CODEX_API_KEY'
 /** Independent Grok-group credential used only by the Grok Build harness. */
 export const GROK_API_KEY_REF = 'OPL_GATEWAY_GROK_API_KEY'
 
+/** Default recoverable request failures; limits and backoff use the official normal defaults. */
+export const DEFAULT_GATEWAY_RETRY_POLICY: RetryPolicyConfig = {
+  mode: 'normal',
+  retryableCodes: [
+    'EMPTY_RESPONSE',
+    'RATE_LIMIT',
+    'SERVER',
+    'TIMEOUT',
+    'TRANSPORT',
+    'STREAM_CLOSED',
+  ],
+}
+
 /**
  * The one model this route advertises. The gateway serves the id
  * `deepseek-flash`, which this deployment presents as `DeepSeek-V4.1-Flash`;
@@ -67,7 +80,7 @@ export interface Config {
   defaultContextWindow?: number
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs?: number
-  /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
+  /** Provider-owned request recovery; omission includes STREAM_CLOSED with official normal limits. */
   retryPolicy?: RetryPolicyConfig
 }
 
@@ -92,7 +105,7 @@ export const Config: z<Config> = z.object({
   maxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS),
   defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
   streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
-  retryPolicy: RetryPolicySchema,
+  retryPolicy: RetryPolicySchema.default(DEFAULT_GATEWAY_RETRY_POLICY),
 })
 
 /**
@@ -101,7 +114,7 @@ export const Config: z<Config> = z.object({
  * @param config - raw plugin config or resolved settings snapshot.
  * @param fallbackBaseURL - endpoint used when neither the settings section nor
  *   the OPL account binding names one.
- * @returns adapter configuration with every unset field left to its own default.
+ * @returns adapter configuration with the Gateway retry defaults and other adapter-owned defaults.
  */
 export function toAdapterConfig(
   config: Config,
@@ -122,6 +135,6 @@ export function toAdapterConfig(
     ...(config.streamIdleTimeoutMs === undefined
       ? {}
       : { streamIdleTimeoutMs: config.streamIdleTimeoutMs }),
-    ...(config.retryPolicy === undefined ? {} : { retryPolicy: config.retryPolicy }),
+    retryPolicy: config.retryPolicy ?? DEFAULT_GATEWAY_RETRY_POLICY,
   }
 }

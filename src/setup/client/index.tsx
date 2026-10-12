@@ -80,7 +80,7 @@ export function apply(
         priority: -10,
         locale: 'settings.oplGateway',
         inject: () => ({
-          readSetup: actions.readSetup,
+          readAccount: actions.status,
           bindModelNavigation: navigation.bindModelNavigation,
         }),
       },

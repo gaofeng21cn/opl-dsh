@@ -1,0 +1,3091 @@
+diff --git a/codex-rs/Cargo.lock b/codex-rs/Cargo.lock
+index 19885ae..c14cdb1 100644
+--- a/codex-rs/Cargo.lock
++++ b/codex-rs/Cargo.lock
+@@ -268,7 +268,7 @@ checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
+ 
+ [[package]]
+ name = "app_test_support"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -1893,7 +1893,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-agent-extension"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-core",
+@@ -1905,7 +1905,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-agent-graph-store"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-protocol",
+  "codex-state",
+@@ -1920,7 +1920,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-agent-identity"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -1940,7 +1940,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-agent-message-board-client"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -1960,7 +1960,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-agent-message-board-extension"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "base64 0.22.1",
+  "caseless",
+@@ -1983,7 +1983,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-agent-roles"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-config",
+  "codex-file-system",
+@@ -1996,7 +1996,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-analytics"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-app-server-protocol",
+  "codex-git-utils",
+@@ -2018,7 +2018,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-ansi-escape"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "ansi-to-tui",
+  "ratatui",
+@@ -2027,7 +2027,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-api"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "assert_matches",
+@@ -2065,7 +2065,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-app-server"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "app_test_support",
+@@ -2177,7 +2177,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-app-server-client"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-app-server",
+  "codex-app-server-protocol",
+@@ -2204,7 +2204,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-app-server-daemon"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "blake3",
+@@ -2229,7 +2229,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-app-server-protocol"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-app-server-protocol-noop-macros",
+@@ -2263,11 +2263,11 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-app-server-protocol-noop-macros"
+-version = "0.0.0"
++version = "0.160.1"
+ 
+ [[package]]
+ name = "codex-app-server-test-client"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -2289,7 +2289,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-app-server-transport"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "axum",
+  "base64 0.22.1",
+@@ -2331,7 +2331,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-apply-patch"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "assert_cmd",
+@@ -2351,7 +2351,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-arg0"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-apply-patch",
+@@ -2374,7 +2374,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-async-utils"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "pretty_assertions",
+  "rand 0.9.3",
+@@ -2384,7 +2384,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-attachment-store"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "pretty_assertions",
+  "serde",
+@@ -2394,7 +2394,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-aws-auth"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "aws-config",
+  "aws-credential-types",
+@@ -2420,7 +2420,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-backend-client"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-api",
+@@ -2440,7 +2440,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-backend-openapi-models"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "serde",
+  "serde_json",
+@@ -2449,7 +2449,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-build-info"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-install-context",
+  "pretty_assertions",
+@@ -2462,7 +2462,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-bwrap"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "cc",
+  "libc",
+@@ -2471,7 +2471,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-chatgpt"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -2493,7 +2493,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-cli"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "app_test_support",
+@@ -2594,7 +2594,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-client"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-http-client",
+  "eventsource-stream",
+@@ -2608,7 +2608,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-cloud-config"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "base64 0.22.1",
+  "chrono",
+@@ -2634,7 +2634,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-cloud-tasks"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -2667,7 +2667,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-cloud-tasks-client"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -2682,7 +2682,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-cloud-tasks-mock-client"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "chrono",
+  "codex-cloud-tasks-client",
+@@ -2691,7 +2691,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-code-mode"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-code-mode-protocol",
+  "codex-http-client",
+@@ -2714,7 +2714,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-code-mode-host"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "axum",
+@@ -2743,7 +2743,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-code-mode-protocol"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-protocol",
+  "glob",
+@@ -2761,7 +2761,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-code-mode-runtime"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-code-mode-protocol",
+@@ -2779,11 +2779,11 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-collaboration-mode-templates"
+-version = "0.0.0"
++version = "0.160.1"
+ 
+ [[package]]
+ name = "codex-config"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -2833,7 +2833,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-config-schema"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -2842,7 +2842,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-connectors"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "arc-swap",
+@@ -2864,7 +2864,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-connectors-extension"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-connectors",
+  "codex-core-plugins",
+@@ -2878,7 +2878,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-context-fragments"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-protocol",
+  "codex-utils-string",
+@@ -2888,7 +2888,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-core"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "arc-swap",
+@@ -3026,7 +3026,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-core-api"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-analytics",
+  "codex-app-server-protocol",
+@@ -3049,7 +3049,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-core-plugin-common"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-utils-absolute-path",
+  "semver",
+@@ -3060,7 +3060,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-core-plugins"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -3116,7 +3116,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-diagnostics"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "libc",
+  "pretty_assertions",
+@@ -3124,7 +3124,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-exec"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "assert_cmd",
+@@ -3176,7 +3176,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-exec-server"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "arc-swap",
+@@ -3244,7 +3244,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-exec-server-protocol"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-file-system",
+@@ -3260,7 +3260,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-exec-server-test-support"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-exec-server",
+@@ -3275,7 +3275,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-execpolicy"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -3293,7 +3293,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-experimental-api-macros"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "proc-macro2",
+  "quote",
+@@ -3302,7 +3302,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-extension-api"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-api",
+  "codex-config",
+@@ -3324,7 +3324,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-extension-items"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-utils-absolute-path",
+  "pretty_assertions",
+@@ -3336,7 +3336,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-external-agent-migration"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "chrono",
+  "codex-analytics",
+@@ -3366,7 +3366,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-features"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-network-proxy",
+  "codex-protocol",
+@@ -3379,7 +3379,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-feedback"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "bytes",
+@@ -3404,7 +3404,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-file-search"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -3420,7 +3420,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-file-system"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "bytes",
+  "codex-protocol",
+@@ -3432,7 +3432,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-file-watcher"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "notify",
+  "pretty_assertions",
+@@ -3443,7 +3443,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-git-attribution"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-backend-client",
+  "codex-extension-api",
+@@ -3456,7 +3456,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-git-utils"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -3483,7 +3483,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-goal-extension"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -3508,7 +3508,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-guardian-context"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-context-fragments",
+  "codex-history",
+@@ -3519,7 +3519,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-guardian-reviewer"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-analytics",
+@@ -3544,7 +3544,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-guardian-v2"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-analytics",
+@@ -3580,7 +3580,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-history"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-protocol",
+@@ -3592,7 +3592,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-history-notes-extension"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-analytics",
+  "codex-client",
+@@ -3617,7 +3617,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-home"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-extension-api",
+  "codex-utils-absolute-path",
+@@ -3629,7 +3629,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-hooks"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "async-channel",
+@@ -3657,7 +3657,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-http-client"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "bytes",
+  "codex-utils-cargo-bin",
+@@ -3693,7 +3693,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-image-generation-extension"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-api",
+@@ -3721,7 +3721,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-install-context"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-utils-absolute-path",
+  "codex-utils-home-dir",
+@@ -3734,7 +3734,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-keyring-store"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "keyring",
+  "pretty_assertions",
+@@ -3745,7 +3745,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-linux-sandbox"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "clap",
+  "codex-core",
+@@ -3773,7 +3773,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-lmstudio"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-core",
+  "codex-http-client",
+@@ -3787,7 +3787,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-login"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -3831,7 +3831,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-mcp"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "arc-swap",
+@@ -3871,7 +3871,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-mcp-extension"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "axum",
+@@ -3904,7 +3904,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-memories-extension"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-core",
+  "codex-extension-api",
+@@ -3926,7 +3926,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-memories-read"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-protocol",
+  "codex-shell-command",
+@@ -3936,7 +3936,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-memories-write"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -3973,7 +3973,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-mermaid"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "insta",
+  "pretty_assertions",
+@@ -3982,7 +3982,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-message-history"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-config",
+  "memchr",
+@@ -3996,7 +3996,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-model-provider"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "base64 0.22.1",
+  "chrono",
+@@ -4029,7 +4029,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-model-provider-info"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-client",
+  "codex-protocol",
+@@ -4047,7 +4047,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-models-manager"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "chrono",
+  "codex-http-client",
+@@ -4066,7 +4066,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-mxc-sandbox"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "appcontainer_common",
+@@ -4088,7 +4088,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-network-proxy"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -4137,7 +4137,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-ollama"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "assert_matches",
+  "async-stream",
+@@ -4157,7 +4157,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-otel"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "bytes",
+  "chrono",
+@@ -4194,7 +4194,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-otel-trace-websocket"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "axum",
+@@ -4205,7 +4205,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-plugin"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-config",
+  "codex-core-plugin-common",
+@@ -4220,7 +4220,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-process-hardening"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "libc",
+  "pretty_assertions",
+@@ -4228,7 +4228,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-prompts"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-collaboration-mode-templates",
+@@ -4245,7 +4245,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-protocol"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "chardetng",
+@@ -4289,7 +4289,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-queue-extension"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-core",
+@@ -4310,7 +4310,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-realtime-webrtc"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-build-info",
+@@ -4328,7 +4328,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-response-debug-context"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-api",
+@@ -4339,7 +4339,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-responses-api-proxy"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -4356,7 +4356,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-rmcp-client"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "axum",
+@@ -4405,7 +4405,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-rollout"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -4433,7 +4433,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-rollout-trace"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-code-mode",
+@@ -4449,7 +4449,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-sandboxing"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-mxc-sandbox",
+@@ -4476,7 +4476,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-secrets"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "age",
+  "anyhow",
+@@ -4497,7 +4497,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-shell-command"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -4520,7 +4520,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-shell-escalation"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -4540,7 +4540,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-skills"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-protocol",
+  "codex-shell-command",
+@@ -4557,7 +4557,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-skills-extension"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "assert_matches",
+  "blake3",
+@@ -4594,7 +4594,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-state"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -4620,7 +4620,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-stdio-to-uds"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-uds",
+@@ -4632,7 +4632,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-tcp-tunnel"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "bytes",
+@@ -4653,7 +4653,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-terminal-detection"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "pretty_assertions",
+  "tracing",
+@@ -4661,7 +4661,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-test-binary-support"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-arg0",
+  "tempfile",
+@@ -4669,7 +4669,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-thread-manager-sample"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -4680,7 +4680,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-thread-store"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "chrono",
+  "codex-app-server-protocol",
+@@ -4711,7 +4711,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-tools"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "bitflags 2.13.1",
+  "codex-code-mode",
+@@ -4737,7 +4737,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-tui"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "app_test_support",
+@@ -4863,7 +4863,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-uds"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "async-io",
+  "libc",
+@@ -4877,7 +4877,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-user-verification"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "base64 0.22.1",
+  "core-foundation 0.10.1",
+@@ -4897,7 +4897,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-absolute-path"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "dirs",
+  "dunce",
+@@ -4911,14 +4911,14 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-approval-presets"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-protocol",
+ ]
+ 
+ [[package]]
+ name = "codex-utils-audio"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-protocol",
+@@ -4932,7 +4932,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-cache"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "lru",
+  "sha1 0.10.6",
+@@ -4941,7 +4941,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-cargo-bin"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "assert_cmd",
+  "runfiles",
+@@ -4950,7 +4950,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-cli"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "clap",
+  "codex-protocol",
+@@ -4962,15 +4962,15 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-elapsed"
+-version = "0.0.0"
++version = "0.160.1"
+ 
+ [[package]]
+ name = "codex-utils-fuzzy-match"
+-version = "0.0.0"
++version = "0.160.1"
+ 
+ [[package]]
+ name = "codex-utils-git-discovery"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-git-utils",
+  "codex-utils-absolute-path",
+@@ -4983,7 +4983,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-home-dir"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-utils-absolute-path",
+  "dirs",
+@@ -4993,7 +4993,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-image"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-utils-cache",
+@@ -5007,7 +5007,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-json-to-toml"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "pretty_assertions",
+  "serde_json",
+@@ -5016,7 +5016,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-oss"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-core",
+  "codex-lmstudio",
+@@ -5026,7 +5026,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-output-truncation"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-protocol",
+  "codex-utils-string",
+@@ -5035,7 +5035,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-path"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-utils-absolute-path",
+  "dunce",
+@@ -5046,7 +5046,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-path-uri"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-utils-absolute-path",
+@@ -5062,7 +5062,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-plugins"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-exec-server",
+  "codex-exec-server-protocol",
+@@ -5076,7 +5076,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-process"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "pretty_assertions",
+  "tokio",
+@@ -5084,7 +5084,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-pty"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "ctor 0.6.3",
+@@ -5102,7 +5102,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-readiness"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "assert_matches",
+  "thiserror 2.0.18",
+@@ -5112,7 +5112,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-redacted-string"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "schemars 0.8.22",
+  "serde",
+@@ -5120,14 +5120,14 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-rustls-provider"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "rustls",
+ ]
+ 
+ [[package]]
+ name = "codex-utils-sandbox-summary"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-protocol",
+  "codex-utils-absolute-path",
+@@ -5137,7 +5137,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-sleep-inhibitor"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "core-foundation 0.9.4",
+  "libc",
+@@ -5147,14 +5147,14 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-stream-parser"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "pretty_assertions",
+ ]
+ 
+ [[package]]
+ name = "codex-utils-string"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "pretty_assertions",
+  "regex-lite",
+@@ -5164,14 +5164,14 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-template"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "pretty_assertions",
+ ]
+ 
+ [[package]]
+ name = "codex-v8-poc"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "pretty_assertions",
+  "v8",
+@@ -5179,7 +5179,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-voice-host"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-install-context",
+@@ -5206,7 +5206,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-web-search-extension"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-api",
+  "codex-core",
+@@ -5228,7 +5228,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-websocket-auth"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -5247,7 +5247,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-websocket-client"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-http-client",
+  "codex-utils-rustls-provider",
+@@ -5263,7 +5263,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-windows-sandbox"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -5291,7 +5291,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-windows-sandbox-service"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-cloud-config",
+@@ -5308,7 +5308,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-workload-identity"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "codex-http-client",
+  "pretty_assertions",
+@@ -5323,7 +5323,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-worktree"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "codex-git-utils",
+@@ -5563,7 +5563,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "core_test_support"
+-version = "0.0.0"
++version = "0.160.1"
+ dependencies = [
+  "anyhow",
+  "assert_cmd",
+diff --git a/codex-rs/codex-api/src/sse/responses.rs b/codex-rs/codex-api/src/sse/responses.rs
+index 6b2a7ed..8e72d51 100644
+--- a/codex-rs/codex-api/src/sse/responses.rs
++++ b/codex-rs/codex-api/src/sse/responses.rs
+@@ -10,7 +10,9 @@ use crate::safety_buffering::treatment_from_headers;
+ use crate::telemetry::SseTelemetry;
+ use codex_client::ByteStream;
+ use codex_client::StreamResponse;
++use codex_protocol::ResponseItemId;
+ use codex_protocol::ResponseUsageMetadata;
++use codex_protocol::models::ContentItem;
+ use codex_protocol::models::ResponseItem;
+ use codex_protocol::protocol::ModelVerification;
+ use codex_protocol::protocol::TokenUsage;
+@@ -352,10 +354,17 @@ pub fn process_responses_event(
+         }
+         "response.output_item.done" => {
+             if let Some(item_val) = event.item {
+-                if let Ok(item) = serde_json::from_value::<ResponseItem>(item_val) {
+-                    return Ok(Some(ResponseEvent::OutputItemDone(item)));
++                match serde_json::from_value::<ResponseItem>(item_val.clone()) {
++                    Ok(item) => return Ok(Some(ResponseEvent::OutputItemDone(item))),
++                    Err(err) => {
++                        tracing::warn!(
++                            error = %err,
++                            item_type = item_val.get("type").and_then(|v| v.as_str()),
++                            item_id = item_val.get("id").and_then(|v| v.as_str()),
++                            "failed to parse ResponseItem from output_item.done"
++                        );
++                    }
+                 }
+-                debug!("failed to parse ResponseItem from output_item.done");
+             }
+         }
+         "response.output_text.delta" => {
+@@ -464,10 +473,17 @@ pub fn process_responses_event(
+         }
+         "response.output_item.added" => {
+             if let Some(item_val) = event.item {
+-                if let Ok(item) = serde_json::from_value::<ResponseItem>(item_val) {
+-                    return Ok(Some(ResponseEvent::OutputItemAdded(item)));
++                match serde_json::from_value::<ResponseItem>(item_val.clone()) {
++                    Ok(item) => return Ok(Some(ResponseEvent::OutputItemAdded(item))),
++                    Err(err) => {
++                        tracing::warn!(
++                            error = %err,
++                            item_type = item_val.get("type").and_then(|v| v.as_str()),
++                            item_id = item_val.get("id").and_then(|v| v.as_str()),
++                            "failed to parse ResponseItem from output_item.added"
++                        );
++                    }
+                 }
+-                debug!("failed to parse ResponseItem from output_item.added");
+             }
+         }
+         "response.reasoning_summary_part.added" => {
+@@ -531,6 +547,10 @@ async fn process_sse_with_treatment(
+     let mut stream = stream.eventsource();
+     let mut response_error: Option<ApiError> = None;
+     let mut last_server_model: Option<String> = None;
++    let mut active_text_item_id: Option<String> = None;
++    let mut active_text_without_id = false;
++    let mut recovered_text_item_id: Option<String> = None;
++    let mut recovered_text = String::new();
+ 
+     loop {
+         let start = Instant::now();
+@@ -626,10 +646,95 @@ async fn process_sse_with_treatment(
+             return;
+         }
+ 
++        // Some Responses-compatible proxies omit (or send an unparseable)
++        // output_item.added while still sending text deltas with a stable item_id.
++        // Start an assistant item before the first such delta so core can stream
++        // the text instead of receiving an orphan delta and dropping it.
++        if event.kind == "response.output_text.delta"
++            && let (Some(item_id), Some(delta)) = (event.item_id.as_ref(), event.delta.as_ref())
++            && !delta.is_empty()
++        {
++            if active_text_item_id.as_deref() != Some(item_id.as_str()) && !active_text_without_id {
++                if let Some(previous_id) = recovered_text_item_id.take() {
++                    let previous_text = std::mem::take(&mut recovered_text);
++                    if tx_event
++                        .send(Ok(ResponseEvent::OutputItemDone(
++                            recovered_assistant_message(previous_id, previous_text),
++                        )))
++                        .await
++                        .is_err()
++                    {
++                        return;
++                    }
++                }
++                if tx_event
++                    .send(Ok(ResponseEvent::OutputItemAdded(
++                        recovered_assistant_message(item_id.clone(), String::new()),
++                    )))
++                    .await
++                    .is_err()
++                {
++                    return;
++                }
++                tracing::warn!(
++                    item_id,
++                    "recovered missing output_item.added from text delta"
++                );
++                active_text_item_id = Some(item_id.clone());
++                recovered_text_item_id = Some(item_id.clone());
++            }
++            if recovered_text_item_id.as_deref() == Some(item_id.as_str()) {
++                recovered_text.push_str(delta);
++            }
++        }
++
+         match process_responses_event(event) {
+             Ok(Some(event)) => {
+                 let is_completed = matches!(event, ResponseEvent::Completed { .. });
+-                if tx_event.send(Ok(event)).await.is_err() {
++                let mut suppress = false;
++                match &event {
++                    ResponseEvent::OutputItemAdded(item) => {
++                        if let ResponseItem::Message { role, id, .. } = item
++                            && role == "assistant"
++                        {
++                            let added_id = id.as_ref().map(|id| id.as_str());
++                            suppress =
++                                added_id.is_some() && added_id == recovered_text_item_id.as_deref();
++                            active_text_item_id = added_id.map(str::to_string);
++                            active_text_without_id = added_id.is_none();
++                        } else {
++                            active_text_item_id = None;
++                            active_text_without_id = false;
++                        }
++                    }
++                    ResponseEvent::OutputItemDone(item) => {
++                        let done_id = item.id().map(ResponseItemId::as_str);
++                        if done_id == recovered_text_item_id.as_deref() {
++                            recovered_text_item_id = None;
++                            recovered_text.clear();
++                        }
++                        if done_id.is_none() || done_id == active_text_item_id.as_deref() {
++                            active_text_item_id = None;
++                            active_text_without_id = false;
++                        }
++                    }
++                    ResponseEvent::Completed { .. } => {
++                        if let Some(item_id) = recovered_text_item_id.take() {
++                            let text = std::mem::take(&mut recovered_text);
++                            if tx_event
++                                .send(Ok(ResponseEvent::OutputItemDone(
++                                    recovered_assistant_message(item_id, text),
++                                )))
++                                .await
++                                .is_err()
++                            {
++                                return;
++                            }
++                        }
++                    }
++                    _ => {}
++                }
++                if !suppress && tx_event.send(Ok(event)).await.is_err() {
+                     return;
+                 }
+                 if is_completed {
+@@ -649,6 +754,20 @@ async fn process_sse_with_treatment(
+     }
+ }
+ 
++fn recovered_assistant_message(item_id: String, text: String) -> ResponseItem {
++    ResponseItem::Message {
++        id: Some(ResponseItemId::from_server(item_id)),
++        role: "assistant".to_string(),
++        content: if text.is_empty() {
++            Vec::new()
++        } else {
++            vec![ContentItem::OutputText { text }]
++        },
++        phase: None,
++        internal_chat_message_metadata_passthrough: None,
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+@@ -730,6 +849,43 @@ mod tests {
+         Duration::from_millis(1000)
+     }
+ 
++    #[tokio::test]
++    async fn recovers_text_deltas_when_output_item_added_is_missing() {
++        let events = run_sse(vec![
++            json!({"type": "response.output_text.delta", "item_id": "msg-recovered", "delta": "hello"}),
++            json!({"type": "response.output_text.delta", "item_id": "msg-recovered", "delta": " world"}),
++            json!({
++                "type": "response.output_item.done",
++                "item": {"type": "message", "id": "msg-recovered", "role": "assistant",
++                         "content": [{"type": "output_text", "text": "hello world"}]}
++            }),
++            json!({"type": "response.completed", "response": {"id": "resp1"}}),
++        ])
++        .await;
++
++        assert_eq!(events.len(), 5);
++        assert_matches!(&events[0], ResponseEvent::OutputItemAdded(ResponseItem::Message { id: Some(id), .. }) if id.as_str() == "msg-recovered");
++        assert_matches!(&events[1], ResponseEvent::OutputTextDelta(delta) if delta == "hello");
++        assert_matches!(&events[2], ResponseEvent::OutputTextDelta(delta) if delta == " world");
++        assert_matches!(&events[3], ResponseEvent::OutputItemDone(ResponseItem::Message { id: Some(id), .. }) if id.as_str() == "msg-recovered");
++        assert_matches!(&events[4], ResponseEvent::Completed { .. });
++    }
++
++    #[tokio::test]
++    async fn completes_recovered_text_item_when_output_item_done_is_missing() {
++        let events = run_sse(vec![
++            json!({"type": "response.output_text.delta", "item_id": "msg-recovered", "delta": "hello"}),
++            json!({"type": "response.completed", "response": {"id": "resp1"}}),
++        ])
++        .await;
++
++        assert_eq!(events.len(), 4);
++        assert_matches!(&events[0], ResponseEvent::OutputItemAdded(_));
++        assert_matches!(&events[1], ResponseEvent::OutputTextDelta(delta) if delta == "hello");
++        assert_matches!(&events[2], ResponseEvent::OutputItemDone(ResponseItem::Message { content, .. }) if matches!(content.as_slice(), [ContentItem::OutputText { text }] if text == "hello"));
++        assert_matches!(&events[3], ResponseEvent::Completed { .. });
++    }
++
+     #[tokio::test]
+     async fn parses_items_and_completed() {
+         let item1 = json!({
+diff --git a/codex-rs/core/src/git_bash.rs b/codex-rs/core/src/git_bash.rs
+new file mode 100644
+index 0000000..d634028
+--- /dev/null
++++ b/codex-rs/core/src/git_bash.rs
+@@ -0,0 +1,420 @@
++//! Opt-in selection of Git for Windows Bash as the Windows default shell.
++//!
++//! Codex's built-in Windows default is PowerShell: `shell_detect`'s
++//! `default_user_shell_from_path` ignores `$SHELL` and the passwd shell on
++//! Windows. A user who wants the model's `exec_command` to run in Git for
++//! Windows Bash opts in explicitly via `CODEX_NATIVE_GIT_BASH_PATH`.
++//!
++//! Design rules for this module:
++//!
++//! * Explicit opt-in only. No configuration means PowerShell, exactly as before.
++//! * Fail closed. A configured path that is not clearly Git for Windows Bash is
++//!   rejected with an error. We never guess, never fall back to PowerShell, and
++//!   never accept the WSL launcher, a WSL UNC path, or an MSYS-style path.
++//! * Layout and identity checks happen once per session start;
++//!   command execution reuses the validated canonical
++//!   path and never re-probes.
++//! * This is a sanity check against mixing up executables (a renamed `cmd.exe`,
++//!   a text file, the WSL launcher). It is **not** authentication of a hostile
++//!   binary.
++
++use std::path::Path;
++use std::path::PathBuf;
++use std::process::Stdio;
++use std::time::Duration;
++
++/// Candidate-only process setting. This is not an upstream TOML configuration key.
++/// Remote executors keep the shell reported by their own environment.
++pub(crate) async fn configured_shell(
++    base_profile: &codex_protocol::models::PermissionProfile,
++) -> anyhow::Result<Option<crate::shell::Shell>> {
++    if !cfg!(windows) {
++        return Ok(None);
++    }
++    let Some(path) = std::env::var_os("CODEX_NATIVE_GIT_BASH_PATH") else {
++        return Ok(None);
++    };
++    ensure_full_access_for_git_bash(matches!(
++        base_profile,
++        codex_protocol::models::PermissionProfile::Disabled
++    ))
++    .map_err(anyhow::Error::msg)?;
++    let shell_path = resolve_configured_git_bash(Path::new(&path)).map_err(anyhow::Error::msg)?;
++    verify_git_bash_identity(&shell_path)
++        .await
++        .map_err(anyhow::Error::msg)?;
++    Ok(Some(crate::shell::Shell {
++        shell_type: crate::shell::ShellType::Bash,
++        shell_path,
++    }))
++}
++
++/// Upper bound for the one-time Bash identity probe.
++const IDENTITY_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
++/// Upper bound for captured probe output.
++const IDENTITY_PROBE_MAX_OUTPUT_BYTES: usize = 8 * 1024;
++
++/// Why a configured `git_bash_path` cannot be used.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub(crate) enum GitBashPathError {
++    /// The path is not absolute, or uses an MSYS-style `/c/...` root.
++    NotAnAbsoluteWindowsPath(String),
++    /// The path points at the WSL launcher (`System32\bash.exe`), `wsl.exe`, or
++    /// a `\\wsl$\...` UNC path.
++    WslLauncher(String),
++    /// The executable name is not exactly `bash`/`bash.exe`.
++    NotBash(String),
++    /// The path does not look like a Git for Windows installation.
++    NotGitForWindows(String),
++    /// The file does not exist or is not a regular file.
++    Missing(String),
++    /// A Git for Windows install root was found but a required layout marker is
++    /// absent, so the installation looks incomplete.
++    IncompleteInstall(String),
++}
++
++impl GitBashPathError {
++    pub(crate) fn message(&self) -> String {
++        match self {
++            Self::NotAnAbsoluteWindowsPath(path) => format!(
++                "`CODEX_NATIVE_GIT_BASH_PATH` must be an absolute Windows path such as \
++                 `C:\\Program Files\\Git\\bin\\bash.exe`; got `{path}`. MSYS-style paths like \
++                 `/c/...` and `/mnt/c/...` are ambiguous and are not accepted."
++            ),
++            Self::WslLauncher(path) => format!(
++                "`CODEX_NATIVE_GIT_BASH_PATH` points at a WSL entry point (`{path}`). Codex requires \
++                 Git for Windows Bash here; use `C:\\Program Files\\Git\\bin\\bash.exe`."
++            ),
++            Self::NotBash(path) => format!(
++                "`CODEX_NATIVE_GIT_BASH_PATH` must point at a Bash executable named `bash.exe`; got \
++                 `{path}`."
++            ),
++            Self::NotGitForWindows(path) => format!(
++                "`CODEX_NATIVE_GIT_BASH_PATH` must point at a Git for Windows Bash installation (for \
++                 example `C:\\Program Files\\Git\\bin\\bash.exe`); got `{path}`. To use Bash under \
++                 WSL, run Codex inside that WSL distribution instead."
++            ),
++            Self::Missing(path) => {
++                format!("`CODEX_NATIVE_GIT_BASH_PATH` file does not exist: `{path}`.")
++            }
++            Self::IncompleteInstall(path) => format!(
++                "`CODEX_NATIVE_GIT_BASH_PATH` points into a Git for Windows installation without its \
++                 `cmd\\git.exe` layout marker (`{path}`); the installation \
++                 looks incomplete."
++            ),
++        }
++    }
++}
++
++impl std::fmt::Display for GitBashPathError {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        f.write_str(&self.message())
++    }
++}
++
++/// A Git for Windows Bash that passed layout checks.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub(crate) struct GitBashShell {
++    /// Canonical absolute path to the Bash executable.
++    pub(crate) path: PathBuf,
++    /// Git for Windows installation root, for example `C:\Program Files\Git`.
++    pub(crate) install_root: PathBuf,
++}
++
++/// True when the path is expressed as a native Windows absolute path.
++///
++/// Rejects MSYS-style `/c/...`, `/mnt/c/...`, and `\\wsl$\...` paths, which are
++/// not meaningful to a native Windows process.
++fn is_native_windows_absolute(path: &Path) -> bool {
++    let Some(text) = path.to_str() else {
++        return false;
++    };
++    let bytes = text.as_bytes();
++    let has_drive_prefix = bytes.len() >= 3
++        && bytes[0].is_ascii_alphabetic()
++        && bytes[1] == b':'
++        && (bytes[2] == b'\\' || bytes[2] == b'/');
++    // `\\?\C:\...` and `\\server\share` are native; `\\wsl$\...` is not.
++    let has_unc_prefix = text.starts_with("\\\\") && !is_wsl_unc(path);
++    has_drive_prefix || has_unc_prefix
++}
++
++/// True for `\\wsl$\<distro>\...` and `\\wsl.localhost\...` UNC paths.
++fn is_wsl_unc(path: &Path) -> bool {
++    let lowered = path.to_string_lossy().to_ascii_lowercase();
++    lowered.starts_with("\\\\wsl$\\")
++        || lowered.starts_with("\\\\wsl.localhost\\")
++        || lowered.starts_with("//wsl$/")
++        || lowered.starts_with("//wsl.localhost/")
++}
++
++/// True when the path targets the WSL Bash entry point rather than Git Bash.
++fn targets_wsl_launcher(path: &Path) -> bool {
++    if is_wsl_unc(path) {
++        return true;
++    }
++    let normalised = path
++        .to_string_lossy()
++        .to_ascii_lowercase()
++        .replace('/', "\\");
++    normalised.contains("\\windows\\system32\\bash.exe")
++        || normalised.ends_with("\\wsl.exe")
++        || normalised.contains("\\windowsapps\\") && normalised.ends_with("bash.exe")
++}
++
++/// True when the executable file name is exactly Bash (case-insensitive).
++///
++/// Requires an `.exe` extension (or no extension for MSYS-style callers); a
++/// `bash.cmd` or `bash.txt` file is rejected.
++fn is_bash_file_name(path: &Path) -> bool {
++    let Some(extension) = path.extension() else {
++        // Bare `bash` with no extension is accepted for callers that pass the
++        // MSYS-style name; it still has to pass the layout checks below.
++        return path
++            .file_name()
++            .and_then(|name| name.to_str())
++            .is_some_and(|name| name.eq_ignore_ascii_case("bash"));
++    };
++    if !extension.eq_ignore_ascii_case("exe") {
++        return false;
++    }
++    path.file_stem()
++        .and_then(|stem| stem.to_str())
++        .is_some_and(|stem| stem.eq_ignore_ascii_case("bash"))
++}
++
++/// Split a path into lowercase components.
++fn components_lowercase(path: &Path) -> Vec<String> {
++    path.components()
++        .filter_map(|component| component.as_os_str().to_str())
++        .map(str::to_ascii_lowercase)
++        .collect()
++}
++
++/// Derive the Git for Windows installation root from a `...\bin\bash.exe` or
++/// `...\usr\bin\bash.exe` path.
++///
++/// Returns `(install_root, under_usr_bin)`. The root directory name is **not**
++/// restricted: custom installation roots are accepted, and the real layout
++/// marker check happens in [`resolve_configured_git_bash`].
++fn split_git_install_root(path: &Path) -> Option<(PathBuf, bool)> {
++    let components = components_lowercase(path);
++    let (bin_depth, under_usr_bin) = if components.len() >= 3
++        && components[components.len() - 3] == "usr"
++        && components[components.len() - 2] == "bin"
++    {
++        (3usize, true)
++    } else if components.len() >= 2 && components[components.len() - 2] == "bin" {
++        (2usize, false)
++    } else {
++        return None;
++    };
++    let keep = components.len() - bin_depth;
++    if keep == 0 {
++        return None;
++    }
++    let mut root = PathBuf::new();
++    for component in path.components().take(keep) {
++        root.push(component);
++    }
++    Some((root, under_usr_bin))
++}
++
++/// Classify a configured path as Git for Windows Bash without touching disk.
++pub(crate) fn classify_git_bash_path(path: &Path) -> Result<GitBashShell, GitBashPathError> {
++    if targets_wsl_launcher(path) {
++        return Err(GitBashPathError::WslLauncher(path.display().to_string()));
++    }
++    if !is_native_windows_absolute(path) {
++        return Err(GitBashPathError::NotAnAbsoluteWindowsPath(
++            path.display().to_string(),
++        ));
++    }
++    if !is_bash_file_name(path) {
++        return Err(GitBashPathError::NotBash(path.display().to_string()));
++    }
++    let Some((install_root, _under_usr_bin)) = split_git_install_root(path) else {
++        return Err(GitBashPathError::NotGitForWindows(
++            path.display().to_string(),
++        ));
++    };
++    Ok(GitBashShell {
++        path: path.to_path_buf(),
++        install_root,
++    })
++}
++
++/// True when `dir` contains the Git for Windows layout marker.
++///
++/// The marker is the real Git executable, not a directory name: a custom
++/// installation root is fine as long as it is a Git for Windows layout.
++fn has_git_layout_marker(root: &Path) -> bool {
++    root.join("cmd").join("git.exe").is_file()
++}
++
++/// Validate a configured `CODEX_NATIVE_GIT_BASH_PATH` end to end.
++///
++/// Canonicalizes the path (so NTFS junctions and symlinks resolve to their real
++/// target before identity decisions), re-checks identity on the canonical path,
++/// and verifies the Git for Windows layout marker. Called once during session
++/// startup; the returned canonical path is reused for the whole session.
++pub(crate) fn resolve_configured_git_bash(path: &Path) -> Result<PathBuf, String> {
++    classify_git_bash_path(path).map_err(|err| err.message())?;
++    let canonical = std::fs::canonicalize(path)
++        .map_err(|_| GitBashPathError::Missing(path.display().to_string()).message())?;
++    let shell = classify_git_bash_path(&canonical).map_err(|err| err.message())?;
++    if !shell.path.is_file() {
++        return Err(GitBashPathError::Missing(shell.path.display().to_string()).message());
++    }
++    if !has_git_layout_marker(&shell.install_root) {
++        return Err(
++            GitBashPathError::IncompleteInstall(shell.install_root.display().to_string()).message(),
++        );
++    }
++    Ok(shell.path)
++}
++
++/// Reject an opt-in Git Bash shell when the session's **base** permission profile
++/// does not disable the sandbox.
++///
++/// Called before the identity probe spawns, so a restricted configuration never
++/// executes the configured shell's startup path at all. `base_profile_disables_sandbox`
++/// must be derived from the environment's base `PermissionProfile` (only
++/// `PermissionProfile::Disabled` is `true`). Per-turn and per-call additional
++/// permissions are never treated as an escalation into full access.
++pub(crate) fn ensure_full_access_for_git_bash(
++    base_profile_disables_sandbox: bool,
++) -> Result<(), String> {
++    if base_profile_disables_sandbox {
++        return Ok(());
++    }
++    Err(
++        "`CODEX_NATIVE_GIT_BASH_PATH` is set but this session's base permission profile is \
++         restricted. Git for Windows Bash has no sandbox backend on Windows, so Codex refuses \
++         to run it under a restricted profile rather than running it unsandboxed. Disable the \
++         sandbox (`--dangerously-bypass-approvals-and-sandbox` or `sandbox_mode = \
++         \"danger-full-access\"`) or unset `CODEX_NATIVE_GIT_BASH_PATH`."
++            .to_string(),
++    )
++}
++
++/// Model guidance follows the selected local shell without changing tool parameters.
++pub(crate) const GIT_BASH_GUIDANCE: &str = "\n\nCommands use Git for Windows Bash. Use POSIX shell syntax. The login option retains its documented behavior. Working directories may use `/c/...` or native Windows absolute paths; `/mnt/...` and other POSIX mount roots are unsupported. Keep destructive file operations in one shell and verify resolved targets before deleting or moving files.";
++
++/// Resolve an explicit request against the already-validated configured shell.
++pub(crate) fn validate_shell_request(requested: &str, configured: &Path) -> Result<(), String> {
++    if requested.eq_ignore_ascii_case("bash") || requested.eq_ignore_ascii_case("bash.exe") {
++        return Ok(());
++    }
++    let path = Path::new(requested);
++    if !path.is_absolute() || !is_bash_file_name(path) {
++        return Err(format!(
++            "shell `{requested}` must be bare bash/bash.exe or the configured absolute Git Bash path"
++        ));
++    }
++    let canonical = std::fs::canonicalize(path)
++        .map_err(|err| format!("cannot resolve requested shell `{requested}`: {err}"))?;
++    if canonical != configured {
++        return Err(format!(
++            "shell `{requested}` does not match CODEX_NATIVE_GIT_BASH_PATH; omit shell to use the configured executable"
++        ));
++    }
++    Ok(())
++}
++
++/// Drain while retaining a fixed-size prefix. Dropping this future closes the
++/// pipe, including when another process still holds an inherited writer.
++async fn drain_capped(mut reader: impl tokio::io::AsyncRead + Unpin) -> std::io::Result<Vec<u8>> {
++    use tokio::io::AsyncReadExt;
++    let mut kept = Vec::with_capacity(IDENTITY_PROBE_MAX_OUTPUT_BYTES);
++    let mut buffer = [0u8; 4096];
++    loop {
++        let read = reader.read(&mut buffer).await?;
++        if read == 0 {
++            return Ok(kept);
++        }
++        let remaining = IDENTITY_PROBE_MAX_OUTPUT_BYTES - kept.len();
++        kept.extend_from_slice(&buffer[..read.min(remaining)]);
++    }
++}
++
++/// Cancels the pipe reader if the probe future is cancelled or times out.
++struct ProbeReader(tokio::task::JoinHandle<std::io::Result<Vec<u8>>>);
++
++impl Drop for ProbeReader {
++    fn drop(&mut self) {
++        self.0.abort();
++    }
++}
++
++/// Probe one executable with a single deadline covering both exit and pipe EOF.
++/// Only the direct child is owned here; no descendant-cleanup guarantee is made.
++async fn probe_identity(
++    command: &mut tokio::process::Command,
++    timeout: Duration,
++) -> Result<(), String> {
++    command
++        .stdin(Stdio::null())
++        .stdout(Stdio::piped())
++        .stderr(Stdio::null())
++        .env_remove("BASH_ENV")
++        .env_remove("ENV")
++        .kill_on_drop(true);
++    #[cfg(windows)]
++    command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
++    let mut child = command
++        .spawn()
++        .map_err(|err| format!("identity probe spawn failed: {err}"))?;
++    let stdout = child
++        .stdout
++        .take()
++        .ok_or_else(|| "identity probe stdout unavailable".to_string())?;
++    let mut reader = ProbeReader(tokio::spawn(drain_capped(stdout)));
++    let result = tokio::time::timeout(timeout, async {
++        let status = child.wait().await?;
++        let output = (&mut reader.0).await.map_err(std::io::Error::other)??;
++        Ok::<_, std::io::Error>((status, output))
++    })
++    .await;
++    let (status, output) = match result {
++        Ok(Ok(result)) => result,
++        other => {
++            let _ = child.start_kill();
++            let _ = tokio::time::timeout(Duration::from_secs(1), child.wait()).await;
++            return Err(match other {
++                Err(_) => "identity probe timed out (process or inherited stdout remained open)"
++                    .to_string(),
++                _ => "identity probe failed while reading output or waiting for exit".to_string(),
++            });
++        }
++    };
++    if !status.success() {
++        return Err(format!("identity probe exited with {status}"));
++    }
++    if !String::from_utf8_lossy(&output)
++        .lines()
++        .any(|line| line.starts_with("GNU bash, version "))
++    {
++        return Err("identity probe did not report a GNU Bash version".to_string());
++    }
++    Ok(())
++}
++
++/// Run once after full-access admission, without Bash startup files or reliance
++/// on inherited MSYSTEM. This checks accidental executable mismatches, not trust.
++pub(crate) async fn verify_git_bash_identity(canonical_bash: &Path) -> Result<(), String> {
++    let mut command = tokio::process::Command::new(canonical_bash);
++    command.arg("--version");
++    probe_identity(&mut command, IDENTITY_PROBE_TIMEOUT)
++        .await
++        .map_err(|err| {
++            format!(
++                "CODEX_NATIVE_GIT_BASH_PATH `{}`: {err}",
++                canonical_bash.display()
++            )
++        })
++}
++
++#[cfg(test)]
++#[path = "git_bash_tests.rs"]
++mod tests;
+diff --git a/codex-rs/core/src/git_bash_tests.rs b/codex-rs/core/src/git_bash_tests.rs
+new file mode 100644
+index 0000000..edc40ee
+--- /dev/null
++++ b/codex-rs/core/src/git_bash_tests.rs
+@@ -0,0 +1,294 @@
++use super::*;
++
++// `classify_git_bash_path` and `resolve_configured_git_bash` reason about native
++// Windows paths, so the Windows-path cases are compiled and asserted only on
++// Windows. The platform-neutral cases below run everywhere.
++
++#[cfg(windows)]
++#[test]
++fn accepts_git_for_windows_bash_under_spaced_and_cjk_roots() {
++    for (path, expected_root) in [
++        (
++            r"C:\Program Files\Git\bin\bash.exe",
++            r"C:\Program Files\Git",
++        ),
++        (
++            r"C:\Program Files\Git\usr\bin\bash.exe",
++            r"C:\Program Files\Git",
++        ),
++        (
++            r"C:\Program Files\Git\bin\BASH.EXE",
++            r"C:\Program Files\Git",
++        ),
++        (
++            r"C:\Users\dev\AppData\Local\Programs\Git\bin\bash.exe",
++            r"C:\Users\dev\AppData\Local\Programs\Git",
++        ),
++        (r"D:\工具 安装\Git\bin\bash.exe", r"D:\工具 安装\Git"),
++    ] {
++        let classified = classify_git_bash_path(std::path::Path::new(path))
++            .unwrap_or_else(|err| panic!("{path} should be accepted, got {err}"));
++        assert_eq!(classified.path, std::path::Path::new(path), "{path}");
++        assert_eq!(
++            classified.install_root,
++            std::path::Path::new(expected_root),
++            "install root for {path}"
++        );
++    }
++}
++
++/// The layout marker is the real `cmd\git.exe` file, not the directory name: a
++/// custom installation root is accepted once it has that layout, and rejected
++/// without it. Exercises the real resolver against a real filesystem tree.
++#[cfg(windows)]
++#[test]
++fn resolve_requires_the_real_git_layout_marker_in_custom_roots() {
++    let base = std::env::temp_dir().join(format!("codex-git-bash-layout-{}", std::process::id()));
++    let _ = std::fs::remove_dir_all(&base);
++
++    let complete = base.join("complete-root");
++    std::fs::create_dir_all(complete.join("cmd")).unwrap();
++    std::fs::create_dir_all(complete.join("bin")).unwrap();
++    std::fs::write(complete.join("cmd").join("git.exe"), b"").unwrap();
++    std::fs::write(complete.join("bin").join("bash.exe"), b"").unwrap();
++    let resolved = resolve_configured_git_bash(&complete.join("bin").join("bash.exe"))
++        .expect("a custom root with cmd\\git.exe is a valid Git layout");
++    assert_eq!(
++        resolved,
++        std::fs::canonicalize(complete.join("bin").join("bash.exe")).unwrap()
++    );
++
++    let incomplete = base.join("incomplete-root");
++    std::fs::create_dir_all(incomplete.join("bin")).unwrap();
++    std::fs::write(incomplete.join("bin").join("bash.exe"), b"").unwrap();
++    let err = resolve_configured_git_bash(&incomplete.join("bin").join("bash.exe"))
++        .expect_err("a bash.exe without cmd\\git.exe must not be accepted");
++    assert!(err.contains("cmd\\git.exe"), "{err}");
++
++    let _ = std::fs::remove_dir_all(&base);
++}
++
++#[test]
++fn rejects_wsl_launcher_paths() {
++    for path in [
++        r"C:\Windows\System32\bash.exe",
++        r"\\wsl$\Ubuntu\bin\bash.exe",
++        r"\\wsl.localhost\Ubuntu\bin\bash.exe",
++    ] {
++        let err = classify_git_bash_path(std::path::Path::new(path))
++            .expect_err("WSL launcher must be rejected");
++        assert!(
++            matches!(err, GitBashPathError::WslLauncher(_)),
++            "unexpected error for {path}: {err}"
++        );
++    }
++}
++
++#[test]
++fn rejects_msys_style_and_relative_paths() {
++    for path in [
++        "/c/Program Files/Git/bin/bash.exe",
++        "/mnt/c/Program Files/Git/bin/bash.exe",
++        "bash.exe",
++        r"Git\bin\bash.exe",
++        // A POSIX shell path must never be mistaken for a configured Git Bash
++        // executable; this keeps Unix sessions on their upstream behavior.
++        "/bin/bash",
++    ] {
++        let err = classify_git_bash_path(std::path::Path::new(path))
++            .expect_err("non-native absolute path must be rejected");
++        assert_eq!(
++            err,
++            GitBashPathError::NotAnAbsoluteWindowsPath(path.to_string())
++        );
++    }
++}
++
++#[test]
++fn rejects_non_bash_and_non_git_layouts() {
++    let not_bash =
++        classify_git_bash_path(std::path::Path::new(r"C:\Program Files\Git\bin\git.exe"))
++            .expect_err("git.exe is not bash");
++    assert_eq!(
++        not_bash,
++        GitBashPathError::NotBash(r"C:\Program Files\Git\bin\git.exe".to_string())
++    );
++
++    // A `bash.cmd` is not Bash either: the extension check is strict.
++    let not_exe =
++        classify_git_bash_path(std::path::Path::new(r"C:\Program Files\Git\bin\bash.cmd"))
++            .expect_err("bash.cmd must not be accepted");
++    assert_eq!(
++        not_exe,
++        GitBashPathError::NotBash(r"C:\Program Files\Git\bin\bash.cmd".to_string())
++    );
++
++    // `bin\bash.exe` without an install root one level up has no layout at all.
++    let no_root = classify_git_bash_path(std::path::Path::new(r"bin\bash.exe"))
++        .expect_err("a bare bin path must be rejected");
++    assert_eq!(
++        no_root,
++        GitBashPathError::NotAnAbsoluteWindowsPath(r"bin\bash.exe".to_string())
++    );
++}
++
++#[test]
++fn error_messages_name_the_config_key_and_the_problem() {
++    let err = classify_git_bash_path(std::path::Path::new(r"C:\Windows\System32\bash.exe"))
++        .expect_err("WSL launcher must be rejected");
++    let message = err.message();
++    assert!(message.contains("CODEX_NATIVE_GIT_BASH_PATH"), "{message}");
++    assert!(message.contains("WSL"), "{message}");
++}
++
++/// Windows-only: on a Unix host a `C:\...` string is a single path component, so
++/// it is classified as a non-Git layout before any disk access.
++#[cfg(windows)]
++#[test]
++fn resolve_reports_missing_file_without_falling_back() {
++    let missing = r"C:\definitely-missing-codex-stage2\Git\bin\bash.exe";
++    let err = resolve_configured_git_bash(std::path::Path::new(missing))
++        .expect_err("a missing file must be an error, never a fallback");
++    assert!(err.contains("CODEX_NATIVE_GIT_BASH_PATH"), "{err}");
++    // Canonicalization happens first, so a non-existent path is reported as
++    // missing rather than as a layout problem.
++    assert!(err.contains("does not exist"), "{err}");
++}
++
++#[test]
++fn resolve_rejects_relative_path_without_touching_disk() {
++    // A relative path cannot be canonicalized to a Windows installation.
++    let err = resolve_configured_git_bash(std::path::Path::new("bash"))
++        .expect_err("relative path must be rejected");
++    assert!(err.contains("CODEX_NATIVE_GIT_BASH_PATH"), "{err}");
++}
++
++#[test]
++fn restricted_base_profile_rejects_git_bash_before_any_spawn() {
++    let err = ensure_full_access_for_git_bash(/*base_profile_disables_sandbox*/ false)
++        .expect_err("a restricted base profile must be refused");
++    assert!(err.contains("CODEX_NATIVE_GIT_BASH_PATH"), "{err}");
++    assert!(err.contains("restricted"), "{err}");
++
++    // Only a base profile that disables the sandbox is admitted.
++    assert_eq!(
++        ensure_full_access_for_git_bash(/*base_profile_disables_sandbox*/ true),
++        Ok(())
++    );
++}
++
++/// Reproduce the reviewer's clean-environment probe with this implementation.
++///
++/// Both `Git\bin\bash.exe` and `Git\usr\bin\bash.exe` are genuine Git for Windows
++/// Bash entry points. In a clean Desktop environment `usr\bin\bash.exe` reports an
++/// empty `MSYSTEM`, which is why identity must not depend on that variable.
++#[cfg(windows)]
++#[test]
++fn identity_probe_accepts_real_git_for_windows_bash_variants() {
++    let mut checked = 0;
++    for candidate in [
++        r"C:\Program Files\Git\bin\bash.exe",
++        r"C:\Program Files\Git\usr\bin\bash.exe",
++    ] {
++        let path = std::path::Path::new(candidate);
++        if !path.is_file() {
++            continue;
++        }
++        checked += 1;
++        tokio::runtime::Builder::new_current_thread()
++            .enable_all()
++            .build()
++            .unwrap()
++            .block_on(verify_git_bash_identity(path))
++            .unwrap_or_else(|err| panic!("{candidate} is a real Git Bash and must pass: {err}"));
++        // The identity probe must not install or depend on MSYSTEM.
++        assert!(
++            !candidate.contains("msystem"),
++            "identity must not key off MSYSTEM"
++        );
++    }
++    if checked == 0 {
++        eprintln!("skipping: no Git for Windows installation on this machine");
++    }
++}
++
++#[test]
++fn capped_reader_limits_storage_and_remains_cancellable_with_open_writer() {
++    tokio::runtime::Builder::new_current_thread()
++        .enable_all()
++        .build()
++        .unwrap()
++        .block_on(async {
++            use tokio::io::AsyncWriteExt;
++            let (reader, mut writer) = tokio::io::duplex(1024);
++            let writer_task = tokio::spawn(async move {
++                writer
++                    .write_all(&vec![b'x'; IDENTITY_PROBE_MAX_OUTPUT_BYTES * 4])
++                    .await
++                    .unwrap();
++            });
++            let retained = drain_capped(reader).await.unwrap();
++            writer_task.await.unwrap();
++            assert_eq!(retained.len(), IDENTITY_PROBE_MAX_OUTPUT_BYTES);
++            let (reader, _inherited_writer) = tokio::io::duplex(64);
++            assert!(
++                tokio::time::timeout(Duration::from_millis(20), drain_capped(reader))
++                    .await
++                    .is_err()
++            );
++        });
++}
++
++#[cfg(windows)]
++#[test]
++fn configured_shell_request_rejects_wrong_path_and_extension() {
++    let path = Path::new(r"C:\Program Files\Git\bin\bash.exe");
++    if !path.is_file() {
++        return;
++    }
++    let canonical = std::fs::canonicalize(path).unwrap();
++    for name in ["bash", "BASH.EXE"] {
++        assert_eq!(validate_shell_request(name, &canonical), Ok(()));
++    }
++    assert_eq!(
++        validate_shell_request(path.to_str().unwrap(), &canonical),
++        Ok(())
++    );
++    for name in ["bash.cmd", r"C:\nonexistent\bin\bash.exe", r".\bash.exe"] {
++        assert!(validate_shell_request(name, &canonical).is_err());
++    }
++}
++
++#[cfg(windows)]
++#[test]
++fn probe_checks_nonzero_exit_and_deadline() {
++    tokio::runtime::Builder::new_current_thread()
++        .enable_all()
++        .build()
++        .unwrap()
++        .block_on(async {
++            let mut failure = tokio::process::Command::new("cmd.exe");
++            failure.args(["/d", "/c", "exit 7"]);
++            assert!(
++                probe_identity(&mut failure, Duration::from_secs(3))
++                    .await
++                    .unwrap_err()
++                    .contains("exited")
++            );
++            let mut blocked = tokio::process::Command::new("powershell.exe");
++            blocked.args([
++                "-NoProfile",
++                "-NonInteractive",
++                "-Command",
++                "Start-Sleep -Seconds 10",
++            ]);
++            let start = std::time::Instant::now();
++            assert!(
++                probe_identity(&mut blocked, Duration::from_millis(50))
++                    .await
++                    .unwrap_err()
++                    .contains("timed out")
++            );
++            assert!(start.elapsed() < Duration::from_secs(3));
++        });
++}
+diff --git a/codex-rs/core/src/lib.rs b/codex-rs/core/src/lib.rs
+index 2595ce5..8ab4a7e 100644
+--- a/codex-rs/core/src/lib.rs
++++ b/codex-rs/core/src/lib.rs
+@@ -89,6 +89,7 @@ mod environment_selection;
+ pub mod exec;
+ pub mod exec_env;
+ mod exec_policy;
++pub(crate) mod git_bash;
+ #[cfg(test)]
+ mod git_info_tests;
+ mod guardian;
+diff --git a/codex-rs/core/src/session/session.rs b/codex-rs/core/src/session/session.rs
+index 824cf58..c84c97e 100644
+--- a/codex-rs/core/src/session/session.rs
++++ b/codex-rs/core/src/session/session.rs
+@@ -1369,6 +1369,10 @@ impl Session {
+                         )
+                     })?
+                 }
++            } else if let Some(git_bash) = crate::git_bash::configured_shell(
++                &session_configuration.permission_profile(),
++            ).await? {
++                git_bash
+             } else {
+                 shell::default_user_shell()
+             };
+diff --git a/codex-rs/core/src/session/turn.rs b/codex-rs/core/src/session/turn.rs
+index 5b335c2..b7173ed 100644
+--- a/codex-rs/core/src/session/turn.rs
++++ b/codex-rs/core/src/session/turn.rs
+@@ -3006,8 +3006,15 @@ async fn try_run_sampling_request(
+                         sess.send_event(&turn_context, EventMsg::AgentMessageContentDelta(event))
+                             .await;
+                     }
+-                } else {
+-                    error_or_panic("OutputTextDelta without active item".to_string());
++                } else if !delta.is_empty() {
++                    // Some Responses proxies send an empty keep-alive delta
++                    // before adding an output item. It carries no text to
++                    // display, so ignore it. An orphan non-empty delta is
++                    // malformed too, but must not crash a debug runtime.
++                    error!(
++                        delta_len = delta.len(),
++                        "OutputTextDelta without active item"
++                    );
+                 }
+             }
+             ResponseEvent::ToolCallInputDelta {
+diff --git a/codex-rs/core/src/tools/handlers/unified_exec.rs b/codex-rs/core/src/tools/handlers/unified_exec.rs
+index 9f9f8a8..7db63a6 100644
+--- a/codex-rs/core/src/tools/handlers/unified_exec.rs
++++ b/codex-rs/core/src/tools/handlers/unified_exec.rs
+@@ -9,8 +9,10 @@ use crate::tools::hook_names::HookToolName;
+ use crate::tools::registry::PostToolUsePayload;
+ use codex_exec_server::Environment;
+ use codex_protocol::models::AdditionalPermissionProfile;
++use codex_protocol::models::PermissionProfile;
+ use codex_tools::UnifiedExecShellMode;
+ use serde::Deserialize;
++use std::borrow::Cow;
+ use std::path::PathBuf;
+ use std::sync::Arc;
+ 
+@@ -96,11 +98,84 @@ fn post_unified_exec_tool_use_payload(
+     })
+ }
+ 
++/// Whether the *selected* Bash is Codex's Windows Git Bash support.
++///
++/// Codex's Git Bash support is full-access only: no Windows sandbox backend
++/// isolates a Git Bash child. Other Bash shells (Linux, WSL, remote
++/// environments) keep their existing semantics and are never refused here.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub(crate) enum BashAdmission {
++    /// The refused case: Git for Windows Bash selected while the base profile is
++    /// restricted.
++    RefusedGitBash,
++    /// Every other case: no Git Bash involved, or full access was granted.
++    NotRefused,
++}
++
++impl BashAdmission {
++    /// Decide admission for the resolved shell.
++    ///
++    /// `is_remote` is the execution environment's own locality, not the host
++    /// platform: a remote Linux environment must stay unrestricted even when
++    /// Codex runs on a Windows host.
++    fn evaluate(shell: &Shell, is_remote: bool, base_policy: CommandShellPolicy) -> Self {
++        if shell.shell_type != ShellType::Bash {
++            return Self::NotRefused;
++        }
++        if base_policy == CommandShellPolicy::FullAccess {
++            return Self::NotRefused;
++        }
++        if is_remote {
++            return Self::NotRefused;
++        }
++        let is_git_for_windows_bash = crate::git_bash::classify_git_bash_path(&shell.shell_path)
++            .is_ok_and(|classified| classified.path == shell.shell_path);
++        if is_git_for_windows_bash {
++            Self::RefusedGitBash
++        } else {
++            Self::NotRefused
++        }
++    }
++}
++
++/// The environment's **base** permission profile, as far as Git Bash admission is
++/// concerned.
++///
++/// This deliberately reads only the environment's base profile.
++/// `apply_granted_turn_permissions` takes `&TurnEnvironment` and returns a separate
++/// value, so it does not change what this reads. The conservative contract of this
++/// version is therefore: only a base profile of [`PermissionProfile::Disabled`]
++/// ("no outer sandbox") admits Git Bash, and per-turn/per-call additional
++/// permissions can never escalate a restricted session into full access.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub(crate) enum CommandShellPolicy {
++    /// The base sandbox is disabled, so Git Bash may run unsandboxed.
++    FullAccess,
++    /// Any other base profile: Git Bash commands are refused.
++    Restricted,
++}
++
++impl CommandShellPolicy {
++    /// True only for [`PermissionProfile::Disabled`], which means "do not apply
++    /// an outer sandbox". Every managed or externally enforced profile is
++    /// restricted, regardless of how permissive its filesystem rules look.
++    pub(crate) fn for_base_permission_profile(profile: &PermissionProfile) -> Self {
++        match profile {
++            PermissionProfile::Disabled => Self::FullAccess,
++            PermissionProfile::Managed { .. } | PermissionProfile::External { .. } => {
++                Self::Restricted
++            }
++        }
++    }
++}
++
+ pub(crate) fn get_command(
+     args: &ExecCommandArgs,
+     session_shell: Arc<Shell>,
+     shell_mode: &UnifiedExecShellMode,
+     allow_login_shell: bool,
++    is_remote_environment: bool,
++    shell_policy: CommandShellPolicy,
+ ) -> Result<ResolvedCommand, String> {
+     let use_login_shell = match args.login {
+         Some(true) if !allow_login_shell => {
+@@ -114,11 +189,42 @@ pub(crate) fn get_command(
+ 
+     match shell_mode {
+         UnifiedExecShellMode::Direct => {
+-            let model_shell = args
+-                .shell
+-                .as_ref()
+-                .map(|shell_str| get_shell_by_model_provided_path(&PathBuf::from(shell_str)));
+-            let shell = model_shell.as_ref().unwrap_or(session_shell.as_ref());
++            // Resolve the requested shell before any admission decision. A bare
++            // `bash`/`BASH.EXE` request is recognized case-insensitively and mapped to
++            // the configured Git for Windows Bash when one is active; an explicit
++            // `bash.exe` path must match that configured shell exactly. This must not
++            // go through `get_shell_by_model_provided_path`, whose case-sensitive
++            // PATH rediscovery can silently turn `BASH.EXE` into `cmd.exe`.
++            let configured_git_bash = cfg!(windows)
++                && !is_remote_environment
++                && session_shell.shell_type == ShellType::Bash
++                && crate::git_bash::classify_git_bash_path(&session_shell.shell_path).is_ok();
++            let shell: Cow<'_, Shell> = match args.shell.as_deref() {
++                Some(requested) if configured_git_bash => {
++                    crate::git_bash::validate_shell_request(requested, &session_shell.shell_path)?;
++                    Cow::Borrowed(session_shell.as_ref())
++                }
++                Some(requested) => {
++                    Cow::Owned(get_shell_by_model_provided_path(&PathBuf::from(requested)))
++                }
++                None => Cow::Borrowed(session_shell.as_ref()),
++            };
++            // Fail closed before any process is spawned. The admission check is
++            // scoped to the selected Git for Windows Bash in a local
++            // environment, so Linux and remote Bash keep working unchanged.
++            if BashAdmission::evaluate(shell.as_ref(), is_remote_environment, shell_policy)
++                == BashAdmission::RefusedGitBash
++            {
++                return Err(format!(
++                    "Git for Windows Bash (`{}`) is only supported when the base permission \
++                     profile disables the sandbox. This session's base profile is restricted, and \
++                     Codex will not run Bash unsandboxed. Re-run with the sandbox disabled \
++                     (`--dangerously-bypass-approvals-and-sandbox` or `sandbox_mode = \
++                     \"danger-full-access\"`), or omit `shell` to use the sandboxed default \
++                     shell.",
++                    shell.shell_path.display()
++                ));
++            }
+             Ok(ResolvedCommand {
+                 command: shell.derive_exec_args(&args.cmd, use_login_shell),
+                 shell_type: shell.shell_type,
+diff --git a/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs b/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs
+index bdf6877..287cb0e 100644
+--- a/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs
++++ b/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs
+@@ -47,6 +47,7 @@ use codex_utils_string::truncate_middle_chars;
+ 
+ use super::super::shell_spec::CommandToolOptions;
+ use super::super::shell_spec::create_exec_command_tool_with_environment_id;
++use super::CommandShellPolicy;
+ use super::ExecCommandArgs;
+ use super::ExecCommandEnvironmentArgs;
+ use super::get_command;
+@@ -56,6 +57,41 @@ use super::shell_mode_for_environment;
+ // A byte limit is a conservative hard token bound even for byte-fallback tokenizers.
+ const EXEC_COMMAND_REJECTION_MAX_BYTES: usize = 900;
+ 
++/// True only for the unambiguous WSL drive layout (`/mnt/c/...`, `/mnt/...`).
++///
++/// This is checked for Windows-local Git Bash commands so the model gets a clear
++/// error instead of a wrong path. Other `/x/...` roots are never reinterpreted.
++pub(crate) fn is_ambiguous_wsl_workdir(workdir: &str) -> bool {
++    let Some(rest) = workdir.strip_prefix('/') else {
++        return false;
++    };
++    let bytes = rest.as_bytes();
++    rest.eq_ignore_ascii_case("mnt")
++        || (bytes.len() >= 4 && bytes[..3].eq_ignore_ascii_case(b"mnt") && bytes[3] == b'/')
++}
++
++/// Convert a Git Bash style `/c/Users/me/dir` workdir into `C:\Users\me\dir`.
++///
++/// Returns `None` when the workdir is not an MSYS single-letter drive path, so the
++/// caller keeps the original value. Only the leading drive prefix is rewritten, so
++/// spaces, Unicode, and the rest of the path are preserved verbatim.
++pub(crate) fn convert_msys_drive_workdir(workdir: &str) -> Option<String> {
++    let rest = workdir.strip_prefix('/')?;
++    let bytes = rest.as_bytes();
++    // `/c/...` (single ASCII letter drive) is the MSYS drive form.
++    if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b'/' {
++        let drive = (bytes[0] as char).to_ascii_uppercase();
++        let remainder = rest[1..].replace('/', "\\");
++        return Some(format!("{drive}:{remainder}"));
++    }
++    // `/c` with no trailing separator is still a drive root.
++    if bytes.len() == 1 && bytes[0].is_ascii_alphabetic() {
++        let drive = (bytes[0] as char).to_ascii_uppercase();
++        return Some(format!("{drive}:\\"));
++    }
++    None
++}
++
+ #[derive(Clone, Copy)]
+ pub(crate) struct ExecCommandHandlerOptions {
+     pub(crate) allow_login_shell: bool,
+@@ -64,6 +100,7 @@ pub(crate) struct ExecCommandHandlerOptions {
+     pub(crate) include_environment_id: bool,
+     pub(crate) include_shell_parameter: bool,
+     pub(crate) include_windows_shell_guidance: bool,
++    pub(crate) git_bash_guidance: bool,
+ }
+ 
+ #[derive(Clone, Copy)]
+@@ -88,6 +125,7 @@ impl Default for ExecCommandHandler {
+                 include_environment_id: false,
+                 include_shell_parameter: true,
+                 include_windows_shell_guidance: cfg!(windows),
++                git_bash_guidance: false,
+             },
+         }
+     }
+@@ -122,12 +160,19 @@ impl ToolExecutor<ToolInvocation> for ExecCommandHandler {
+             },
+             self.options.include_environment_id,
+             self.options.include_shell_parameter,
+-            self.options.include_windows_shell_guidance,
++            self.options.include_windows_shell_guidance && !self.options.git_bash_guidance,
+         );
+         let mut spec = match self.lifetime {
+             ExecCommandLifetime::Interactive => spec,
+             ExecCommandLifetime::OneShot => one_shot_exec_command_spec(spec),
+         };
++        if self.options.git_bash_guidance
++            && let ToolSpec::Function(function) = &mut spec
++        {
++            function
++                .description
++                .push_str(crate::git_bash::GIT_BASH_GUIDANCE);
++        }
+         if !self.options.allow_tty
+             && let ToolSpec::Function(spec) = &mut spec
+         {
+@@ -194,8 +239,41 @@ impl ExecCommandHandler {
+             ));
+         };
+         let native_environment_cwd = turn_environment.cwd().clone();
+-        let cwd = environment_args
+-            .workdir
++        let environment = Arc::clone(&turn_environment.environment);
++        // The environment's own shell wins when it reports one; otherwise the session
++        // default shell applies. This is the same selection the command will use.
++        let selected_local_shell = turn_environment
++            .shell
++            .clone()
++            .unwrap_or_else(|| session.user_shell().as_ref().clone());
++        let selected_is_git_bash = selected_local_shell.shell_type == crate::shell::ShellType::Bash
++            && crate::git_bash::classify_git_bash_path(&selected_local_shell.shell_path)
++                .is_ok_and(|classified| classified.path == selected_local_shell.shell_path);
++        // Only a Git for Windows Bash command gets MSYS drive paths rewritten. The
++        // default PowerShell/Unix behavior is untouched. For selected Git Bash,
++        // unsupported POSIX roots are rejected instead of misresolving on Windows.
++        let normalized_workdir = match environment_args.workdir.clone() {
++            Some(workdir) if selected_is_git_bash && cfg!(windows) && !environment.is_remote() => {
++                if is_ambiguous_wsl_workdir(&workdir) {
++                    return Err(FunctionCallError::RespondToModel(format!(
++                        "working directory `{workdir}` uses a WSL `/mnt/...` path, which is \
++                         ambiguous from a native Windows process. Use a native path such as \
++                         `C:\\...` or a Git Bash drive path such as `/c/...`."
++                    )));
++                }
++                match convert_msys_drive_workdir(&workdir) {
++                    Some(converted) => Some(converted),
++                    None if workdir.starts_with('/') => {
++                        return Err(FunctionCallError::RespondToModel(format!(
++                            "Git Bash working directory `{workdir}` is not a supported drive path; use `/c/...` or a native Windows absolute path."
++                        )));
++                    }
++                    None => Some(workdir),
++                }
++            }
++            other => other,
++        };
++        let cwd = normalized_workdir
+             .as_deref()
+             .filter(|workdir| !workdir.is_empty())
+             .map_or_else(
+@@ -203,7 +281,6 @@ impl ExecCommandHandler {
+                 |workdir| native_environment_cwd.join(workdir),
+             )
+             .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?;
+-        let environment = Arc::clone(&turn_environment.environment);
+         let fs = environment.get_filesystem();
+ 
+         // Remote executors enforce URI-native sandbox policy themselves. Only a host-local
+@@ -294,6 +371,8 @@ impl ExecCommandHandler {
+             shell,
+             &shell_mode,
+             turn_environment.config().allow_login_shell,
++            environment.is_remote(),
++            CommandShellPolicy::for_base_permission_profile(turn_environment.permission_profile()),
+         )
+         .map_err(FunctionCallError::RespondToModel)?;
+         let command = resolved_command.command;
+diff --git a/codex-rs/core/src/tools/handlers/unified_exec_tests.rs b/codex-rs/core/src/tools/handlers/unified_exec_tests.rs
+index 46fa63d..4c10a64 100644
+--- a/codex-rs/core/src/tools/handlers/unified_exec_tests.rs
++++ b/codex-rs/core/src/tools/handlers/unified_exec_tests.rs
+@@ -1,3 +1,5 @@
++use super::exec_command::convert_msys_drive_workdir;
++use super::exec_command::is_ambiguous_wsl_workdir;
+ use super::*;
+ use crate::shell::ShellType;
+ use crate::shell::default_user_shell;
+@@ -59,6 +61,8 @@ fn test_get_command_uses_default_shell_when_unspecified() -> anyhow::Result<()>
+         Arc::new(default_user_shell()),
+         &UnifiedExecShellMode::Direct,
+         /*allow_login_shell*/ true,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::FullAccess,
+     )
+     .map_err(anyhow::Error::msg)?;
+     let command = resolved.command;
+@@ -81,6 +85,8 @@ fn test_get_command_respects_explicit_bash_shell() -> anyhow::Result<()> {
+         Arc::new(default_user_shell()),
+         &UnifiedExecShellMode::Direct,
+         /*allow_login_shell*/ true,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::FullAccess,
+     )
+     .map_err(anyhow::Error::msg)?;
+     let command = resolved.command;
+@@ -122,6 +128,8 @@ fn test_get_command_resolves_powershell_by_type() -> anyhow::Result<()> {
+         Arc::new(default_user_shell()),
+         &UnifiedExecShellMode::Direct,
+         /*allow_login_shell*/ true,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::FullAccess,
+     )
+     .map_err(anyhow::Error::msg)?;
+     let expected_shell = get_shell(ShellType::PowerShell)
+@@ -147,6 +155,8 @@ fn test_get_command_respects_explicit_cmd_shell() -> anyhow::Result<()> {
+         Arc::new(default_user_shell()),
+         &UnifiedExecShellMode::Direct,
+         /*allow_login_shell*/ true,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::FullAccess,
+     )
+     .map_err(anyhow::Error::msg)?;
+     let command = resolved.command;
+@@ -165,6 +175,8 @@ fn test_get_command_rejects_explicit_login_when_disallowed() -> anyhow::Result<(
+         Arc::new(default_user_shell()),
+         &UnifiedExecShellMode::Direct,
+         /*allow_login_shell*/ false,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::FullAccess,
+     )
+     .expect_err("explicit login should be rejected");
+ 
+@@ -238,6 +250,8 @@ fn test_get_command_rejects_explicit_shell_in_zsh_fork_mode() -> anyhow::Result<
+         Arc::new(default_user_shell()),
+         &shell_mode,
+         /*allow_login_shell*/ true,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::FullAccess,
+     )
+     .expect_err("explicit shell should be rejected");
+ 
+@@ -606,3 +620,240 @@ async fn write_stdin_post_tool_use_payload_keeps_parallel_session_metadata_separ
+         ]
+     );
+ }
++
++#[test]
++fn test_command_shell_policy_only_full_access_is_disabled_profile() {
++    assert_eq!(
++        CommandShellPolicy::for_base_permission_profile(&PermissionProfile::Disabled),
++        CommandShellPolicy::FullAccess
++    );
++    assert_eq!(
++        CommandShellPolicy::for_base_permission_profile(&PermissionProfile::read_only()),
++        CommandShellPolicy::Restricted
++    );
++}
++
++/// A POSIX Bash is unaffected by the Windows Git Bash admission rule.
++#[cfg(not(windows))]
++#[test]
++fn test_get_command_allows_local_unix_bash_under_restricted_policy() -> anyhow::Result<()> {
++    let json = r#"{"cmd": "echo hello", "shell": "bash"}"#;
++    let args: ExecCommandArgs = parse_arguments(json)?;
++    let bash = get_shell(ShellType::Bash).expect("bash should be discoverable on this host");
++
++    let resolved = get_command(
++        &args,
++        Arc::new(bash),
++        &UnifiedExecShellMode::Direct,
++        /*allow_login_shell*/ true,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::Restricted,
++    )
++    .expect("local Unix bash must keep working under a restricted base profile");
++
++    assert_eq!(resolved.shell_type, ShellType::Bash);
++    Ok(())
++}
++
++/// A Git for Windows Bash session is refused under a restricted base profile,
++/// both for the session default shell and for an explicit bare `bash` request.
++#[cfg(windows)]
++#[test]
++fn test_get_command_refuses_git_for_windows_bash_under_restricted_policy() -> anyhow::Result<()> {
++    let git_bash = Shell {
++        shell_type: ShellType::Bash,
++        shell_path: std::path::PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
++    };
++
++    for json in [
++        r#"{"cmd": "echo hello"}"#,
++        r#"{"cmd": "echo hello", "shell": "bash"}"#,
++    ] {
++        let args: ExecCommandArgs = parse_arguments(json)?;
++        let err = get_command(
++            &args,
++            Arc::new(git_bash.clone()),
++            &UnifiedExecShellMode::Direct,
++            /*allow_login_shell*/ true,
++            /*is_remote_environment*/ false,
++            CommandShellPolicy::Restricted,
++        )
++        .expect_err("Git for Windows Bash must be refused when the base profile is restricted");
++        assert!(err.contains("restricted"), "{err}");
++    }
++    Ok(())
++}
++
++#[test]
++fn test_get_command_allows_bash_under_full_access() -> anyhow::Result<()> {
++    let json = r#"{"cmd": "echo hello", "shell": "bash"}"#;
++    let args: ExecCommandArgs = parse_arguments(json)?;
++
++    let resolved = get_command(
++        &args,
++        Arc::new(default_user_shell()),
++        &UnifiedExecShellMode::Direct,
++        /*allow_login_shell*/ true,
++        /*is_remote_environment*/ false,
++        CommandShellPolicy::FullAccess,
++    )
++    .map_err(anyhow::Error::msg)?;
++
++    assert_eq!(resolved.shell_type, ShellType::Bash);
++    assert_eq!(resolved.command.last(), Some(&"echo hello".to_string()));
++    Ok(())
++}
++
++#[test]
++fn test_bash_admission_allows_unix_bash_under_restricted_policy() {
++    // A POSIX/local Bash that is not Git for Windows must never be refused, so
++    // Linux and WSL sessions keep their existing behaviour.
++    let unix_bash = Shell {
++        shell_type: ShellType::Bash,
++        shell_path: std::path::PathBuf::from("/bin/bash"),
++    };
++    assert_eq!(
++        BashAdmission::evaluate(
++            &unix_bash,
++            /*is_remote*/ false,
++            CommandShellPolicy::Restricted
++        ),
++        BashAdmission::NotRefused
++    );
++}
++
++#[test]
++fn test_bash_admission_allows_remote_bash_under_restricted_policy() {
++    // A remote environment keeps its own semantics even on a Windows host.
++    let git_bash = Shell {
++        shell_type: ShellType::Bash,
++        shell_path: std::path::PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
++    };
++    assert_eq!(
++        BashAdmission::evaluate(
++            &git_bash,
++            /*is_remote*/ true,
++            CommandShellPolicy::Restricted
++        ),
++        BashAdmission::NotRefused
++    );
++}
++
++#[cfg(windows)]
++#[test]
++fn test_bash_admission_refuses_local_git_for_windows_bash_when_restricted() {
++    let git_bash = Shell {
++        shell_type: ShellType::Bash,
++        shell_path: std::path::PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
++    };
++    assert_eq!(
++        BashAdmission::evaluate(
++            &git_bash,
++            /*is_remote*/ false,
++            CommandShellPolicy::Restricted
++        ),
++        BashAdmission::RefusedGitBash
++    );
++    // Full access is the documented supported mode for Git Bash.
++    assert_eq!(
++        BashAdmission::evaluate(
++            &git_bash,
++            /*is_remote*/ false,
++            CommandShellPolicy::FullAccess
++        ),
++        BashAdmission::NotRefused
++    );
++}
++
++#[test]
++fn test_convert_msys_drive_workdir_rewrites_only_drive_prefixes() {
++    assert_eq!(
++        convert_msys_drive_workdir("/c/Users/me/My Project"),
++        Some(r"C:\Users\me\My Project".to_string())
++    );
++    assert_eq!(
++        convert_msys_drive_workdir("/d/工作 目录"),
++        Some("D:\\工作 目录".to_string())
++    );
++    assert_eq!(convert_msys_drive_workdir("/c"), Some(r"C:\".to_string()));
++    // Already-native paths, unknown POSIX roots, and empty values are left alone so
++    // PowerShell and non-opt-in sessions keep the exact upstream behaviour.
++    for untouched in [r"C:\Users\me", "/usr/local/bin", "", "/", "/mnt/c/Users/me"] {
++        assert_eq!(
++            convert_msys_drive_workdir(untouched),
++            None,
++            "{untouched} must not be rewritten"
++        );
++    }
++}
++
++#[test]
++fn test_is_ambiguous_wsl_workdir_only_flags_mnt() {
++    assert!(is_ambiguous_wsl_workdir("/mnt/c/Users/me"));
++    assert!(is_ambiguous_wsl_workdir("/mnt/"));
++    for allowed in ["/c/Users/me", r"C:\Users\me", "/usr/local/bin", ""] {
++        assert!(
++            !is_ambiguous_wsl_workdir(allowed),
++            "{allowed} must not be treated as a WSL path"
++        );
++    }
++}
++
++#[cfg(windows)]
++#[test]
++fn configured_git_bash_preserves_bare_names_and_rejects_mismatched_path() -> anyhow::Result<()> {
++    let path = std::path::Path::new(r"C:\Program Files\Git\bin\bash.exe");
++    if !path.is_file() {
++        return Ok(());
++    }
++    let canonical = std::fs::canonicalize(path)?;
++    let shell = Arc::new(Shell {
++        shell_type: ShellType::Bash,
++        shell_path: canonical.clone(),
++    });
++    for requested in ["bash", "BASH.EXE"] {
++        let args: ExecCommandArgs = parse_arguments(
++            &serde_json::json!({
++                "cmd": "echo ok", "shell": requested, "login": false
++            })
++            .to_string(),
++        )?;
++        let resolved = get_command(
++            &args,
++            Arc::clone(&shell),
++            &UnifiedExecShellMode::Direct,
++            /*allow_login_shell*/ true,
++            /*is_remote_environment*/ false,
++            CommandShellPolicy::FullAccess,
++        )
++        .map_err(anyhow::Error::msg)?;
++        assert_eq!(
++            resolved.command,
++            vec![
++                canonical.to_string_lossy().into_owned(),
++                "-c".to_string(),
++                "echo ok".to_string()
++            ]
++        );
++    }
++    for requested in ["bash.cmd", r"C:\not-the-selected-install\bin\bash.exe"] {
++        let args: ExecCommandArgs = parse_arguments(
++            &serde_json::json!({
++                "cmd": "echo ok", "shell": requested
++            })
++            .to_string(),
++        )?;
++        assert!(
++            get_command(
++                &args,
++                Arc::clone(&shell),
++                &UnifiedExecShellMode::Direct,
++                /*allow_login_shell*/ true,
++                /*is_remote_environment*/ false,
++                CommandShellPolicy::FullAccess,
++            )
++            .is_err()
++        );
++    }
++    Ok(())
++}
+diff --git a/codex-rs/core/src/tools/spec_plan.rs b/codex-rs/core/src/tools/spec_plan.rs
+index bb1474f..c23f986 100644
+--- a/codex-rs/core/src/tools/spec_plan.rs
++++ b/codex-rs/core/src/tools/spec_plan.rs
+@@ -1104,6 +1104,18 @@ fn add_shell_tools(context: &CoreToolPlanContext<'_>, registry: &mut ToolRegistr
+             context.environments,
+         ),
+         include_windows_shell_guidance: should_include_windows_shell_guidance(context.environments),
++        git_bash_guidance: {
++            let mut environments = context.environments.turn_environments();
++            environments.next().is_some_and(|environment| {
++                environments.next().is_none()
++                    && cfg!(windows)
++                    && !environment.environment.is_remote()
++                    && environment.shell.as_ref().is_some_and(|shell| {
++                        shell.shell_type == crate::shell::ShellType::Bash
++                            && crate::git_bash::classify_git_bash_path(&shell.shell_path).is_ok()
++                    })
++            })
++        },
+     };
+     if features.enabled(Feature::UnifiedExec) {
+         registry.add(ExecCommandHandler::new(options));
+diff --git a/codex-rs/core/tests/suite/client.rs b/codex-rs/core/tests/suite/client.rs
+index e37725f..6ba05f3 100644
+--- a/codex-rs/core/tests/suite/client.rs
++++ b/codex-rs/core/tests/suite/client.rs
+@@ -107,6 +107,39 @@ const INSTALLATION_ID_FILENAME: &str = "installation_id";
+ const TEST_WINDOW_ID: &str = "test-thread:0";
+ const TEST_INSTALLATION_ID: &str = "11111111-1111-4111-8111-111111111111";
+ 
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn empty_output_delta_before_item_does_not_abort_turn() -> anyhow::Result<()> {
++    skip_if_no_network!(Ok(()));
++    let server = start_mock_server().await;
++    let response_mock = mount_sse_once(
++        &server,
++        sse(vec![
++            json!({
++                "type": "response.output_text.delta",
++                "item_id": "SSE-Keep-Alive",
++                "output_index": 0,
++                "content_index": 0,
++                "delta": "",
++                "SSE-Keep-Alive": true,
++            }),
++            ev_response_created("resp-1"),
++            ev_message_item_added("msg-1", ""),
++            ev_output_text_delta("STREAM_OK"),
++            ev_assistant_message("msg-1", "STREAM_OK"),
++            ev_completed("resp-1"),
++        ]),
++    )
++    .await;
++    let test = test_codex().build_with_auto_env(&server).await?;
++    tokio::time::timeout(
++        std::time::Duration::from_secs(30),
++        test.submit_turn("hello"),
++    )
++    .await??;
++    let _ = response_mock.single_request();
++    Ok(())
++}
++
+ #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+ async fn responses_request_preserves_flex_without_catalog_support_or_fast_mode()
+ -> anyhow::Result<()> {
