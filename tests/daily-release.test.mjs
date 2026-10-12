@@ -185,7 +185,11 @@ test(
     execFileSync('git', ['init', '--bare', remote], { stdio: 'ignore' })
     git('remote', 'add', 'origin', remote)
     await mkdir(join(root, 'scripts'))
-    for (const file of ['prepare-daily-release.mjs', 'daily-release-notes.mjs'])
+    for (const file of [
+      'prepare-daily-release.mjs',
+      'daily-release-notes.mjs',
+      'copilot-release-notes.mjs',
+    ])
       await copyFile(new URL('../scripts/' + file, import.meta.url), join(root, 'scripts', file))
     await writeFile(
       join(root, 'package-lock.json'),

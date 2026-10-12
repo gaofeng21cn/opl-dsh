@@ -1,0 +1,36 @@
+name: Release note writer check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      copilot-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install the verified Copilot CLI version
+        run: npm install -g @github/copilot@1.0.95
+      - name: Check real writers and forced fallbacks without publishing
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OPL_RELEASE_NOTES_CODEX_API_KEY: ${{ secrets.OPL_RELEASE_NOTES_CODEX_API_KEY }}
+        run: node scripts/check-release-note-writers.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-note-writer-check
+          path: dist/release-note-writer-check/
+          if-no-files-found: error
