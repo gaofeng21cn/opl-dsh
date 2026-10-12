@@ -275,6 +275,7 @@ test(
       GITHUB_STEP_SUMMARY: join(external, 'summary'),
     }
     delete env.OPL_RELEASE_NOTES_CODEX_API_KEY
+    delete env.GITHUB_TOKEN
     const run = () =>
       JSON.parse(
         execFileSync(process.execPath, ['scripts/prepare-daily-release.mjs'], {

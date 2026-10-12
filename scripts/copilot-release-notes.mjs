@@ -1,4 +1,4 @@
-/** Copilot is a text writer only: isolated home, no tools, no repository write token. */
+/** Copilot is a text writer only: isolated home, no tools or other provider secrets. */
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdtemp, rm } from 'node:fs/promises'

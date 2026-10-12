@@ -131,11 +131,19 @@ export async function prepareDailyRelease(root) {
             diff: diff.status === 0 ? diff.stdout : '',
             diffComplete: diff.status === 0,
           },
-          { apiKey: process.env.OPL_RELEASE_NOTES_CODEX_API_KEY },
+          {
+            apiKey: process.env.OPL_RELEASE_NOTES_CODEX_API_KEY,
+            copilotToken: process.env.GITHUB_TOKEN,
+          },
         )
         await writeFile(notesFile, result.notes)
         console.log(
-          JSON.stringify({ releaseNotes: result.mode, model: result.model, reason: result.reason }),
+          JSON.stringify({
+            releaseNotes: result.mode,
+            model: result.model,
+            reason: result.reason,
+            attempts: result.attempts,
+          }),
         )
       }
       for (const path of ['package.json', 'package-lock.json']) {
