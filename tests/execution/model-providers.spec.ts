@@ -3,13 +3,81 @@ import { updateVolatile } from '@deepseek-ai/cosmokit'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import * as official from '@deepseek-ai/dsh-llm-pi-ai'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import * as providers from '../../src/compat/host/model-providers.ts'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
+const keyring = vi.hoisted(() => ({
+  describe: vi.fn(),
+  read: vi.fn(),
+  set: vi.fn(),
+  remove: vi.fn(),
+}))
+vi.mock('../../src/credentials/host/windows-keyring.ts', () => ({ huaweiMaaSKeyring: keyring }))
+beforeEach(() => keyring.describe.mockResolvedValue({ available: false, configured: false }))
+
 describe('native Huawei provider profile', () => {
+  it('exposes the native editor only after the Windows migration write finishes', async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' })
+    const probe = Promise.withResolvers<{ available: boolean; configured: boolean }>()
+    const writing = Promise.withResolvers<void>()
+    const committed = Promise.withResolvers<void>()
+    keyring.describe.mockReturnValueOnce(probe.promise)
+    const ctx = new Context()
+    const home = await mkdtemp(join(tmpdir(), 'opl-native-migration-'))
+    try {
+      await ctx.plugin(LlmRuntime)
+      await ctx.plugin(LocalCredentialProvider, {
+        path: join(home, '.credentials.yaml'),
+        watch: false,
+      })
+      ctx.provide('settings', {
+        configure: () => () => {},
+        describe: () => [{ ns: 'llm-pi-ai', revision: 0 }],
+        mutate: async (ns: string, ops: unknown, revision: number) => {
+          expect(ns).toBe('llm-pi-ai')
+          expect(ops).toEqual([{ op: 'set', path: ['huaweiKeyringMigrated'], value: true }])
+          expect(revision).toBe(0)
+          writing.resolve()
+          await committed.promise
+        },
+      })
+      const native = ctx.plugin(official, {})
+      await native
+      ctx.provide('loader', {
+        entries: () => [
+          {
+            options: { id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai' },
+            fiber: native.ctx.fiber,
+          },
+        ],
+      })
+      const adaptation = ctx.plugin(providers)
+      await vi.waitFor(() => expect(keyring.describe).toHaveBeenCalled())
+      expect(
+        ctx.llm.listConfigurableProviders().some((item) => item.provider === 'huawei-maas'),
+      ).toBe(false)
+      probe.resolve({ available: true, configured: false })
+      await writing.promise
+      expect(
+        ctx.llm.listConfigurableProviders().some((item) => item.provider === 'huawei-maas'),
+      ).toBe(false)
+      committed.resolve()
+      await adaptation
+      expect(
+        ctx.llm.listConfigurableProviders().some((item) => item.provider === 'huawei-maas'),
+      ).toBe(true)
+    } finally {
+      committed.resolve()
+      probe.resolve({ available: false, configured: false })
+      await ctx.fiber.dispose()
+      Object.defineProperty(process, 'platform', platform)
+      await rm(home, { recursive: true, force: true })
+    }
+  })
   it('extends the existing official owner, responds to native volatile changes and restores the schema on unload', async () => {
     const ctx = new Context()
     const home = await mkdtemp(join(tmpdir(), 'opl-native-provider-'))

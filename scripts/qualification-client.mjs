@@ -335,6 +335,8 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
       await waitFor(
         `Array.from(${dialog}.querySelectorAll('select')).some(node=>Array.from(node.options).some(option=>option.value==='huawei-maas'))`,
         '华为云未进入原生提供商目录',
+        undefined,
+        process.platform === 'win32' ? 280 : 80,
       )
       await pipe.evaluate(
         session,

@@ -66,6 +66,30 @@ export async function apply(ctx: Context): Promise<void> {
   await entry.fiber.restart()
   const configuration = () => entry.fiber!.config as ExtraConfig
   installHuaweiCredentialRouting(ctx)
+  // Finish the one-time owner write before exposing an editor. Otherwise a
+  // slower Windows probe can change the namespace revision under an open draft.
+  if (process.platform === 'win32' && !configuration().huaweiKeyringMigrated.get()) {
+    const info = await huaweiMaaSKeyring.describe()
+    const view = ctx.settings.describe().find((item) => item.ns === ns)
+    if (info.available && view && !configuration().huaweiKeyringMigrated.get()) {
+      await ctx.settings.mutate(
+        ns,
+        [
+          ...(info.configured && !configuration().huaweiProviders.get()[HUAWEI_ZCODE_MODEL.provider]
+            ? [
+                {
+                  op: 'set' as const,
+                  path: ['huaweiProviders', HUAWEI_ZCODE_MODEL.provider],
+                  value: {},
+                },
+              ]
+            : []),
+          { op: 'set', path: ['huaweiKeyringMigrated'], value: true },
+        ],
+        view.revision,
+      )
+    }
+  }
   ctx.llm.registerConfigurableProviders([
     {
       provider: HUAWEI_ZCODE_MODEL.provider,
@@ -87,30 +111,4 @@ export async function apply(ctx: Context): Promise<void> {
   }
   refresh()
   ctx.on('loader/volatile-update', refresh, { global: true })
-  // Existing WinCred users keep their model after the UI changes. Once imported,
-  // removing the native profile stays removed; later startups never recreate it.
-  if (process.platform === 'win32' && !configuration().huaweiKeyringMigrated.get()) {
-    ctx.inject(['settings'], async (ready) => {
-      const info = await huaweiMaaSKeyring.describe()
-      if (!info.available) return
-      const view = ready.settings.describe().find((item) => item.ns === ns)
-      if (!view || configuration().huaweiKeyringMigrated.get()) return
-      await ready.settings.mutate(
-        ns,
-        [
-          ...(info.configured && !configuration().huaweiProviders.get()[HUAWEI_ZCODE_MODEL.provider]
-            ? [
-                {
-                  op: 'set' as const,
-                  path: ['huaweiProviders', HUAWEI_ZCODE_MODEL.provider],
-                  value: {},
-                },
-              ]
-            : []),
-          { op: 'set', path: ['huaweiKeyringMigrated'], value: true },
-        ],
-        view.revision,
-      )
-    })
-  }
 }
