@@ -12,7 +12,7 @@ export async function resolveGatewayExecution(
   ctx: Context,
   ref: { provider: string; model: string },
   resolveKey?: () => Promise<string | undefined>,
-): Promise<{ baseURL: string; model: string; apiKey: string; credential: string }> {
+): Promise<{ baseURL: string; model: string; apiKey: string; credential: string; api: string }> {
   if (ref.provider !== 'opl-gateway') throw Error('模型不属于 OPL Gateway')
   const separator = ref.model.indexOf('::')
   const id = separator < 0 ? 'deepseek' : ref.model.slice(0, separator)
@@ -27,7 +27,7 @@ export async function resolveGatewayExecution(
     | { gateway?: { baseURL?: string } }
     | undefined
   const providers = settings?.find((item) => item.ns === 'llm-pi-ai')?.value as
-    | { providers?: Record<string, { baseURL?: string }> }
+    | { providers?: Record<string, { baseURL?: string; api?: string }> }
     | undefined
   const baseURL =
     (group.id === 'deepseek'
@@ -38,5 +38,6 @@ export async function resolveGatewayExecution(
     model: separator < 0 ? ref.model : ref.model.slice(separator + 2),
     apiKey: key,
     credential: group.credential,
+    api: providers?.providers?.[group.provider]?.api ?? group.api,
   }
 }

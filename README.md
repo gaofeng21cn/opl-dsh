@@ -55,7 +55,7 @@ Windows · x64，在 PowerShell 中运行：
 - **分组模型路由**：按账号权限自动管理各分组密钥，并保留每个模型的明确分组归属。模型归属决定实际协议：DeepSeek 模型通过官方 DeepSeek adapter 使用 Messages，GPT 等 OpenAI 协议模型通过官方 `dsh-llm-pi-ai` 协议库使用 OpenAI。两组不会因为请求失败而互相回退，仍由 DSH 执行工具和管理会话。
 - **Codex ↔ DSH 协作**：自动安装 `opl-dsh-official` Skill，可启动 DSH、连续派发任务、等待结果、读取持久化反馈。设置中可修复 Skill、调整自动启动和可选通知桥。
 - **任务系统通知**：DSH 在后台时，原生与已接入外部 Harness 的运行结束或失败会发送系统通知。**设置 → 通用设置 → 系统通知** 提供开关和测试按钮；通知只显示对话标题与结束状态，手动停止也属于运行结束。详见[任务系统通知](docs/desktop-notifications.md)。
-- **停止后编辑**：原生 DSH 和具有会话历史扩展的 MiniMax 对话可回退到所选用户消息之前，在正常侧栏打开编辑分支并修改原文本。磁盘文件保留，其他 Harness 隐藏入口。详见[停止后编辑](docs/stop-edit.md)。
+- **编辑消息**：原生 DSH 对话选择消息后，在正常输入框修改并发送，直接替换原对话中的该消息及后续回复；首条消息也保留同一对话。取消保留历史，磁盘文件不回退。外部 Harness 隐藏入口，分叉沿用官方菜单。详见[编辑消息](docs/stop-edit.md)。
 - **对话空白区域**：隐藏对话两侧的隐形宽度拖动区，空白处不显示横向缩放光标；侧栏与面板分隔条仍可拖动。
 - **上下文预算观测**：在 **设置 → 通用设置 → 上下文预算** 可选开启（默认关闭），输入栏只展示有值的预算项目；来源与说明放在悬停提示中，不自动调整参数或压缩策略。详见[上下文预算观测](docs/context-budget.md)。
 - **Auto Review 工具审批**：默认关闭；DSH 与 ZCode 默认使用专用 codex-auto-review，也可显式选择独立审查模型。会话选择 Auto 后送审，失败不执行工具，保存审核输入与结果。Codex、Claude 使用官方审核接口。详见[Auto Review 工具审批](docs/auto-review.md)。
@@ -65,6 +65,7 @@ Windows · x64，在 PowerShell 中运行：
 
 - **网页搜索**：登录 OPL Gateway 后，DSH 原生 `web_search` 使用 OPL 的搜索路由；`web_fetch` 继续使用官方公共 HTTP 提供方。搜索固定使用低成本的 `gpt-6-luna`，无需额外配置；不提供独立搜索设置页或本地统计。
 - **简化首启**：统一账户选择，支持稍后登录；完成后不再重复提示，不导入其他 OPL 应用的登录状态。
+- **账户入口**：主界面左下角显示已登录的 OPL 邮箱，未登录显示“未登录”；长邮箱悬停可查看完整内容，点击仍可进入账户或设置。
 
 推理菜单只列具体档位，不提供“默认”：GPT-6 Astra/Sol/Luna 与 Claude Opus 5.5 为 `low/medium/high/xhigh/max`（GPT 不提供 `ultra`）；Grok 4.7 为 `low/medium/high/xhigh`；MiniMax M3.1 为 `low/medium/high/xhigh/max`，M3 为思考开关。选项按实际 Harness 核对，Grok 通过 ACP 设置并回读。所有 DeepSeek-V4.1-Flash 渠道未指定档位时使用 `max`；已明确选择的档位和每模型会话记忆保留。
 
@@ -134,3 +135,5 @@ Homebrew 用户可用 `brew upgrade --cask gaofeng21cn/opl-dsh/opl-dsh` 更新�
 ## 开发维护
 
 套件采用一个仓库、一个增强包，内部按 Gateway、执行、协作、首启和兼容层划分 Host、Client 与契约。前后端 RPC 由官方 Typert 从服务源码生成，构建验证接口漂移、依赖边界和官方桌面兼容性。代码职责、运行数据和恢复路径见[开发与验证](docs/development.md)，平台资格入口见[兼容验证](docs/compatibility.md)。
+
+Codex 的 Windows Git Bash 自建运行时见[交付与回切](docs/codex-gitbash-candidate.md)；新模型来源的外部 Harness 接入见[适配准备](docs/harness-adaptation.md)。

@@ -8,6 +8,7 @@ import { withMinimaxPermissions } from './minimax-permissions.ts'
 import { zcodeAdapter } from './zcode.ts'
 import { withZcodePermissions } from './zcode-permissions.ts'
 import type { HarnessAdapter } from './types.ts'
+import type { ExternalModelSources } from '../model-sources.ts'
 /**
  * Harnesses that own their own model catalog and authentication. An automatic
  * combination must bind one of these instead of the DSH loop, because DSH cannot
@@ -22,8 +23,16 @@ export const harnessAdapters: readonly HarnessAdapter[] = [
   grokAdapter,
   dshAdapter,
 ]
-export function adapterFor(id: string, ref: ModelRef): HarnessAdapter | undefined {
-  return harnessAdapters.find((adapter) => adapter.id === id && adapter.matches(ref))
+export function adapterFor(
+  id: string,
+  ref: ModelRef,
+  sources?: ExternalModelSources,
+): HarnessAdapter | undefined {
+  return harnessAdapters.find(
+    (adapter) =>
+      adapter.id === id &&
+      (adapter.matches(ref) || (adapter.capabilities.customEndpoint && sources?.supports(id, ref))),
+  )
 }
 export function nativeHarnessMatches(id: string, ref: ModelRef): boolean {
   return (id === 'codex' || id === 'claude') && adapterFor(id, ref) !== undefined

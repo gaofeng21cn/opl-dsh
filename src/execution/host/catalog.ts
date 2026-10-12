@@ -12,6 +12,7 @@ import {
 } from '../contracts/catalog.ts'
 import { harnessAllowsFullAccess } from './permissions.ts'
 import { normalizeHarnessProxy } from './proxy.ts'
+import type { CodexGitBashRuntime } from '../contracts/codex-runtime.ts'
 export type { ExecutionCatalog } from '../contracts/catalog.ts'
 export const defaultExecutionCatalog = (): ExecutionCatalog => ({
   version: 2,
@@ -64,6 +65,29 @@ export function normalizeCatalog(value: unknown): ExecutionCatalog {
     if (x.kind === 'dsh' && x.id !== 'dsh') throw Error('内置 DSH 的身份不能修改')
     if (!['dsh', 'grok-build', 'acp'].includes(x.kind)) throw Error('Harness 类型无效')
     const proxy = normalizeHarnessProxy(x.proxy)
+    let codexRuntime: CodexGitBashRuntime | undefined
+    if (x.codexRuntime !== undefined) {
+      const runtime = record(x.codexRuntime)
+      if (
+        x.id !== 'codex' ||
+        typeof runtime.version !== 'string' ||
+        !/^[a-zA-Z0-9][a-zA-Z0-9.-]{0,95}$/.test(runtime.version) ||
+        typeof runtime.manifestSha256 !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(runtime.manifestSha256) ||
+        !Array.isArray(runtime.officialPrefix) ||
+        runtime.officialPrefix.length > 32 ||
+        runtime.officialPrefix.some(
+          (arg: unknown) => typeof arg !== 'string' || arg.length > 4096 || /[\r\n\0]/.test(arg),
+        )
+      )
+        throw Error('Codex 候选选择无效')
+      codexRuntime = {
+        version: runtime.version,
+        manifestSha256: runtime.manifestSha256,
+        officialCommand: text(runtime.officialCommand, '官方 Codex 路径'),
+        officialPrefix: [...runtime.officialPrefix],
+      }
+    }
     if (
       x.prefix !== undefined &&
       (!Array.isArray(x.prefix) ||
@@ -84,6 +108,7 @@ export function normalizeCatalog(value: unknown): ExecutionCatalog {
       ...(x.prefix !== undefined ? { prefix: [...x.prefix] as string[] } : {}),
       ...(x.adapter ? { adapter: text(x.adapter, '适配器') } : {}),
       ...(proxy ? { proxy } : {}),
+      ...(codexRuntime ? { codexRuntime } : {}),
     }
   })
   if (!harnesses.some((x) => x.id === 'dsh' && x.kind === 'dsh')) throw Error('不能移除内置 DSH')
@@ -255,6 +280,48 @@ export class ExecutionCatalogStore {
       await this.persist(value)
       this.value = value
       return { previousCommand: previous.command ?? 'mcode', previousPrefix: previous.prefix ?? [] }
+    })
+    this.queue = write.then(
+      () => {},
+      () => {},
+    )
+    return write
+  }
+  /** Publish the Codex command and backend selection in one persisted catalog transaction. */
+  async setCodexRuntime(
+    selection: { command: string; version: string; manifestSha256: string } | null,
+  ) {
+    await this.ready
+    const write = this.queue.then(async () => {
+      const previous = this.value.harnesses.find((h) => h.id === 'codex')!
+      const officialCommand = previous.codexRuntime?.officialCommand ?? previous.command ?? 'codex'
+      const officialPrefix = previous.codexRuntime?.officialPrefix ?? previous.prefix ?? []
+      const command = selection?.command ?? officialCommand
+      const value = normalizeCatalog({
+        ...this.value,
+        harnesses: this.value.harnesses.map((h) => {
+          if (h.id !== 'codex') return h
+          const { codexRuntime: _, ...definition } = h
+          return {
+            ...definition,
+            command,
+            prefix: selection ? [] : officialPrefix,
+            ...(selection
+              ? {
+                  codexRuntime: {
+                    version: selection.version,
+                    manifestSha256: selection.manifestSha256,
+                    officialCommand,
+                    officialPrefix,
+                  },
+                }
+              : {}),
+          }
+        }),
+      })
+      await this.persist(value)
+      this.value = value
+      return { command, previousCommand: previous.command ?? 'codex' }
     })
     this.queue = write.then(
       () => {},

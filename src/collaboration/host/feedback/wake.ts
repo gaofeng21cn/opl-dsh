@@ -133,7 +133,21 @@ function needsInputLines(notice: NeedsInputNotice, harness: HarnessExecution | n
 }
 
 /**
- * Compose the message one delivery carries.
+ * Compose the short notice queued into the receiving conversation.
+ * @param payload - the task and observed state.
+ * @param deliveryId - the durable delivery to claim.
+ * @returns status and the command that retrieves review details.
+ */
+export function composeWakeMessage(payload: DeliveryPayload, deliveryId: string): string {
+  return [
+    `Task ${payload.taskId} reached state "${payload.state}" (pending review).`,
+    `delivery: ${deliveryId}`,
+    `read: taskFeedback.receive (control CLI: receive ${payload.taskId} ${deliveryId} --consumer <stable id>); review/resume: read reviewInstructions; busy/skip: stop.`,
+  ].join('\n')
+}
+
+/**
+ * Compose review details returned to the consumer holding a live claim.
  *
  * The framing tells the receiver what the text is and what it must not do with
  * it, and the payload stays inside it: no transcript, no credentials, no
@@ -151,7 +165,7 @@ function needsInputLines(notice: NeedsInputNotice, harness: HarnessExecution | n
  * @param summaryMaxChars - cap applied to the summary line.
  * @returns the message text a wake adapter hands to its transport.
  */
-export function composeWakeMessage(
+export function composeDeliveryReview(
   payload: DeliveryPayload,
   deliveryId: string,
   summaryMaxChars = WAKE_SUMMARY_MAX_CHARS,

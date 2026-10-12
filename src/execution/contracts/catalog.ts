@@ -1,4 +1,5 @@
 import type { ModelRef, ModelDefinition } from '../../shared/models.ts'
+import type { CodexGitBashRuntime } from './codex-runtime.ts'
 export * from '../../shared/models.ts'
 /** Network routing for this external CLI and its children; omission inherits Desktop. */
 export type HarnessProxy =
@@ -14,6 +15,8 @@ export interface HarnessDefinition {
   prefix?: string[]
   adapter?: string
   proxy?: HarnessProxy
+  /** Optional suite-owned Windows build; omission uses the configured official CLI. */
+  codexRuntime?: CodexGitBashRuntime
 }
 export interface CombinationDefinition {
   id: string

@@ -3,7 +3,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { HarnessService } from './harness.ts'
 import type { HarnessProxy } from '../contracts/catalog.ts'
+import type { CodexRuntimeRequest, CodexRuntimeResult } from '../contracts/codex-runtime.ts'
 import type { MiniMaxCandidateRequest, MiniMaxCandidateResult } from '../contracts/candidate.ts'
+import type { MessageEditSend, MessageEditState } from '../contracts/message-edit.ts'
+import type { SessionPromptValue } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {
   HarnessSessionsRequest,
   HarnessSessionsPage,
@@ -36,6 +39,16 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 export class ExecutionService extends TypertRemoteService {
+  /** Read same-conversation edit choices without changing history. */
+  @Remote('message-edit-state')
+  messageEditState(request: { sessionId: string }): Promise<MessageEditState> {
+    return this.execution.messageEditState(request)
+  }
+  /** Replace selected history when the ordinary composer submits. */
+  @Remote('message-edit-send')
+  messageEditSend(request: MessageEditSend): Promise<SessionPromptValue> {
+    return this.execution.messageEditSend(request)
+  }
   constructor(
     ctx: Context,
     private readonly execution: HarnessService,
@@ -50,6 +63,11 @@ export class ExecutionService extends TypertRemoteService {
   @Remote('select-minimax-candidate')
   selectMiniMaxCandidate(request: MiniMaxCandidateRequest): Promise<MiniMaxCandidateResult> {
     return this.execution.selectMiniMaxCandidate(request)
+  }
+  /** Select or restore a verified Codex runtime without changing permissions. */
+  @Remote('select-codex-runtime')
+  selectCodexRuntime(request: CodexRuntimeRequest): Promise<CodexRuntimeResult> {
+    return this.execution.selectCodexRuntime(request)
   }
   @Remote('save-catalog')
   saveCatalog(request: { catalog: ExecutionCatalog }): Promise<ExecutionCatalog> {

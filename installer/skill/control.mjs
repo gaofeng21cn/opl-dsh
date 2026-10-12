@@ -166,7 +166,28 @@ async function waitHarness(input) {
     return harnessRpc('snapshot', { sessionId: input.sessionId })
   }
 }
-if (command === 'minimax-candidate-select') {
+if (command === 'codex-runtime-select') {
+  for (const key of Object.keys(args))
+    if (!['mode', 'version', 'source'].includes(key)) throw Error('未知 Codex 运行时参数')
+  if (!['official', 'git-bash'].includes(args.mode)) throw Error('需要 --mode official|git-bash')
+  if (args.mode === 'official' && (args.version || args.source))
+    throw Error('官方回切不接受候选参数')
+  if (args.mode === 'git-bash' && !args.version) throw Error('需要 --version')
+  console.log(
+    JSON.stringify(
+      await harnessRpc(
+        'select-codex-runtime',
+        args.mode === 'official'
+          ? { mode: 'official' }
+          : {
+              mode: 'git-bash',
+              version: args.version,
+              ...(args.source ? { source: args.source } : {}),
+            },
+      ),
+    ),
+  )
+} else if (command === 'minimax-candidate-select') {
   if (!args.version?.trim()) throw Error('需要 --version <候选版本>')
   for (const name of Object.keys(args))
     if (!['version', 'source'].includes(name)) throw Error(`不支持参数 --${name}`)

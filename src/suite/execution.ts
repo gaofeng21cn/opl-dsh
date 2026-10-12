@@ -41,6 +41,7 @@ export const inject = [
  */
 export function apply(ctx: Context, _config: Record<string, never>): void {
   const harness = createHarnessService(ctx)
+  ctx.provide('oplExternalModelSources', harness.modelSources)
   const reviewerMaintenance: AutoReviewMaintenance = {
     change: (operation) => harness.changeReviewerSettings(operation),
   }
@@ -54,9 +55,21 @@ export function apply(ctx: Context, _config: Record<string, never>): void {
       harness.externalApprovalBinding(agent.session.id, request.callId),
   })
   // Apply model defaults on official/custom routes before the request is logged.
+  ctx.on('agent/pre-step', async (payload, next) => {
+    const decision = await next()
+    if (decision.kind === 'enter')
+      await harness.claimMessageEdit(payload.agent, decision.messages, payload.turn, payload.step)
+    return decision
+  })
   ctx.on('agent/request', async (payload, next) => {
     harness.assertRuntimeAvailable()
-    await harness.assertConversationEditable(payload.agent.session.id)
+    const edited = await harness.commitMessageEdit(
+      payload.agent,
+      payload.turn,
+      payload.step,
+      payload.signal,
+    )
+    await harness.assertConversationEditable(payload.agent.session.id, edited)
     harness.assertRuntimeAvailable()
     const request = await next()
     harness.assertRuntimeAvailable()

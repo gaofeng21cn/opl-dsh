@@ -155,6 +155,36 @@ const accepting = () => ({
 })
 
 describe('feedback service durable lifecycle', () => {
+  it('queues only a short pointer and retrieves full native review details after restart', async () => {
+    const disk = await fixture()
+    const first = await disk.mount()
+    const delivery = await first.complete()
+    const transport = accepting()
+    first.service.setWakeAdapter(transport)
+    await first.service.flush()
+    const message = transport.send.mock.calls[0]![0].message
+    expect(message.split('\n')).toHaveLength(3)
+    expect(message).toContain('receive task task@completed --consumer <stable id>')
+    expect(message).toContain('busy/skip: stop')
+    expect(message).not.toContain('verified outcome')
+    expect(message).not.toContain('source-session')
+    expect(message).not.toContain('taskFeedback.consume')
+    await first.ctx.fiber.dispose()
+    const restarted = await disk.mount()
+    const received = await restarted.service.receive({
+      taskId: delivery.taskId,
+      deliveryId: delivery.deliveryId,
+      consumerId: 'reviewer',
+    })
+    expect(received.action).toBe('review')
+    expect(received.delivery.payload).toEqual(delivery.payload)
+    expect(received.reviewInstructions).toContain('acceptance: verified outcome')
+    expect(received.reviewInstructions).toContain('evidence: read session source-session')
+    expect(received.reviewInstructions).toContain(
+      'consume task task@completed --epoch <claimEpoch from receive>',
+    )
+  })
+
   it('withdraws an obsolete combination pause without dropping its completion', async () => {
     const first = await (await fixture()).mount()
     const { task } = await first.service.registerHarnessOperation({
@@ -397,9 +427,11 @@ describe('feedback service durable lifecycle', () => {
       action: 'resume',
       receipt: { claimEpoch: 1 },
       delivery: { acknowledged: true },
+      reviewInstructions: expect.stringContaining('consume task task@completed'),
     })
     expect(await restarted.service.receive({ ...request, consumerId: 'other' })).toMatchObject({
       action: 'busy',
+      reviewInstructions: null,
     })
   })
 
@@ -409,12 +441,14 @@ describe('feedback service durable lifecycle', () => {
     await first.complete()
     const request = { taskId: 'task', deliveryId: 'task@completed' }
     const received = await first.service.receive({ ...request, consumerId: 'first' })
+    expect(received.reviewInstructions).toContain('read session source-session')
     const future = Date.parse(received.receipt.leaseExpiresAt!) + 1
     vi.spyOn(Date, 'now').mockReturnValue(future)
     const reclaimed = await first.service.receive({ ...request, consumerId: 'second' })
     expect(reclaimed).toMatchObject({
       action: 'resume',
       receipt: { claimEpoch: 2, ownerId: 'second' },
+      reviewInstructions: received.reviewInstructions,
     })
     await expect(
       first.service.consume({ ...request, consumerId: 'first', claimEpoch: 1 }),
@@ -430,6 +464,7 @@ describe('feedback service durable lifecycle', () => {
     expect(await restarted.service.receive({ ...request, consumerId: 'third' })).toMatchObject({
       action: 'skip',
       receipt: { status: 'consumed', claimEpoch: 2 },
+      reviewInstructions: null,
     })
   })
 

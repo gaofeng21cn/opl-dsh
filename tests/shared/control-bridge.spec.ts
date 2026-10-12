@@ -99,6 +99,41 @@ it('routes candidate selection to the execution owner without granting arbitrary
   }
 })
 
+it('routes Codex selection and rollback through the authenticated execution owner', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'opl-codex-control-'))
+  const invoke = vi.fn(async () => ({ mode: 'git-bash', command: 'verified-codex' }))
+  const stop = await startControlBridge(
+    { invoke } as unknown as TypertGateway,
+    join(dir, 'control.json'),
+  )
+  try {
+    const binding = readBinding(join(dir, 'control.json'))
+    for (const args of [
+      { mode: 'git-bash', version: 'reviewed', source: 'owned-package' },
+      { mode: 'official' },
+    ]) {
+      expect(
+        await rpc(binding, { namespace: 'harness', method: 'select-codex-runtime', args }),
+      ).toMatchObject({ status: 200, json: { ok: true } })
+      expect(invoke).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          namespace: 'harness',
+          method: 'select-codex-runtime',
+          args,
+          signal: expect.any(AbortSignal),
+        }),
+      )
+    }
+    expect(
+      (await rpc(binding, { namespace: 'harness', method: 'execute-candidate', args: {} })).status,
+    ).toBe(403)
+    expect(invoke).toHaveBeenCalledTimes(2)
+  } finally {
+    await stop()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 it('allows the event-driven session wait through the method allowlist', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'opl-control-wait-'))
   const file = join(dir, 'control.json')

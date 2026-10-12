@@ -1,0 +1,4 @@
+/* The official settings rail supplies a gear for sections without a dedicated glyph. */
+:global([role='dialog'][aria-modal='true'] > nav button > svg[class*='_navIcon']) {
+  display: none;
+}

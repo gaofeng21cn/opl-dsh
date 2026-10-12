@@ -3,6 +3,7 @@ export type * from '../gateway/contracts/account.ts'
 export type * from '../gateway/contracts/models.ts'
 export type * from '../execution/contracts/sessions.ts'
 export type * from '../execution/contracts/stop-edit.ts'
+export type * from '../execution/contracts/message-edit.ts'
 export type * from '../execution/contracts/catalog.ts'
 export type * from '../execution/contracts/installations.ts'
 export type * from '../execution/contracts/views.ts'
@@ -94,3 +95,6 @@ export type {
   MiniMaxCandidateRequest,
   MiniMaxCandidateResult,
 } from '../execution/contracts/candidate.ts'
+
+export type * from '../execution/contracts/codex-runtime.ts'
+export type * from '../execution/contracts/capabilities.ts'

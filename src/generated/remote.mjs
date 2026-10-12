@@ -539,6 +539,12 @@ const _one_person_lab_dsh_opl_oplExecution_catalog_result$schema = () => (_one_p
   'mode': z.literal("custom"),
   'url': z.string(),
 })]).optional(),
+  'codexRuntime': z.object({
+  'version': z.string(),
+  'manifestSha256': z.string(),
+  'officialCommand': z.string(),
+  'officialPrefix': z.array(z.string()),
+}).optional(),
 })),
   'combinations': z.array(z.object({
   'id': z.string(),
@@ -828,6 +834,23 @@ const _one_person_lab_dsh_opl_oplExecution_harness_installations_result$schema =
   'mode': z.literal("custom"),
   'url': z.string(),
 })]).optional(),
+  'codexRuntime': z.object({
+  'version': z.string(),
+  'manifestSha256': z.string(),
+  'officialCommand': z.string(),
+  'officialPrefix': z.array(z.string()),
+}).optional(),
+}).optional(),
+  'capabilities': z.object({
+  'transport': z.union([z.literal("dsh"), z.literal("acp"), z.literal("app-server"), z.literal("official-sdk")]),
+  'authentication': z.union([z.literal("dsh-provider"), z.literal("api-source"), z.literal("official-account")]),
+  'protocols': z.array(z.union([z.literal("responses"), z.literal("messages"), z.literal("chat")])),
+  'customEndpoint': z.boolean(),
+  'permissions': z.array(z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")])),
+  'sessionLoad': z.boolean(),
+  'cancel': z.boolean(),
+  'reasoning': z.union([z.literal("model-declared"), z.literal("cli-advertised")]),
+  'autoReview': z.union([z.literal("official"), z.literal("codex-auto-review"), z.literal("unsupported")]),
 }).optional(),
   'installed': z.boolean(),
   'version': z.string().optional(),
@@ -966,6 +989,49 @@ const _one_person_lab_dsh_opl_oplExecution_list_result$schema = () => (_one_pers
   'removedTurns': z.number(),
   'at': z.string(),
 }).optional(),
+})),
+}))
+let _one_person_lab_dsh_opl_oplExecution_message_edit_send_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplExecution_message_edit_send_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_message_edit_send_parameter_0$schema$value ??= z.object({
+  'prompt': z.object({
+  'requestId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'mode': z.union([z.literal("queue"), z.literal("steer")]).readonly(),
+  'content': z.array(z.union([z.object({
+  'type': z.literal("text").readonly(),
+  'text': z.string().readonly(),
+}), z.object({
+  'type': z.literal("image").readonly(),
+  'mediaType': z.union([z.literal("image/png"), z.literal("image/jpeg"), z.literal("image/webp"), z.literal("image/gif")]).readonly(),
+  'data': z.string().readonly(),
+  'name': z.string().readonly().optional(),
+}), z.object({
+  'type': z.literal("file").readonly(),
+  'receiptId': z.intersection(z.string(), z.unknown()).readonly(),
+})])).readonly(),
+  'clientTimeZone': z.string().readonly().optional(),
+}),
+  'targetSeq': z.number(),
+  'head': z.number(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_message_edit_send_result$schema$value
+const _one_person_lab_dsh_opl_oplExecution_message_edit_send_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_message_edit_send_result$schema$value ??= z.object({
+  'accepted': z.literal(true).readonly(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_message_edit_state_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplExecution_message_edit_state_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_message_edit_state_parameter_0$schema$value ??= z.object({
+  'sessionId': z.string(),
+}))
+let _one_person_lab_dsh_opl_oplExecution_message_edit_state_result$schema$value
+const _one_person_lab_dsh_opl_oplExecution_message_edit_state_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_message_edit_state_result$schema$value ??= z.object({
+  'sessionId': z.string(),
+  'supported': z.boolean(),
+  'busy': z.boolean(),
+  'head': z.number(),
+  'pending': z.boolean(),
+  'choices': z.array(z.object({
+  'seq': z.number(),
+  'text': z.string(),
 })),
 }))
 let _one_person_lab_dsh_opl_oplExecution_model_selection_parameter_0$schema$value
@@ -1491,6 +1557,12 @@ const _one_person_lab_dsh_opl_oplExecution_save_catalog_parameter_0$schema = () 
   'mode': z.literal("custom"),
   'url': z.string(),
 })]).optional(),
+  'codexRuntime': z.object({
+  'version': z.string(),
+  'manifestSha256': z.string(),
+  'officialCommand': z.string(),
+  'officialPrefix': z.array(z.string()),
+}).optional(),
 })),
   'combinations': z.array(z.object({
   'id': z.string(),
@@ -1535,6 +1607,12 @@ const _one_person_lab_dsh_opl_oplExecution_save_catalog_result$schema = () => (_
   'mode': z.literal("custom"),
   'url': z.string(),
 })]).optional(),
+  'codexRuntime': z.object({
+  'version': z.string(),
+  'manifestSha256': z.string(),
+  'officialCommand': z.string(),
+  'officialPrefix': z.array(z.string()),
+}).optional(),
 })),
   'combinations': z.array(z.object({
   'id': z.string(),
@@ -1602,6 +1680,12 @@ const _one_person_lab_dsh_opl_oplExecution_save_harness_proxy_result$schema = ()
   'mode': z.literal("custom"),
   'url': z.string(),
 })]).optional(),
+  'codexRuntime': z.object({
+  'version': z.string(),
+  'manifestSha256': z.string(),
+  'officialCommand': z.string(),
+  'officialPrefix': z.array(z.string()),
+}).optional(),
 })),
   'combinations': z.array(z.object({
   'id': z.string(),
@@ -1616,6 +1700,24 @@ const _one_person_lab_dsh_opl_oplExecution_save_harness_proxy_result$schema = ()
   'isDefault': z.boolean(),
   'enabled': z.boolean(),
 })),
+}))
+let _one_person_lab_dsh_opl_oplExecution_select_codex_runtime_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplExecution_select_codex_runtime_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_select_codex_runtime_parameter_0$schema$value ??= z.union([z.object({
+  'mode': z.literal("official"),
+}), z.object({
+  'mode': z.literal("git-bash"),
+  'version': z.string(),
+  'source': z.string().optional(),
+})]))
+let _one_person_lab_dsh_opl_oplExecution_select_codex_runtime_result$schema$value
+const _one_person_lab_dsh_opl_oplExecution_select_codex_runtime_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_select_codex_runtime_result$schema$value ??= z.object({
+  'mode': z.union([z.literal("official"), z.literal("git-bash")]),
+  'command': z.string(),
+  'previousCommand': z.string(),
+  'version': z.string().optional(),
+  'manifestSha256': z.string().optional(),
+  'executableSha256': z.string().optional(),
+  'validation': z.union([z.literal("static"), z.literal("launch-settings")]),
 }))
 let _one_person_lab_dsh_opl_oplExecution_select_combination_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_select_combination_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_select_combination_parameter_0$schema$value ??= z.object({
@@ -2610,7 +2712,7 @@ const _one_person_lab_dsh_opl_oplGatewayModels_read_result$schema = () => (_one_
 })),
 }))
 let _one_person_lab_dsh_opl_oplSetup_finish_parameter_0$schema$value
-const _one_person_lab_dsh_opl_oplSetup_finish_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplSetup_finish_parameter_0$schema$value ??= z.union([z.literal("gateway"), z.literal("official"), z.literal("later")]))
+const _one_person_lab_dsh_opl_oplSetup_finish_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplSetup_finish_parameter_0$schema$value ??= z.union([z.literal("official"), z.literal("gateway"), z.literal("later")]))
 let _one_person_lab_dsh_opl_oplSetup_finish_result$schema$value
 const _one_person_lab_dsh_opl_oplSetup_finish_result$schema = () => (_one_person_lab_dsh_opl_oplSetup_finish_result$schema$value ??= z.literal(null))
 let _one_person_lab_dsh_opl_oplSetup_official_cancel_result$schema$value
@@ -2624,7 +2726,7 @@ const _one_person_lab_dsh_opl_oplSetup_official_start_result$schema = () => (_on
 let _one_person_lab_dsh_opl_oplSetup_status_result$schema$value
 const _one_person_lab_dsh_opl_oplSetup_status_result$schema = () => (_one_person_lab_dsh_opl_oplSetup_status_result$schema$value ??= z.object({
   'completed': z.boolean(),
-  'choice': z.union([z.literal("undecided"), z.literal("gateway"), z.literal("official"), z.literal("later")]),
+  'choice': z.union([z.literal("official"), z.literal("undecided"), z.literal("gateway"), z.literal("later")]),
   'gatewayReady': z.boolean(),
   'officialProvider': z.string().optional(),
   'officialPhase': z.string().optional(),
@@ -2885,6 +2987,7 @@ const _one_person_lab_dsh_opl_taskFeedback_receive_result$schema = () => (_one_p
   'createdAt': z.string().readonly(),
   'updatedAt': z.string().readonly(),
 }).readonly(),
+  'reviewInstructions': z.union([z.literal(null), z.string()]).readonly(),
 }))
 let _one_person_lab_dsh_opl_taskFeedback_register_parameter_0$schema$value
 const _one_person_lab_dsh_opl_taskFeedback_register_parameter_0$schema = () => (_one_person_lab_dsh_opl_taskFeedback_register_parameter_0$schema$value ??= z.object({
@@ -3295,7 +3398,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_answer_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":135,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":153,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/cancel',
@@ -3320,7 +3423,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_cancel_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":131,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":149,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/cancel-task',
@@ -3346,7 +3449,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_cancel_task_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":127,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":145,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/catalog',
@@ -3361,7 +3464,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#ExecutionCatalog',
         create: _one_person_lab_dsh_opl_oplExecution_catalog_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":46,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":59,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/combinations',
@@ -3376,7 +3479,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/combinations:result',
         create: _one_person_lab_dsh_opl_oplExecution_combinations_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":68,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":86,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/cooperation-settings',
@@ -3392,7 +3495,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#CooperationSettings',
         create: _one_person_lab_dsh_opl_oplExecution_cooperation_settings_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":164,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":182,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/delegate',
@@ -3418,7 +3521,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_delegate_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":108,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":126,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/detail',
@@ -3443,7 +3546,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessDetailPage',
         create: _one_person_lab_dsh_opl_oplExecution_detail_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":76,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":94,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/harness-installations',
@@ -3459,7 +3562,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/harness-installations:result',
         create: _one_person_lab_dsh_opl_oplExecution_harness_installations_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":80,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":98,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/harness-update',
@@ -3485,7 +3588,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/harness-update:result',
         create: _one_person_lab_dsh_opl_oplExecution_harness_update_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":84,"column":9},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":102,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/list',
@@ -3500,7 +3603,59 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessCatalog',
         create: _one_person_lab_dsh_opl_oplExecution_list_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":64,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":82,"column":3},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplExecution/message-edit-send',
+      service: 'oplExecution',
+      namespace: 'oplExecution',
+      method: 'message-edit-send',
+      implementation: 'messageEditSend',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'request',
+          wire: 'request',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl/types#MessageEditSend',
+            create: _one_person_lab_dsh_opl_oplExecution_message_edit_send_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl#oplExecution/message-edit-send:result',
+        create: _one_person_lab_dsh_opl_oplExecution_message_edit_send_result$schema,
+      },
+      sourceLocation: {"file":"src/execution/host/service.ts","line":49,"column":3},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplExecution/message-edit-state',
+      service: 'oplExecution',
+      namespace: 'oplExecution',
+      method: 'message-edit-state',
+      implementation: 'messageEditState',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'request',
+          wire: 'request',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl#oplExecution/message-edit-state:request',
+            create: _one_person_lab_dsh_opl_oplExecution_message_edit_state_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#MessageEditState',
+        create: _one_person_lab_dsh_opl_oplExecution_message_edit_state_result$schema,
+      },
+      sourceLocation: {"file":"src/execution/host/service.ts","line":44,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/model-selection',
@@ -3526,7 +3681,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSelection',
         create: _one_person_lab_dsh_opl_oplExecution_model_selection_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":143,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":161,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/prompt',
@@ -3551,7 +3706,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_prompt_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":93,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":111,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/report',
@@ -3576,7 +3731,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/report:result',
         create: _one_person_lab_dsh_opl_oplExecution_report_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":112,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":130,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/result',
@@ -3602,7 +3757,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_result_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":120,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":138,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/retry-delivery',
@@ -3628,7 +3783,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_retry_delivery_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":180,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":198,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/review',
@@ -3653,7 +3808,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_review_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":116,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":134,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/save-catalog',
@@ -3679,7 +3834,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#ExecutionCatalog',
         create: _one_person_lab_dsh_opl_oplExecution_save_catalog_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":55,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":73,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/save-cooperation-settings',
@@ -3705,7 +3860,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#CooperationSettings',
         create: _one_person_lab_dsh_opl_oplExecution_save_cooperation_settings_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":168,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":186,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/save-harness-proxy',
@@ -3731,7 +3886,33 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#ExecutionCatalog',
         create: _one_person_lab_dsh_opl_oplExecution_save_harness_proxy_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":60,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":78,"column":3},
+    },
+    {
+      id: '@one-person-lab/dsh-opl#oplExecution/select-codex-runtime',
+      service: 'oplExecution',
+      namespace: 'oplExecution',
+      method: 'select-codex-runtime',
+      implementation: 'selectCodexRuntime',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'request',
+          wire: 'request',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl/types#CodexRuntimeRequest',
+            create: _one_person_lab_dsh_opl_oplExecution_select_codex_runtime_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#CodexRuntimeResult',
+        create: _one_person_lab_dsh_opl_oplExecution_select_codex_runtime_result$schema,
+      },
+      sourceLocation: {"file":"src/execution/host/service.ts","line":69,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/select-combination',
@@ -3757,7 +3938,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/select-combination:result',
         create: _one_person_lab_dsh_opl_oplExecution_select_combination_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":147,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":165,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/select-effort',
@@ -3783,7 +3964,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/select-effort:result',
         create: _one_person_lab_dsh_opl_oplExecution_select_effort_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":154,"column":9},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":172,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/select-minimax-candidate',
@@ -3809,7 +3990,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#MiniMaxCandidateResult',
         create: _one_person_lab_dsh_opl_oplExecution_select_minimax_candidate_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":51,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":64,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/sessions',
@@ -3834,7 +4015,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSessionsPage',
         create: _one_person_lab_dsh_opl_oplExecution_sessions_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":72,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":90,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/snapshot',
@@ -3859,7 +4040,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_snapshot_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":97,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":115,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/start',
@@ -3884,7 +4065,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_start_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":89,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":107,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/stop-edit',
@@ -3910,7 +4091,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#StopEditResult',
         create: _one_person_lab_dsh_opl_oplExecution_stop_edit_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":190,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":208,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/stop-edit-acknowledge',
@@ -3936,7 +4117,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/stop-edit-acknowledge:result',
         create: _one_person_lab_dsh_opl_oplExecution_stop_edit_acknowledge_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":195,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":213,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/stop-edit-state',
@@ -3962,7 +4143,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#StopEditState',
         create: _one_person_lab_dsh_opl_oplExecution_stop_edit_state_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":185,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":203,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/task-summaries',
@@ -3988,7 +4169,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/task-summaries:result',
         create: _one_person_lab_dsh_opl_oplExecution_task_summaries_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":176,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":194,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/tasks',
@@ -4013,7 +4194,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplExecution/tasks:result',
         create: _one_person_lab_dsh_opl_oplExecution_tasks_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":172,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":190,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplExecution/wait',
@@ -4039,7 +4220,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSnapshot',
         create: _one_person_lab_dsh_opl_oplExecution_wait_result$schema,
       },
-      sourceLocation: {"file":"src/execution/host/service.ts","line":101,"column":3},
+      sourceLocation: {"file":"src/execution/host/service.ts","line":119,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#oplGatewayAccount/refresh',
@@ -4332,7 +4513,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskAckValue',
         create: _one_person_lab_dsh_opl_taskFeedback_ack_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":880,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":881,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/consume',
@@ -4357,7 +4538,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskConsumeValue',
         create: _one_person_lab_dsh_opl_taskFeedback_consume_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":937,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":938,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/flush',
@@ -4372,7 +4553,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskFlushValue',
         create: _one_person_lab_dsh_opl_taskFeedback_flush_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":1630,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":1659,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/outbox',
@@ -4388,7 +4569,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#taskFeedback/outbox:result',
         create: _one_person_lab_dsh_opl_taskFeedback_outbox_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":831,"column":3},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":832,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/receipts',
@@ -4403,7 +4584,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#taskFeedback/receipts:result',
         create: _one_person_lab_dsh_opl_taskFeedback_receipts_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":921,"column":3},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":922,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/receive',
@@ -4428,7 +4609,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskReceiveValue',
         create: _one_person_lab_dsh_opl_taskFeedback_receive_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":908,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":909,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/register',
@@ -4453,7 +4634,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskRegistrationValue',
         create: _one_person_lab_dsh_opl_taskFeedback_register_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":500,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":501,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/resumeFailed',
@@ -4478,7 +4659,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskResumeValue',
         create: _one_person_lab_dsh_opl_taskFeedback_resumeFailed_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":956,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":957,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/task',
@@ -4503,7 +4684,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#TaskRecord',
         create: _one_person_lab_dsh_opl_taskFeedback_task_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":813,"column":3},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":814,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/tasks',
@@ -4518,7 +4699,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#taskFeedback/tasks:result',
         create: _one_person_lab_dsh_opl_taskFeedback_tasks_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":822,"column":3},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":823,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/wake',
@@ -4533,7 +4714,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#WakeStatus',
         create: _one_person_lab_dsh_opl_taskFeedback_wake_result$schema,
       },
-      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":846,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/feedback/index.ts","line":847,"column":9},
     },
   ],
 }

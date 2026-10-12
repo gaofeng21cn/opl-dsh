@@ -57,6 +57,7 @@ const allowed: Readonly<Record<string, readonly string[]>> = {
     'save-catalog',
     'save-harness-proxy',
     'select-minimax-candidate',
+    'select-codex-runtime',
   ],
 }
 

@@ -1,0 +1,99 @@
+/** External CLI routes resolved by the model-source owner, without copying provider settings. */
+import type { Context } from '@deepseek-ai/cordis'
+import type { ModelRef } from '../contracts/catalog.ts'
+import { resolveGatewayExecution } from '../../gateway/host/execution-access.ts'
+
+export type ExternalWireProtocol = 'responses' | 'messages' | 'chat'
+/** Host-only resolved data; credentials never enter catalog/capability responses. */
+export interface ExternalModelRoute {
+  baseURL: string
+  model: string
+  apiKey: string
+  protocol: ExternalWireProtocol
+}
+/** One source explicitly declares supported model/Harness pairs and owns route resolution. */
+export interface ExternalModelSource {
+  provider: string
+  supports(harness: string, ref: ModelRef): boolean
+  resolve(harness: string, ref: ModelRef): Promise<ExternalModelRoute>
+}
+
+/** Routes are registered by their owner; names alone never select a provider or account. */
+export class ExternalModelSources {
+  private readonly sources = new Map<string, ExternalModelSource>()
+  constructor(
+    private readonly ctx: Context,
+    private readonly changed: () => void = () => {},
+  ) {}
+
+  /** Register through the contributing plugin's effect scope; duplicate ownership is refused. */
+  register(owner: Context, source: ExternalModelSource): () => void {
+    if (
+      !source.provider.trim() ||
+      source.provider === 'opl-gateway' ||
+      this.sources.has(source.provider)
+    )
+      throw Error('外部模型来源已注册或身份无效')
+    return owner.effect(() => {
+      this.sources.set(source.provider, source)
+      this.changed()
+      return () => {
+        if (this.sources.get(source.provider) === source) this.sources.delete(source.provider)
+        this.changed()
+      }
+    })
+  }
+
+  /** Only an explicit registration can add a non-Gateway source to an external adapter. */
+  supports(harness: string, ref: ModelRef): boolean {
+    return this.sources.get(ref.provider)?.supports(harness, ref) === true
+  }
+
+  /** Resolve the exact source and verify wire data before any profile write or CLI launch. */
+  async resolve(
+    harness: string,
+    ref: ModelRef,
+    protocol: ExternalWireProtocol,
+  ): Promise<ExternalModelRoute> {
+    let route: ExternalModelRoute
+    if (ref.provider === 'opl-gateway') {
+      const resolved = await resolveGatewayExecution(this.ctx, ref)
+      const wire: Record<string, ExternalWireProtocol> = {
+        'openai-responses': 'responses',
+        'anthropic-messages': 'messages',
+        'openai-completions': 'chat',
+      }
+      const expected = wire[resolved.api]
+      if (expected !== protocol) throw Error('所选来源的协议与 Harness 不兼容')
+      route = { ...resolved, protocol: expected }
+    } else {
+      const source = this.sources.get(ref.provider)
+      if (!source?.supports(harness, ref)) throw Error('该模型来源尚未适配此 Harness')
+      route = await source.resolve(harness, ref)
+      // A source removed/replaced during an asynchronous read cannot authorize a new launch.
+      if (this.sources.get(ref.provider) !== source || !source.supports(harness, ref))
+        throw Error('模型来源已变更，请重新选择')
+    }
+    const url = new URL(route.baseURL)
+    if (
+      !['https:', 'http:'].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.hash ||
+      url.search ||
+      !route.model?.trim() ||
+      /[\r\n\0]/.test(route.model) ||
+      !route.apiKey ||
+      route.protocol !== protocol
+    )
+      throw Error('模型来源未提供兼容的执行参数')
+    return route
+  }
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Source owners may register explicit external CLI routes through their effect scope. */
+    oplExternalModelSources: ExternalModelSources
+  }
+}
