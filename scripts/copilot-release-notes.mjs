@@ -30,7 +30,7 @@ export async function runCopilotReleaseNotes(prompt, token) {
         '--log-level',
         'none',
         '--max-ai-credits',
-        '1',
+        '30',
       ],
       { cwd: home, env, timeout: 90000, maxBuffer: 128 * 1024, killSignal: 'SIGKILL' },
     )
