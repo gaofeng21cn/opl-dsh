@@ -162,7 +162,8 @@ export async function prepareDailyRelease(root) {
         'package-lock.json',
         `docs/release-notes-${candidate.version}.md`,
       ])
-      git(root, ['commit', '-m', `release: prepare OPL DSH v${candidate.version}`])
+      if (git(root, ['diff', '--cached', '--name-only']))
+        git(root, ['commit', '-m', `release: prepare OPL DSH v${candidate.version}`])
       candidate.tag = `opl-dsh-v${candidate.version}`
       git(root, ['tag', '-a', candidate.tag, '-m', `OPL DSH v${candidate.version}`])
       // Never force main or reuse a tag. The same run continues with these exact bytes:

@@ -299,74 +299,94 @@ test(
   },
 )
 
-test(
-  'real preparation pushes one frozen candidate and the next run resumes it',
-  { skip: process.platform === 'win32' },
-  async (t) => {
-    const { root, git, latest, commit } = await fixture(t)
-    const external = await mkdtemp(join(tmpdir(), 'opl-daily-remote-'))
-    t.after(() => rm(external, { recursive: true, force: true }))
-    const remote = join(external, 'origin.git')
-    execFileSync('git', ['init', '--bare', remote], { stdio: 'ignore' })
-    git('remote', 'add', 'origin', remote)
-    await mkdir(join(root, 'scripts'))
-    for (const file of ['prepare-daily-release.mjs', 'daily-release-notes.mjs'])
-      await copyFile(new URL('../scripts/' + file, import.meta.url), join(root, 'scripts', file))
-    await writeFile(
-      join(root, 'package-lock.json'),
-      JSON.stringify({ version: '0.2.21', packages: { '': { version: '0.2.21' } } }),
-    )
-    await writeFile(join(root, 'src/plugin.ts'), 'export const value = 2\n')
-    commit()
-    git('push', 'origin', 'main', '--tags')
-    const bin = join(external, 'bin')
-    await mkdir(bin)
-    // Only Latest metadata is simulated; version writes, commits, tags, pushes,
-    // remote readback and workflow outputs use the actual production entry point.
-    await writeFile(
-      join(bin, 'gh'),
-      `#!${process.execPath}\nconsole.log(${JSON.stringify(JSON.stringify(latest))})\n`,
-      { mode: 0o700 },
-    )
-    const output = join(external, 'output')
-    const env = {
-      ...process.env,
-      PATH: bin + delimiter + process.env.PATH,
-      GITHUB_REPOSITORY: 'gaofeng21cn/opl-dsh',
-      GITHUB_REF: 'refs/heads/main',
-      GITHUB_OUTPUT: output,
-      GITHUB_STEP_SUMMARY: join(external, 'summary'),
-    }
-    delete env.OPL_RELEASE_NOTES_CODEX_API_KEY
-    delete env.GITHUB_TOKEN
-    const run = () =>
-      JSON.parse(
-        execFileSync(process.execPath, ['scripts/prepare-daily-release.mjs'], {
-          cwd: root,
-          env,
-          encoding: 'utf8',
-        })
-          .trim()
-          .split('\n')
-          .at(-1),
+for (const prepared of [false, true])
+  test(
+    prepared
+      ? 'precommitted version and notes freeze without an empty commit, then resume'
+      : 'real preparation pushes one frozen candidate and the next run resumes it',
+    { skip: process.platform === 'win32' },
+    async (t) => {
+      const { root, git, latest, commit } = await fixture(t)
+      const external = await mkdtemp(join(tmpdir(), 'opl-daily-remote-'))
+      t.after(() => rm(external, { recursive: true, force: true }))
+      const remote = join(external, 'origin.git')
+      execFileSync('git', ['init', '--bare', remote], { stdio: 'ignore' })
+      git('remote', 'add', 'origin', remote)
+      await mkdir(join(root, 'scripts'))
+      for (const file of ['prepare-daily-release.mjs', 'daily-release-notes.mjs'])
+        await copyFile(new URL('../scripts/' + file, import.meta.url), join(root, 'scripts', file))
+      await writeFile(
+        join(root, 'package-lock.json'),
+        JSON.stringify({ version: '0.2.21', packages: { '': { version: '0.2.21' } } }),
       )
-    const first = run()
-    assert.equal(first.action, 'prepare')
-    assert.equal(first.tag, 'opl-dsh-v0.2.22')
-    assert.equal(git('rev-parse', 'HEAD'), first.sourceCommit)
-    assert.ok(
-      git('ls-remote', 'origin', 'refs/tags/opl-dsh-v0.2.22^{}').startsWith(first.sourceCommit),
-    )
-    const lock = JSON.parse(await readFile(join(root, 'package-lock.json')))
-    assert.equal(lock.version, '0.2.22')
-    assert.equal(lock.packages[''].version, '0.2.22')
-    assert.ok((await readFile(output, 'utf8')).includes('tag=opl-dsh-v0.2.22'))
-    const second = run()
-    assert.equal(second.action, 'resume')
-    assert.equal(second.sourceCommit, first.sourceCommit)
-    assert.equal(git('status', '--porcelain'), '')
-  },
-)
+      await writeFile(join(root, 'src/plugin.ts'), 'export const value = 2\n')
+      if (prepared) {
+        for (const file of ['package.json', 'package-lock.json']) {
+          const value = JSON.parse(await readFile(join(root, file), 'utf8'))
+          value.version = '0.2.22'
+          if (value.packages?.['']) value.packages[''].version = '0.2.22'
+          await writeFile(join(root, file), JSON.stringify(value, null, 2) + '\n')
+        }
+        await writeFile(join(root, 'docs/release-notes-0.2.22.md'), '维护者已准备的发布说明\n')
+      }
+      commit()
+      const preparedCommit = git('rev-parse', 'HEAD')
+      git('push', 'origin', 'main', '--tags')
+      const bin = join(external, 'bin')
+      await mkdir(bin)
+      // Only Latest metadata is simulated; version writes, commits, tags, pushes,
+      // remote readback and workflow outputs use the actual production entry point.
+      await writeFile(
+        join(bin, 'gh'),
+        `#!${process.execPath}\nconsole.log(${JSON.stringify(JSON.stringify(latest))})\n`,
+        { mode: 0o700 },
+      )
+      const output = join(external, 'output')
+      const env = {
+        ...process.env,
+        PATH: bin + delimiter + process.env.PATH,
+        GITHUB_REPOSITORY: 'gaofeng21cn/opl-dsh',
+        GITHUB_REF: 'refs/heads/main',
+        GITHUB_OUTPUT: output,
+        GITHUB_STEP_SUMMARY: join(external, 'summary'),
+      }
+      delete env.OPL_RELEASE_NOTES_CODEX_API_KEY
+      delete env.GITHUB_TOKEN
+      const run = () =>
+        JSON.parse(
+          execFileSync(process.execPath, ['scripts/prepare-daily-release.mjs'], {
+            cwd: root,
+            env,
+            encoding: 'utf8',
+          })
+            .trim()
+            .split('\n')
+            .at(-1),
+        )
+      const first = run()
+      assert.equal(first.action, 'prepare')
+      assert.equal(first.tag, 'opl-dsh-v0.2.22')
+      assert.equal(git('rev-parse', 'HEAD'), first.sourceCommit)
+      if (prepared) {
+        assert.equal(first.sourceCommit, preparedCommit)
+        assert.equal(
+          await readFile(join(root, 'docs/release-notes-0.2.22.md'), 'utf8'),
+          '维护者已准备的发布说明\n',
+        )
+      }
+      assert.ok(
+        git('ls-remote', 'origin', 'refs/tags/opl-dsh-v0.2.22^{}').startsWith(first.sourceCommit),
+      )
+      const lock = JSON.parse(await readFile(join(root, 'package-lock.json')))
+      assert.equal(lock.version, '0.2.22')
+      assert.equal(lock.packages[''].version, '0.2.22')
+      assert.ok((await readFile(output, 'utf8')).includes('tag=opl-dsh-v0.2.22'))
+      const second = run()
+      assert.equal(second.action, 'resume')
+      assert.equal(second.sourceCommit, first.sourceCommit)
+      assert.equal(git('status', '--porcelain'), '')
+    },
+  )
 
 test(
   'Gateway flash failure falls through to luna before mechanical notes',
