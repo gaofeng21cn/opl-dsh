@@ -212,6 +212,7 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
   }
   await openSettings()
   const panels = [
+    { label: ['通用设置', 'General'], marker: 'context-budget' },
     { label: ['执行引擎', 'Harnesses'], marker: 'execution-settings' },
     { label: ['执行组合', 'Combinations'], marker: 'catalog' },
     { label: ['协作与自动化', 'Collaboration'], marker: 'collaboration' },
@@ -229,8 +230,6 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
       'Agent 预设',
       '协作与自动化',
       '工具审批',
-      '上下文预算',
-      '系统通知',
       '插件管理',
     ],
     [
@@ -243,8 +242,6 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
       'Agent presets',
       'Collaboration',
       'Tool approval',
-      'Context budget',
-      'Notifications',
       'Plugins',
     ],
   ]
@@ -300,14 +297,44 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
       await captureFailureScreenshot()
       throw new Error(panel.label[0] + ' 报错：' + alerts.join('; '))
     }
+    if (panel.marker === 'context-budget') {
+      for (const marker of ['context-budget', 'notifications']) {
+        await waitFor(
+          `(() => {const row=document.querySelector('[data-opl-panel="${marker}"]'); return Boolean(row && row.getClientRects().length && row.querySelector('[role=switch]'))})()`,
+          marker + ' 通用设置条目未挂载',
+        )
+        const toggle = `document.querySelector('[data-opl-panel="${marker}"] [role=switch]')`
+        const before = await pipe.evaluate(session, `${toggle}.getAttribute('aria-checked')`)
+        await pipe.evaluate(session, `${toggle}.click()`)
+        await waitFor(
+          `${toggle}.getAttribute('aria-checked')!==${JSON.stringify(before)}`,
+          marker + ' 开关未更新',
+        )
+        await pipe.evaluate(session, `${toggle}.click()`)
+        await waitFor(
+          `${toggle}.getAttribute('aria-checked')===${JSON.stringify(before)}`,
+          marker + ' 开关未恢复',
+        )
+      }
+      result.generalPreferences = {
+        contextBudget: true,
+        notifications: true,
+        nativeGeneralItems: true,
+      }
+    }
     if (panel.marker === 'catalog') {
+      if (await pipe.evaluate(session, `Boolean(document.querySelector('[data-opl-proxy-row]'))`))
+        throw new Error('执行组合仍重复提供 Harness 代理配置')
+      result.combinationsOnly = true
+    }
+    if (panel.marker === 'execution-settings') {
       await waitFor(
         `(() => {const row=document.querySelector('[data-opl-proxy-row="minimax-code"]'); const builtin=document.querySelector('[data-opl-proxy-row="dsh"]'); return Boolean(row && row.querySelectorAll('input[type=radio]').length===3 && builtin && Array.from(builtin.querySelectorAll('input[type=radio]')).every(x=>x.disabled))})()`,
         'Harness 独立代理设置未注册',
       )
       await pipe.evaluate(
         session,
-        `document.querySelector('[data-opl-proxy-row="minimax-code"] input[value="custom"]').click()`,
+        `(() => {const row=document.querySelector('[data-opl-proxy-row="minimax-code"]'); row.open=true; row.querySelector('input[value="custom"]').click()})()`,
       )
       await waitFor(
         `Boolean(document.querySelector('[data-opl-proxy-url="minimax-code"]'))`,

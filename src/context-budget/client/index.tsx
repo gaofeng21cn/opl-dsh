@@ -1,4 +1,3 @@
-import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
 /**
  * Client context-budget view: one compact entry in the official composer
  * control row (`conversation.input.left`) rendering the read-only observations
@@ -40,14 +39,12 @@ export function apply(ctx: Context, config: Config): void {
     getItem: (key) => window.localStorage.getItem(key),
     setItem: (key, value) => window.localStorage.setItem(key, value),
   })
-  const t = ctx.locale.bind(BUDGET_NAMESPACE)
-  ctx.slots.inject('settings.section', () =>
+  ctx.slots.inject('settings.general.item', () =>
     ctx.slots.register(
       {
-        name: 'settings.section',
+        name: 'settings.general.item',
         id: 'opl-context-budget',
-        order: SETTINGS_ORDER['opl-context-budget'],
-        label: () => t('panelTitle'),
+        order: 40,
         locale: BUDGET_NAMESPACE,
         inject: () => ({ preference }),
       },

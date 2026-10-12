@@ -1,10 +1,26 @@
 import { useHarnessSettings } from './use-harness-settings.ts'
+import { HarnessProxySection } from './HarnessProxySection.tsx'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from '../../shared/client/SettingsSection.module.css'
 import type { ExecutionCall as Call } from '../../shared/client/remote-call.ts'
 export function HarnessSettings({ call }: { call: Call }) {
-  const { draft, setDraft, items, error, busy, load, update, savePath, register } =
-    useHarnessSettings(call)
+  const {
+    draft,
+    setDraft,
+    items,
+    error,
+    busy,
+    load,
+    update,
+    savePath,
+    register,
+    proxyDrafts,
+    proxyErrors,
+    proxyOutcome,
+    editProxy,
+    saveProxy,
+    resetProxy,
+  } = useHarnessSettings(call)
   return (
     <div className={css.section} data-opl-panel="execution-settings" aria-busy={busy}>
       <div className={css.header}>
@@ -24,7 +40,7 @@ export function HarnessSettings({ call }: { call: Call }) {
         </p>
       )}
       {items.map((item) => (
-        <div className={css.card} key={item.id}>
+        <div className={css.card} key={item.id} data-opl-harness-row={item.id}>
           <div className={css.header}>
             <span className={css.identity}>
               <strong>{item.name}</strong>
@@ -101,6 +117,18 @@ export function HarnessSettings({ call }: { call: Call }) {
                 }}
               />
             </details>
+          )}
+          {item.definition && (
+            <HarnessProxySection
+              harness={item.definition}
+              drafts={proxyDrafts}
+              errors={proxyErrors}
+              outcome={proxyOutcome}
+              busy={busy}
+              onEdit={editProxy}
+              onSave={saveProxy}
+              onReset={resetProxy}
+            />
           )}
         </div>
       ))}

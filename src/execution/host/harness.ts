@@ -434,7 +434,7 @@ export class HarnessService {
       catalog.harnesses.map(async (harness) => {
         const item = await inspectHarness(harness, this.directory, this.command()),
           maintenance = this.maintenance.get(harness.id)
-        return { ...item, ...(maintenance ? { maintenance } : {}) }
+        return { ...item, definition: harness, ...(maintenance ? { maintenance } : {}) }
       }),
     )
   }

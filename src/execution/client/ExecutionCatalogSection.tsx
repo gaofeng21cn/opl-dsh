@@ -1,5 +1,4 @@
 import { useExecutionCatalog } from './use-execution-catalog.ts'
-import { HarnessProxySection } from './HarnessProxySection.tsx'
 import { Button, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { displayModelSource, selectableModels, modelRefKey } from '../contracts/catalog.ts'
 import css from '../../shared/client/SettingsSection.module.css'
@@ -17,20 +16,13 @@ export function ExecutionCatalogSection({ call }: { call: Call }) {
     setEditing,
     update,
     add,
-    proxyDrafts,
-    proxyErrors,
-    proxyOutcome,
-    editProxy,
-    saveProxy,
-    resetProxy,
   } = useExecutionCatalog(call)
   return (
     <div className={css.section} data-opl-panel="catalog" aria-busy={busy || (!catalog && !notice)}>
       <h2 className={css.title}>执行组合</h2>
       <p className={css.intro}>
         保存模型、渠道、Harness
-        与权限的搭配。已启用的组合显示在官方会话输入框中，未就绪项显示原因；委派任务和交付由后台保存。模型在“模型”页管理，账号与凭据在“OPL
-        Gateway”中管理。
+        与权限的搭配。已启用的组合显示在官方会话输入框中，未就绪项显示原因；委派任务和交付由后台保存。模型在“模型供应商”页管理，账号与凭据在“网关账户”中管理。
       </p>
       {!catalog && !notice && (
         <p className={css.muted} role="status">
@@ -179,18 +171,6 @@ export function ExecutionCatalogSection({ call }: { call: Call }) {
           </details>
         )
       })}
-      {catalog && (
-        <HarnessProxySection
-          harnesses={catalog.harnesses}
-          drafts={proxyDrafts}
-          errors={proxyErrors}
-          outcome={proxyOutcome}
-          busy={busy}
-          onEdit={editProxy}
-          onSave={saveProxy}
-          onReset={resetProxy}
-        />
-      )}
     </div>
   )
 }

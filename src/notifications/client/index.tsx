@@ -1,4 +1,3 @@
-import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
 /** Background task notices through the official Client events and Web Notifications. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
@@ -142,13 +141,12 @@ export function apply(ctx: Context): void {
     observed.clear()
     controller.dispose()
   })
-  ctx.slots.inject('settings.section', () =>
+  ctx.slots.inject('settings.general.item', () =>
     ctx.slots.register(
       {
-        name: 'settings.section',
+        name: 'settings.general.item',
         id: 'opl-notifications',
-        order: SETTINGS_ORDER['opl-notifications'],
-        label: () => ctx.locale.bind(ns)('nav'),
+        order: 50,
         locale: ns,
         inject: () => ({ controller }),
       },

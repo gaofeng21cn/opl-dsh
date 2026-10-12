@@ -9,9 +9,7 @@ export const SETTINGS_ORDER = {
   'agent-presets': 60,
   'opl-codex': 70,
   'opl-auto-review': 80,
-  'opl-context-budget': 90,
-  'opl-notifications': 100,
-  plugins: 110,
+  plugins: 90,
 } as const
 
 export const SETTINGS_NAVIGATION_NS = 'settings.oplNavigation'
@@ -25,8 +23,6 @@ export const settingsNavigationZh = {
   'agent-presets': 'Agent 预设',
   'opl-codex': '协作与自动化',
   'opl-auto-review': '工具审批',
-  'opl-context-budget': '上下文预算',
-  'opl-notifications': '系统通知',
   plugins: '插件管理',
 } satisfies Record<keyof typeof SETTINGS_ORDER, string>
 export const settingsNavigationEn: Record<keyof typeof SETTINGS_ORDER, string> = {
@@ -39,8 +35,6 @@ export const settingsNavigationEn: Record<keyof typeof SETTINGS_ORDER, string> =
   'agent-presets': 'Agent presets',
   'opl-codex': 'Collaboration',
   'opl-auto-review': 'Tool approval',
-  'opl-context-budget': 'Context budget',
-  'opl-notifications': 'Notifications',
   plugins: 'Plugins',
 }
 

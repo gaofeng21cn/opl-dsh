@@ -1,7 +1,7 @@
 /**
- * Per-Harness network proxy in 设置 → 运行配置.
+ * Per-Harness network proxy in 设置 → 执行引擎.
  *
- * These tests drive the real `ExecutionCatalogSection` — the settings surface the user
+ * These tests drive the real `HarnessSettings` — the settings surface the user
  * actually opens — through the same minimal DOM as the sibling client specs, and only
  * through public behaviour: choosing a mode, typing an address, pressing 保存代理,
  * and the OPL RPC calls that result. Nothing asserts on hook internals, and no
@@ -36,6 +36,7 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
 // `./dom.ts` installs the process DOM on import, before React DOM is loaded.
 const dom = createTestDom()
 const { act } = React
+const { HarnessSettings } = await import('../../src/execution/client/HarnessSettings.tsx')
 const { ExecutionCatalogSection } = await import(
   '../../src/execution/client/ExecutionCatalogSection.tsx'
 )
@@ -226,6 +227,16 @@ function fixture(start: ReturnType<typeof catalog>, save?: (next: any) => unknow
   let stored = JSON.parse(JSON.stringify(start))
   const call = (async (method: string, args?: unknown) => {
     calls.push({ method, args })
+    if (method === 'harness-installations')
+      return stored.harnesses.map((definition: Harness) => ({
+        id: definition.id,
+        name: definition.name,
+        installed: true,
+        runnable: true,
+        instructions: '',
+        website: '',
+        definition: JSON.parse(JSON.stringify(definition)),
+      }))
     if (method === 'catalog') return JSON.parse(JSON.stringify(stored))
     if (method === 'combinations')
       return stored.combinations.map((item: { id: string }) => ({ id: item.id, available: true }))
@@ -258,8 +269,8 @@ const mounted: Array<() => Promise<void>> = []
 afterEach(async () => {
   while (mounted.length) await mounted.pop()!()
 })
-/** Open 设置 → 运行配置 the way the desktop does and let the catalog load. */
-async function open(call: ExecutionCall) {
+/** Open 设置 → 执行引擎 the way the desktop does and let the catalog load. */
+async function open(call: ExecutionCall, component = HarnessSettings) {
   const container = dom.container()
   const root = createRoot(container as unknown as Element)
   mounted.push(() =>
@@ -268,12 +279,23 @@ async function open(call: ExecutionCall) {
     }),
   )
   await act(async () => {
-    root.render(React.createElement(ExecutionCatalogSection as never, { call }))
+    root.render(React.createElement(component as never, { call }))
   })
   return container
 }
 
 describe('每个外部 Harness 独立的代理设置', () => {
+  it('代理配置归执行引擎，组合页面不再重复提供且检测不读取模型目录', async () => {
+    const { call, calls } = fixture(catalog())
+    const view = await open(call)
+    expect(row(view, 'codex')).toBeTruthy()
+    expect(calls.some(({ method }) => method === 'catalog' || method === 'combinations')).toBe(
+      false,
+    )
+    const combinations = await open(call, ExecutionCatalogSection)
+    expect(walk(combinations).some((node) => node.getAttribute?.('data-opl-proxy-row'))).toBe(false)
+  })
+
   it('为每个外部 Harness 提供三种方式，内置 DSH 不可设置并说明原因', async () => {
     const { call } = fixture(catalog())
     const view = await open(call)
@@ -284,7 +306,7 @@ describe('每个外部 Harness 独立的代理设置', () => {
         radios.map((radio) => radio.value),
         `${id} 未提供三种代理方式`,
       ).toEqual(['inherit', 'direct', 'custom'])
-      expect(text(row(view, id))).toContain(
+      expect(text(control(view, 'data-opl-harness-row', id))).toContain(
         id === 'codex'
           ? 'Codex CLI'
           : id === 'claude'

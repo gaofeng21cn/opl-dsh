@@ -813,6 +813,22 @@ let _one_person_lab_dsh_opl_oplExecution_harness_installations_result$schema$val
 const _one_person_lab_dsh_opl_oplExecution_harness_installations_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_harness_installations_result$schema$value ??= z.array(z.object({
   'id': z.string(),
   'name': z.string(),
+  'definition': z.object({
+  'id': z.string(),
+  'name': z.string(),
+  'kind': z.union([z.literal("dsh"), z.literal("grok-build"), z.literal("acp")]),
+  'command': z.string().optional(),
+  'prefix': z.array(z.string()).optional(),
+  'adapter': z.string().optional(),
+  'proxy': z.union([z.object({
+  'mode': z.literal("inherit"),
+}), z.object({
+  'mode': z.literal("direct"),
+}), z.object({
+  'mode': z.literal("custom"),
+  'url': z.string(),
+})]).optional(),
+}).optional(),
   'installed': z.boolean(),
   'version': z.string().optional(),
   'path': z.string().optional(),
