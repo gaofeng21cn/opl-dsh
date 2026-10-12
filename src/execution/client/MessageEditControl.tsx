@@ -19,6 +19,7 @@ const copy = {
   failed: '无法读取可编辑消息，请重试',
   storage: '无法保存编辑状态，请重试',
   stop: '请先停止当前对话',
+  recover: '重试未确认的编辑',
 }
 const keyFor = (sessionId: string) => `opl-message-edit-v1:${sessionId}`
 function restored(sessionId: string): EditSelection | undefined {
@@ -146,7 +147,7 @@ export function MessageEditControl({
       document.removeEventListener('keydown', escape, true)
     }
   }, [open])
-  if (!selection && (!state?.supported || !state.choices.length)) return null
+  if (!selection && !state?.recovery && (!state?.supported || !state.choices.length)) return null
   return (
     <div className={css.root} ref={root}>
       <button
@@ -159,6 +160,24 @@ export function MessageEditControl({
       </button>
       {open && (
         <div className={css.panel}>
+          {state?.recovery && (
+            <button
+              type="button"
+              className={css.row}
+              disabled={locked || state.busy}
+              onClick={async () => {
+                try {
+                  await call('message-edit-send', state.recovery!)
+                  setOpen(false)
+                  setError('')
+                } catch {
+                  setError(copy.failed)
+                }
+              }}
+            >
+              {copy.recover}
+            </button>
+          )}
           {selection ? (
             <button
               type="button"

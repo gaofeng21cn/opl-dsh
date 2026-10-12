@@ -67,6 +67,35 @@ export class MessageEditTransactions {
   pending(id: string): boolean {
     return this.store.get(id)?.phase === 'prepared'
   }
+  recovery(session: Session): MessageEditSend | undefined {
+    const intent = this.store.get(session.id)
+    const events = session.snapshotEvents()
+    if (!intent || !unresolvedMessageEdit(events)) return
+    const marker = events
+      .flatMap((event) =>
+        event.type === 'system/message' ? [messageEditMarker(event.data.message.source)] : [],
+      )
+      .find((value) => value?.requestId === intent.input.prompt.requestId)
+    return marker?.digest === digest(intent.input) ? structuredClone(intent.input) : undefined
+  }
+  private async admit(
+    agent: Agent,
+    intent: EditIntent,
+    prompt: () => Promise<SessionPromptValue>,
+  ): Promise<SessionPromptValue> {
+    await this.store.save({ ...intent, phase: 'prepared' })
+    try {
+      return await prompt()
+    } catch (error) {
+      const pending = [...agent.inbox.nextTurn, ...agent.inbox.nextStep].find(
+        (message) =>
+          'rpcId' in message.source && message.source.rpcId === intent.input.prompt.requestId,
+      )
+      if (pending) agent.inbox.remove(pending.id)
+      await this.store.save({ ...intent, phase: 'cancelled' })
+      throw error
+    }
+  }
   async recoverUnadmitted(agent: Agent): Promise<void> {
     const intent = this.store.get(agent.id)
     if (
@@ -98,7 +127,18 @@ export class MessageEditTransactions {
       if (prior) {
         if (prior.digest !== digest(input)) throw Error('发送身份已经用于另一次编辑')
         if (!unresolvedMessageEdit(events)) return { accepted: true }
-        throw Error('发送结果尚未确认，请重新读取对话')
+        const intent = this.store.get(agent.id)
+        if (
+          !intent ||
+          digest(intent.input) !== prior.digest ||
+          agent.status !== 'idle' ||
+          agent.inbox.nextTurn.length ||
+          agent.inbox.nextStep.length
+        )
+          throw Error('发送结果尚未确认，请重新读取对话')
+        // The official loop can reject prepareCall after our marker but before
+        // user/message. Retry its exact missing admission, never the replacement.
+        return await this.admit(agent, intent, prompt)
       }
       if (this.pending(agent.id) || unresolvedMessageEdit(events))
         throw Error('上次编辑发送尚未确认，请重新读取对话')
@@ -131,17 +171,7 @@ export class MessageEditTransactions {
         surface: [...agent.session.surface.nodes],
         phase: 'prepared',
       }
-      await this.store.save(intent)
-      try {
-        return await prompt()
-      } catch (error) {
-        const pending = [...agent.inbox.nextTurn, ...agent.inbox.nextStep].find(
-          (message) => 'rpcId' in message.source && message.source.rpcId === input.prompt.requestId,
-        )
-        if (pending) agent.inbox.remove(pending.id)
-        await this.store.save({ ...intent, phase: 'cancelled' })
-        throw error
-      }
+      return await this.admit(agent, intent, prompt)
     } finally {
       this.staging.delete(agent.id)
     }

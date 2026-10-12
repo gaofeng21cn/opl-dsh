@@ -1843,7 +1843,12 @@ export class HarnessService {
     const agent = this.ctx.agents.get(session.id)
     if (agent) await this.messageEdits.recoverUnadmitted(agent)
     const state = messageEditState(session, agent?.status === 'running', supported)
-    return { ...state, pending: state.pending || this.messageEdits.pending(input.sessionId) }
+    const recovery = this.messageEdits.recovery(session)
+    return {
+      ...state,
+      pending: state.pending || this.messageEdits.pending(input.sessionId),
+      ...(recovery ? { recovery } : {}),
+    }
   }
 
   /** Normal composer send with an exact old message target; retains the Session identity. */

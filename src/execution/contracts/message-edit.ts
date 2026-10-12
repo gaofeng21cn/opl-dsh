@@ -11,6 +11,8 @@ export interface MessageEditState {
   busy: boolean
   head: number
   pending: boolean
+  /** Exact durable input for an explicit retry; never submitted by a state read. */
+  recovery?: MessageEditSend
   choices: MessageEditChoice[]
 }
 export interface MessageEditSend {

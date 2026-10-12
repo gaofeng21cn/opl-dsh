@@ -178,6 +178,52 @@ it('a failed flush blocks model continuation and cannot repeat replacement', asy
   await expect(f.edits.send(f.agent, f.input, f.admit)).rejects.toThrow('确认')
   expect(f.session.seq).toBe(head)
 })
+it('explicitly retries missing official admission after prepare failure without another replacement', async () => {
+  const f = fixture()
+  await f.edits.send(f.agent, f.input, f.admit)
+  await f.commit()
+  // The official loop claims the inbox before prepareCall, which may fail or be
+  // cancelled before it appends the user message. No automatic replay is safe.
+  f.agent.inbox.nextTurn.splice(0)
+  const before = f.session.seq
+  expect(f.edits.recovery(f.session)).toEqual(f.input)
+  await f.edits.recoverUnadmitted(f.agent)
+  expect(f.admit).toHaveBeenCalledTimes(1)
+  expect(f.session.seq).toBe(before)
+  expect(unresolvedMessageEdit(f.session.snapshotEvents())).toBe(true)
+  await expect(
+    f.edits.send(
+      f.agent,
+      { ...f.input, prompt: { ...f.input.prompt, content: [{ type: 'text', text: 'changed' }] } },
+      f.admit,
+    ),
+  ).rejects.toThrow('身份')
+  // Simulate recovery from the persistent intent, with no in-memory old claim.
+  const recovered = new MessageEditTransactions(f.store)
+  await recovered.send(f.agent, f.input, f.admit)
+  recovered.claim(f.agent, f.agent.inbox.nextTurn, 3, 1)
+  f.session.append('turn/start', { turn: 3 })
+  f.session.append('step/start', { turn: 3, step: 1 })
+  await recovered.commit(f.agent, 3, 1, new AbortController().signal, async () => true)
+  f.drain()
+  expect(f.admit).toHaveBeenCalledTimes(2)
+  expect(unresolvedMessageEdit(f.session.snapshotEvents())).toBe(false)
+  expect(
+    f.session
+      .snapshotEvents()
+      .filter(
+        (event) => event.type === 'system/message' && messageEditMarker(event.data.message.source),
+      ),
+  ).toHaveLength(1)
+  expect(f.session.deriveMessages().flatMap((message) => message.content)).toEqual([
+    { type: 'text', text: 'instructions' },
+    { type: 'text', text: 'edited' },
+  ])
+  const acceptedHead = f.session.seq
+  await recovered.send(f.agent, f.input, f.admit)
+  expect(f.session.seq).toBe(acceptedHead)
+  expect(f.admit).toHaveBeenCalledTimes(2)
+})
 it('refuses a changed surface after asynchronous admission', async () => {
   const f = fixture()
   await f.edits.send(f.agent, f.input, f.admit)

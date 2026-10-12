@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   mkdtempSync,
+  realpathSync,
   mkdirSync,
   writeFileSync,
   rmSync,
@@ -18,7 +19,7 @@ import {
   importCodexCandidate,
 } from '../scripts/codex-candidate/lifecycle.mjs'
 function fixture(run) {
-  const root = mkdtempSync(join(tmpdir(), 'opl-codex-package-'))
+  const root = mkdtempSync(join(realpathSync(tmpdir()), 'opl-codex-package-'))
   const source = join(root, 'source')
   mkdirSync(source)
   for (const name of Object.keys(plan.files)) {

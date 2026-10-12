@@ -1029,6 +1029,28 @@ const _one_person_lab_dsh_opl_oplExecution_message_edit_state_result$schema = ()
   'busy': z.boolean(),
   'head': z.number(),
   'pending': z.boolean(),
+  'recovery': z.object({
+  'prompt': z.object({
+  'requestId': z.intersection(z.string(), z.unknown()).readonly(),
+  'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
+  'mode': z.union([z.literal("queue"), z.literal("steer")]).readonly(),
+  'content': z.array(z.union([z.object({
+  'type': z.literal("text").readonly(),
+  'text': z.string().readonly(),
+}), z.object({
+  'type': z.literal("image").readonly(),
+  'mediaType': z.union([z.literal("image/png"), z.literal("image/jpeg"), z.literal("image/webp"), z.literal("image/gif")]).readonly(),
+  'data': z.string().readonly(),
+  'name': z.string().readonly().optional(),
+}), z.object({
+  'type': z.literal("file").readonly(),
+  'receiptId': z.intersection(z.string(), z.unknown()).readonly(),
+})])).readonly(),
+  'clientTimeZone': z.string().readonly().optional(),
+}),
+  'targetSeq': z.number(),
+  'head': z.number(),
+}).optional(),
   'choices': z.array(z.object({
   'seq': z.number(),
   'text': z.string(),
