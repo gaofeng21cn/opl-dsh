@@ -18,6 +18,8 @@ GitHub 的临时 token 推送 tag 不会触发另一轮 push 工作流，因此�
 
 打包 job 执行源码门禁，生成 macOS DMG、Windows EXE、增强 ZIP 和联合清单；两个验收 job 解压同一 ZIP，用其实际 payload 验收官方桌面，不用各自重建的字节代替。发布 job 检查清洁源码、清单与两平台证据的源提交、套件摘要和官方版本，重新读取官方 feed，然后生成联合资格 JSON 和 `SHA256SUMS`。只有全部通过才创建并公开稳定 Release。
 
+冻结产品源码与资格运行器分别记录。打包、产品源码检查和公开校验仍使用候选 tag 的提交；资格运行器从触发本轮工作流的精确提交独立检出到忽略目录，显式读取同一交付 payload，不改产品 checkout 或安装包。证据的 `sourceCommit`、源树摘要和套件摘要对应产品，`qualificationRunner.sourceCommit` 对应执行验收的脚本，`sourceDirty` 要求构建来源与运行器均清洁。仅修正验收脚本时，主线手动触发可用修正后的运行器继续验收已冻结候选，保留同一个版本与 tag；这不能用于替换产品代码或绕过既有门禁。
+
 公开后逐一下载核验资产、确认 Latest，再更新 Homebrew Cask。主线若已移动，Cask 跟随停止并报告，不覆盖新提交；已经公开的 Release 保留。历史 Release/tag 默认保留，发布流程不自动删除；元数据及操作记录保存为 `release-audit` 工作流 artifact。失败后先读取对应 job、证据和 audit，再按本文恢复；已公开版本的资产不被重建字节覆盖。
 
 以下步骤同时是手动发布和故障恢复的事实检查合同。

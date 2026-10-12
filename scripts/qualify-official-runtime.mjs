@@ -46,6 +46,12 @@ if (
 const artifact = await verifyPayload(payload)
 const root = await assertIsolatedRoot(await mkdtemp(join(tmpdir(), 'opl-dsh-accept-')))
 const suite = join(root, 'suite')
+const runnerSourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
+  cwd: repo,
+  encoding: 'utf8',
+}).trim()
+const runnerSourceDirty =
+  execFileSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).trim().length > 0
 const evidence = {
   schemaVersion: 1,
   status: 'failed',
@@ -57,9 +63,8 @@ const evidence = {
   enhancementVersion: artifact.enhancementVersion,
   enhancementSha256: artifact.sha256,
   suiteSha256: artifact.suiteSha256,
-  sourceDirty:
-    execFileSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).trim().length >
-    0,
+  sourceDirty: artifact.sourceDirty !== false || runnerSourceDirty,
+  qualificationRunner: { sourceCommit: runnerSourceCommit, sourceDirty: runnerSourceDirty },
   protocolProbe: 'local-fixture',
   checks: {},
 }

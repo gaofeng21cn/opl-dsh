@@ -208,26 +208,42 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
   const panels = [
     { label: ['执行引擎', 'Harnesses'], marker: 'execution-settings' },
     { label: ['执行组合', 'Combinations'], marker: 'catalog' },
-    { label: ['协作与自动化'], marker: 'collaboration' },
+    { label: ['协作与自动化', 'Collaboration'], marker: 'collaboration' },
     { label: ['模型供应商', 'Model providers'], marker: 'gateway-models' },
   ]
   const screenshots = result.screenshots
   const expectedNavigation = [
-    '通用设置',
-    '网关账户',
-    '模型供应商',
-    'OFM 模型服务',
-    '执行引擎',
-    '执行组合',
-    'Agent 预设',
-    '协作与自动化',
-    '工具审批',
-    '上下文预算',
-    '系统通知',
-    '插件管理',
+    [
+      '通用设置',
+      '网关账户',
+      '模型供应商',
+      'OFM 模型服务',
+      '执行引擎',
+      '执行组合',
+      'Agent 预设',
+      '协作与自动化',
+      '工具审批',
+      '上下文预算',
+      '系统通知',
+      '插件管理',
+    ],
+    [
+      'General',
+      'Gateway account',
+      'Model providers',
+      'OFM services',
+      'Harnesses',
+      'Combinations',
+      'Agent presets',
+      'Collaboration',
+      'Tool approval',
+      'Context budget',
+      'Notifications',
+      'Plugins',
+    ],
   ]
   await waitFor(
-    `JSON.stringify(Array.from(${settingsNav}.querySelectorAll('button')).map(x=>x.textContent.trim())) === ${JSON.stringify(JSON.stringify(expectedNavigation))}`,
+    `(() => {const labels=Array.from(${settingsNav}.querySelectorAll('button')).map(x=>x.textContent.trim());return ${JSON.stringify(expectedNavigation)}.some(expected=>JSON.stringify(labels)===JSON.stringify(expected))})()`,
     '设置导航名称或顺序与统一目录不一致',
   )
   result.settingsNavigation = await pipe.evaluate(

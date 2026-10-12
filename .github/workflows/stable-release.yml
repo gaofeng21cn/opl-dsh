@@ -160,8 +160,13 @@ jobs:
           const status = execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim()
           if (status) throw Error('Qualification source is dirty: ' + status)
           NODE
+      - name: Check out the qualification runner from this workflow revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: dist/qualification-runner
       - name: Qualify unmodified official Desktop against the shipped bytes
-        run: node scripts/qualify-official-runtime.mjs --download --evidence dist/official-qualification.json
+        run: node dist/qualification-runner/scripts/qualify-official-runtime.mjs --download --payload "dist/OPL DSH 一键安装" --evidence dist/official-qualification.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
