@@ -73,7 +73,13 @@ function onlineResult(content, model, secrets) {
 
 export async function writeDailyReleaseNotes(
   evidence,
-  { apiKey, request = fetch, copilotToken, copilot = runCopilotReleaseNotes } = {},
+  {
+    apiKey,
+    request = fetch,
+    copilotToken,
+    copilot = runCopilotReleaseNotes,
+    diagnostics = false,
+  } = {},
 ) {
   const attempts = []
   const fallback = (reason) => ({
@@ -100,6 +106,7 @@ export async function writeDailyReleaseNotes(
         reason: /^copilot_[a-z_]+$/.test(error.code ?? '')
           ? error.code
           : 'copilot_response_or_call_failed',
+        ...(diagnostics && error.diagnostic ? { diagnostic: error.diagnostic } : {}),
       })
     }
   }

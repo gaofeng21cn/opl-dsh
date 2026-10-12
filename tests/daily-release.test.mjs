@@ -174,6 +174,64 @@ test('credential absence, provider failures and malformed or incomplete replies 
   }
 })
 
+test('Copilot auto succeeds before Gateway, and quota or invalid replies fall through in the required order', async () => {
+  const copy = JSON.stringify({
+    overview: '保留草稿。',
+    changes: ['已有草稿不会被覆盖。'],
+    limitations: [],
+  })
+  let gatewayCalls = 0
+  const request = async () => {
+    gatewayCalls++
+    return Response.json({ choices: [{ finish_reason: 'stop', message: { content: copy } }] })
+  }
+  const options = { apiKey: 'gateway-secret', copilotToken: 'copilot-secret', request }
+  const first = await writeDailyReleaseNotes(notesEvidence, {
+    ...options,
+    copilot: async () => copy,
+  })
+  assert.equal(first.model, 'copilot-auto')
+  assert.equal(gatewayCalls, 0)
+  assert.deepEqual(first.attempts, [{ provider: 'copilot-auto', status: 'passed' }])
+  for (const copilot of [
+    async () => {
+      throw Error('quota exhausted with copilot-secret')
+    },
+    async () => 'invalid JSON',
+  ]) {
+    const second = await writeDailyReleaseNotes(notesEvidence, { ...options, copilot })
+    assert.equal(second.model, 'gpt-6-luna')
+    assert.deepEqual(
+      second.attempts.map(({ provider, status }) => [provider, status]),
+      [
+        ['copilot-auto', 'failed'],
+        ['gpt-6-luna', 'passed'],
+      ],
+    )
+    assert.ok(!JSON.stringify(second).includes('copilot-secret'))
+  }
+  const third = await writeDailyReleaseNotes(notesEvidence, {
+    ...options,
+    copilot: async () => 'invalid',
+    request: async () => new Response('', { status: 429 }),
+  })
+  assert.equal(third.mode, 'mechanical')
+  assert.deepEqual(
+    third.attempts.map(({ provider, status }) => [provider, status]),
+    [
+      ['copilot-auto', 'failed'],
+      ['gpt-6-luna', 'failed'],
+    ],
+  )
+  assert.doesNotThrow(() =>
+    renderReleaseNotes(third.notes, {
+      version: '0.2.22',
+      officialVersion: '0.2.0-rc.2',
+      sourceCommit: 'a'.repeat(40),
+    }),
+  )
+})
+
 test(
   'real preparation pushes one frozen candidate and the next run resumes it',
   { skip: process.platform === 'win32' },

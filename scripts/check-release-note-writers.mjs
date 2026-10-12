@@ -26,6 +26,7 @@ const evidence = {
 const options = {
   apiKey: process.env.OPL_RELEASE_NOTES_CODEX_API_KEY,
   copilotToken: process.env.GITHUB_TOKEN,
+  diagnostics: true,
 }
 const output = 'dist/release-note-writer-check'
 await mkdir(output, { recursive: true })

@@ -50,6 +50,7 @@ export async function runCopilotReleaseNotes(prompt, token) {
               : 'copilot_transport_or_cli'
     const failure = new Error(code)
     failure.code = code
+    failure.diagnostic = diagnostic.replaceAll(token, '[redacted]').slice(0, 800)
     throw failure
   } finally {
     await rm(home, { recursive: true, force: true })
