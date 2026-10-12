@@ -429,6 +429,7 @@ export async function verifyDesktopClient(
         `(() => {const input=${dialog}.querySelector('input[type=password]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'synthetic-native-provider-replacement');input.dispatchEvent(new Event('input',{bubbles:true}))})()`,
       )
       await waitFor(clickLabel(['保存', 'Apply'], dialog), '原生更换密钥保存按钮未就绪')
+      await waitFor(`!${dialog}.querySelector('input[type=password]')`, '原生更换密钥保存尚未完成')
       await waitFor(clickLabel(editLabels, dialog), '更换密钥后提供商未显示')
       await credentialReadback('synthetic-native-provider-replacement')
       await waitFor(
