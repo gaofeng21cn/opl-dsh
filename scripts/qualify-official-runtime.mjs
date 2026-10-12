@@ -3,6 +3,7 @@ import { spawn, execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import { parse as parseYaml } from 'yaml'
 import { setTimeout as delay } from 'node:timers/promises'
 import { assertIsolatedRoot, verifyPayload, safeBinding, sha256 } from './qualification-support.mjs'
 import { DesktopPipe, verifyDesktopClient } from './qualification-client.mjs'
@@ -539,6 +540,11 @@ try {
     evidenceFile.replace(/\.json$/, '') + '-client',
     (progress) => {
       evidence.checks.client = progress
+    },
+    async (expected) => {
+      const stored = parseYaml(await readFile(join(root, '.credentials.yaml'), 'utf8'))
+      if (stored.refs?.HUAWEI_MAAS_API_KEY !== expected)
+        throw new Error('华为云原生表单与官方统一凭据存储回读不一致')
     },
   )
   evidence.checks.runtime = JSON.parse(

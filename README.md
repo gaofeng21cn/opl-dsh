@@ -68,7 +68,7 @@ Windows · x64，在 PowerShell 中运行：
 
 推理菜单只列具体档位，不提供“默认”：GPT-6 Astra/Sol/Luna 与 Claude Opus 5.5 为 `low/medium/high/xhigh/max`（GPT 不提供 `ultra`）；Grok 4.7 为 `low/medium/high/xhigh`；MiniMax M3.1 为 `low/medium/high/xhigh/max`，M3 为思考开关。选项按实际 Harness 核对，Grok 通过 ACP 设置并回读。所有 DeepSeek-V4.1-Flash 渠道未指定档位时使用 `max`；已明确选择的档位和每模型会话记忆保留。
 
-设置按账户与模型来源、执行与组合、协作与行为、插件管理排列。**网关账户** 管理 OPL Gateway 凭据和权限；**模型供应商** 复用 DSH 原生设置，OPL Gateway 按分组展开，华为云 MaaS 的 GLM-5.2 与 API Key 在此配置。**OFM 模型服务** 保留原版 Our Free Model 的全部设置与更新功能。**执行引擎** 管理 Harness 程序、版本与路径，提供官方安装更新入口。执行组合只引用模型、Harness 和权限，不再重复保存连接和协议；协作与自动化管理任务验收、外部接入和 Skill。外部任务不单列设置页，按官方会话在对应项目侧栏查看和处理。
+设置按账户与模型来源、执行与组合、协作与行为、插件管理排列。**网关账户** 管理 OPL Gateway 凭据和权限；**模型供应商** 复用 DSH 原生设置，OPL Gateway 按分组展开，华为云 MaaS 的 GLM-5.2 与 API Key 在此配置，macOS 与 Windows 统一使用官方凭据服务，旧 Windows Key 首次升级自动迁移。**OFM 模型服务** 保留原版 Our Free Model 的全部设置与更新功能。**执行引擎** 管理 Harness 程序、版本与路径，提供官方安装更新入口。执行组合只引用模型、Harness 和权限，不再重复保存连接和协议；协作与自动化管理任务验收、外部接入和 Skill。外部任务不单列设置页，按官方会话在对应项目侧栏查看和处理。
 
 对话输入栏直接使用官方 DSH 的会话 UI，并在模型选择器中显示“模型 · Harness”。所有已就绪组合都可在当前会话选择；官方 DSH 组合直接切换模型，外部 Harness 组合由 Host 在同一官方会话的模型请求阶段转发。切换到外部 Harness 时，已有会话的文本、工具调用和结果会作为上下文交接；历史推理内容不会交接，直接附件暂不支持。未配置官方凭据的 DeepSeek 模型不会作为可用选项；未登录 DeepSeek 官方账号时不请求远端模型目录，已保存的组合仍显示为不可用。默认 DeepSeek Flash 只走 DeepSeek 分组，不要求 OpenAI 协议权限；用户在模型页显式启用后，才会加入 OpenAI 协议渠道。同名模型的渠道分别保留；Claude Opus 5.5 可选 AWS/Kiro。账号页展示上游返回的分组倍率，组合始终绑定所选渠道。GPT 使用 OpenAI 协议分组。
 

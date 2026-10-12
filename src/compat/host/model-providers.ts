@@ -7,12 +7,11 @@ import {
   HUAWEI_MAAS_CREDENTIAL_REF,
   HUAWEI_MAAS_ENDPOINT,
 } from '../../credentials/contracts/huawei-maas.ts'
-import { huaweiMaaSKeyring } from '../../credentials/host/windows-keyring.ts'
 import {
   HuaweiZcodeModelAdapter,
   HUAWEI_ZCODE_MODEL,
 } from '../../execution/host/adapters/zcode-models.ts'
-import { installHuaweiCredentialRouting } from '../../credentials/host/provider.ts'
+import { migrateHuaweiCredential } from '../../credentials/host/provider.ts'
 import type { Volatile } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-settings'
 
@@ -33,10 +32,12 @@ const extraFields = {
     .default({})
     .volatile(),
   huaweiKeyringMigrated: z.boolean().default(false).volatile(),
+  huaweiCredentialsMigrated: z.boolean().default(false).volatile(),
 }
 type ExtraConfig = {
   huaweiProviders: Volatile<Record<string, { models: { id: string; name: string }[] }>>
   huaweiKeyringMigrated: Volatile<boolean>
+  huaweiCredentialsMigrated: Volatile<boolean>
 }
 
 /** The native editor only recognizes official adapter namespaces. Extend the
@@ -65,30 +66,31 @@ export async function apply(ctx: Context): Promise<void> {
   // references before settings reads them. No config or package bytes are rewritten.
   await entry.fiber.restart()
   const configuration = () => entry.fiber!.config as ExtraConfig
-  installHuaweiCredentialRouting(ctx)
   // Finish the one-time owner write before exposing an editor. Otherwise a
   // slower Windows probe can change the namespace revision under an open draft.
-  if (process.platform === 'win32' && !configuration().huaweiKeyringMigrated.get()) {
-    const info = await huaweiMaaSKeyring.describe()
+  if (!configuration().huaweiCredentialsMigrated.get()) {
+    const oldMigration = configuration().huaweiKeyringMigrated.get()
+    const hasProvider = !!configuration().huaweiProviders.get()[HUAWEI_ZCODE_MODEL.provider]
+    const imported = await migrateHuaweiCredential(ctx, !oldMigration || hasProvider)
     const view = ctx.settings.describe().find((item) => item.ns === ns)
-    if (info.available && view && !configuration().huaweiKeyringMigrated.get()) {
-      await ctx.settings.mutate(
-        ns,
-        [
-          ...(info.configured && !configuration().huaweiProviders.get()[HUAWEI_ZCODE_MODEL.provider]
-            ? [
-                {
-                  op: 'set' as const,
-                  path: ['huaweiProviders', HUAWEI_ZCODE_MODEL.provider],
-                  value: {},
-                },
-              ]
-            : []),
-          { op: 'set', path: ['huaweiKeyringMigrated'], value: true },
-        ],
-        view.revision,
-      )
-    }
+    if (!view) throw new Error('官方模型供应商设置不可用，凭据迁移状态未保存')
+    await ctx.settings.mutate(
+      ns,
+      [
+        ...(imported && !hasProvider
+          ? [
+              {
+                op: 'set' as const,
+                path: ['huaweiProviders', HUAWEI_ZCODE_MODEL.provider],
+                value: {},
+              },
+            ]
+          : []),
+        { op: 'set', path: ['huaweiKeyringMigrated'], value: true },
+        { op: 'set', path: ['huaweiCredentialsMigrated'], value: true },
+      ],
+      view.revision,
+    )
   }
   ctx.llm.registerConfigurableProviders([
     {

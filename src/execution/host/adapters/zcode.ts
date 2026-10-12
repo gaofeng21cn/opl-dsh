@@ -1,10 +1,10 @@
 /** Official ZCode CLI adapter for the Huawei MaaS GLM route.
  *
- * The adapter only prepares the launch. It deliberately does NOT read the Huawei
- * credential: `readHuaweiMaaSApiKey` is called by the bridge process, which holds the
- * value in memory only. Nothing here puts a secret into an environment variable, an
- * argument vector, a file or a log.
+ * Bind private bridge requests to the official Host credential owner. The bridge
+ * resolves this one ref on demand over its existing stdio channel; launch arguments,
+ * environment and ZCode configuration contain no model credential.
  */
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { mkdir } from 'node:fs/promises'
 import { join, parse as parsePath } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -12,6 +12,7 @@ import { executablePath } from '../harness-registry.ts'
 import type { HarnessSession } from '../../contracts/sessions.ts'
 import type { AdapterOptions, AdapterLaunch, HarnessAdapter } from './types.ts'
 import { systemEnvironment } from './environment.ts'
+import { HUAWEI_MAAS_CREDENTIAL_REF } from '../../../credentials/contracts/huawei-maas.ts'
 import {
   HUAWEI_MAAS_BASE_URL,
   HUAWEI_MAAS_MODEL,
@@ -19,6 +20,7 @@ import {
   HUAWEI_DEFAULT_REASONING_LEVEL,
   ZCODE_FULL_ACCESS_MODE,
   ZCODE_HARNESS,
+  HUAWEI_CREDENTIAL_REQUESTS,
 } from './zcode-protocol.ts'
 
 export {
@@ -41,7 +43,7 @@ export function zcodeModeForSandbox(sandbox: string): string {
 }
 
 async function prepareZcodeLaunch(
-  _ctx: Context,
+  ctx: Context,
   record: HarnessSession,
   options: AdapterOptions,
 ): Promise<AdapterLaunch> {
@@ -84,6 +86,17 @@ async function prepareZcodeLaunch(
     home,
     command: process.execPath,
     args: [bridgePath],
+    clientRequests: new Map<string, () => Promise<unknown>>([
+      [
+        HUAWEI_CREDENTIAL_REQUESTS.describe,
+        () => ctx.credentials.describe(credentialRef(HUAWEI_MAAS_CREDENTIAL_REF)),
+      ],
+      [
+        HUAWEI_CREDENTIAL_REQUESTS.resolve,
+        async () =>
+          (await ctx.credentials.resolve(credentialRef(HUAWEI_MAAS_CREDENTIAL_REF)))?.value,
+      ],
+    ]),
     env: {
       ...systemEnvironment(),
       ELECTRON_RUN_AS_NODE: '1',

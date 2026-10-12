@@ -129,6 +129,9 @@ export async function verifyModelPlugins({ root, origin, cookie, wire, harness }
       },
     ],
   })
+  const credential = await wire('credentials/describe', { ref: 'HUAWEI_MAAS_API_KEY' })
+  assert.equal(credential.configured, false, 'Deleted native Huawei credential returned')
+  assert.equal(credential.writable, true, 'Official credential service is not writable')
   const catalog = await harness('catalog')
   assert(
     !catalog.models.some((model) => model.ref.provider === 'huawei-maas'),

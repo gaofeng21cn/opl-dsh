@@ -1,3 +1,4 @@
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { Context } from '@deepseek-ai/cordis'
 import { updateVolatile } from '@deepseek-ai/cosmokit'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
@@ -16,16 +17,19 @@ const keyring = vi.hoisted(() => ({
   remove: vi.fn(),
 }))
 vi.mock('../../src/credentials/host/windows-keyring.ts', () => ({ huaweiMaaSKeyring: keyring }))
-beforeEach(() => keyring.describe.mockResolvedValue({ available: false, configured: false }))
+beforeEach(() => {
+  keyring.read.mockReset()
+  keyring.read.mockResolvedValue(undefined)
+})
 
 describe('native Huawei provider profile', () => {
   it('exposes the native editor only after the Windows migration write finishes', async () => {
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
     Object.defineProperty(process, 'platform', { ...platform, value: 'win32' })
-    const probe = Promise.withResolvers<{ available: boolean; configured: boolean }>()
+    const probe = Promise.withResolvers<string | undefined>()
     const writing = Promise.withResolvers<void>()
     const committed = Promise.withResolvers<void>()
-    keyring.describe.mockReturnValueOnce(probe.promise)
+    keyring.read.mockReturnValueOnce(probe.promise)
     const ctx = new Context()
     const home = await mkdtemp(join(tmpdir(), 'opl-native-migration-'))
     try {
@@ -39,7 +43,10 @@ describe('native Huawei provider profile', () => {
         describe: () => [{ ns: 'llm-pi-ai', revision: 0 }],
         mutate: async (ns: string, ops: unknown, revision: number) => {
           expect(ns).toBe('llm-pi-ai')
-          expect(ops).toEqual([{ op: 'set', path: ['huaweiKeyringMigrated'], value: true }])
+          expect(ops).toEqual([
+            { op: 'set', path: ['huaweiKeyringMigrated'], value: true },
+            { op: 'set', path: ['huaweiCredentialsMigrated'], value: true },
+          ])
           expect(revision).toBe(0)
           writing.resolve()
           await committed.promise
@@ -56,11 +63,11 @@ describe('native Huawei provider profile', () => {
         ],
       })
       const adaptation = ctx.plugin(providers)
-      await vi.waitFor(() => expect(keyring.describe).toHaveBeenCalled())
+      await vi.waitFor(() => expect(keyring.read).toHaveBeenCalled())
       expect(
         ctx.llm.listConfigurableProviders().some((item) => item.provider === 'huawei-maas'),
       ).toBe(false)
-      probe.resolve({ available: true, configured: false })
+      probe.resolve(undefined)
       await writing.promise
       expect(
         ctx.llm.listConfigurableProviders().some((item) => item.provider === 'huawei-maas'),
@@ -72,12 +79,59 @@ describe('native Huawei provider profile', () => {
       ).toBe(true)
     } finally {
       committed.resolve()
-      probe.resolve({ available: false, configured: false })
+      probe.resolve(undefined)
       await ctx.fiber.dispose()
       Object.defineProperty(process, 'platform', platform)
       await rm(home, { recursive: true, force: true })
     }
   })
+
+  it.each([
+    [{ huaweiKeyringMigrated: true, huaweiProviders: { 'huawei-maas': {} } }, true],
+    [{ huaweiKeyringMigrated: true }, false],
+    [{ huaweiCredentialsMigrated: true, huaweiProviders: { 'huawei-maas': {} } }, false],
+  ])(
+    'uses a separate credential migration marker and never revives deleted keys (%j)',
+    async (raw, shouldRead) => {
+      const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+      Object.defineProperty(process, 'platform', { ...platform, value: 'win32' })
+      const ctx = new Context()
+      const home = await mkdtemp(join(tmpdir(), 'opl-migration-marker-'))
+      try {
+        keyring.read.mockResolvedValue('synthetic-old-key')
+        await ctx.plugin(LlmRuntime)
+        await ctx.plugin(LocalCredentialProvider, {
+          path: join(home, '.credentials.yaml'),
+          watch: false,
+        })
+        ctx.provide('settings', {
+          configure: () => () => {},
+          describe: () => [{ ns: 'llm-pi-ai', revision: 0 }],
+          mutate: async () => {},
+        })
+        // The old fields arrive in the original raw config before our extension is installed.
+        const native = ctx.plugin(official, raw)
+        await native
+        ctx.provide('loader', {
+          entries: () => [
+            {
+              options: { id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai' },
+              fiber: native.ctx.fiber,
+            },
+          ],
+        })
+        await ctx.plugin(providers)
+        expect(keyring.read.mock.calls.length > 0).toBe(shouldRead)
+        expect((await ctx.credentials.resolve(credentialRef('HUAWEI_MAAS_API_KEY')))?.value).toBe(
+          shouldRead ? 'synthetic-old-key' : undefined,
+        )
+      } finally {
+        await ctx.fiber.dispose()
+        Object.defineProperty(process, 'platform', platform)
+        await rm(home, { recursive: true, force: true })
+      }
+    },
+  )
   it('extends the existing official owner, responds to native volatile changes and restores the schema on unload', async () => {
     const ctx = new Context()
     const home = await mkdtemp(join(tmpdir(), 'opl-native-provider-'))
@@ -86,7 +140,11 @@ describe('native Huawei provider profile', () => {
       path: join(home, '.credentials.yaml'),
       watch: false,
     })
-    ctx.provide('settings', { configure: () => () => {}, describe: () => [] })
+    ctx.provide('settings', {
+      configure: () => () => {},
+      describe: () => [{ ns: 'llm-pi-ai', revision: 0 }],
+      mutate: async () => {},
+    })
     const native = ctx.plugin(official, {})
     await native
     const entry = {

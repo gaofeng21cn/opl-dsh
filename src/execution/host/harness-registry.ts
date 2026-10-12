@@ -42,7 +42,7 @@ const info: Record<
     command: 'zcode',
     website: 'https://github.com/zai-org/ZCode/releases',
     instructions:
-      '使用官方 ZCode CLI 的 app-server 入口；华为云 Key 在设置中保存到 Windows 凭据管理器。',
+      '使用官方 ZCode CLI 的 app-server 入口；华为云 Key 由模型供应商设置与官方凭据服务统一管理。',
   },
 }
 /**

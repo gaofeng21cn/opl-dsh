@@ -39,16 +39,13 @@ export const HUAWEI_RELAY_UPSTREAM_ORIGIN = 'https://api.modelarts-maas.com'
 export const HUAWEI_RELAY_MAX_BODY_BYTES = 32 * 1024 * 1024
 export const HUAWEI_MAAS_PROVIDER_ID = 'huawei-maas'
 export const HUAWEI_MAAS_MODEL = 'glm-5.2'
-/**
- * Reference to the stored Huawei credential.
- *
- * This is the Windows Credential Manager target owned by the credentials host
- * (`HUAWEI_MAAS_KEYRING_TARGET`), re-exported here only so a settings surface can
- * record a reference without holding a value. There is deliberately no second name
- * for this credential and no `credentials.yml` / `.env` fallback: the OPL Gateway
- * account service cannot satisfy a Huawei key, or the reverse.
- */
-export { HUAWEI_MAAS_KEYRING_TARGET as HUAWEI_MAAS_API_KEY_REF } from '../../../credentials/contracts/windows-keyring.ts'
+/** Official credential ref shared by provider settings and the execution bridge. */
+export { HUAWEI_MAAS_CREDENTIAL_REF as HUAWEI_MAAS_API_KEY_REF } from '../../../credentials/contracts/huawei-maas.ts'
+/** OPL-owned bridge-only requests; no caller-selected credential ref is accepted. */
+export const HUAWEI_CREDENTIAL_REQUESTS = {
+  describe: 'opl/huawei-credential/describe',
+  resolve: 'opl/huawei-credential/resolve',
+} as const
 
 /**
  * Official launch vector. `apps/zcode-cli/packages/cli/src/arguments.ts` routes on

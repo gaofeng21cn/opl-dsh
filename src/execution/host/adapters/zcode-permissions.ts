@@ -1,6 +1,7 @@
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { HarnessConfigurationError } from '../acp.ts'
 import type { HarnessAdapter } from './types.ts'
-import { describeHuaweiMaaSApiKey } from '../../../credentials/host/windows-keyring.ts'
+import { HUAWEI_MAAS_CREDENTIAL_REF } from '../../../credentials/contracts/huawei-maas.ts'
 
 /** ZCode plan is a tool policy, not a verifiable DSH filesystem sandbox. */
 export function withZcodePermissions(adapter: HarnessAdapter): HarnessAdapter {
@@ -9,8 +10,7 @@ export function withZcodePermissions(adapter: HarnessAdapter): HarnessAdapter {
     async available(ctx, options) {
       const installation = await adapter.available(ctx, options)
       if (!installation.available) return installation
-      const credential = await describeHuaweiMaaSApiKey()
-      if (!credential.available) return { available: false, reason: 'Windows 凭据管理器不可用' }
+      const credential = await ctx.credentials.describe(credentialRef(HUAWEI_MAAS_CREDENTIAL_REF))
       if (!credential.configured)
         return {
           available: false,

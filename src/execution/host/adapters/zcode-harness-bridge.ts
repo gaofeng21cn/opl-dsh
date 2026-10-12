@@ -5,8 +5,8 @@
  * delimited JSON-RPC over stdio) onto the ACP surface the host already drives for the
  * other official harnesses.
  *
- * Credential handling: the Huawei key is read from the Windows Credential Manager into
- * this process's memory at startup and never leaves it in any persisted form. It is not
+ * Credential handling: the Huawei key is resolved on demand from the official Host
+ * credential service over private stdio and held only in memory. It is not
  * passed through the adapter's environment, argv, a file, a log or the ZCode protocol.
  * Instead the official CLI is pointed at a loopback relay that holds the key and
  * swaps it in on the wire. The provider config therefore only ever contains a fixed
@@ -20,11 +20,8 @@ import { dirname } from 'node:path'
 import { commandLaunch } from '../harness-registry.ts'
 import { EXTERNAL_TOOL_NAME_META } from '../external-binding.ts'
 import {
-  describeHuaweiMaaSApiKey,
-  readHuaweiMaaSApiKey,
-} from '../../../credentials/host/windows-keyring.ts'
-import {
   HUAWEI_RELAY_TICKET_HEADER,
+  HUAWEI_CREDENTIAL_REQUESTS,
   ZCODE_CLIENT_REQUESTS,
   ZCODE_EVENT_NOTIFICATION,
   ZCODE_FULL_ACCESS_MODE,
@@ -78,6 +75,10 @@ let sessionId = '',
 const streamed = new Set<string>()
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
 const asks = new Map<string, (optionId: string | undefined) => void>()
+const hostPending = new Map<
+  string,
+  { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
+>()
 let resolveTurn: ((value: unknown) => void) | undefined,
   rejectTurn: ((e: Error) => void) | undefined
 
@@ -97,11 +98,29 @@ function releaseEverything(reason = 'ZCode 会话已结束') {
 function failPending(reason: string) {
   for (const entry of pending.values()) entry.reject(Error(reason))
   pending.clear()
+  for (const entry of hostPending.values()) {
+    clearTimeout(entry.timer)
+    entry.reject(Error(reason))
+  }
+  hostPending.clear()
   for (const answer of asks.values()) answer(undefined)
   asks.clear()
   rejectTurn?.(Error(reason))
   resolveTurn = undefined
   rejectTurn = undefined
+}
+
+/** Only the OPL Host sees these requests; no ref or secret goes to the official CLI. */
+function hostCredentialRequest(method: string): Promise<unknown> {
+  const id = 'credential-' + ++seq
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      hostPending.delete(id)
+      reject(Error('Host 凭据读取超时'))
+    }, 30000)
+    hostPending.set(id, { resolve, reject, timer })
+    send({ id, method, params: {} })
+  })
 }
 
 /** Ask the host to authorize one ZCode `interaction/requestPermission`. */
@@ -184,7 +203,8 @@ let apiKey: string | undefined
  * argument vector, or logged.
  */
 async function readKey(): Promise<string | undefined> {
-  apiKey = await readHuaweiMaaSApiKey()
+  const value = await hostCredentialRequest(HUAWEI_CREDENTIAL_REQUESTS.resolve)
+  apiKey = typeof value === 'string' && value.length ? value : undefined
   return apiKey
 }
 
@@ -362,13 +382,13 @@ async function answerAgentRequest(m: any) {
 
 async function invoke(method: string, p: any) {
   if (method === 'initialize') {
-    // The credential is read here, once, into this process's memory. Nothing downstream
-    // ever reads it again, and it is not written anywhere.
     // Presence is checked without loading the value. An unconfigured or unreachable
-    // keyring is reported rather than thrown here, so the protocol surface stays usable
+    // credential is reported here, so the protocol surface stays usable
     // and the failure lands on the request that actually needs the credential, with the
     // relay refusing closed (503) instead of any silent downgrade.
-    const keyring = await describeHuaweiMaaSApiKey()
+    const credential = (await hostCredentialRequest(HUAWEI_CREDENTIAL_REQUESTS.describe)) as {
+      configured: boolean
+    }
     // `runtime/capabilities` only reports `independentPlanState`; it carries no protocol
     // identity, so the identity is verified from the real session snapshot instead.
     if (child || relay) throw Error('ZCode 桥接器已经初始化')
@@ -389,7 +409,7 @@ async function invoke(method: string, p: any) {
       agentInfo: {
         name: ZCODE_HARNESS,
         version: `${ZCODE_PROTOCOL_NAME} ${ZCODE_PROTOCOL_VERSION}`,
-        credentialConfigured: keyring.configured,
+        credentialConfigured: credential.configured,
         home: homedir(),
       },
     }
@@ -484,6 +504,14 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       return
     }
     if (!m.method) {
+      const credential = hostPending.get(m.id)
+      if (credential) {
+        clearTimeout(credential.timer)
+        hostPending.delete(m.id)
+        if (m.error) credential.reject(Error('Host 凭据读取失败'))
+        else credential.resolve(m.result)
+        return
+      }
       const answer = asks.get(m.id)
       if (answer) {
         asks.delete(m.id)

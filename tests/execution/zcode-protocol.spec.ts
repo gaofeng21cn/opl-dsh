@@ -177,6 +177,8 @@ class Bridge {
     number,
     { resolve: (v: any) => void; reject: (e: Error) => void }
   >()
+  credential: string | undefined = API_KEY
+  readonly credentialRequests: string[] = []
   readonly updates: any[] = []
   readonly permissionRequests: any[] = []
   readonly diagnostics: string[] = []
@@ -222,7 +224,20 @@ class Bridge {
           : p.resolve(m.result)
         return
       }
-      if (m.method === 'session/update') this.updates.push(m.params.update)
+      if (
+        m.method === 'opl/huawei-credential/describe' ||
+        m.method === 'opl/huawei-credential/resolve'
+      ) {
+        this.credentialRequests.push(m.method)
+        this.child.stdin.write(
+          JSON.stringify({
+            id: m.id,
+            result: m.method.endsWith('/describe')
+              ? { configured: !!this.credential, writable: true }
+              : this.credential,
+          }) + '\n',
+        )
+      } else if (m.method === 'session/update') this.updates.push(m.params.update)
       else if (m.method === 'session/request_permission') {
         this.permissionRequests.push(m.params)
         this.child.stdin.write(
@@ -827,6 +842,34 @@ describe('bridge against a fake official app-server', () => {
         memoryEnabled: false,
         modelContextBudgetStrategy: 'preflight-v1',
       })
+    })
+  })
+
+  test('resolves the current Host credential on demand and refuses after native deletion', async () => {
+    await withHarness(async (bridge, _cli, providerConfigFile) => {
+      const init = await bridge.request('initialize', {})
+      expect(init.agentInfo.credentialConfigured).toBe(true)
+      expect(bridge.credentialRequests).toEqual(['opl/huawei-credential/describe'])
+      bridge.credential = undefined
+      const personal = JSON.parse(
+        await readFile(join(providerConfigFile, '..', 'provider-personal.json'), 'utf8'),
+      )
+      const api = personal.config.providerConfigRules.providerRules[0].config.api
+      for (let i = 0; i < 2; i++) {
+        const response = await fetch(api.baseUrl + '/chat/completions', {
+          method: 'POST',
+          headers: api.headers,
+          body: '{}',
+        })
+        expect(response.status).toBe(503)
+      }
+      expect(bridge.credentialRequests).toEqual([
+        'opl/huawei-credential/describe',
+        'opl/huawei-credential/resolve',
+        'opl/huawei-credential/resolve',
+      ])
+      expect(JSON.stringify(bridge.traced())).not.toContain(API_KEY)
+      expect(bridge.diagnostics.join('\n')).not.toContain(API_KEY)
     })
   })
 

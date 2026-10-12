@@ -1049,6 +1049,7 @@ export class HarnessService {
         if (method !== HISTORY_BOUNDARY) return
         void this.recordNativeBoundary(record, params).catch(() => {})
       },
+      launch.clientRequests,
     )
     active.acp = acp
     try {

@@ -16,6 +16,8 @@ export interface AdapterLaunch {
   command: string
   args: string[]
   env: NodeJS.ProcessEnv
+  /** Private bridge requests explicitly bound by this adapter, never a generic credential API. */
+  clientRequests?: ReadonlyMap<string, () => Promise<unknown>>
   /**
    * Hand the argument vector to the OS verbatim. Required for `cmd.exe` wrappers:
    * Node's default Windows escaping turns the quotes around a script path into

@@ -70,7 +70,12 @@ export class DesktopPipe {
   }
 }
 
-export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () => {}) {
+export async function verifyDesktopClient(
+  pipe,
+  screenshotPrefix,
+  progress = () => {},
+  credentialReadback = async () => {},
+) {
   const result = {
     clientMounted: false,
     settingsSlots: [],
@@ -373,11 +378,10 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
         `Boolean(${dialog}.querySelector('input[type=password]'))`,
         '原生 API Key 表单未显示',
       )
-      if (process.platform !== 'win32')
-        await waitFor(
-          `${dialog}.querySelector('input[type=password]')?.disabled === true`,
-          '原生凭据状态未锁定不支持的系统存储',
-        )
+      await waitFor(
+        `${dialog}.querySelector('input[type=password]')?.disabled === false`,
+        '原生凭据服务未开放可写密钥输入框',
+      )
       result.huaweiProvider = await pipe.evaluate(
         session,
         `(() => {const input=${dialog}.querySelector('input[type=password]');return {nativeAdd:true,keyInputType:input.type,keyInputEmpty:input.value==='',keyInputDisabled:input.disabled,independentCard:document.querySelector('[data-opl-provider="huawei-maas"]')!==null,independentPage:document.querySelector('[data-opl-panel="huawei-maas"]')!==null}})()`,
@@ -387,20 +391,14 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
         !source.keyInputEmpty ||
         source.independentCard ||
         source.independentPage ||
-        (process.platform !== 'win32' && !source.keyInputDisabled)
+        source.keyInputDisabled
       )
         throw new Error('华为云未完整复用原生提供商表单或凭据边界错误')
-      // Only disposable hosted Windows users may write the fixed OS keyring target.
-      // macOS verifies the same native profile UI with its unsupported key field locked.
-      const keyMutation =
-        process.platform === 'win32' &&
-        process.env.GITHUB_ACTIONS === 'true' &&
-        process.env.RUNNER_ENVIRONMENT === 'github-hosted'
-      if (keyMutation)
-        await pipe.evaluate(
-          session,
-          `(() => {const input=${dialog}.querySelector('input[type=password]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'synthetic-native-provider-qualification');input.dispatchEvent(new Event('input',{bubbles:true}))})()`,
-        )
+      // Every platform uses the qualification profile's own official credential store.
+      await pipe.evaluate(
+        session,
+        `(() => {const input=${dialog}.querySelector('input[type=password]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'synthetic-native-provider-qualification');input.dispatchEvent(new Event('input',{bubbles:true}))})()`,
+      )
       const providerScreenshot = await captureScreenshot('huawei-provider-add')
       if (providerScreenshot) screenshots.push(providerScreenshot)
       else result.screenshotFailures.push('huawei-provider-add')
@@ -413,6 +411,7 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
         process.platform === 'win32' ? 520 : 80,
       )
       source.nativeAdded = true
+      await credentialReadback('synthetic-native-provider-qualification')
       await waitFor(
         `Boolean(${dialog}.querySelector('input[type=password]'))`,
         '华为云原生编辑器未显示',
@@ -421,10 +420,21 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
         session,
         `${dialog}.querySelector('input[type=password]').value===''`,
       )
-      source.keyMutation = keyMutation ? 'native-ui-save-delete' : 'not-attempted'
+      source.keyMutation = 'native-ui-save-replace-delete'
       const editScreenshot = await captureScreenshot('huawei-provider-edit')
       if (editScreenshot) screenshots.push(editScreenshot)
       else result.screenshotFailures.push('huawei-provider-edit')
+      await pipe.evaluate(
+        session,
+        `(() => {const input=${dialog}.querySelector('input[type=password]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'synthetic-native-provider-replacement');input.dispatchEvent(new Event('input',{bubbles:true}))})()`,
+      )
+      await waitFor(clickLabel(['保存', 'Apply'], dialog), '原生更换密钥保存按钮未就绪')
+      await waitFor(clickLabel(editLabels, dialog), '更换密钥后提供商未显示')
+      await credentialReadback('synthetic-native-provider-replacement')
+      await waitFor(
+        `${dialog}.querySelector('input[type=password]')?.value === ''`,
+        '更换密钥后密码框泄露已保存值',
+      )
       await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
       await waitFor(
         clickLabel(['删除 华为云 MaaS (huawei-maas)', 'Delete 华为云 MaaS (huawei-maas)'], dialog),
@@ -444,6 +454,8 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
         process.platform === 'win32' ? 520 : 80,
       )
       source.nativeRemoved = true
+      await credentialReadback(undefined)
+      source.credentialReadback = 'saved-replaced-deleted'
       await waitFor(
         clickLabel(['添加模型提供商', 'Add model provider'], dialog),
         '删除后的原生添加入口未恢复',

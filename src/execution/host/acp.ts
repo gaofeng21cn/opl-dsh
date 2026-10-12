@@ -71,6 +71,7 @@ export class AcpProcess {
     verbatimArguments = false,
     /** 扩展通知：官方 ACP 只定义 `session/update`，其余通知必须由使用方自行取用。 */
     private readonly notification?: (method: string, params: unknown) => void,
+    private readonly clientRequests?: ReadonlyMap<string, () => Promise<unknown>>,
   ) {
     this.child = spawn(command, args, {
       cwd,
@@ -105,7 +106,9 @@ export class AcpProcess {
       else if (typeof m.id === 'string' || typeof m.id === 'number') {
         // 带 id 的是发往本方的请求，必须照常回应；扩展通知永远不会走到这里。
         if (m.method === 'session/request_permission') this.permission(m.id, m.params)
-        else
+        else if (this.clientRequests?.has(m.method)) {
+          void this.handleClientRequest(m.id, this.clientRequests.get(m.method)!)
+        } else
           this.send({
             id: m.id,
             error: { code: -32601, message: 'Unsupported ACP client request' },
@@ -122,6 +125,15 @@ export class AcpProcess {
     }
     this.pending.clear()
     this.onExit()
+  }
+  private async handleClientRequest(id: string | number, handler: () => Promise<unknown>) {
+    let response: object
+    try {
+      response = { id, result: await handler() }
+    } catch {
+      response = { id, error: { code: -32603, message: 'Bridge request failed' } }
+    }
+    if (!this.closed) this.send(response)
   }
   private send(value: object) {
     if (this.closed) throw new Error('Harness ACP 通道已关闭')
