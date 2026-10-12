@@ -1,6 +1,5 @@
 import { GatewayModelsService } from '../gateway/host/model-service.ts'
 import { SetupService } from '../setup/host/index.ts'
-import { HuaweiMaaSService } from '../credentials/host/huawei-maas-service.ts'
 import { CoordinationService } from '../collaboration/host/settings-service.ts'
 import TaskFeedbackService from '../collaboration/host/feedback/index.ts'
 import ContextBudgetService from '../context-budget/host/index.ts'
@@ -9,6 +8,7 @@ import AutoReviewService from '../auto-review/host/index.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import * as gateway from '../gateway/host/index.ts'
 import * as control from './execution.ts'
+import * as nativeModelProviders from '../compat/host/model-providers.ts'
 import * as gitBash from '../shell/host/git-bash.ts'
 import { Config } from './config.ts'
 export { Config } from './config.ts'
@@ -23,9 +23,9 @@ export function apply(ctx: Context, config: Config): void {
   if (process.platform === 'win32') ctx.plugin(gitBash, {})
   ctx.plugin(gateway, structuredClone(config.gateway.get()) as gateway.OplGatewayConfig)
   ctx.plugin(control, {})
+  ctx.plugin(nativeModelProviders)
   ctx.plugin(GatewayModelsService)
   ctx.plugin(SetupService)
-  ctx.plugin(HuaweiMaaSService)
   ctx.plugin(CoordinationService)
   ctx.plugin(ContextBudgetService)
   ctx.plugin(AutoReviewService, config.toolAutoReview.get())

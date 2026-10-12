@@ -7,16 +7,22 @@ export const HUAWEI_ZCODE_COMBINATION = 'zcode/glm-5.2'
 
 /** Expose the model through the official picker; the ZCode combination owns execution. */
 export class HuaweiZcodeModelAdapter extends LlmAdapter {
+  constructor(
+    private readonly models = () =>
+      [{ id: 'glm-5.2', name: 'GLM-5.2' }] as readonly { id: string; name: string }[] | undefined,
+  ) {
+    super()
+  }
   override providerInfo(provider: string) {
     return { id: provider, name: '华为云 MaaS' }
   }
   override async listModels(provider: string) {
-    return [{ provider, id: HUAWEI_ZCODE_MODEL.model, name: 'GLM-5.2' }]
+    return (this.models() ?? []).map((model) => ({ provider, ...model }))
   }
   override async resolveModel(provider: string, model: string) {
-    if (model !== HUAWEI_ZCODE_MODEL.model)
+    if (!(this.models() ?? []).some((item) => item.id === model))
       throw new LlmError('华为云 ZCode 组合不支持该模型', 'UNKNOWN_MODEL')
-    return { provider, id: model, name: 'GLM-5.2' }
+    return { provider, ...this.models()!.find((item) => item.id === model)! }
   }
   override async prepareCall(provider: string, model: string) {
     return {

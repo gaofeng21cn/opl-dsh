@@ -3,7 +3,7 @@ import type {
   RemoteResult,
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, ContextBudgetRequest, ContextBudgetSnapshot, CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, HuaweiMaaSKeyResult, HuaweiMaaSStatus, LoginChoice, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
+import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, ContextBudgetRequest, ContextBudgetSnapshot, CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$6f706c4175746f526576696577 {
@@ -64,11 +64,6 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     discover: (request: { group: string; }) => Promise<RemoteResult<ModelDraft[]>>
     edit: (request: GatewayModelEdit) => Promise<RemoteResult<GatewayModelSettings>>
     read: () => Promise<RemoteResult<GatewayModelSettings>>
-  }
-  interface TypertRemoteNamespace$6f706c4875617765694d616173 {
-    clearKey: () => Promise<RemoteResult<HuaweiMaaSKeyResult>>
-    saveKey: (key: string) => Promise<RemoteResult<HuaweiMaaSKeyResult>>
-    status: () => Promise<RemoteResult<HuaweiMaaSStatus>>
   }
   interface TypertRemoteNamespace$6f706c5365747570 {
     finish: (choice: Exclude<LoginChoice, 'undecided'>) => Promise<RemoteResult<null>>
@@ -138,9 +133,6 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplGatewayModels/discover': (request: { group: string; }) => Promise<RemoteResult<ModelDraft[]>>
     'oplGatewayModels/edit': (request: GatewayModelEdit) => Promise<RemoteResult<GatewayModelSettings>>
     'oplGatewayModels/read': () => Promise<RemoteResult<GatewayModelSettings>>
-    'oplHuaweiMaas/clearKey': () => Promise<RemoteResult<HuaweiMaaSKeyResult>>
-    'oplHuaweiMaas/saveKey': (key: string) => Promise<RemoteResult<HuaweiMaaSKeyResult>>
-    'oplHuaweiMaas/status': () => Promise<RemoteResult<HuaweiMaaSStatus>>
     'oplSetup/finish': (choice: Exclude<LoginChoice, 'undecided'>) => Promise<RemoteResult<null>>
     'oplSetup/official-cancel': () => Promise<RemoteResult<null>>
     'oplSetup/official-key': (key: string) => Promise<RemoteResult<null>>
@@ -165,7 +157,6 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution': TypertRemoteNamespace$6f706c457865637574696f6e
     'oplGatewayAccount': TypertRemoteNamespace$6f706c476174657761794163636f756e74
     'oplGatewayModels': TypertRemoteNamespace$6f706c476174657761794d6f64656c73
-    'oplHuaweiMaas': TypertRemoteNamespace$6f706c4875617765694d616173
     'oplSetup': TypertRemoteNamespace$6f706c5365747570
     'taskFeedback': TypertRemoteNamespace$7461736b466565646261636b
   }

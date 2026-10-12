@@ -12,7 +12,10 @@ export function withZcodePermissions(adapter: HarnessAdapter): HarnessAdapter {
       const credential = await describeHuaweiMaaSApiKey()
       if (!credential.available) return { available: false, reason: 'Windows 凭据管理器不可用' }
       if (!credential.configured)
-        return { available: false, reason: '请在设置 → 模型供应商 → 华为云 MaaS 配置 API Key' }
+        return {
+          available: false,
+          reason: '请在设置 → 模型供应商中添加或编辑华为云 MaaS，保存 API Key',
+        }
       return installation
     },
     async prepare(ctx, record, options) {

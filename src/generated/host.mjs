@@ -2593,52 +2593,6 @@ const _one_person_lab_dsh_opl_oplGatewayModels_read_result$schema = () => (_one_
   'revision': z.number(),
 })),
 }))
-let _one_person_lab_dsh_opl_oplHuaweiMaas_clearKey_result$schema$value
-const _one_person_lab_dsh_opl_oplHuaweiMaas_clearKey_result$schema = () => (_one_person_lab_dsh_opl_oplHuaweiMaas_clearKey_result$schema$value ??= z.object({
-  'ok': z.boolean().readonly(),
-  'status': z.object({
-  'baseUrl': z.string().readonly(),
-  'model': z.string().readonly(),
-  'credential': z.object({
-  'configured': z.boolean().readonly(),
-  'source': z.literal("windows-credential-manager").readonly(),
-  'supported': z.boolean().readonly(),
-  'available': z.boolean().readonly(),
-  'failure': z.union([z.literal("unsupported-platform"), z.literal("unavailable-target"), z.literal("empty-value"), z.literal("invalid-value"), z.literal("value-too-large"), z.literal("helper-unavailable"), z.literal("helper-failed"), z.literal("unexpected-response")]).readonly().optional(),
-}).readonly(),
-}).readonly(),
-  'failure': z.union([z.literal("unsupported-platform"), z.literal("unavailable-target"), z.literal("empty-value"), z.literal("invalid-value"), z.literal("value-too-large"), z.literal("helper-unavailable"), z.literal("helper-failed"), z.literal("unexpected-response")]).readonly().optional(),
-}))
-let _one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_parameter_0$schema$value
-const _one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_parameter_0$schema$value ??= z.string())
-let _one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_result$schema$value
-const _one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_result$schema = () => (_one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_result$schema$value ??= z.object({
-  'ok': z.boolean().readonly(),
-  'status': z.object({
-  'baseUrl': z.string().readonly(),
-  'model': z.string().readonly(),
-  'credential': z.object({
-  'configured': z.boolean().readonly(),
-  'source': z.literal("windows-credential-manager").readonly(),
-  'supported': z.boolean().readonly(),
-  'available': z.boolean().readonly(),
-  'failure': z.union([z.literal("unsupported-platform"), z.literal("unavailable-target"), z.literal("empty-value"), z.literal("invalid-value"), z.literal("value-too-large"), z.literal("helper-unavailable"), z.literal("helper-failed"), z.literal("unexpected-response")]).readonly().optional(),
-}).readonly(),
-}).readonly(),
-  'failure': z.union([z.literal("unsupported-platform"), z.literal("unavailable-target"), z.literal("empty-value"), z.literal("invalid-value"), z.literal("value-too-large"), z.literal("helper-unavailable"), z.literal("helper-failed"), z.literal("unexpected-response")]).readonly().optional(),
-}))
-let _one_person_lab_dsh_opl_oplHuaweiMaas_status_result$schema$value
-const _one_person_lab_dsh_opl_oplHuaweiMaas_status_result$schema = () => (_one_person_lab_dsh_opl_oplHuaweiMaas_status_result$schema$value ??= z.object({
-  'baseUrl': z.string().readonly(),
-  'model': z.string().readonly(),
-  'credential': z.object({
-  'configured': z.boolean().readonly(),
-  'source': z.literal("windows-credential-manager").readonly(),
-  'supported': z.boolean().readonly(),
-  'available': z.boolean().readonly(),
-  'failure': z.union([z.literal("unsupported-platform"), z.literal("unavailable-target"), z.literal("empty-value"), z.literal("invalid-value"), z.literal("value-too-large"), z.literal("helper-unavailable"), z.literal("helper-failed"), z.literal("unexpected-response")]).readonly().optional(),
-}).readonly(),
-}))
 let _one_person_lab_dsh_opl_oplSetup_finish_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplSetup_finish_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplSetup_finish_parameter_0$schema$value ??= z.union([z.literal("gateway"), z.literal("official"), z.literal("later")]))
 let _one_person_lab_dsh_opl_oplSetup_finish_result$schema$value
@@ -4243,61 +4197,6 @@ export const TYPERT = {
         create: _one_person_lab_dsh_opl_oplGatewayModels_read_result$schema,
       },
       sourceLocation: {"file":"src/gateway/host/model-service.ts","line":20,"column":3},
-    },
-    {
-      id: '@one-person-lab/dsh-opl#oplHuaweiMaas/clearKey',
-      service: 'oplHuaweiMaas',
-      namespace: 'oplHuaweiMaas',
-      method: 'clearKey',
-      invocation: { kind: 'direct' },
-      parameters: [
-      ],
-      result: {
-        mode: 'strict',
-        typeSymbol: '@one-person-lab/dsh-opl/types#HuaweiMaaSKeyResult',
-        create: _one_person_lab_dsh_opl_oplHuaweiMaas_clearKey_result$schema,
-      },
-      sourceLocation: {"file":"src/credentials/host/huawei-maas-service.ts","line":58,"column":9},
-    },
-    {
-      id: '@one-person-lab/dsh-opl#oplHuaweiMaas/saveKey',
-      service: 'oplHuaweiMaas',
-      namespace: 'oplHuaweiMaas',
-      method: 'saveKey',
-      invocation: { kind: 'direct' },
-      parameters: [
-        {
-          name: 'key',
-          wire: 'key',
-          source: 'json',
-          codec: {
-            mode: 'strict',
-            typeSymbol: '@one-person-lab/dsh-opl#oplHuaweiMaas/saveKey:key',
-            create: _one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_parameter_0$schema,
-          },
-        },
-      ],
-      result: {
-        mode: 'strict',
-        typeSymbol: '@one-person-lab/dsh-opl/types#HuaweiMaaSKeyResult',
-        create: _one_person_lab_dsh_opl_oplHuaweiMaas_saveKey_result$schema,
-      },
-      sourceLocation: {"file":"src/credentials/host/huawei-maas-service.ts","line":40,"column":9},
-    },
-    {
-      id: '@one-person-lab/dsh-opl#oplHuaweiMaas/status',
-      service: 'oplHuaweiMaas',
-      namespace: 'oplHuaweiMaas',
-      method: 'status',
-      invocation: { kind: 'direct' },
-      parameters: [
-      ],
-      result: {
-        mode: 'strict',
-        typeSymbol: '@one-person-lab/dsh-opl/types#HuaweiMaaSStatus',
-        create: _one_person_lab_dsh_opl_oplHuaweiMaas_status_result$schema,
-      },
-      sourceLocation: {"file":"src/credentials/host/huawei-maas-service.ts","line":27,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#oplSetup/finish',

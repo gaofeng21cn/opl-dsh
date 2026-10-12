@@ -315,36 +315,107 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
       result.harnessProxySaved = true
     }
     if (panel.marker === 'gateway-models') {
+      const dialog = "document.querySelector('[role=dialog]')"
+      const editLabels = ['编辑 华为云 MaaS (huawei-maas)', 'Edit 华为云 MaaS (huawei-maas)']
       await waitFor(
-        `(() => {const node=document.querySelector('[data-opl-provider="huawei-maas"]');return Boolean(node && node.getClientRects().length && node.getAttribute('aria-busy')==='false' && node.innerText.includes('GLM-5.2'))})()`,
-        '华为云模型来源未挂载到供应商页',
+        clickLabel(['添加模型提供商', 'Add model provider'], dialog),
+        '原生添加模型提供商入口未就绪',
         undefined,
-        // The Windows credential helper includes compilation in its 60s budget.
-        // Await its bounded presence/unavailability result before judging the UI.
         process.platform === 'win32' ? 280 : 80,
+      )
+      await waitFor(
+        `Array.from(${dialog}.querySelectorAll('select')).some(node=>Array.from(node.options).some(option=>option.value==='huawei-maas'))`,
+        '华为云未进入原生提供商目录',
       )
       await pipe.evaluate(
         session,
-        `(() => {const node=document.querySelector('[data-opl-provider="huawei-maas"]');node.querySelector('summary').click();node.scrollIntoView({block:'center'})})()`,
+        `(() => {const select=Array.from(${dialog}.querySelectorAll('select')).find(node=>Array.from(node.options).some(option=>option.value==='huawei-maas'));select.value='huawei-maas';select.dispatchEvent(new Event('change',{bubbles:true}))})()`,
       )
+      await waitFor(
+        `Boolean(${dialog}.querySelector('input[type=password]'))`,
+        '原生 API Key 表单未显示',
+      )
+      if (process.platform !== 'win32')
+        await waitFor(
+          `${dialog}.querySelector('input[type=password]')?.disabled === true`,
+          '原生凭据状态未锁定不支持的系统存储',
+        )
       result.huaweiProvider = await pipe.evaluate(
         session,
-        `(() => {const node=document.querySelector('[data-opl-provider="huawei-maas"]');const input=node.querySelector('input');return {count:document.querySelectorAll('[data-opl-provider="huawei-maas"]').length,expanded:node.querySelector('details').open,keyInputType:input.type,keyInputEmpty:input.value==='',keyInputDisabled:input.disabled,hasEndpoint:node.innerText.includes('https://api.modelarts-maas.com/openai/v1'),independentPage:document.querySelector('[data-opl-panel="huawei-maas"]')!==null}})()`,
+        `(() => {const input=${dialog}.querySelector('input[type=password]');return {nativeAdd:true,keyInputType:input.type,keyInputEmpty:input.value==='',keyInputDisabled:input.disabled,independentCard:document.querySelector('[data-opl-provider="huawei-maas"]')!==null,independentPage:document.querySelector('[data-opl-panel="huawei-maas"]')!==null}})()`,
       )
       const source = result.huaweiProvider
       if (
-        source.count !== 1 ||
-        !source.expanded ||
-        source.keyInputType !== 'password' ||
         !source.keyInputEmpty ||
-        !source.hasEndpoint ||
+        source.independentCard ||
         source.independentPage ||
         (process.platform !== 'win32' && !source.keyInputDisabled)
       )
-        throw new Error('华为云供应商卡片的配置或凭据状态错误')
-      const providerScreenshot = await captureScreenshot('huawei-provider')
+        throw new Error('华为云未完整复用原生提供商表单或凭据边界错误')
+      // Only disposable hosted Windows users may write the fixed OS keyring target.
+      // macOS verifies the same native profile UI with its unsupported key field locked.
+      const keyMutation =
+        process.platform === 'win32' &&
+        process.env.GITHUB_ACTIONS === 'true' &&
+        process.env.RUNNER_ENVIRONMENT === 'github-hosted'
+      if (keyMutation)
+        await pipe.evaluate(
+          session,
+          `(() => {const input=${dialog}.querySelector('input[type=password]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'synthetic-native-provider-qualification');input.dispatchEvent(new Event('input',{bubbles:true}))})()`,
+        )
+      const providerScreenshot = await captureScreenshot('huawei-provider-add')
       if (providerScreenshot) screenshots.push(providerScreenshot)
-      else result.screenshotFailures.push('huawei-provider')
+      else result.screenshotFailures.push('huawei-provider-add')
+      await pipe.evaluate(session, clickLabel(['保存', 'Apply'], dialog))
+      await waitFor(
+        clickLabel(editLabels, dialog),
+        '华为云原生提供商未保存或未显示普通编辑入口',
+        undefined,
+        process.platform === 'win32' ? 520 : 80,
+      )
+      source.nativeAdded = true
+      await waitFor(
+        `Boolean(${dialog}.querySelector('input[type=password]'))`,
+        '华为云原生编辑器未显示',
+      )
+      source.nativeEdited = await pipe.evaluate(
+        session,
+        `${dialog}.querySelector('input[type=password]').value===''`,
+      )
+      source.keyMutation = keyMutation ? 'native-ui-save-delete' : 'not-attempted'
+      const editScreenshot = await captureScreenshot('huawei-provider-edit')
+      if (editScreenshot) screenshots.push(editScreenshot)
+      else result.screenshotFailures.push('huawei-provider-edit')
+      await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
+      await waitFor(
+        clickLabel(['删除 华为云 MaaS (huawei-maas)', 'Delete 华为云 MaaS (huawei-maas)'], dialog),
+        '华为云原生删除入口未显示',
+      )
+      await waitFor(
+        clickLabel(
+          ['删除 华为云 MaaS (huawei-maas)', 'Delete 华为云 MaaS (huawei-maas)'],
+          "Array.from(document.querySelectorAll('[role=dialog]')).find(node=>/删除 华为云 MaaS .*？|Delete 华为云 MaaS .*\\?/.test(node.textContent))",
+        ),
+        '原生删除确认未显示',
+      )
+      await waitFor(
+        `!Array.from(${dialog}.querySelectorAll('button')).some(node=>${JSON.stringify(editLabels)}.includes(node.getAttribute('aria-label')))`,
+        '原生删除后提供商仍存在',
+        undefined,
+        process.platform === 'win32' ? 520 : 80,
+      )
+      source.nativeRemoved = true
+      await waitFor(
+        clickLabel(['添加模型提供商', 'Add model provider'], dialog),
+        '删除后的原生添加入口未恢复',
+      )
+      source.nativeRestorable = await pipe.evaluate(
+        session,
+        `Array.from(${dialog}.querySelectorAll('select option')).some(node=>node.value==='huawei-maas')`,
+      )
+      if (!source.nativeEdited || !source.nativeRestorable)
+        throw new Error('华为云编辑或删除后的目录恢复未通过')
+      await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
     }
     const file = await captureScreenshot(panel.marker)
     if (file) screenshots.push(file)

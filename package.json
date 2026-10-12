@@ -1,6 +1,6 @@
 {
   "name": "@one-person-lab/dsh-opl",
-  "version": "0.2.23",
+  "version": "0.2.24",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -52,6 +52,7 @@
     "@deepseek-ai/dsh-llm": "0.2.1-alpha.2",
     "@deepseek-ai/dsh-llm-deepseek": "0.2.1-alpha.2",
     "@deepseek-ai/dsh-llm-deepseek-api-key": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.2.1-alpha.2",
     "@deepseek-ai/dsh-permission-presets": "0.2.1-alpha.2",
     "@deepseek-ai/dsh-sandbox": "0.2.1-alpha.2",
     "@deepseek-ai/dsh-sandbox-policy": "0.2.1-alpha.2",
@@ -61,6 +62,8 @@
     "@deepseek-ai/dsh-shell": "0.2.1-alpha.2",
     "@deepseek-ai/dsh-storage": "0.2.1-alpha.2",
     "@deepseek-ai/dsh-storage-domain": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-subagent": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-tool-todo": "0.2.1-alpha.2",
     "@deepseek-ai/dsh-tools": "0.2.1-alpha.2",
     "@deepseek-ai/dsh-typert-generator": "0.2.1-alpha.2",
     "@deepseek-ai/dsh-typert-protocol": "0.2.1-alpha.2",
@@ -79,9 +82,7 @@
     "typescript": "6.0.3",
     "vitest": "4.1.8",
     "yaml": "^2.9.1",
-    "zod": "^4.4.3",
-    "@deepseek-ai/dsh-subagent": "0.2.1-alpha.2",
-    "@deepseek-ai/dsh-tool-todo": "0.2.1-alpha.2"
+    "zod": "^4.4.3"
   },
   "engines": {
     "node": ">=24"

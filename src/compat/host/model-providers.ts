@@ -1,0 +1,116 @@
+/** Extend the official provider configuration, retaining its editor and adapter. */
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
+import z from '@deepseek-ai/schemastery'
+import * as official from '@deepseek-ai/dsh-llm-pi-ai'
+import {
+  HUAWEI_MAAS_CREDENTIAL_REF,
+  HUAWEI_MAAS_ENDPOINT,
+} from '../../credentials/contracts/huawei-maas.ts'
+import { huaweiMaaSKeyring } from '../../credentials/host/windows-keyring.ts'
+import {
+  HuaweiZcodeModelAdapter,
+  HUAWEI_ZCODE_MODEL,
+} from '../../execution/host/adapters/zcode-models.ts'
+import { installHuaweiCredentialRouting } from '../../credentials/host/provider.ts'
+import type { Volatile } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-settings'
+
+export const inject = ['loader', 'llm', 'settings', 'credentials']
+const huaweiProfile = z.object({
+  apiKeyEnv: z.const(HUAWEI_MAAS_CREDENTIAL_REF).default(HUAWEI_MAAS_CREDENTIAL_REF),
+  baseURL: z.const(HUAWEI_MAAS_ENDPOINT).default(HUAWEI_MAAS_ENDPOINT),
+  api: z.const('openai-completions').default('openai-completions'),
+  models: z
+    .array(z.object({ id: z.const('glm-5.2'), name: z.string().default('GLM-5.2') }))
+    .min(1)
+    .max(1)
+    .default([{ id: 'glm-5.2', name: 'GLM-5.2' }]),
+})
+const extraFields = {
+  huaweiProviders: z
+    .dict(huaweiProfile, z.const(HUAWEI_ZCODE_MODEL.provider))
+    .default({})
+    .volatile(),
+  huaweiKeyringMigrated: z.boolean().default(false).volatile(),
+}
+type ExtraConfig = {
+  huaweiProviders: Volatile<Record<string, { models: { id: string; name: string }[] }>>
+  huaweiKeyringMigrated: Volatile<boolean>
+}
+
+/** The native editor only recognizes official adapter namespaces. Extend the
+ * existing public Schema and fiber; never duplicate/replace its loader entry.
+ * Keep this compatibility seam removable when native providers support arbitrary families. */
+export async function apply(ctx: Context): Promise<void> {
+  const ns = 'llm-pi-ai'
+  const entry = [...ctx.loader.entries()].find(
+    (item) => item.options.id === ns && item.options.name === '@deepseek-ai/dsh-llm-pi-ai',
+  )
+  if (!entry?.fiber?.runtime?.Config) throw new Error('官方模型供应商配置实例不可用')
+  const schema = entry.fiber.runtime.Config as typeof official.Config
+  ctx.effect(() => {
+    const previous = new Map(Object.keys(extraFields).map((key) => [key, schema.dict?.[key]]))
+    for (const [key, field] of Object.entries(extraFields)) schema.set(key, field)
+    return () => {
+      for (const [key, field] of Object.entries(extraFields)) {
+        if (schema.dict?.[key] !== field) continue
+        const old = previous.get(key)
+        if (old) schema.set(key, old)
+        else delete schema.dict![key]
+      }
+    }
+  })
+  // Reparse the same raw config once, so the new fields have official volatile
+  // references before settings reads them. No config or package bytes are rewritten.
+  await entry.fiber.restart()
+  const configuration = () => entry.fiber!.config as ExtraConfig
+  installHuaweiCredentialRouting(ctx)
+  ctx.llm.registerConfigurableProviders([
+    {
+      provider: HUAWEI_ZCODE_MODEL.provider,
+      displayName: '华为云 MaaS',
+      settingsNs: ns,
+      settingsPath: ['huaweiProviders', HUAWEI_ZCODE_MODEL.provider],
+    },
+  ])
+  const adapter = new HuaweiZcodeModelAdapter(
+    () => configuration().huaweiProviders.get()[HUAWEI_ZCODE_MODEL.provider]?.models,
+  )
+  let registration: ReturnType<typeof ctx.llm.registerAdapter> | undefined
+  const refresh = () => {
+    const routes = configuration().huaweiProviders.get()[HUAWEI_ZCODE_MODEL.provider]
+      ? [HUAWEI_ZCODE_MODEL.provider]
+      : []
+    if (registration) registration.replace(routes)
+    else if (routes.length) registration = ctx.llm.registerAdapter(routes, adapter)
+  }
+  refresh()
+  ctx.on('loader/volatile-update', refresh, { global: true })
+  // Existing WinCred users keep their model after the UI changes. Once imported,
+  // removing the native profile stays removed; later startups never recreate it.
+  if (process.platform === 'win32' && !configuration().huaweiKeyringMigrated.get()) {
+    ctx.inject(['settings'], async (ready) => {
+      const info = await huaweiMaaSKeyring.describe()
+      if (!info.available) return
+      const view = ready.settings.describe().find((item) => item.ns === ns)
+      if (!view || configuration().huaweiKeyringMigrated.get()) return
+      await ready.settings.mutate(
+        ns,
+        [
+          ...(info.configured && !configuration().huaweiProviders.get()[HUAWEI_ZCODE_MODEL.provider]
+            ? [
+                {
+                  op: 'set' as const,
+                  path: ['huaweiProviders', HUAWEI_ZCODE_MODEL.provider],
+                  value: {},
+                },
+              ]
+            : []),
+          { op: 'set', path: ['huaweiKeyringMigrated'], value: true },
+        ],
+        view.revision,
+      )
+    })
+  }
+}

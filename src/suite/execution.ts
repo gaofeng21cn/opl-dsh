@@ -12,10 +12,6 @@ import { installSessionWaitProjection } from '../execution/host/session-wait.ts'
 import { createHarnessService } from '../execution/host/harness.ts'
 import { MiniMaxCodeModelAdapter } from '../execution/host/adapters/minimax-models.ts'
 import { MINIMAX_CODE_PROVIDER } from '../execution/host/adapters/minimax.ts'
-import {
-  HuaweiZcodeModelAdapter,
-  HUAWEI_ZCODE_MODEL,
-} from '../execution/host/adapters/zcode-models.ts'
 import { installCollaborationTools } from '../collaboration/host/tools.ts'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
@@ -81,7 +77,6 @@ export function apply(ctx: Context, _config: Record<string, never>): void {
   // point. Without this the two models exist in the execution catalog but the official
   // session controller cannot list or select them, so no message would ever route.
   ctx.llm.registerAdapter([MINIMAX_CODE_PROVIDER], new MiniMaxCodeModelAdapter())
-  ctx.llm.registerAdapter([HUAWEI_ZCODE_MODEL.provider], new HuaweiZcodeModelAdapter())
   new ExecutionService(ctx, harness)
   ctx.effect(() => () => harness.dispose())
   installCollaborationTools(ctx, harness)
