@@ -282,6 +282,9 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
         await openSettings()
         await selectPanel()
       },
+      // The native page waits for the Windows OS credential probe, whose
+      // first helper invocation has a 60-second budget on a fresh runner.
+      panel.marker === 'gateway-models' && process.platform === 'win32' ? 520 : 80,
     )
     const alerts = await pipe.evaluate(
       session,
