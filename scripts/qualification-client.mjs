@@ -138,8 +138,8 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
   async function captureFailureScreenshot() {
     await captureScreenshot('failure')
   }
-  async function waitFor(expression, description, recover) {
-    for (let attempt = 0; attempt < 80; attempt++) {
+  async function waitFor(expression, description, recover, maxAttempts = 80) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       // Original plugin onboarding can arrive after the shell/setup is ready.
       // Dismiss its real deferred button whenever it appears, rather than
       // assuming a single early check has acknowledged the asynchronous gate.
@@ -229,7 +229,7 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
     ],
     [
       'General',
-      'Gateway account',
+      'Gateway',
       'Model providers',
       'OFM services',
       'Harnesses',
@@ -318,6 +318,10 @@ export async function verifyDesktopClient(pipe, screenshotPrefix, progress = () 
       await waitFor(
         `(() => {const node=document.querySelector('[data-opl-provider="huawei-maas"]');return Boolean(node && node.getClientRects().length && node.getAttribute('aria-busy')==='false' && node.innerText.includes('GLM-5.2'))})()`,
         '华为云模型来源未挂载到供应商页',
+        undefined,
+        // The Windows credential helper includes compilation in its 60s budget.
+        // Await its bounded presence/unavailability result before judging the UI.
+        process.platform === 'win32' ? 280 : 80,
       )
       await pipe.evaluate(
         session,

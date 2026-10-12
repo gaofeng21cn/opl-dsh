@@ -31,7 +31,7 @@ export const settingsNavigationZh = {
 } satisfies Record<keyof typeof SETTINGS_ORDER, string>
 export const settingsNavigationEn: Record<keyof typeof SETTINGS_ORDER, string> = {
   general: 'General',
-  'opl-gateway': 'Gateway account',
+  'opl-gateway': 'Gateway',
   models: 'Model providers',
   'our-free-model': 'OFM services',
   'opl-harness-settings': 'Harnesses',
