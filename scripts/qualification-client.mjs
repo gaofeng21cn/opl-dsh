@@ -196,8 +196,7 @@ export async function verifyDesktopClient(
     '首次设置尚未关闭',
   )
   const settingsNav = "document.querySelector('[role=dialog] nav')"
-  async function openSettings() {
-    if (await pipe.evaluate(session, `Boolean(${settingsNav})`)) return
+  async function activateSettings() {
     await waitFor(
       clickLabel([
         '账户菜单',
@@ -213,7 +212,17 @@ export async function verifyDesktopClient(
     )
     if (!(await pipe.evaluate(session, `Boolean(${settingsNav})`)))
       await waitFor(clickLabel(['设置', 'Settings']), '设置菜单不可见')
-    await waitFor(`Boolean(${settingsNav})`, '官方设置容器未打开')
+  }
+  async function openSettings() {
+    if (await pipe.evaluate(session, `Boolean(${settingsNav})`)) return
+    await activateSettings()
+    const openedAt = Date.now()
+    await waitFor(`Boolean(${settingsNav})`, '官方设置容器未打开', async () => {
+      // The observed first-run closure can happen before the first navigation check.
+      if (result.settingsReopens || Date.now() - openedAt < 1000) return
+      result.settingsReopens++
+      await activateSettings()
+    })
   }
   await openSettings()
   const panels = [

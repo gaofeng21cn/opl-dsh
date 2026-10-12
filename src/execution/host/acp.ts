@@ -129,7 +129,7 @@ export class AcpProcess {
   private async handleClientRequest(id: string | number, handler: () => Promise<unknown>) {
     let response: object
     try {
-      response = { id, result: await handler() }
+      response = { id, result: (await handler()) ?? null }
     } catch {
       response = { id, error: { code: -32603, message: 'Bridge request failed' } }
     }

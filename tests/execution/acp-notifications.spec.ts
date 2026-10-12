@@ -93,7 +93,7 @@ it('仅响应适配器显式绑定的私有请求，失败不回显凭据诊断'
   const notifications: unknown[] = []
   const child = `
     const {createInterface} = require('node:readline')
-    for (const [id, method] of [[1,'opl/credential'],[2,'opl/failure'],[3,'credentials/arbitrary']])
+    for (const [id, method] of [[1,'opl/credential'],[2,'opl/failure'],[3,'credentials/arbitrary'],[4,'opl/empty']])
       process.stdout.write(JSON.stringify({jsonrpc:'2.0',id,method,params:{ref:'OTHER_KEY'}})+'\\n')
     createInterface({input:process.stdin}).on('line',line=>{
       process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'test/reply',params:JSON.parse(line)})+'\\n')
@@ -113,6 +113,7 @@ it('仅响应适配器显式绑定的私有请求，失败不回显凭据诊断'
     },
     new Map<string, () => Promise<unknown>>([
       ['opl/credential', async () => 'synthetic-bound-key'],
+      ['opl/empty', async () => undefined],
       [
         'opl/failure',
         async () => {
@@ -121,7 +122,7 @@ it('仅响应适配器显式绑定的私有请求，失败不回显凭据诊断'
       ],
     ]),
   )
-  await vi.waitFor(() => expect(notifications).toHaveLength(3))
+  await vi.waitFor(() => expect(notifications).toHaveLength(4))
   expect(notifications).toContainEqual({ jsonrpc: '2.0', id: 1, result: 'synthetic-bound-key' })
   expect(notifications).toContainEqual({
     jsonrpc: '2.0',
@@ -133,5 +134,6 @@ it('仅响应适配器显式绑定的私有请求，失败不回显凭据诊断'
     id: 3,
     error: { code: -32601, message: 'Unsupported ACP client request' },
   })
+  expect(notifications).toContainEqual({ jsonrpc: '2.0', id: 4, result: null })
   expect(JSON.stringify(notifications)).not.toContain('must-not-leak-key')
 })
