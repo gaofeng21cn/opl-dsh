@@ -19,7 +19,7 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -43,7 +43,7 @@ afterEach(async () => {
 })
 /** A scratch directory that is always removed again. */
 async function scratch(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'opl-official-auto-review-'))
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'opl-official-auto-review-')))
   roots.push(root)
   return root
 }
