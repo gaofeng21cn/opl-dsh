@@ -31,9 +31,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Install optional Copilot release-note writer
+      - name: Load shared release-note writer policy
         continue-on-error: true
-        run: npm install -g @github/copilot@1.0.95
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/prepare-shared-release-note-writer.mjs
       - name: Detect unpublished enhancement changes or resume a frozen tag
         id: candidate
         env:

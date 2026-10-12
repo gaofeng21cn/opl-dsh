@@ -12,7 +12,7 @@ OPL DSH 是官方桌面的打包增强层，采用与 OPL 智能体相同的每�
 
 检查后直接在同一工作流内打包、双平台验收、公开发布、资产回读和 Homebrew 跟随。未公开的候选已有 canonical tag 且产品源码无需改变时续作该版本，不分配新版本、不覆盖 tag 或公开资产。若验收确认必须修改产品代码，保留失败候选的 tag 与证据，为修正后的产品递增版本并建立新 tag；不把新产品字节写入旧候选身份。版本准备与人工 tag 发布共享同一串行组；主线竞争、认证、源码或资格检查失败时明确报告断点，保留上一个可用 Release。手动触发 `main` 可立即执行一次同样的检查；选择 canonical tag 可恢复该候选。
 
-自动 Release Note 按四个入口顺序生成：先由 Copilot CLI 使用 `--model auto` 与 Actions 自带 `GITHUB_TOKEN` 撰写中文用户说明；额度不足、认证、安装、调用或结果校验失败时，降级到 OPL App 已使用的 Gateway 接口的 `deepseek-flash`，失败后再调用 `gpt-6-luna`；仍失败时，使用带提交链接的原始改动记录和发布门禁事实生成机械说明。模型只读取本次公开 Git 证据，不执行工具；正文标注最终生成方式，工作流记录尝试顺序，维护者已准备的说明不覆盖。Copilot 消耗仓库所有者的包含额度，不承诺无限免费，不自动开启额外付费预算。Gateway 凭据保存在仓库 Secret `OPL_RELEASE_NOTES_CODEX_API_KEY`，不进入源码、日志、Copilot 子进程或发布资产。输入超过写作预算时直接生成机械说明。Release Note 的模型质量或可用性不构成发布阻断项；资格与版本事实由发布工作流填入，模型不得代替验收证据。
+DSH 与 OPL App Stable/Nightly 共用 [Framework 发布说明策略](https://github.com/gaofeng21cn/one-person-lab/blob/main/scripts/release-note-writer/policy.json)及同目录调用实现。中央主线修改自动影响下一次准备，单次准备固定中央提交与配置摘要，已冻结正文不追新；中文提示词、结构校验与机械正文仍归本仓，共享代码不进入增强包。共享源码下载或校验失败直接使用机械说明。当前自动 Release Note 按四个入口顺序生成：先由 Copilot CLI 使用 `--model auto` 与 Actions 自带 `GITHUB_TOKEN` 撰写中文用户说明；额度不足、认证、安装、调用或结果校验失败时，降级到 OPL App 已使用的 Gateway 接口的 `deepseek-flash`，失败后再调用 `gpt-6-luna`；仍失败时，使用带提交链接的原始改动记录和发布门禁事实生成机械说明。模型只读取本次公开 Git 证据，不执行工具；正文标注最终生成方式，工作流记录尝试顺序，维护者已准备的说明不覆盖。Copilot 消耗仓库所有者的包含额度，不承诺无限免费，不自动开启额外付费预算。Gateway 凭据保存在仓库 Secret `OPL_RELEASE_NOTES_CODEX_API_KEY`，不进入源码、日志、Copilot 子进程或发布资产。输入超过写作预算时直接生成机械说明。Release Note 的模型质量或可用性不构成发布阻断项；资格与版本事实由发布工作流填入，模型不得代替验收证据。
 
 每日触发改变的是发布时机与授权，不取消官方签名、摘要、隔离运行和两平台资格验收。巡检范围为已进入主线的 OPL 增强改动；未合并提案不会直接发布，官方上游更新仍按真实接口和兼容资格处理。
 

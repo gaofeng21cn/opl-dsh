@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { planDailyRelease } from '../scripts/prepare-daily-release.mjs'
 import { dailyReleaseNotes, writeDailyReleaseNotes } from '../scripts/daily-release-notes.mjs'
 import { renderReleaseNotes } from '../scripts/release-notes.mjs'
+import { prepareSharedReleaseNoteWriter } from '../scripts/prepare-shared-release-note-writer.mjs'
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'opl-daily-release-'))
@@ -97,38 +98,99 @@ const notesEvidence = {
   diff: '- overwrite draft\n+ preserve draft',
 }
 
-test('online writer uses the requested deepseek-flash and separates user copy from qualification facts', async () => {
-  let calls = 0
-  const result = await writeDailyReleaseNotes(notesEvidence, {
-    apiKey: 'secret-fixture-key',
-    request: async (url, options) => {
-      calls++
-      assert.equal(url, 'https://gateway.medopl.com/v1/chat/completions')
-      const body = JSON.parse(options.body)
-      assert.equal(body.model, 'deepseek-flash')
-      assert.equal(JSON.parse(body.messages[1].content).diff, notesEvidence.diff)
-      return Response.json({
-        choices: [
-          {
-            finish_reason: 'stop',
-            message: {
-              content: JSON.stringify({
-                overview: '编辑时保留已有草稿。',
-                changes: ['已有草稿不再被回填覆盖。'],
-                limitations: [],
-              }),
-            },
-          },
-        ],
-      })
-    },
+test('shared source download or import failure never prevents mechanical publication', async (t) => {
+  const old = process.env.OPL_RELEASE_NOTES_WRITER_MODULE
+  t.after(() => {
+    if (old === undefined) delete process.env.OPL_RELEASE_NOTES_WRITER_MODULE
+    else process.env.OPL_RELEASE_NOTES_WRITER_MODULE = old
   })
-  assert.equal(calls, 1)
-  assert.equal(result.mode, 'online-ai')
-  assert.ok(result.notes.includes('已有草稿不再被回填覆盖'))
-  assert.ok(result.notes.includes('OPL_DSH_RELEASE_NOTES:online-ai:deepseek-flash'))
-  assert.ok(!result.notes.includes('secret-fixture-key'))
+  assert.equal(
+    await prepareSharedReleaseNoteWriter({
+      request: async () => new Response('', { status: 503 }),
+      install: false,
+    }),
+    null,
+  )
+  process.env.OPL_RELEASE_NOTES_WRITER_MODULE = '/missing-shared-note-writer/writer.mjs'
+  const result = await writeDailyReleaseNotes(notesEvidence, {
+    apiKey: 'gateway-fixture-secret',
+    copilotToken: 'copilot-fixture-secret',
+  })
+  assert.equal(result.reason, 'shared_writer_unavailable')
+  assert.equal(result.mode, 'mechanical')
+  assert.ok(result.notes.includes(notesEvidence.commitsMarkdown))
 })
+
+test(
+  'bootstrap resolves central main once and downloads immutable code and policy outside the product',
+  { skip: !process.env.OPL_RELEASE_NOTES_WRITER_MODULE },
+  async (t) => {
+    const githubEnv = process.env.GITHUB_ENV
+    delete process.env.GITHUB_ENV
+    t.after(() => {
+      if (githubEnv !== undefined) process.env.GITHUB_ENV = githubEnv
+    })
+    const source = new URL('file://' + process.env.OPL_RELEASE_NOTES_WRITER_MODULE)
+    const calls = []
+    const sha = 'a'.repeat(40)
+    const result = await prepareSharedReleaseNoteWriter({
+      install: false,
+      request: async (url) => {
+        calls.push(url)
+        if (url.includes('/commits/')) return Response.json({ sha })
+        assert.ok(url.includes('/' + sha + '/'))
+        return new Response(
+          await readFile(
+            new URL(url.endsWith('policy.json') ? 'policy.json' : 'writer.mjs', source),
+          ),
+        )
+      },
+    })
+    t.after(() => rm(new URL('.', 'file://' + result.module), { recursive: true, force: true }))
+    assert.equal(calls.filter((url) => url.includes('/commits/')).length, 1)
+    assert.equal(result.source_commit, sha)
+    assert.ok(!result.module.startsWith(process.cwd() + '/'))
+    const shared = await import('file://' + result.module)
+    assert.equal(typeof shared.writeWithReleaseNoteFallback, 'function')
+  },
+)
+
+test(
+  'online writer uses the requested deepseek-flash and separates user copy from qualification facts',
+  { skip: !process.env.OPL_RELEASE_NOTES_WRITER_MODULE },
+  async () => {
+    let calls = 0
+    const result = await writeDailyReleaseNotes(notesEvidence, {
+      apiKey: 'secret-fixture-key',
+      request: async (url, options) => {
+        calls++
+        assert.equal(url, 'https://gateway.medopl.com/v1/chat/completions')
+        const body = JSON.parse(options.body)
+        assert.equal(body.model, 'deepseek-flash')
+        assert.equal(JSON.parse(body.messages[1].content).diff, notesEvidence.diff)
+        return Response.json({
+          choices: [
+            {
+              finish_reason: 'stop',
+              message: {
+                content: JSON.stringify({
+                  overview: '编辑时保留已有草稿。',
+                  changes: ['已有草稿不再被回填覆盖。'],
+                  limitations: [],
+                }),
+              },
+            },
+          ],
+        })
+      },
+    })
+    assert.equal(calls, 1)
+    assert.equal(result.mode, 'online-ai')
+    assert.ok(result.notes.includes('已有草稿不再被回填覆盖'))
+    assert.ok(result.notes.includes('OPL_DSH_RELEASE_NOTES:online-ai:deepseek-flash'))
+    assert.ok(!result.notes.includes('secret-fixture-key'))
+  },
+)
 
 test('credential absence, provider failures and malformed or incomplete replies always produce publishable mechanical notes', async () => {
   const requests = [
@@ -174,64 +236,68 @@ test('credential absence, provider failures and malformed or incomplete replies 
   }
 })
 
-test('Copilot auto succeeds before Gateway, and quota or invalid replies fall through in the required order', async () => {
-  const copy = JSON.stringify({
-    overview: '保留草稿。',
-    changes: ['已有草稿不会被覆盖。'],
-    limitations: [],
-  })
-  let gatewayCalls = 0
-  const request = async () => {
-    gatewayCalls++
-    return Response.json({ choices: [{ finish_reason: 'stop', message: { content: copy } }] })
-  }
-  const options = { apiKey: 'gateway-secret', copilotToken: 'copilot-secret', request }
-  const first = await writeDailyReleaseNotes(notesEvidence, {
-    ...options,
-    copilot: async () => copy,
-  })
-  assert.equal(first.model, 'copilot-auto')
-  assert.equal(gatewayCalls, 0)
-  assert.deepEqual(first.attempts, [{ provider: 'copilot-auto', status: 'passed' }])
-  for (const copilot of [
-    async () => {
-      throw Error('quota exhausted with copilot-secret')
-    },
-    async () => 'invalid JSON',
-  ]) {
-    const second = await writeDailyReleaseNotes(notesEvidence, { ...options, copilot })
-    assert.equal(second.model, 'deepseek-flash')
+test(
+  'Copilot auto succeeds before Gateway, and quota or invalid replies fall through in the required order',
+  { skip: !process.env.OPL_RELEASE_NOTES_WRITER_MODULE },
+  async () => {
+    const copy = JSON.stringify({
+      overview: '保留草稿。',
+      changes: ['已有草稿不会被覆盖。'],
+      limitations: [],
+    })
+    let gatewayCalls = 0
+    const request = async () => {
+      gatewayCalls++
+      return Response.json({ choices: [{ finish_reason: 'stop', message: { content: copy } }] })
+    }
+    const options = { apiKey: 'gateway-secret', copilotToken: 'copilot-secret', request }
+    const first = await writeDailyReleaseNotes(notesEvidence, {
+      ...options,
+      copilot: async () => copy,
+    })
+    assert.equal(first.model, 'copilot-auto')
+    assert.equal(gatewayCalls, 0)
+    assert.deepEqual(first.attempts, [{ provider: 'copilot-auto', status: 'passed' }])
+    for (const copilot of [
+      async () => {
+        throw Error('quota exhausted with copilot-secret')
+      },
+      async () => 'invalid JSON',
+    ]) {
+      const second = await writeDailyReleaseNotes(notesEvidence, { ...options, copilot })
+      assert.equal(second.model, 'deepseek-flash')
+      assert.deepEqual(
+        second.attempts.map(({ provider, status }) => [provider, status]),
+        [
+          ['copilot-auto', 'failed'],
+          ['deepseek-flash', 'passed'],
+        ],
+      )
+      assert.ok(!JSON.stringify(second).includes('copilot-secret'))
+    }
+    const third = await writeDailyReleaseNotes(notesEvidence, {
+      ...options,
+      copilot: async () => 'invalid',
+      request: async () => new Response('', { status: 429 }),
+    })
+    assert.equal(third.mode, 'mechanical')
     assert.deepEqual(
-      second.attempts.map(({ provider, status }) => [provider, status]),
+      third.attempts.map(({ provider, status }) => [provider, status]),
       [
         ['copilot-auto', 'failed'],
-        ['deepseek-flash', 'passed'],
+        ['deepseek-flash', 'failed'],
+        ['gpt-6-luna', 'failed'],
       ],
     )
-    assert.ok(!JSON.stringify(second).includes('copilot-secret'))
-  }
-  const third = await writeDailyReleaseNotes(notesEvidence, {
-    ...options,
-    copilot: async () => 'invalid',
-    request: async () => new Response('', { status: 429 }),
-  })
-  assert.equal(third.mode, 'mechanical')
-  assert.deepEqual(
-    third.attempts.map(({ provider, status }) => [provider, status]),
-    [
-      ['copilot-auto', 'failed'],
-      ['deepseek-flash', 'failed'],
-      ['gpt-6-luna', 'failed'],
-    ],
-  )
-  assert.doesNotThrow(() =>
-    renderReleaseNotes(third.notes, {
-      version: '0.2.22',
-      officialVersion: '0.2.0-rc.2',
-      sourceCommit: 'a'.repeat(40),
-    }),
-  )
-})
+    assert.doesNotThrow(() =>
+      renderReleaseNotes(third.notes, {
+        version: '0.2.22',
+        officialVersion: '0.2.0-rc.2',
+        sourceCommit: 'a'.repeat(40),
+      }),
+    )
+  },
+)
 
 test(
   'real preparation pushes one frozen candidate and the next run resumes it',
@@ -244,11 +310,7 @@ test(
     execFileSync('git', ['init', '--bare', remote], { stdio: 'ignore' })
     git('remote', 'add', 'origin', remote)
     await mkdir(join(root, 'scripts'))
-    for (const file of [
-      'prepare-daily-release.mjs',
-      'daily-release-notes.mjs',
-      'copilot-release-notes.mjs',
-    ])
+    for (const file of ['prepare-daily-release.mjs', 'daily-release-notes.mjs'])
       await copyFile(new URL('../scripts/' + file, import.meta.url), join(root, 'scripts', file))
     await writeFile(
       join(root, 'package-lock.json'),
@@ -306,31 +368,35 @@ test(
   },
 )
 
-test('Gateway flash failure falls through to luna before mechanical notes', async () => {
-  const models = []
-  const result = await writeDailyReleaseNotes(notesEvidence, {
-    apiKey: 'gateway-secret',
-    copilotToken: 'copilot-secret',
-    copilot: async () => 'invalid',
-    request: async (_url, options) => {
-      const model = JSON.parse(options.body).model
-      models.push(model)
-      if (model === 'deepseek-flash') return new Response('', { status: 429 })
-      return Response.json({
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({
-                overview: '保留草稿。',
-                changes: ['草稿不会被覆盖。'],
-                limitations: [],
-              }),
+test(
+  'Gateway flash failure falls through to luna before mechanical notes',
+  { skip: !process.env.OPL_RELEASE_NOTES_WRITER_MODULE },
+  async () => {
+    const models = []
+    const result = await writeDailyReleaseNotes(notesEvidence, {
+      apiKey: 'gateway-secret',
+      copilotToken: 'copilot-secret',
+      copilot: async () => 'invalid',
+      request: async (_url, options) => {
+        const model = JSON.parse(options.body).model
+        models.push(model)
+        if (model === 'deepseek-flash') return new Response('', { status: 429 })
+        return Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  overview: '保留草稿。',
+                  changes: ['草稿不会被覆盖。'],
+                  limitations: [],
+                }),
+              },
             },
-          },
-        ],
-      })
-    },
-  })
-  assert.equal(result.model, 'gpt-6-luna')
-  assert.deepEqual(models, ['deepseek-flash', 'gpt-6-luna'])
-})
+          ],
+        })
+      },
+    })
+    assert.equal(result.model, 'gpt-6-luna')
+    assert.deepEqual(models, ['deepseek-flash', 'gpt-6-luna'])
+  },
+)

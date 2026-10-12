@@ -10,7 +10,7 @@
 
 `.github/workflows/stable-release.yml` 每日北京时间 02:37 自动检查主线，并为稳定发布提供临时 macOS arm64 打包环境（Node 24、Python、Apple 工具及 NSIS）、临时 Windows 桌面验收环境和 Ubuntu 公开发布环境。准备与发布 job 使用 GitHub 为本仓库签发的临时 `GITHUB_TOKEN`，仅这两个 job 具有 `contents: write`；不需要把个人访问令牌写入仓库或云环境。
 
-日常更新只需让可接受改动进入 `main`。每日准备 job 通过 `scripts/prepare-daily-release.mjs` 比较公开稳定 tag 与主线的真实产品路径；有未发布增强改动就自动准备递增版本、`docs/release-notes-<版本>.md` 和 canonical tag，没有改动则跳过。`scripts/daily-release-notes.mjs` 依次尝试 Copilot CLI 自动选模型、Gateway `deepseek-flash`、Gateway `gpt-6-luna`、机械说明。Copilot 使用固定验证版本 `1.0.95` 与 `GITHUB_TOKEN`，其 job 具有 `copilot-requests: write`；CLI 安装失败也继续使用后三个入口。模型按本次公开 Git 证据撰写中文用户说明；机械说明保留原始提交与链接，不把提交标题加工成已验证的功能承诺。正文标注生成方式，工作流记录调用顺序，维护者已准备的说明保持原样。准备后的源码提交作为后续所有 job 的 checkout ref，各阶段重新核对 tag 与实际源码。
+日常更新只需让可接受改动进入 `main`。每日准备 job 通过 `scripts/prepare-daily-release.mjs` 比较公开稳定 tag 与主线的真实产品路径；有未发布增强改动就自动准备递增版本、`docs/release-notes-<版本>.md` 和 canonical tag，没有改动则跳过。`scripts/daily-release-notes.mjs` 依次尝试 Copilot CLI 自动选模型、Gateway `deepseek-flash`、Gateway `gpt-6-luna`、机械说明。调用策略与实现统一归 [Framework 发布说明入口](https://github.com/gaofeng21cn/one-person-lab/tree/main/scripts/release-note-writer)；模型顺序、Gateway 地址、超时、Copilot 版本和预算仅修改其中的 `policy.json`。每次准备先解析中央主线 SHA 并下载同提交的配置和代码到 runner 临时目录，记录策略提交及配置摘要；加载失败直接机械兜底，CLI 安装失败继续 Gateway。凭据仍由本仓 Secret 和 `GITHUB_TOKEN` 提供，job 保留 `copilot-requests: write`。模型按本次公开 Git 证据撰写中文用户说明；机械说明保留原始提交与链接，不把提交标题加工成已验证的功能承诺。正文标注生成方式，工作流记录调用顺序，维护者已准备的说明保持原样。准备后的源码提交作为后续所有 job 的 checkout ref，各阶段重新核对 tag 与实际源码。
 
 GitHub 的临时 token 推送 tag 不会触发另一轮 push 工作流，因此本轮准备 job 直接将 tag 与源码提交传给既有打包、验收和发布 job，不依赖第二次事件或本机调度。人工推送 canonical tag 仍可启动同一流程。Release Note 中的 `{{VERSION}}`、`{{OFFICIAL_VERSION}}`、`{{SOURCE_COMMIT}}` 由已核验清单替换。手动选择 `main` 立即执行一次每日检查；恢复已冻结候选时选择同一个 canonical tag。
 

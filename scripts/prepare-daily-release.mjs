@@ -141,6 +141,7 @@ export async function prepareDailyRelease(root) {
           JSON.stringify({
             releaseNotes: result.mode,
             model: result.model,
+            policy: result.policy,
             reason: result.reason,
             attempts: result.attempts,
           }),
