@@ -65,7 +65,11 @@ export class DesktopPipe {
       { expression, returnByValue: true, awaitPromise: true },
       session,
     )
-    if (value.exceptionDetails) throw new Error('Client 执行失败：' + value.exceptionDetails.text)
+    if (value.exceptionDetails)
+      throw new Error(
+        'Client 执行失败：' +
+          (value.exceptionDetails.exception?.description ?? value.exceptionDetails.text),
+      )
     return value.result.value
   }
 }
@@ -144,6 +148,8 @@ export async function verifyDesktopClient(
     await captureScreenshot('failure')
   }
   async function waitFor(expression, description, recover, maxAttempts = 80) {
+    result.currentCheck = description
+    progress(result)
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       // Original plugin onboarding can arrive after the shell/setup is ready.
       // Dismiss its real deferred button whenever it appears, rather than
