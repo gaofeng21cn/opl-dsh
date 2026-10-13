@@ -373,6 +373,31 @@ export async function verifyDesktopClient(
     if (panel.marker === 'gateway-models') {
       const dialog = "document.querySelector('[role=dialog]')"
       const editLabels = ['编辑 华为云 MaaS (huawei-maas)', 'Edit 华为云 MaaS (huawei-maas)']
+      async function enterNativeCredential(value) {
+        await waitFor(
+          `Boolean(${dialog}.querySelector('input[type=password]'))`,
+          '原生凭据编辑器未显示',
+          undefined,
+          process.platform === 'win32' ? 280 : 80,
+        )
+        await waitFor(
+          `(() => {const input=${dialog}.querySelector('input[type=password]');return Boolean(input && !input.disabled)})()`,
+          '原生凭据输入框未就绪',
+          undefined,
+          process.platform === 'win32' ? 520 : 80,
+        )
+        await pipe.evaluate(
+          session,
+          `(() => {const input=${dialog}.querySelector('input[type=password]');input.focus();input.select()})()`,
+        )
+        // Use Chromium's native input path so React commits its controlled draft
+        // before Apply. A synthetic DOM value/event can leave that draft stale.
+        await pipe.command('Input.insertText', { text: value }, session)
+        await waitFor(
+          `new Promise(resolve => requestAnimationFrame(() => {const input=${dialog}.querySelector('input[type=password]');resolve(Boolean(input && input.value===${JSON.stringify(value)}))}))`,
+          '原生凭据输入未保留测试值',
+        )
+      }
       await waitFor(
         clickLabel(['添加模型提供商', 'Add model provider'], dialog),
         '原生添加模型提供商入口未就绪',
@@ -410,10 +435,7 @@ export async function verifyDesktopClient(
       )
         throw new Error('华为云未完整复用原生提供商表单或凭据边界错误')
       // Every platform uses the qualification profile's own official credential store.
-      await pipe.evaluate(
-        session,
-        `(() => {const input=${dialog}.querySelector('input[type=password]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'synthetic-native-provider-qualification');input.dispatchEvent(new Event('input',{bubbles:true}))})()`,
-      )
+      await enterNativeCredential('synthetic-native-provider-qualification')
       const providerScreenshot = await captureScreenshot('huawei-provider-add')
       if (providerScreenshot) screenshots.push(providerScreenshot)
       else result.screenshotFailures.push('huawei-provider-add')
@@ -428,8 +450,8 @@ export async function verifyDesktopClient(
       source.nativeAdded = true
       await credentialReadback('synthetic-native-provider-qualification')
       await waitFor(
-        `Boolean(${dialog}.querySelector('input[type=password]'))`,
-        '华为云原生编辑器未显示',
+        `(() => {const input=${dialog}.querySelector('input[type=password]');return Boolean(input && !input.disabled)})()`,
+        '华为云原生编辑器未就绪',
       )
       source.nativeEdited = await pipe.evaluate(
         session,
@@ -439,10 +461,7 @@ export async function verifyDesktopClient(
       const editScreenshot = await captureScreenshot('huawei-provider-edit')
       if (editScreenshot) screenshots.push(editScreenshot)
       else result.screenshotFailures.push('huawei-provider-edit')
-      await pipe.evaluate(
-        session,
-        `(() => {const input=${dialog}.querySelector('input[type=password]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'synthetic-native-provider-replacement');input.dispatchEvent(new Event('input',{bubbles:true}))})()`,
-      )
+      await enterNativeCredential('synthetic-native-provider-replacement')
       await waitFor(clickLabel(['保存', 'Apply'], dialog), '原生更换密钥保存按钮未就绪')
       await waitFor(`!${dialog}.querySelector('input[type=password]')`, '原生更换密钥保存尚未完成')
       await waitFor(clickLabel(editLabels, dialog), '更换密钥后提供商未显示')
