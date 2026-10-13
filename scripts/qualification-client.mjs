@@ -375,8 +375,16 @@ export async function verifyDesktopClient(
       const editLabels = ['编辑 华为云 MaaS (huawei-maas)', 'Edit 华为云 MaaS (huawei-maas)']
       async function enterNativeCredential(value) {
         await waitFor(
+          `Boolean(${dialog}.querySelector('input[type=password]'))`,
+          '原生凭据编辑器未显示',
+          undefined,
+          process.platform === 'win32' ? 280 : 80,
+        )
+        await waitFor(
           `(() => {const input=${dialog}.querySelector('input[type=password]');return Boolean(input && !input.disabled)})()`,
           '原生凭据输入框未就绪',
+          undefined,
+          process.platform === 'win32' ? 520 : 80,
         )
         await pipe.evaluate(
           session,
