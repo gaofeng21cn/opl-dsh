@@ -73,14 +73,6 @@ export function apply(ctx: Context): void {
   ctx.effect(() => installMessageEditViews(ctx.uiConversation.views))
   ctx.effect(() => installMessageEditNavigation(ctx))
   ctx.effect(() => ctx.uiConversation.events.register(messageEditDefinition))
-  ctx.slots.inject('conversation.hero.agentPreset', () =>
-    ctx.slots.register(
-      {
-        name: 'conversation.hero.agentPreset',
-      },
-      () => <ProjectlessHeroChoice create={() => ctx.uiWorkspace.startSession()} />,
-    ),
-  )
   const editors = new Map<
     string,
     { selection: () => EditSelection | undefined; accepted: () => void }
@@ -206,6 +198,18 @@ export function apply(ctx: Context): void {
         inject: () => ({ call }),
       },
       ExecutionCatalogSection,
+    ),
+  )
+  // Register this optional hero contribution after the execution settings are
+  // declared. Some official Desktop builds expose the hero slot lazily; a
+  // contribution failure must never suppress the plugin's required settings
+  // sections and their verification surface.
+  ctx.slots.inject('conversation.hero.agentPreset', () =>
+    ctx.slots.register(
+      {
+        name: 'conversation.hero.agentPreset',
+      },
+      () => <ProjectlessHeroChoice create={() => ctx.uiWorkspace.startSession()} />,
     ),
   )
 }
