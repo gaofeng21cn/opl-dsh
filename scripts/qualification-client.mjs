@@ -441,6 +441,8 @@ export async function verifyDesktopClient(
       else result.screenshotFailures.push('huawei-provider-add')
       await waitFor(clickLabel(['保存', 'Apply'], dialog), '原生提供商保存按钮未就绪')
       source.nativeSaveClicked = true
+      await waitFor(`!${dialog}.querySelector('input[type=password]')`, '原生提供商保存尚未完成')
+      await credentialReadback('synthetic-native-provider-qualification')
       await waitFor(
         clickLabel(editLabels, dialog),
         '华为云原生提供商未保存或未显示普通编辑入口',
@@ -448,7 +450,6 @@ export async function verifyDesktopClient(
         process.platform === 'win32' ? 520 : 80,
       )
       source.nativeAdded = true
-      await credentialReadback('synthetic-native-provider-qualification')
       await waitFor(
         `(() => {const input=${dialog}.querySelector('input[type=password]');return Boolean(input && !input.disabled)})()`,
         '华为云原生编辑器未就绪',
@@ -464,8 +465,8 @@ export async function verifyDesktopClient(
       await enterNativeCredential('synthetic-native-provider-replacement')
       await waitFor(clickLabel(['保存', 'Apply'], dialog), '原生更换密钥保存按钮未就绪')
       await waitFor(`!${dialog}.querySelector('input[type=password]')`, '原生更换密钥保存尚未完成')
-      await waitFor(clickLabel(editLabels, dialog), '更换密钥后提供商未显示')
       await credentialReadback('synthetic-native-provider-replacement')
+      await waitFor(clickLabel(editLabels, dialog), '更换密钥后提供商未显示')
       await waitFor(
         `${dialog}.querySelector('input[type=password]')?.value === ''`,
         '更换密钥后密码框泄露已保存值',

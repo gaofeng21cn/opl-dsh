@@ -7,6 +7,6 @@ export interface HarnessCapabilities {
   permissions: ('read-only' | 'workspace' | 'full-access')[]
   sessionLoad: boolean
   cancel: boolean
-  reasoning: 'model-declared' | 'cli-advertised'
+  reasoning: 'model-declared' | 'cli-advertised' | 'none'
   autoReview: 'codex-auto-review' | 'official' | 'unsupported'
 }

@@ -21,6 +21,7 @@ import {
   installMessageEditNavigation,
   messageEditDefinition,
 } from './message-edit-view.ts'
+import { allowProjectlessSessions } from './fresh-session.ts'
 import { HARNESS_TRANSCRIPT_TOOL } from '../contracts/tool-display.ts'
 import { remoteCall } from '../../shared/client/remote-call.ts'
 export const inject = [
@@ -67,6 +68,7 @@ function sessionChanges(ctx: Context, sessionId: string, listener: () => void): 
 
 export function apply(ctx: Context): void {
   const call = remoteCall(ctx.remote.oplExecution)
+  ctx.effect(() => allowProjectlessSessions(ctx.uiWorkspace, ctx.sessions))
   ctx.effect(() => installMessageEditViews(ctx.uiConversation.views))
   ctx.effect(() => installMessageEditNavigation(ctx))
   ctx.effect(() => ctx.uiConversation.events.register(messageEditDefinition))

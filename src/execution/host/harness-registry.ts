@@ -44,6 +44,46 @@ const info: Record<
     instructions:
       '使用官方 ZCode CLI 的 app-server 入口；华为云 Key 由模型供应商设置与官方凭据服务统一管理。',
   },
+  'kimi-code': {
+    command: 'kimi',
+    website: 'https://www.npmjs.com/package/@moonshot-ai/kimi-code',
+    instructions: '使用 Kimi Code 官方安装方式安装 kimi；模型连接由模型供应商管理。',
+  },
+  'mimo-code': {
+    command: 'mimo',
+    website: 'https://github.com/XiaomiMiMo/MiMo-Code',
+    instructions: '使用 MiMo Code 官方安装方式安装 mimo；模型连接由模型供应商管理。',
+  },
+  pool: {
+    command: 'pool',
+    website: 'https://poolside.ai',
+    instructions: '使用 Poolside 官方安装方式安装 pool；适配接口要求 1.0.16。',
+  },
+  'step-code': {
+    command: 'step',
+    website: 'https://github.com/stepfun-ai/Step-Code',
+    instructions: '使用 StepCode 官方安装方式安装 step；模型连接由模型供应商管理。',
+  },
+  'muse-code': {
+    command: 'muse',
+    website: 'https://dev.meta.ai/docs/muse-code',
+    instructions: '使用 Muse Code 官方安装方式安装 muse；模型连接由模型供应商管理。',
+  },
+  opencode: {
+    command: 'opencode',
+    website: 'https://opencode.ai',
+    instructions: '使用 OpenCode 官方安装方式安装 opencode；模型连接由模型供应商管理。',
+  },
+  pi: {
+    command: 'pi',
+    website: 'https://github.com/badlogic/pi-mono',
+    instructions: '使用 Pi Coding Agent 官方安装方式安装 pi；模型连接由模型供应商管理。',
+  },
+  kilo: {
+    command: 'kilo',
+    website: 'https://github.com/Kilo-Org/kilocode',
+    instructions: '使用 Kilo Code 官方安装方式安装 kilo；模型连接由模型供应商管理。',
+  },
 }
 /**
  * Directories the official MiniMax Code installer writes its launcher into. The
@@ -115,12 +155,7 @@ function candidatePaths(
   ]
 }
 async function shellResolved(command: string, id: string): Promise<string | undefined> {
-  if (
-    !['codex', 'claude', 'minimax-code', 'zcode'].includes(id) ||
-    isAbsolute(command) ||
-    !/^[A-Za-z0-9_.-]+$/.test(command)
-  )
-    return undefined
+  if (!info[id] || isAbsolute(command) || !/^[A-Za-z0-9_.-]+$/.test(command)) return undefined
   const shell =
     process.platform === 'win32'
       ? 'where.exe'
@@ -275,10 +310,7 @@ export async function inspectHarness(
     runnable:
       !!path &&
       (harness.kind === 'grok-build' ||
-        harness.id === 'codex' ||
-        harness.id === 'claude' ||
-        harness.id === 'minimax-code' ||
-        harness.id === 'zcode'),
+        (Object.hasOwn(info, harness.id) && harness.id !== 'antigravity')),
     instructions: entry?.instructions ?? '使用此 Harness 的官方安装与更新方式。',
     website: entry?.website ?? '',
     ...(entry?.installable ? { installable: true } : {}),

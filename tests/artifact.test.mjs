@@ -17,6 +17,17 @@ test('tarball checksum and contents bind the installer to an external plugin', a
     encoding: 'utf8',
   })
   assert.doesNotMatch(files, /node_modules|app\.asar|credentials|\/\.env/)
+  for (const bridge of [
+    'native-harness-bridge.mjs',
+    'zcode-harness-bridge.mjs',
+    'step-bridge.mjs',
+    'pi-bridge.mjs',
+    'zcode-ofm-bridge.mjs',
+    'muse-bridge.mjs',
+    'muse-bash-mcp.mjs',
+    'muse-endpoint.mjs',
+  ])
+    assert.ok(files.includes(`package/lib/${bridge}`), `missing packaged bridge ${bridge}`)
   const pkg = JSON.parse(await readFile(new URL('package/package.json', output), 'utf8'))
   assert.equal(pkg.name, '@one-person-lab/dsh-opl')
   assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-llm'], '*')

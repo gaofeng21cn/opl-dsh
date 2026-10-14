@@ -34,12 +34,19 @@ const BRIDGE = fileURLToPath(
 )
 
 const roots: string[] = []
-const running = new Set<ChildProcess>()
+const running = new Map<ChildProcess, Promise<void>>()
 afterEach(async () => {
   vi.unstubAllEnvs()
-  for (const child of running) child.kill()
+  for (const child of running.keys()) child.stdin?.end()
+  await Promise.all(running.values())
   running.clear()
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  for (const root of roots.splice(0))
+    await rm(root, {
+      recursive: true,
+      force: true,
+      maxRetries: process.platform === 'win32' ? 10 : 0,
+      retryDelay: 100,
+    })
 })
 /** A scratch directory that is always removed again. */
 async function scratch(): Promise<string> {
@@ -187,13 +194,13 @@ async function openBridge(env: NodeJS.ProcessEnv, cwd: string): Promise<BridgeCo
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
   })
-  running.add(child)
+  const closed = new Promise<void>((resolve) => child.once('close', () => resolve()))
+  running.set(child, closed)
   const updates: string[] = []
   const permissionAsks: { title: string }[] = []
   const errors: string[] = []
   child.stderr.on('data', (b) => errors.push(String(b)))
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>()
-  const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()))
   child.on('error', (error) => {
     for (const p of pending.values()) p.reject(error)
     pending.clear()
@@ -256,8 +263,8 @@ async function openBridge(env: NodeJS.ProcessEnv, cwd: string): Promise<BridgeCo
     permissionAsks,
     stderr: () => errors.join(''),
     close: async () => {
-      child.kill()
-      await exited
+      child.stdin!.end()
+      await closed
     },
   }
 }

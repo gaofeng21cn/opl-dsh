@@ -18,9 +18,15 @@ export interface ExternalModelSource {
   resolve(harness: string, ref: ModelRef): Promise<ExternalModelRoute>
 }
 
+/** Registration and declared pairing captured before asynchronous CLI preparation. */
+export interface ExternalModelSourceLease {
+  /** Reject if the captured registration or its declared pairing no longer exists. */
+  assertCurrent(): void
+}
+
 /** Routes are registered by their owner; names alone never select a provider or account. */
 export class ExternalModelSources {
-  private readonly sources = new Map<string, ExternalModelSource>()
+  private readonly sources = new Map<string, { source: ExternalModelSource }>()
   constructor(
     private readonly ctx: Context,
     private readonly changed: () => void = () => {},
@@ -35,10 +41,11 @@ export class ExternalModelSources {
     )
       throw Error('外部模型来源已注册或身份无效')
     return owner.effect(() => {
-      this.sources.set(source.provider, source)
+      const registration = { source }
+      this.sources.set(source.provider, registration)
       this.changed()
       return () => {
-        if (this.sources.get(source.provider) === source) this.sources.delete(source.provider)
+        if (this.sources.get(source.provider) === registration) this.sources.delete(source.provider)
         this.changed()
       }
     })
@@ -46,7 +53,32 @@ export class ExternalModelSources {
 
   /** Only an explicit registration can add a non-Gateway source to an external adapter. */
   supports(harness: string, ref: ModelRef): boolean {
-    return this.sources.get(ref.provider)?.supports(harness, ref) === true
+    return this.sources.get(ref.provider)?.source.supports(harness, ref) === true
+  }
+
+  /**
+   * Capture a registered external source before resolving its route. Adapters
+   * check the lease after their final asynchronous preflight and immediately
+   * before returning a launch. Source owners still validate live catalog and
+   * connection data; this lease covers registration lifetime and declared pairing.
+   * @param harness - requested Harness identity.
+   * @param ref - exact provider and model to retain throughout preparation.
+   * @returns a synchronous check bound to this registration, including re-registration.
+   */
+  lease(harness: string, ref: ModelRef): ExternalModelSourceLease {
+    const captured = { provider: ref.provider, model: ref.model }
+    const registration = this.sources.get(captured.provider)
+    if (!registration?.source.supports(harness, captured))
+      throw Error('该模型来源尚未适配此 Harness')
+    return {
+      assertCurrent: () => {
+        if (
+          this.sources.get(captured.provider) !== registration ||
+          !registration.source.supports(harness, captured)
+        )
+          throw Error('模型来源已变更，请重新选择')
+      },
+    }
   }
 
   /** Resolve the exact source and verify wire data before any profile write or CLI launch. */
@@ -67,11 +99,12 @@ export class ExternalModelSources {
       if (expected !== protocol) throw Error('所选来源的协议与 Harness 不兼容')
       route = { ...resolved, protocol: expected }
     } else {
-      const source = this.sources.get(ref.provider)
+      const registration = this.sources.get(ref.provider)
+      const source = registration?.source
       if (!source?.supports(harness, ref)) throw Error('该模型来源尚未适配此 Harness')
       route = await source.resolve(harness, ref)
       // A source removed/replaced during an asynchronous read cannot authorize a new launch.
-      if (this.sources.get(ref.provider) !== source || !source.supports(harness, ref))
+      if (this.sources.get(ref.provider) !== registration || !source.supports(harness, ref))
         throw Error('模型来源已变更，请重新选择')
     }
     const url = new URL(route.baseURL)

@@ -522,6 +522,7 @@ describe('ordinary conversation full-access binding', () => {
         get: () => ({ status: 'idle', ctx: { get: () => ({ resolve: () => ({ mode }) }) } }),
       },
       sessions: { list: () => [], get: () => session },
+      permissionPresets: { current: () => mode },
       llm: {
         listProviders: () => [{ id: 'opl-gateway', name: 'OPL Gateway' }],
         listConfigurableProviders: () => [],
@@ -621,9 +622,22 @@ describe('ordinary conversation full-access binding', () => {
         HarnessService.prototype as unknown as { start: (...args: any[]) => Promise<any> },
         'start',
       )
-      .mockResolvedValue({ id: 'child', sandbox: mode } as never)
+      .mockRejectedValue(new Error('captured first-send binding'))
     try {
       await service.selectCombination({ sessionId: 'dsh-session', combination })
+      expect(start).not.toHaveBeenCalled()
+      const definition = (await service.executionCatalog()).combinations.find(
+        (item) => item.id === combination,
+      )!
+      const stream = service.conversationStream(
+        {
+          ...definition.modelRef,
+          sessionId: 'dsh-session',
+          messages: [],
+        },
+        async function* () {},
+      )
+      await expect(stream.next()).rejects.toThrow('captured first-send binding')
       return start.mock.calls.at(-1)?.[0]?.sandbox as string | undefined
     } finally {
       start.mockRestore()
@@ -643,16 +657,9 @@ describe('ordinary conversation full-access binding', () => {
 
   it('keeps a harness of unknown capability at the workspace boundary', async () => {
     const { service, unknown } = await setupConversation('danger-full-access')
-    const start = vi
-      .spyOn(
-        HarnessService.prototype as unknown as { start: (...args: any[]) => Promise<any> },
-        'start',
-      )
-      .mockResolvedValue({ id: 'child' } as never)
     // The binding decides on capability evidence, so an unverified harness is never granted
     // full access even when the surrounding conversation is unrestricted.
-    await service.selectCombination({ sessionId: 'dsh-session', combination: unknown.id })
-    expect(start.mock.calls.at(-1)?.[0]?.sandbox).toBe('workspace')
+    expect(await launchedSandbox(service, unknown.id, 'danger-full-access')).toBe('workspace')
   })
 
   it('never widens a read-only conversation to full access', async () => {

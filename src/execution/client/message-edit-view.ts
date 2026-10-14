@@ -11,6 +11,7 @@ import { createElement, useMemo, type ComponentType } from 'react'
 import type { ChatViewSlotProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { Context } from '@deepseek-ai/cordis'
+import { projectDeliverAssets } from './deliver-assets-view.ts'
 
 const emptyHiddenTurns: ReadonlySet<number> = new Set()
 const hiddenTurnsBySnapshot = new WeakMap<object, ReadonlySet<number>>()
@@ -196,7 +197,7 @@ export function installMessageEditNavigation(ctx: Context): () => void {
   }
 }
 
-/** Observe current and later official Chat definitions; restore only our own decoration. */
+/** Project edit history and file deliveries through current and later official Chat builders. */
 export function installMessageEditViews(registry: {
   entries(): readonly ConversationViewDefinition[]
   subscribe(listener: () => void): () => void
@@ -208,7 +209,7 @@ export function installMessageEditViews(registry: {
       if (definition.target !== 'chat' || seen.has(definition)) continue
       seen.add(definition)
       const original = definition.create
-      const wrapped = () => filterMessageEdits(original.call(definition))
+      const wrapped = () => filterMessageEdits(projectDeliverAssets(original.call(definition)))
       definition.create = wrapped
       restorers.push(() => {
         if (definition.create === wrapped) definition.create = original

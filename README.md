@@ -67,7 +67,7 @@ Windows · x64，在 PowerShell 中运行：
 - **简化首启**：统一账户选择，支持稍后登录；完成后不再重复提示，不导入其他 OPL 应用的登录状态。
 - **账户入口**：主界面左下角显示已登录的 OPL 邮箱，未登录显示“未登录”；长邮箱悬停可查看完整内容，点击仍可进入账户或设置。
 
-推理菜单只列具体档位，不提供“默认”：GPT-6 Astra/Sol/Luna 与 Claude Opus 5.5 为 `low/medium/high/xhigh/max`（GPT 不提供 `ultra`）；Grok 4.7 为 `low/medium/high/xhigh`；MiniMax M3.1 为 `low/medium/high/xhigh/max`，M3 为思考开关。选项按实际 Harness 核对，Grok 通过 ACP 设置并回读。所有 DeepSeek-V4.1-Flash 渠道未指定档位时使用 `max`；已明确选择的档位和每模型会话记忆保留。
+推理菜单只列具体档位，不提供“默认”：GPT-6 Astra/Sol/Luna 与 Claude Opus 5.5 为 `low/medium/high/xhigh/max`（GPT 不提供 `ultra`）；Grok 4.7 为 `low/medium/high/xhigh`；MiniMax M3.1 为 `low/medium/high/xhigh/max`，M3 为思考开关。CLI 管理的推理档位在菜单显示前通过临时 ACP 会话读取，读取失败或没有可调档位时隐藏设置；重新打开菜单或点击重读即可按当前权限刷新。读取不发送模型提示词、不创建任务或普通对话。Codex、Claude 使用对应模型声明，Grok 通过 ACP 设置并回读。所有 DeepSeek-V4.1-Flash 渠道未指定档位时使用 `max`；已明确选择的档位和每模型会话记忆保留。
 
 设置按账户与模型来源、执行与组合、协作与行为、插件管理排列。**网关账户** 管理 OPL Gateway 凭据和权限；**模型供应商** 复用 DSH 原生设置，OPL Gateway 按分组展开，华为云 MaaS 的 GLM-5.2 与 API Key 在此配置，macOS 与 Windows 统一使用官方凭据服务，旧 Windows Key 首次升级自动迁移。**OFM 模型服务** 保留原版 Our Free Model 的全部设置与更新功能。**执行引擎** 管理 Harness 程序、版本与路径，提供官方安装更新入口。执行组合只引用模型、Harness 和权限，不再重复保存连接和协议；协作与自动化管理任务验收、外部接入和 Skill。外部任务不单列设置页，按官方会话在对应项目侧栏查看和处理。
 

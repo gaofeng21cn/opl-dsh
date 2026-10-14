@@ -71,9 +71,8 @@ function fold(event: ConversationMatch['event']): DeliverAssetsState {
 /**
  * Show every real local file delivery of an assistant reply as one compact row.
  *
- * Additive by design: it contributes its own node beside the official assistant
- * row and leaves the stored message, the official Markdown body and the official
- * copy action untouched.
+ * The Chat builder removes recognized markup from the visible assistant body;
+ * this row retains the file entries. Stored messages and copy-action data stay intact.
  */
 export const deliverAssetsDefinition: ConversationNodeDefinition<DeliverAssetsState> = {
   kind: DELIVER_ASSETS_KIND,

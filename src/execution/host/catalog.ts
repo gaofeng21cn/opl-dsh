@@ -27,6 +27,20 @@ export const defaultExecutionCatalog = (): ExecutionCatalog => ({
     // supplies an OPL Gateway key for it.
     { id: 'minimax-code', name: 'MiniMax Code', kind: 'acp', command: 'mcode', adapter: 'acp-v1' },
     { id: 'zcode', name: 'ZCode', kind: 'acp', command: 'zcode', adapter: 'zcode-protocol-v1' },
+    { id: 'kimi-code', name: 'Kimi Code', kind: 'acp', command: 'kimi', adapter: 'acp-v1' },
+    { id: 'mimo-code', name: 'MiMo Code', kind: 'acp', command: 'mimo', adapter: 'acp-v1' },
+    { id: 'pool', name: 'Poolside', kind: 'acp', command: 'pool', adapter: 'acp-v1' },
+    { id: 'step-code', name: 'StepCode', kind: 'acp', command: 'step', adapter: 'step-rpc-v1' },
+    {
+      id: 'muse-code',
+      name: 'Muse Code',
+      kind: 'acp',
+      command: 'muse',
+      adapter: 'muse-protocol-v1',
+    },
+    { id: 'opencode', name: 'OpenCode', kind: 'acp', command: 'opencode', adapter: 'acp-v1' },
+    { id: 'pi', name: 'Pi Coding Agent', kind: 'acp', command: 'pi', adapter: 'pi-rpc-v1' },
+    { id: 'kilo', name: 'Kilo Code', kind: 'acp', command: 'kilo', adapter: 'acp-v1' },
   ],
   combinations: [
     {

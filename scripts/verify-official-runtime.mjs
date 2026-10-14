@@ -11,6 +11,7 @@ const binding = safeBinding(
 function requestDeadline(method) {
   const discovery = ['oplExecution/catalog', 'oplExecution/save-catalog', 'session/modelCatalog']
   return method === 'oplExecution/wait' ||
+    method === 'harness/wait' ||
     (process.platform === 'win32' && discovery.includes(method))
     ? 180000
     : 30000
@@ -270,6 +271,16 @@ try {
     ops: [
       { op: 'set', path: ['providers', 'opl-gateway-openai', 'baseURL'], value: base },
       { op: 'set', path: ['providers', 'opl-gateway-openai', 'api'], value: 'openai-completions' },
+      {
+        op: 'set',
+        path: ['providers', 'opl-gateway-openai', 'apiKeyEnv'],
+        value: 'OPL_GATEWAY_CODEX_API_KEY',
+      },
+      {
+        op: 'set',
+        path: ['providers', 'opl-gateway-openai', 'models'],
+        value: [{ id: 'gpt-5.4', name: 'GPT-5.4' }],
+      },
     ],
   })
   async function editGateway(group, input) {
@@ -430,6 +441,10 @@ try {
     assert.equal(await readFile(join(project, 'opl-git-bash-smoke.txt'), 'utf8'), 'OPL_GIT_BASH_OK')
   }
   await wire('credentials/set', { ref: 'OPL_GATEWAY_GROK_API_KEY', value: 'fixture-grok' })
+  await editGateway('grok', {
+    api: 'openai-responses',
+    models: [{ id: 'grok-4.7', name: 'Grok 4.7' }],
+  })
   const wrapper = join(
     root,
     process.platform === 'win32' ? 'fixture-harness.cmd' : 'fixture-harness',

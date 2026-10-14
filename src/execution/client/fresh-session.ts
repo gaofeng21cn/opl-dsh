@@ -50,3 +50,40 @@ export function protectEditBranchesFromNewSession(
     if (workspace.connectWorkspace === guarded) workspace.connectWorkspace = original
   }
 }
+
+/**
+ * Keep the global New Conversation action usable when no Workspace is selected.
+ *
+ * Workspace-group actions still call the official implementation with an explicit id. The
+ * no-argument shortcut creates an unattached Session through the public `cwd`-optional API and
+ * opens it directly, so it appears in the official Ungrouped group without inventing a project.
+ * @param workspace - official navigation service.
+ * @param sessions - official Session creation service.
+ * @returns disposer restoring the original start action.
+ */
+export function allowProjectlessSessions(
+  workspace: Pick<UiWorkspace, 'startSession' | 'openSession'>,
+  sessions: Pick<ISessions, 'create'>,
+): () => void {
+  const original = workspace.startSession
+  let disposed = false
+  const start: UiWorkspace['startSession'] = (workspaceId, options) => {
+    if (workspaceId !== undefined || options !== undefined) {
+      original.call(workspace, workspaceId, options)
+      return
+    }
+    void sessions
+      .create({})
+      .then((sessionId) => {
+        if (!disposed) workspace.openSession(sessionId)
+      })
+      .catch((error) => {
+        if (!disposed) console.warn('projectless Session creation failed:', error)
+      })
+  }
+  workspace.startSession = start
+  return () => {
+    disposed = true
+    if (workspace.startSession === start) workspace.startSession = original
+  }
+}

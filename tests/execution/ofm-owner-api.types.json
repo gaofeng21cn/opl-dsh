@@ -1,0 +1,4 @@
+{
+  "extends": "../../tsconfig.host.json",
+  "include": ["../../src/execution/host/ofm-owner-api.ts"]
+}

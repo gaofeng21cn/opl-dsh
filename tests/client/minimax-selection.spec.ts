@@ -160,6 +160,11 @@ function fixture(initial: { model: string; reasoningEffort?: string }) {
     if (method === 'catalog') return catalog
     if (method === 'combinations')
       return catalog.combinations.map((item) => ({ id: item.id, available: true }))
+    if (method === 'reasoning-preflight')
+      return {
+        status: 'known',
+        efforts: initial.model === M3 ? m3Reasoning.efforts : flashReasoning.efforts,
+      }
     if (method === 'select-effort') {
       const input = args as { reasoningEffort?: string }
       current = {
@@ -507,6 +512,7 @@ describe('MiniMax Code model menu labels', () => {
     expect(view.trigger.textContent).toContain('开启思考')
 
     await view.open()
+    expect(view.trigger.textContent).toContain('开启思考')
     await view.click('思考')
     const open = view.menuText()
     // A switch, labeled by its state — never "推理强度" with on/off levels.
@@ -579,6 +585,43 @@ describe('MiniMax Code model menu labels', () => {
     expect(view.menuText()).toContain('推理强度')
   })
 
+  it('hides a remembered max when the live CLI advertises only thinking-off', async () => {
+    const base = fixture({ model: M3_FLASH, reasoningEffort: 'max' })
+    const call = (async (method: string, args?: unknown) =>
+      method === 'reasoning-preflight'
+        ? { status: 'known', efforts: [{ id: 'off', name: 'off' }] }
+        : base.call(method as never, args as never)) as ExecutionCall
+    const face = createFace({
+      lastUsed: null,
+      next: { provider: PROVIDER, model: M3_FLASH, reasoningEffort: 'max' },
+    })
+    const view = await mount({ call, source: () => face.face })
+    expect(view.trigger.textContent).not.toContain('最大')
+    await view.open()
+    await view.click('思考')
+    expect(view.menuText()).toContain('关闭思考')
+    expect(view.menuText()).not.toContain('最大')
+    expect(view.menuText()).not.toContain('极高')
+  })
+
+  it('offers a read retry and no effort ladder after a preflight failure', async () => {
+    const base = fixture({ model: M3_FLASH, reasoningEffort: 'max' })
+    const call = (async (method: string, args?: unknown) => {
+      if (method === 'reasoning-preflight') throw Error('private provider detail')
+      return base.call(method as never, args as never)
+    }) as ExecutionCall
+    const face = createFace({
+      lastUsed: null,
+      next: { provider: PROVIDER, model: M3_FLASH, reasoningEffort: 'max' },
+    })
+    const view = await mount({ call, source: () => face.face })
+    await view.open()
+    expect(view.menuText()).toContain('重新读取推理设置')
+    expect(view.menuText()).not.toContain('推理强度')
+    expect(view.menuText()).not.toContain('private provider detail')
+    expect(view.trigger.textContent).not.toContain('最大')
+  })
+
   it('does not leak one Session selection into another', async () => {
     const first = fixture({ model: M3, reasoningEffort: 'on' })
     const second = fixture({ model: M3_FLASH, reasoningEffort: 'max' })
@@ -588,6 +631,8 @@ describe('MiniMax Code model menu labels', () => {
     })
     const view = await mount({ call: first.call, source: () => mine.face })
     expect(view.trigger.textContent).toContain(`${M3} · ${HARNESS_NAME}`)
+    expect(view.trigger.textContent).toContain('开启思考')
+    await view.open()
     expect(view.trigger.textContent).toContain('开启思考')
 
     // The other Session resolves to the other model; this view keeps its own.

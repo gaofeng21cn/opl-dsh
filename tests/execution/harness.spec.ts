@@ -129,17 +129,71 @@ const start = (s: HarnessService, cwd: string, taskId = 'task') =>
     origin: { kind: 'codex', sessionId: 'parent' },
   })
 const wait = (s: HarnessService, id: string) => s.wait({ sessionId: id }, AbortSignal.timeout(8000))
+
+describe('ACP model namespaces', () => {
+  it('keeps the actual new and loaded session observations through pre-prompt verification', async () => {
+    const { service, root, ctx, options } = await setup()
+    const adapter = adapterFor('grok-build', { provider: 'opl-gateway', model: 'grok::grok-4.7' })!
+    const observations: string[] = []
+    vi.spyOn(adapter, 'configureSession').mockImplementation(async (_acp, _record, snapshot) => {
+      expect(snapshot.session.sessionId).toBe('test-native')
+      expect(snapshot.session.models?.currentModelId).toBe('grok-4.7')
+      observations.push(snapshot.session.sessionId)
+    })
+    const session = await start(service, root)
+    await service.prompt({ sessionId: session.id, text: 'first-observed', operationId: 'first' })
+    expect((await wait(service, session.id)).state).toBe('completed')
+    await service.dispose()
+    const resumed = new HarnessService(ctx, options)
+    cleanups.push(() => resumed.dispose())
+    await resumed.prompt({ sessionId: session.id, text: 'loaded-observed', operationId: 'loaded' })
+    expect((await wait(resumed, session.id)).state).toBe('completed')
+    expect(observations).toHaveLength(4)
+    expect(await readFile(join(root, 'connections.txt'), 'utf8')).toBe(
+      'session/new\nsession/load\n',
+    )
+    expect(await readFile(join(root, 'calls.txt'), 'utf8')).toBe(
+      'first-observed\nloaded-observed\n',
+    )
+  })
+
+  it.each([
+    ['owned/grok-4.7', true],
+    ['other/grok-4.7', false],
+  ])('checks the CLI model ID %s before accepting the session', async (model, accepted) => {
+    const { service, root } = await setup()
+    const adapter = adapterFor('grok-build', { provider: 'opl-gateway', model: 'grok::grok-4.7' })!
+    Object.defineProperty(adapter, 'acpModelId', {
+      configurable: true,
+      value: () => 'owned/grok-4.7',
+    })
+    cleanups.push(async () => {
+      Reflect.deleteProperty(adapter, 'acpModelId')
+    })
+    const prepare = vi.mocked(adapter.prepare!).getMockImplementation()!
+    vi.mocked(adapter.prepare!).mockImplementation(async (...args) => {
+      const launch = await prepare(...args)
+      return { ...launch, env: { ...launch.env, OPL_FIXTURE_MODEL: model } }
+    })
+    if (accepted) await expect(start(service, root)).resolves.toHaveProperty('acpSessionId')
+    else await expect(start(service, root)).rejects.toThrow('不同的模型')
+    await expect(access(join(root, 'calls.txt'))).rejects.toThrow()
+  })
+})
+
 async function nativeSetup(
   models = [
     { id: 'codex::test-model', name: 'Test Model' },
     { id: 'deepseek-flash', name: 'DeepSeek' },
   ],
   providers = [{ id: 'opl-gateway', name: 'OPL Gateway' }],
+  initialPermission: 'read-only' | 'workspace-write' | 'danger-full-access' = 'danger-full-access',
 ) {
   const { root, options, service: initial } = await setup()
   await initial.executionCatalog()
   await initial.dispose()
   let current = { provider: 'opl-gateway', model: 'codex::test-model' }
+  let permission = initialPermission
   const session = {
     id: 'native-session',
     header: { cwd: root },
@@ -151,7 +205,7 @@ async function nativeSetup(
     agents: { get: () => undefined, list: () => [] },
     waterfall: async (_event, _request, next) => next(),
     sessions: { list: () => [], get: () => session },
-    permissionPresets: { current: () => 'danger-full-access' },
+    permissionPresets: { current: () => permission },
     llm: {
       listProviders: () => providers,
       listConfigurableProviders: () => [],
@@ -179,9 +233,46 @@ async function nativeSetup(
     changeModel: () => {
       current = { provider: 'opl-gateway', model: 'deepseek-flash' }
     },
+    setPermission: (next: 'read-only' | 'workspace-write' | 'danger-full-access') => {
+      permission = next
+    },
   }
 }
 describe('native conversation combinations', () => {
+  it('omits provider reasoning controls when the selected CLI has no effort interface', async () => {
+    const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
+    const { service, ctx, session } = await nativeSetup([{ id: ref.model, name: 'Grok' }])
+    const adapter = adapterFor('grok-build', ref)!
+    const original = adapter.capabilities.reasoning
+    adapter.capabilities.reasoning = 'none'
+    cleanups.push(async () => {
+      adapter.capabilities.reasoning = original
+    })
+    const groups = [
+      {
+        id: ref.provider,
+        name: 'Gateway',
+        models: [
+          {
+            id: ref.model,
+            name: 'Grok',
+            reasoning: {
+              efforts: [{ id: 'balanced', name: 'Balanced' }],
+              defaultEffort: 'balanced',
+            },
+          },
+        ],
+      },
+    ]
+    Object.assign(ctx, {
+      sessionProjections: { snapshot: () => ({ values: { modelSelection: { next: ref } } }) },
+      typertGateway: { invoke: async () => ({ default: ref, groups }) },
+    })
+    const selected = await service.modelSelection(session.id)
+    expect(selected.groups[0]!.models[0]).not.toHaveProperty('reasoning')
+    expect(groups[0]!.models[0]!.reasoning.defaultEffort).toBe('balanced')
+  })
+
   it.each(['aws', 'kiro'])(
     'routes the first ordinary %s request through Claude without a picker binding',
     async (channel) => {
@@ -244,6 +335,48 @@ describe('native conversation combinations', () => {
     const chunks = await Array.fromAsync(service.conversationStream(options, next))
     expect(next).not.toHaveBeenCalled()
     expect(await readFile(join(root, 'calls.txt'), 'utf8')).toContain('first-send')
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('uses the permission selected before the first external prompt', async () => {
+    const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
+    const { service, root, session, setPermission } = await nativeSetup(
+      [{ id: ref.model, name: 'Grok' }],
+      [{ id: ref.provider, name: 'OPL Gateway' }],
+      'workspace-write',
+    )
+    const adapter = adapterFor('grok-build', ref)!
+    vi.spyOn(adapter, 'available').mockResolvedValue({ available: true })
+    const catalog = await service.executionCatalog()
+    const combination = catalog.combinations.find(
+      (item) => item.harnessRef === 'grok-build' && item.modelRef.model === ref.model,
+    )!
+    await service.selectCombination({ sessionId: session.id, combination: combination.id })
+    setPermission('danger-full-access')
+    const chunks = await Array.fromAsync(
+      service.conversationStream(
+        {
+          ...ref,
+          sessionId: session.id,
+          messages: [
+            createUserMessage({
+              source: { kind: 'user' },
+              content: [{ type: 'text', text: 'permission-before-first-send' }],
+            }),
+          ],
+        } as GenerateOptions,
+        async function* () {
+          throw Error('direct provider must not receive this model')
+        },
+      ),
+    )
+    const record = (await service.list()).sessions.find(
+      (item) => item.origin.kind === 'dsh' && item.origin.sessionId === session.id,
+    )!
+    expect(record.sandbox).toBe('full-access')
+    expect(await readFile(join(root, 'calls.txt'), 'utf8')).toContain(
+      'permission-before-first-send',
+    )
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
   })
 
@@ -426,6 +559,24 @@ describe('native conversation combinations', () => {
     expect(catalog.combinations.map((item) => item.modelRef.model)).not.toEqual(
       expect.arrayContaining(['deepseek-v4-pro', 'codex::gpt-5', 'codex::gpt-5-mini']),
     )
+  })
+  it('hides OFM decision and moderation models from the conversation picker', async () => {
+    const { service } = await nativeSetup(
+      [
+        { id: 'jev-1.13-free', name: 'Jev 1.13' },
+        { id: 'nvidia/nemotron-3.5-content-safety:free', name: 'Nemotron Content Safety' },
+        { id: 'cat-jam-free', name: 'Cat Jam' },
+      ],
+      [{ id: 'our-free-model', name: 'Our Free Model' }],
+    )
+    const catalog = await service.executionCatalog()
+    expect(catalog.models.map((item) => item.ref.model)).not.toEqual(
+      expect.arrayContaining(['jev-1.13-free', 'nvidia/nemotron-3.5-content-safety:free']),
+    )
+    expect(catalog.combinations.map((item) => item.modelRef.model)).not.toEqual(
+      expect.arrayContaining(['jev-1.13-free', 'nvidia/nemotron-3.5-content-safety:free']),
+    )
+    expect(catalog.models.map((item) => item.ref.model)).toContain('cat-jam-free')
   })
   it('does not expose the built-in DeepSeek catalog without its own credential', async () => {
     const { service } = await nativeSetup(

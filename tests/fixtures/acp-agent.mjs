@@ -60,6 +60,19 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       running = undefined
       return
     }
+    // A transport that reports success for a request that produced nothing at all. This
+    // is the shape official MiMo Code returns for a failed request; a harness that does
+    // not declare its own completion rule keeps this reading, unchanged.
+    if (text === 'empty-turn') {
+      update({ sessionUpdate: 'available_commands_update', availableCommands: [] })
+      update({ sessionUpdate: 'usage_update', usage: { totalTokens: 0 } })
+      answer(m.id, {
+        stopReason: 'end_turn',
+        usage: { totalTokens: 0, inputTokens: 0, outputTokens: 0 },
+      })
+      running = undefined
+      return
+    }
     if (text === 'allow-write' || text === 'deny-write') {
       approvals.set('permission-string', m.id)
       send({

@@ -1,0 +1,12 @@
+{
+  "extends": "../../../tsconfig.host.json",
+  "include": [
+    "../../../src/execution/host/adapters/zcode-ofm/**/*.ts",
+    "../../../tests/execution/ofm-zcode/**/*.ts",
+    "../../../src/execution/contracts/**/*.ts",
+    "../../../src/contracts/**/*.ts",
+    "../../../src/shared/models.ts",
+    "../../../src/gateway/contracts/**/*.ts",
+    "../../../src/gateway/host/account-service.ts"
+  ]
+}
