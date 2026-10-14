@@ -384,24 +384,36 @@ describe('MiMo Code Windows Shell', () => {
     ).rejects.toThrow(/Git Bash/)
   })
 
-  it('SHELL 与官方 flag 变量指向同一个可执行的 Git Bash', async () => {
-    const shell = resolveGitBashPath()
-    const env = await mimoShellEnvironment(
-      { PATH: process.env.PATH! },
-      {
-        platform: 'win32',
-        resolve: () => shell,
-      },
-    )
-    expect(env[MIMO_SHELL_VARIABLE]).toBe(shell)
-    expect(env[MIMO_GIT_BASH_VARIABLE]).toBe(shell)
-    // 官方 `select()` 只在 SHELL 非空时跳过 PowerShell 回退。
-    expect(mimoShellSelectionAccepts(shell, 'win32')).toBe(true)
-    expect(mimoShellSelectionAccepts('C:/Windows/System32/cmd.exe', 'win32')).toBe(false)
+  it('SHELL 与官方 flag 变量只接受 MiMo 会直接采用的可执行路径', () => {
+    // 官方 `select()` 只在 SHELL 非空且指向它会直接采用的 bash 时才跳过 PowerShell 回退。
+    for (const candidate of ['bash', 'bash.exe', 'C:/Windows/System32/cmd.exe'])
+      expect(mimoShellSelectionAccepts(candidate, 'win32')).toBe(false)
+    // 同一个 `/` 根拼写在 posix 与 win32 规则下都是绝对路径，因此这里检验的是可执行文件名
+    // 规则本身，而不是宿主对“绝对路径”的理解——`path.isAbsolute` 取自运行平台而非注入的
+    // 那个平台，所以 `C:/…` 夹具在 Linux 上会因为一个无关的原因被拒。
+    expect(mimoShellSelectionAccepts('/opt/opl-test/Git/bin/cmd.exe', 'win32')).toBe(false)
+    expect(mimoShellSelectionAccepts('/opt/opl-test/Git/bin/bash.exe', 'win32')).toBe(true)
   })
 
-  it('在中文加空格的目录里执行真实 git 外部命令', async () => {
-    if (process.platform !== 'win32') return
+  // 只有真正解析并执行一个 Git Bash 才回答得了的问题，限定在 Windows。
+  it.skipIf(process.platform !== 'win32')(
+    'SHELL 与官方 flag 变量指向同一个可执行的 Git Bash',
+    async () => {
+      const shell = resolveGitBashPath()
+      const env = await mimoShellEnvironment(
+        { PATH: process.env.PATH! },
+        {
+          platform: 'win32',
+          resolve: () => shell,
+        },
+      )
+      expect(env[MIMO_SHELL_VARIABLE]).toBe(shell)
+      expect(env[MIMO_GIT_BASH_VARIABLE]).toBe(shell)
+      expect(mimoShellSelectionAccepts(shell, 'win32')).toBe(true)
+    },
+  )
+
+  it.skipIf(process.platform !== 'win32')('在中文加空格的目录里执行真实 git 外部命令', async () => {
     const dir = await workspace('opl-mimo-git-')
     await exec(resolveGitBashPath(), ['--noprofile', '--norc', '-c', 'git init -q'], { cwd: dir })
     const env = await mimoShellEnvironment({ PATH: process.env.PATH! }, { platform: 'win32' })

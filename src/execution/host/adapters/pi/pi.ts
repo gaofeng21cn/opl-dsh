@@ -43,6 +43,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { executablePath } from '../../harness-registry.ts'
+import { acceptVisibleCliResult } from '../visible-result.ts'
 import { HarnessConfigurationError } from '../../acp.ts'
 import { systemEnvironment } from '../environment.ts'
 import { piBashEnvironment } from './pi-bash.ts'
@@ -293,6 +294,7 @@ export function createPiAdapter(bridgePath: string): HarnessAdapter {
       autoReview: 'unsupported',
     },
     matches: isPiCodeModel,
+    acceptResult: acceptVisibleCliResult,
     async available(_ctx, options) {
       const path = await executablePath(options.command || PI_HARNESS)
       if (!path)

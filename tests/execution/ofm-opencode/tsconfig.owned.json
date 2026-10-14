@@ -5,6 +5,7 @@
     "../../../tests/execution/ofm-opencode/**/*.ts",
     "../../../src/execution/contracts/**/*.ts",
     "../../../src/contracts/**/*.ts",
-    "../../../src/shared/models.ts"
+    "../../../src/shared/models.ts",
+    "../../../src/gateway/host/account-service.ts"
   ]
 }

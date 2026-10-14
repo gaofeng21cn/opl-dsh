@@ -36,6 +36,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { executablePath } from '../../harness-registry.ts'
+import { acceptVisibleCliResult } from '../visible-result.ts'
 import { HarnessConfigurationError } from '../../acp.ts'
 import type { ExternalModelSourceLease } from '../../model-sources.ts'
 import { systemEnvironment } from '../environment.ts'
@@ -342,6 +343,7 @@ export function createStepCodeAdapter(bridgePath: string): HarnessAdapter {
       autoReview: 'unsupported',
     },
     matches: isStepCodeModel,
+    acceptResult: acceptVisibleCliResult,
     async available(_ctx, options) {
       const path = await executablePath(options.command || 'step', STEP_HARNESS)
       if (!path)

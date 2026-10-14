@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -36,6 +36,11 @@ beforeAll(async () => {
   home = await mkdtemp(join(tmpdir(), 'opl-kimi-home-'))
   stubBinary = join(home, 'kimi-stub.mjs')
   await writeFile(stubBinary, '// stub\n')
+  // The registry only accepts a discovered command the platform can actually run: it checks
+  // `X_OK` off Windows and `F_OK` on it. Without the execute bit the stub reads as "not
+  // installed" on Linux, so these tests would fail at CLI discovery instead of exercising
+  // the launch preparation they are about.
+  await chmod(stubBinary, 0o755)
 })
 
 afterAll(async () => {

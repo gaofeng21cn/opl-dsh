@@ -10,9 +10,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, win32 } from 'node:path'
 import { HarnessConfigurationError } from '../../../src/execution/host/acp.ts'
-import { resolveGitBashPath } from '../../../src/shell/host/git-bash.ts'
 import { systemEnvironment } from '../../../src/execution/host/adapters/environment.ts'
 import {
   POOL_GIT_BASH_ARGS,
@@ -70,21 +69,30 @@ describe('pool interpreter pin', () => {
     )
   })
   it('pins the Git Bash this suite resolves, not one the environment names', () => {
-    // Both sides use the product's own environment construction. Building one side
-    // from a `{...process.env}` spread and the other from the live object is not
-    // equivalent on Windows: `process.env` reads names case-insensitively while a
-    // spread object does not, so `ProgramFiles` can resolve on one side and vanish on
-    // the other. Both results were Git Bash, never PowerShell; the fixture is what was
-    // wrong, so the fix is a like-for-like environment, not a different expectation.
-    const expected = resolvePoolShell({ platform: 'win32', env: systemEnvironment() })
-    const hostile = {
-      ...systemEnvironment(),
-      SHELL: 'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe',
-    }
-    const shell = resolvePoolShell({ platform: 'win32', env: hostile })
-    expect(shell).toBe(expected)
-    expect(shell.toLowerCase()).toContain('bash.exe')
-    expect(shell.toLowerCase()).not.toContain('powershell.exe')
+    // A controlled installation rather than whatever this machine happens to carry, so
+    // the claim is decided by the resolver's own candidate order instead of by a local
+    // install: PowerShell genuinely exists in the probe, `SHELL` names PowerShell, and
+    // the resolver must still answer Git Bash. Building one side from a `{...process.env}`
+    // spread and the other from the live object is not equivalent on Windows:
+    // `process.env` reads names case-insensitively while a spread object does not, so
+    // `ProgramFiles` can resolve on one side and vanish on the other. Both results were
+    // Git Bash, never PowerShell; the fixture was what was wrong, so the fix is a
+    // like-for-like environment, not a different expectation.
+    const gitBash = win32.join('C:/ControlledPrograms', 'Git', 'bin', 'bash.exe')
+    const powerShell = win32.join('C:/Windows/System32/WindowsPowerShell/v1.0', 'powershell.exe')
+    const env = {
+      ProgramFiles: 'C:/ControlledPrograms',
+      SHELL: powerShell,
+      PATH: ['C:/Windows/System32', 'C:/Windows/System32/WindowsPowerShell/v1.0'].join(';'),
+    } as NodeJS.ProcessEnv
+    const exists = (path: string) => path === gitBash || path === powerShell
+    expect(resolvePoolShell({ platform: 'win32', env, exists })).toBe(gitBash)
+    // With no `SHELL` naming anything, the answer is unchanged.
+    expect(resolvePoolShell({ platform: 'win32', env: { ...env, SHELL: '' }, exists })).toBe(
+      gitBash,
+    )
+    expect(gitBash.toLowerCase()).toContain('bash.exe')
+    expect(gitBash.toLowerCase()).not.toContain('powershell.exe')
   })
 
   it('prefers the installation root over PATH order, with an injected probe', () => {
@@ -113,7 +121,9 @@ describe('pool interpreter pin', () => {
   })
 
   it('honours an explicit candidate over SHELL and over PATH', () => {
-    const explicit = resolveGitBashPath()
+    // The explicit override wins outright, so this needs no Git for Windows install to
+    // decide: `SHELL` names PowerShell and `PATH` offers only System32.
+    const explicit = 'C:/OwnedShell/bash.exe'
     const shell = resolvePoolShell({
       platform: 'win32',
       env: {
@@ -122,6 +132,7 @@ describe('pool interpreter pin', () => {
         PATH: 'C:/Windows/System32',
         OPL_GIT_BASH_PATH: explicit,
       },
+      exists: (path) => path === explicit,
     })
     expect(shell).toBe(explicit)
   })
@@ -203,9 +214,12 @@ describe('pool hook preflight', () => {
   it('refuses the launch when the hook cannot start, because hooks fail open', async () => {
     const home = await suiteHome()
     const env = await poolShellEnvironment({ home })
-    // A launcher the CLI's command runner cannot execute is the fail-open case: the
-    // hook would never run and the model's own interpreter would win silently.
-    await writeFile(join(home, POOL_HOOK_COMMAND_NAME), '@echo off\nexit /b 3\n', 'utf8')
+    // The fail-open case, expressed for whichever command runner this host uses: the
+    // registered hook program is replaced by one that exits without ever printing a
+    // decision, so the CLI would silently leave the model's own interpreter in place.
+    // `cmd /c` on Windows and `/bin/sh -c` on POSIX both surface that as a non-zero exit,
+    // and neither is a Windows-only fixture.
+    await writeFile(join(home, POOL_HOOK_FILE), 'process.exit(3)\n', 'utf8')
     await expect(verifyPoolShellHook(home, poolShellPath(resolvePoolShell()), env)).rejects.toThrow(
       /钩子自检未通过/u,
     )

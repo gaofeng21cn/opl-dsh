@@ -217,6 +217,7 @@ async function grokSetup() {
   return { service, session }
 }
 
+// These cases include CLI discovery and subprocess startup on mounted filesystems.
 describe('MiMo Code 空成功拒绝', () => {
   it('拒绝无正文也无工具结果的 end_turn，不把它当作已完成', async () => {
     const { service, session } = await mimoSetup()
@@ -235,7 +236,7 @@ describe('MiMo Code 空成功拒绝', () => {
     expect(settled.error).toContain('没有正文')
     expect(settled.error).toContain('未自动重发')
     expect(settled.error).not.toMatch(/4\d\d|429|400|限流|quota/i)
-  })
+  }, 30_000)
 
   it('仅思考不算正文：只有推理片段的 end_turn 同样不算完成', async () => {
     const { service, session } = await mimoSetup()
@@ -247,7 +248,7 @@ describe('MiMo Code 空成功拒绝', () => {
     // The reasoning is retained for the transcript, it just is not an answer.
     expect(settled.content?.some((item) => item.type === 'reasoning')).toBe(true)
     expect(settled.state).toBe('failed')
-  })
+  }, 30_000)
 
   it('真实完成的工具即使没有正文也能完成', async () => {
     const { service, session } = await mimoSetup()
@@ -259,7 +260,7 @@ describe('MiMo Code 空成功拒绝', () => {
     expect(settled.text).toBe('')
     expect(settled.tools.map((tool) => tool.status)).toEqual(['completed'])
     expect(settled.error).toBeUndefined()
-  })
+  }, 30_000)
 
   it('纯正文可以完成', async () => {
     const { service, session } = await mimoSetup()
@@ -270,7 +271,7 @@ describe('MiMo Code 空成功拒绝', () => {
     expect(settled.text).toBe('这是正文。')
     expect(settled.tools).toEqual([])
     expect(settled.error).toBeUndefined()
-  })
+  }, 30_000)
 
   it('失败的工具不能伪装成成功', async () => {
     const { service, session } = await mimoSetup()
@@ -281,7 +282,7 @@ describe('MiMo Code 空成功拒绝', () => {
     expect(settled.text).toBe('')
     expect(settled.tools.map((tool) => tool.status)).toEqual(['failed'])
     expect(settled.state).toBe('failed')
-  })
+  }, 30_000)
 
   it('取消仍然是取消，不被完成判定改成失败', async () => {
     const { service, session } = await mimoSetup()
@@ -300,7 +301,7 @@ describe('MiMo Code 空成功拒绝', () => {
     expect(settled.state).toBe('cancelled')
     expect(settled.stopReason).toBe('cancelled')
     expect(settled.error).toBeUndefined()
-  })
+  }, 30_000)
 })
 
 describe('其他 Harness 的空回复语义不变', () => {

@@ -144,7 +144,7 @@ describe.skipIf(!binary)('Official Muse source endpoint and tools', () => {
     })
     const options = {
       home: root,
-      command: binary,
+      command: binary!,
       nativeBridgePath: bridge,
       grokCommand: 'grok',
       modelSources: sources,

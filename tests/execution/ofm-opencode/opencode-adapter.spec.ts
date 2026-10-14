@@ -14,10 +14,14 @@
 import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AcpProcess } from '../../../src/execution/host/acp.ts'
 import { ExternalModelSources } from '../../../src/execution/host/model-sources.ts'
 import { resolveGitBashPath } from '../../../src/shell/host/git-bash.ts'
+import type {
+  OpenCodeShellBinding,
+  OpenCodeShellOptions,
+} from '../../../src/execution/host/adapters/opencode/opencode-shell.ts'
 import type {
   ExternalModelRoute,
   ExternalModelSource,
@@ -53,6 +57,58 @@ import {
   withOpenCodeShell,
 } from '../../../src/execution/host/adapters/opencode/index.ts'
 
+/**
+ * The adapter's Git Bash preflight is the single await the shared registry cannot cover: the
+ * lease is checked immediately after it. On Windows it spawns a real process and is
+ * therefore a real suspension point, but the POSIX binding resolves without suspending at
+ * all, so nothing can interleave there. The tests below need that await to exist
+ * deterministically on every host, so the shell module delegates to a test-supplied binding
+ * while one is installed. Every other test keeps the real implementation.
+ */
+const shellBinding = vi.hoisted(() => ({
+  current: null as null | ((env: NodeJS.ProcessEnv) => Promise<OpenCodeShellBinding>),
+}))
+
+vi.mock(
+  '../../../src/execution/host/adapters/opencode/opencode-shell.ts',
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import('../../../src/execution/host/adapters/opencode/opencode-shell.ts')
+      >()
+    return {
+      ...actual,
+      openCodeShellBinding: async (
+        env: NodeJS.ProcessEnv,
+        options?: OpenCodeShellOptions,
+      ): Promise<OpenCodeShellBinding> => {
+        const supplied = shellBinding.current
+        return supplied ? supplied(env) : actual.openCodeShellBinding(env, options)
+      },
+    }
+  },
+)
+
+/**
+ * A shell binding the adapter can merge without a real Git Bash on this host. The path is
+ * `/`-rooted, so it is absolute under both the posix and the win32 rules and this says
+ * nothing about where the suite resolved a shell on any particular machine.
+ */
+const TEST_SHELL = '/opt/opl-test/Git/bin/bash.exe'
+
+const testBinding = (env: NodeJS.ProcessEnv): OpenCodeShellBinding => ({
+  config: { [OPENCODE_SHELL_CONFIG_KEY]: TEST_SHELL },
+  env: {
+    ...env,
+    [OPENCODE_SHELL_VARIABLE]: TEST_SHELL,
+    [OPENCODE_GIT_BASH_VARIABLE]: TEST_SHELL,
+  },
+  uname: 'MINGW64_NT-10.0',
+})
+
+/** Suspend preparation the way a spawned shell process would. */
+const tick = () => new Promise<void>((done) => setImmediate(done))
+
 const FIXTURE = resolve('tests/execution/ofm-opencode/fixtures/opencode-acp-agent.mjs')
 /** The one model used for launch-level assertions; a slash-bearing id on purpose. */
 const MODEL = 'inclusionai/ling-3.1-flash'
@@ -70,6 +126,7 @@ const cleanups: (() => Promise<unknown>)[] = []
 const removeTree = (path: string) =>
   rm(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 afterEach(async () => {
+  shellBinding.current = null
   while (cleanups.length) await cleanups.pop()!()
 })
 
@@ -82,10 +139,7 @@ async function workspace(prefix: string, name = '中文 项目 dir'): Promise<st
 }
 
 /** Register a real source through the real registry, so revocation semantics are genuine. */
-function sourcesWith(
-  route: ExternalModelRoute = ROUTE,
-  duringResolve?: (run: (fn: () => void) => void) => void,
-): {
+function sourcesWith(route: ExternalModelRoute = ROUTE): {
   sources: ExternalModelSources
   release: () => void
   source: ExternalModelSource
@@ -96,12 +150,7 @@ function sourcesWith(
   const source: ExternalModelSource = {
     provider: OPENCODE_OFM_PROVIDER,
     supports: () => true,
-    resolve: async () => {
-      // Runs *after* `prepare` captured its lease and *after* the shared registry's own
-      // re-check, which is the only window in which an adapter-side lease is load-bearing.
-      duringResolve?.(run)
-      return route
-    },
+    resolve: async () => route,
   }
   // The fake owner's `effect` runs the callback synchronously and hands back the
   // disposer, exactly as an effect scope would.
@@ -137,9 +186,6 @@ function record(overrides: Partial<HarnessSession> = {}): HarnessSession {
     ...overrides,
   }
 }
-
-/** Run a revocation on the macrotask queue while `prepare` is still awaiting. */
-const run = (fn: () => void) => setImmediate(fn)
 
 interface Entry {
   method?: string
@@ -340,10 +386,17 @@ describe('OpenCode 启动参数与环境', () => {
   })
 
   it('配置经官方环境变量传入，根级 shell 与 provider 都在同一份文档里', async () => {
+    // The shell fragment is supplied explicitly so this proves how the adapter merges one
+    // document on every host. On POSIX the real binding injects nothing at all, which
+    // `POSIX 主机不注入任何 shell 覆盖` asserts separately.
+    shellBinding.current = async (env) => testBinding(env)
     const env = await launchEnv()
     const content = JSON.parse(env.OPENCODE_CONFIG_CONTENT)
     expect(content.$schema).toBe('https://opencode.ai/config.json')
+    // The root `shell` the selector reads and the inherited `SHELL` are one value, so the
+    // legacy variable can never point the selector at a different interpreter.
     expect(content[OPENCODE_SHELL_CONFIG_KEY]).toEqual(env[OPENCODE_SHELL_VARIABLE])
+    expect(content[OPENCODE_SHELL_CONFIG_KEY]).toBe(TEST_SHELL)
     const provider = content.provider[OPENCODE_ROUTE_PROVIDER_ID]
     expect(provider.npm).toBe('@ai-sdk/openai-compatible')
     expect(provider.options).toEqual({ baseURL: ROUTE.baseURL, apiKey: FAKE_KEY })
@@ -406,8 +459,17 @@ describe('OpenCode 来源解析', () => {
 
   it('来源在启动准备期间撤销，晚到的 launch 被拒绝', async () => {
     // The shared registry re-checks around its own `resolve`; this revocation lands
-    // strictly after it, while the adapter is still awaiting its Git Bash probe.
-    const { sources, release } = sourcesWith(ROUTE, (defer) => defer(release))
+    // strictly after it, while the adapter is still awaiting its shell preflight. That
+    // preflight is the adapter's only await past the registry's re-check, and on POSIX the
+    // real binding resolves without suspending — so the supplied binding revokes first and
+    // then yields a macrotask, reproducing the window deterministically on every host
+    // instead of depending on a Windows process spawn.
+    const { sources, release } = sourcesWith(ROUTE)
+    shellBinding.current = async () => {
+      release()
+      await tick()
+      return testBinding({})
+    }
     await expect(openCodeAdapter.prepare!({} as never, record(), options(sources))).rejects.toThrow(
       /模型来源已变更，请重新选择/,
     )
@@ -417,16 +479,20 @@ describe('OpenCode 来源解析', () => {
   })
 
   it('同一 source 对象注销再注册，旧 launch 仍然被拒绝', async () => {
-    const { sources, release, source, owner } = sourcesWith(ROUTE, (defer) =>
+    const { sources, release, source, owner } = sourcesWith(ROUTE)
+    shellBinding.current = async () => {
       // Unregister and re-register the *same object* while preparation is in flight.
-      defer(() => {
-        release()
-        sources.register(owner as never, source)
-      }),
-    )
+      release()
+      sources.register(owner as never, source)
+      await tick()
+      return testBinding({})
+    }
     await expect(openCodeAdapter.prepare!({} as never, record(), options(sources))).rejects.toThrow(
       /模型来源已变更，请重新选择/,
     )
+    // The replacement really is registered, so the refusal came from comparing registration
+    // identity rather than from the source having been dropped.
+    expect(sources.supports(OPENCODE_HARNESS, record().modelRef)).toBe(true)
   })
 })
 
@@ -503,24 +569,47 @@ describe('OpenCode shell 绑定', () => {
     ).rejects.toThrow(/未回退 PowerShell、CMD 或 WSL/)
   })
 
-  it('无法被直接采用的路径在启动前就拒绝', async () => {
-    for (const candidate of ['bash', 'C:/tools', 'C:/Program Files/Git/bin/git.exe'])
+  it('无法被直接采用的路径在启动前就拒绝', () => {
+    // A bare name resolves only through PATH, so it can become some other interpreter by
+    // the time the tool runs; it is refused rather than handed over to be reinterpreted.
+    for (const candidate of ['bash', 'bash.exe', 'Git/bin/bash.exe'])
       expect(openCodeShellSelectionAccepts(candidate, 'win32')).toBe(false)
-    expect(openCodeShellSelectionAccepts('C:/Program Files/Git/bin/bash.exe', 'win32')).toBe(true)
+    // Rooted paths. The same `/`-rooted spelling is absolute under both the posix and the
+    // win32 rules, so these check the executable-name rule itself instead of the host's
+    // notion of an absolute path — `path.isAbsolute` follows the running platform, not the
+    // injected one, so a `C:/…` fixture would be refused on Linux for an unrelated reason.
+    expect(openCodeShellSelectionAccepts('/opt/opl-test/Git/bin/git.exe', 'win32')).toBe(false)
+    expect(openCodeShellSelectionAccepts('/opt/opl-test/Git/bin/bash.exe', 'win32')).toBe(true)
+    // On a Windows host the drive-letter spelling the resolver really returns is accepted.
+    if (process.platform === 'win32')
+      expect(openCodeShellSelectionAccepts('C:/Program Files/Git/bin/bash.exe', 'win32')).toBe(true)
   })
 
-  it('真实执行所选 shell，只有 Git Bash/MSYS 运行时才算通过', async () => {
-    const gitBash = resolveGitBashPath()
-    const uname = await verifyOpenCodeGitBash(gitBash, process.env)
-    expect(uname).toMatch(/^MINGW(?:32|64)?_NT-|^MSYS_NT-/)
-    // 一个存在但不是 Git Bash 的可执行文件必须被拒绝，且不得放行任何非 MSYS 运行时。
+  it('不是 Git Bash 的可执行文件和不存在的路径都在启动前拒绝', async () => {
+    // A runnable executable that is not Git Bash must never be let through, on any host.
     await expect(verifyOpenCodeGitBash(process.execPath, process.env)).rejects.toThrow(
       /OpenCode Git Bash 启动验证失败/,
     )
     await expect(verifyOpenCodeGitBash(process.execPath, process.env)).rejects.toThrow(
       /未回退 PowerShell、CMD 或 WSL/,
     )
+    // A path that does not exist fails the same way instead of falling through to
+    // PowerShell, which is the silent failure this check exists to prevent.
+    await expect(
+      verifyOpenCodeGitBash(join(tmpdir(), 'opl-no-such-dir', 'opl-missing-bash.exe'), process.env),
+    ).rejects.toThrow(/未回退 PowerShell、CMD 或 WSL/)
   })
+
+  // Executing a real Git Bash only answers on Windows; POSIX hosts run a different shell
+  // that the adapter deliberately does not bind at all.
+  it.skipIf(process.platform !== 'win32')(
+    '真实执行所选 shell，只有 Git Bash/MSYS 运行时才算通过',
+    async () => {
+      const gitBash = resolveGitBashPath()
+      const uname = await verifyOpenCodeGitBash(gitBash, process.env)
+      expect(uname).toMatch(/^MINGW(?:32|64)?_NT-|^MSYS_NT-/)
+    },
+  )
 
   it('POSIX 主机不注入任何 shell 覆盖', async () => {
     const env = { PATH: '/usr/bin' }

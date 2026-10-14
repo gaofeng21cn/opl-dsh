@@ -8,10 +8,11 @@
  * channel, and must never borrow the Huawei MaaS key or fall back to the Huawei route.
  */
 import { afterEach, describe, expect, test } from 'vitest'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile, chmod } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ModelRef } from '../../../src/execution/contracts/catalog.ts'
 import type { HarnessSession } from '../../../src/execution/contracts/sessions.ts'
@@ -146,6 +147,11 @@ const makeInstall = async () => {
   await writeFile(bundle, '// stand-in bundle')
   const executable = join(root, 'ZCode.exe')
   await writeFile(executable, 'MZ')
+  // Off Windows the adapter resolves a configured CLI path with `X_OK` rather than
+  // `F_OK`, so a merely readable stand-in is reported as a missing CLI there while
+  // resolving fine on Windows. `chmod` is a no-op on Windows, so one stand-in serves
+  // both platforms without pretending a POSIX binary was installed.
+  await chmod(executable, 0o755)
   return { root, release, command: executable, prefix: [bundle] }
 }
 
@@ -428,35 +434,65 @@ describe('ZCode · Our Free Model packaging path conversion', () => {
   // The shipped host is `package/lib/index.js`; the source checkout runs `.ts`. The
   // bridge must resolve to whatever sits beside the running module, never to a path in
   // the other layout.
+
+  /**
+   * A synthetic absolute location on the host running the suite.
+   *
+   * `resolve` against the filesystem root is used so a synthetic Windows location keeps
+   * the drive letter that `fileURLToPath` will hand back, which is what makes the
+   * expected values below exact rather than merely plausible.
+   * @param segments - path segments below the filesystem root.
+   * @returns an absolute native path.
+   */
+  const locationAt = (...segments: string[]) => resolve(sep, ...segments)
+
+  /**
+   * The module URL a bundle at that location would report.
+   * @param segments - path segments below the filesystem root.
+   * @returns a `file:` URL, encoded the way the runtime encodes a module's own URL.
+   */
+  const moduleUrlAt = (...segments: string[]) => pathToFileURL(locationAt(...segments)).href
+
   test('resolves the emitted .mjs beside the packaged index.js bundle', () => {
-    const resolved = zcodeOfmBridgePath('file:///C:/owned/package/lib/index.js')
-    expect(resolved).toBe(
-      join('C:' + String.fromCharCode(92), 'owned', 'package', 'lib', 'zcode-ofm-bridge.mjs'),
-    )
-    expect(resolved.endsWith('zcode-ofm-bridge.mjs')).toBe(true)
+    const resolved = zcodeOfmBridgePath(moduleUrlAt('owned', 'package', 'lib', 'index.js'))
+    expect(resolved).toBe(locationAt('owned', 'package', 'lib', 'zcode-ofm-bridge.mjs'))
+    expect(basename(resolved)).toBe('zcode-ofm-bridge.mjs')
   })
 
   test('resolves the emitted .mjs beside an already-emitted index.mjs bundle', () => {
-    expect(zcodeOfmBridgePath('file:///C:/owned/package/lib/index.mjs')).toMatch(
-      /zcode-ofm-bridge\.mjs$/,
+    expect(zcodeOfmBridgePath(moduleUrlAt('owned', 'package', 'lib', 'index.mjs'))).toBe(
+      locationAt('owned', 'package', 'lib', 'zcode-ofm-bridge.mjs'),
     )
   })
 
   test('keeps the source checkout on the .ts bridge', () => {
     expect(
-      zcodeOfmBridgePath('file:///C:/owned/src/execution/host/adapters/zcode-ofm/index.ts'),
-    ).toMatch(/zcode-ofm-bridge\.ts$/)
+      zcodeOfmBridgePath(
+        moduleUrlAt('owned', 'src', 'execution', 'host', 'adapters', 'zcode-ofm', 'index.ts'),
+      ),
+    ).toBe(
+      locationAt(
+        'owned',
+        'src',
+        'execution',
+        'host',
+        'adapters',
+        'zcode-ofm',
+        'zcode-ofm-bridge.ts',
+      ),
+    )
   })
 
   test('resolves beside the module, not at a fixed install path', () => {
     // Two different bundle locations must resolve to two different bridges, each one
     // next to its own bundle.
-    const a = zcodeOfmBridgePath('file:///C:/one/lib/index.js')
-    const b = zcodeOfmBridgePath('file:///C:/two/lib/index.js')
+    const a = zcodeOfmBridgePath(moduleUrlAt('one', 'lib', 'index.js'))
+    const b = zcodeOfmBridgePath(moduleUrlAt('two', 'lib', 'index.js'))
     expect(a).not.toBe(b)
-    expect(dirname(a)).toBe(dirname(zcodeOfmBridgePath('file:///C:/one/lib/index.js')))
-    expect(a.startsWith(join('C:' + String.fromCharCode(92), 'one'))).toBe(true)
-    expect(b.startsWith(join('C:' + String.fromCharCode(92), 'two'))).toBe(true)
+    expect(dirname(a)).toBe(dirname(locationAt('one', 'lib', 'index.js')))
+    expect(dirname(b)).toBe(dirname(locationAt('two', 'lib', 'index.js')))
+    expect(a.startsWith(locationAt('one'))).toBe(true)
+    expect(b.startsWith(locationAt('two'))).toBe(true)
   })
 
   test('never resolves a bridge that does not exist in the source checkout', () => {

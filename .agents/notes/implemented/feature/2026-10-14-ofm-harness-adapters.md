@@ -13,3 +13,5 @@ Global new-conversation actions may create an ungrouped Session. Workspace-targe
 Compiled Pi and Step test bridges use independently allocated roots. esbuild returns output bytes to Node for filesystem writes, which supports Windows hosts that permit Node writes but refuse writes from the esbuild helper executable.
 
 Pi and Step bridges quote the complete Windows CLI argument vector at the child launch. The outer Node bridge retains Node's normal argument quoting. All packaged bridges follow the requested build output directory, including the native Harness bridge.
+
+Pi and Step transport-success turns require an answer or completed tool result. Thinking and failed tools cannot become a successful completion. Adapter tests separate Windows execution from portable route and permission checks; subprocess cases have explicit deadlines that include CLI discovery and startup.

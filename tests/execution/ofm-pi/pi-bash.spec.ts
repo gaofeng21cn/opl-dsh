@@ -17,7 +17,7 @@ import { describe, expect, it } from 'vitest'
 import { execFile } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, win32 } from 'node:path'
 import { promisify } from 'node:util'
 import { HarnessConfigurationError } from '../../../src/execution/host/acp.ts'
 import {
@@ -44,14 +44,27 @@ const realBash = (() => {
   }
 })()
 
+/**
+ * The same path, but only where it is a runnable Git-for-Windows bash.
+ *
+ * `resolveGitBashPath()` answers the bare name `bash` on a POSIX host, which is a
+ * correct answer for the POSIX provider but not a Windows candidate: the cases below
+ * execute the pinned path as a Windows shell, so they are Windows-only by construction
+ * rather than by accident of what happens to be installed.
+ */
+const windowsBash = process.platform === 'win32' ? realBash : undefined
+
 describe('Pi shell candidate checks', () => {
   it('rejects a relative path before spawning anything', () => {
     expect(piShellCandidateProblem('bash.exe')).toMatch(/必须是绝对 Windows 路径/)
   })
 
   it('rejects the WSL entry point the official CLI also refuses', () => {
-    const system32 = join(process.env.SystemRoot ?? 'C:/Windows', 'System32')
-    expect(piShellCandidateProblem(join(system32, 'bash.exe'))).toMatch(/WSL/)
+    // `win32.join` so the candidate keeps Windows separators on every host. The WSL
+    // branch is decided from the path shape alone and runs before any filesystem probe,
+    // so the refusal is the same on a runner that has no `System32` at all.
+    const system32 = win32.join(process.env.SystemRoot ?? 'C:/Windows', 'System32')
+    expect(piShellCandidateProblem(win32.join(system32, 'bash.exe'))).toMatch(/WSL/)
   })
 
   it('rejects an executable that is not named bash.exe', () => {
@@ -99,15 +112,15 @@ describe('Pi shell environment', () => {
     await expect(attempt).rejects.toThrow(/不会静默回退到其他 shell/)
   })
 
-  it.runIf(realBash)('pins a verified Git-for-Windows bash it actually executed', async () => {
+  it.runIf(windowsBash)('pins a verified Git-for-Windows bash it actually executed', async () => {
     const result = await piBashEnvironment({ PATH: process.env.PATH ?? '' }, { platform: 'win32' })
-    expect(result.shell).toBe(realBash)
-    expect(result.env[PI_SHELL_PATH_ENV]).toBe(realBash)
-    expect(result.env.SHELL).toBe(realBash)
+    expect(result.shell).toBe(windowsBash)
+    expect(result.env[PI_SHELL_PATH_ENV]).toBe(windowsBash)
+    expect(result.env.SHELL).toBe(windowsBash)
     expect(existsSync(result.shell!)).toBe(true)
   })
 
-  it.runIf(realBash)('runs a real external git command through the pinned bash', async () => {
+  it.runIf(windowsBash)('runs a real external git command through the pinned bash', async () => {
     const result = await piBashEnvironment({}, { platform: 'win32' })
     const { stdout } = await exec(result.shell!, ['--noprofile', '--norc', '-c', 'git --version'], {
       windowsHide: true,

@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { win32 } from 'node:path'
 import { HarnessConfigurationError } from '../../../src/execution/host/acp.ts'
 import {
   STEP_SHELL_PATH_ENV,
@@ -17,8 +17,16 @@ import {
 } from '../../../src/execution/host/adapters/step/step-bash.ts'
 import { resolveGitBashPath } from '../../../src/shell/host/git-bash.ts'
 
-/** The real Git-for-Windows bash on this machine, when there is one. */
-const realBash = (() => {
+/**
+ * The real Git-for-Windows bash on this machine, and only where it is one.
+ *
+ * `resolveGitBashPath()` answers the bare name `bash` on a POSIX host, which is a
+ * correct answer for the POSIX provider but not a Windows candidate. The two cases that
+ * use this execute the pinned path as a Windows shell, so they are Windows-only by
+ * construction rather than by accident of what happens to be installed.
+ */
+const windowsBash = (() => {
+  if (process.platform !== 'win32') return undefined
   try {
     return resolveGitBashPath()
   } catch {
@@ -32,8 +40,11 @@ describe('StepCode shell candidate checks', () => {
   })
 
   it('rejects the WSL entry point the official CLI also refuses', () => {
-    const system32 = join(process.env.SystemRoot ?? 'C:/Windows', 'System32')
-    expect(stepShellCandidateProblem(join(system32, 'bash.exe'))).toMatch(/WSQL|WSL|WSL 入口/)
+    // `win32.join` so the candidate keeps Windows separators on every host. The WSL
+    // branch is decided from the path shape alone and runs before any filesystem probe,
+    // so the refusal is the same on a runner that has no `System32` at all.
+    const system32 = win32.join(process.env.SystemRoot ?? 'C:/Windows', 'System32')
+    expect(stepShellCandidateProblem(win32.join(system32, 'bash.exe'))).toMatch(/WSQL|WSL|WSL 入口/)
   })
 
   it('rejects an executable that is not named bash.exe', () => {
@@ -81,18 +92,18 @@ describe('StepCode shell environment', () => {
     await expect(attempt).rejects.toThrow(/不会静默回退到其他 shell/)
   })
 
-  it.runIf(realBash)('pins a verified Git-for-Windows bash it actually executed', async () => {
+  it.runIf(windowsBash)('pins a verified Git-for-Windows bash it actually executed', async () => {
     const result = await stepBashEnvironment(
       { PATH: process.env.PATH ?? '' },
       { platform: 'win32' },
     )
-    expect(result.shell).toBe(realBash)
-    expect(result.env[STEP_SHELL_PATH_ENV]).toBe(realBash)
-    expect(result.env.SHELL).toBe(realBash)
+    expect(result.shell).toBe(windowsBash)
+    expect(result.env[STEP_SHELL_PATH_ENV]).toBe(windowsBash)
+    expect(result.env.SHELL).toBe(windowsBash)
     expect(existsSync(result.shell!)).toBe(true)
   })
 
-  it.runIf(realBash)('runs a real external git command through the pinned bash', async () => {
+  it.runIf(windowsBash)('runs a real external git command through the pinned bash', async () => {
     const { execFile } = await import('node:child_process')
     const { promisify } = await import('node:util')
     const exec = promisify(execFile)

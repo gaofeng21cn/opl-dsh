@@ -6,12 +6,18 @@
  * a hook that cannot start, or that returns the wrong decision, silently leaves
  * the model's own interpreter in place. The property under test is therefore
  * behaviour, not shape.
+ *
+ * The interpreter the hook is pinned to is a file this fixture creates, not whatever Git
+ * for Windows the machine happens to carry. The hook's own contract is only "the pinned
+ * path is an existing file": deciding whether a candidate really is a MINGW/MSYS bash is
+ * `verifyPoolShell`'s job, covered in `pool-bash.spec.ts`, which pins the real resolved
+ * interpreter through this same hook. Keeping the pin here host-independent is what lets
+ * every case below run on a runner with no Git for Windows at all.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { resolveGitBashPath } from '../../../src/shell/host/git-bash.ts'
 import { scratchRoot } from './fixtures/records.ts'
 import {
   POOL_AUDIT_MAX_BYTES,
@@ -23,6 +29,7 @@ import {
   POOL_SHELL_VARIABLE,
   poolSettings,
   poolShellHookSource,
+  poolShellPath,
 } from '../../../src/execution/host/adapters/pool/index.ts'
 
 const dirs: string[] = []
@@ -30,12 +37,16 @@ afterEach(async () => {
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
 
-async function hookProgram(): Promise<{ dir: string; file: string }> {
+async function hookProgram(): Promise<{ dir: string; file: string; shell: string }> {
   const dir = await mkdtemp(join(scratchRoot(), 'opl-pool-hook-'))
   dirs.push(dir)
   const file = join(dir, 'pool-shell-hook.mjs')
   await writeFile(file, poolShellHookSource(), 'utf8')
-  return { dir, file }
+  // The pinned interpreter, in the exact shape the adapter hands the hook: an absolute
+  // path normalized by `poolShellPath`, pointing at a file that exists here.
+  const shell = poolShellPath(join(dir, 'bash.exe'))
+  await writeFile(shell, 'suite fixture standing in for the pinned interpreter\n', 'utf8')
+  return { dir, file, shell }
 }
 
 interface HookResult {
@@ -69,18 +80,18 @@ const preToolUse = (toolInput: unknown) => ({
   tool_call_id: 'call-1',
 })
 
-const pinnedEnv = (over: NodeJS.ProcessEnv = {}) => ({
-  [POOL_SHELL_VARIABLE]: resolveGitBashPath().replace(/\\/gu, '/'),
+const pinnedEnv = (shell: string, over: NodeJS.ProcessEnv = {}) => ({
+  [POOL_SHELL_VARIABLE]: shell,
   [POOL_SHELL_ARGS_VARIABLE]: JSON.stringify(POOL_GIT_BASH_ARGS),
   ...over,
 })
 
 describe('pool PreToolUse interpreter pin', () => {
   it('rewrites the interpreter of a call that chose none', async () => {
-    const { file } = await hookProgram()
+    const { file, shell } = await hookProgram()
     const result = await runHook(
       file,
-      pinnedEnv(),
+      pinnedEnv(shell),
       preToolUse({ cmd: 'uname -s', mode: 'foreground' }),
     )
     expect(result.code).toBe(0)
@@ -88,16 +99,16 @@ describe('pool PreToolUse interpreter pin', () => {
     expect(decision.hook_specific_output.updated_input).toEqual({
       cmd: 'uname -s',
       mode: 'foreground',
-      shell: resolveGitBashPath().replace(/\\/gu, '/'),
+      shell,
       shell_args: [...POOL_GIT_BASH_ARGS],
     })
   })
 
   it('overrides an interpreter the model picked for itself', async () => {
-    const { file } = await hookProgram()
+    const { file, shell } = await hookProgram()
     const result = await runHook(
       file,
-      pinnedEnv(),
+      pinnedEnv(shell),
       preToolUse({
         cmd: 'echo hi',
         shell: 'powershell.exe',
@@ -106,14 +117,14 @@ describe('pool PreToolUse interpreter pin', () => {
     )
     const updated = JSON.parse(result.stdout).hook_specific_output.updated_input
     expect(updated.shell).not.toBe('powershell.exe')
-    expect(updated.shell).toBe(resolveGitBashPath().replace(/\\/gu, '/'))
+    expect(updated.shell).toBe(shell)
   })
 
   it('preserves the working directory, environment and mode the model asked for', async () => {
-    const { file } = await hookProgram()
+    const { file, shell } = await hookProgram()
     const result = await runHook(
       file,
-      pinnedEnv(),
+      pinnedEnv(shell),
       preToolUse({ cmd: 'pwd', cwd: 'C:/work 中文 空格', env: { A: '1' }, mode: 'background' }),
     )
     const updated = JSON.parse(result.stdout).hook_specific_output.updated_input
@@ -123,10 +134,10 @@ describe('pool PreToolUse interpreter pin', () => {
   })
 
   it('blocks instead of falling back when Git Bash is absent', async () => {
-    const { file } = await hookProgram()
+    const { file, shell } = await hookProgram()
     const result = await runHook(
       file,
-      pinnedEnv({ [POOL_SHELL_VARIABLE]: 'C:/uninstalled/opl-bash.exe' }),
+      pinnedEnv(shell, { [POOL_SHELL_VARIABLE]: 'C:/uninstalled/opl-bash.exe' }),
       preToolUse({ cmd: 'echo hi' }),
     )
     expect(result.code).toBe(2)
@@ -143,10 +154,10 @@ describe('pool PreToolUse interpreter pin', () => {
   })
 
   it('blocks when the pinned argv is not a JSON string array', async () => {
-    const { file } = await hookProgram()
+    const { file, shell } = await hookProgram()
     const result = await runHook(
       file,
-      pinnedEnv({ [POOL_SHELL_ARGS_VARIABLE]: '{oops' }),
+      pinnedEnv(shell, { [POOL_SHELL_ARGS_VARIABLE]: '{oops' }),
       preToolUse({ cmd: 'x' }),
     )
     expect(result.code).toBe(2)
@@ -154,23 +165,23 @@ describe('pool PreToolUse interpreter pin', () => {
   })
 
   it('stays silent for anything that is not a shell call', async () => {
-    const { file } = await hookProgram()
+    const { file, shell } = await hookProgram()
     for (const payload of [
       { ...preToolUse({ cmd: 'echo hi' }), hook_event_name: 'PostToolUse' },
       preToolUse('not-an-object'),
       preToolUse([1, 2, 3]),
       { hook_event_name: 'PreToolUse' },
     ]) {
-      const result = await runHook(file, pinnedEnv(), payload)
+      const result = await runHook(file, pinnedEnv(shell), payload)
       expect(result.code).toBe(0)
       expect(result.stdout).toBe('')
     }
   })
 
   it('leaves no decision behind for malformed input instead of guessing', async () => {
-    const { file } = await hookProgram()
+    const { file, shell } = await hookProgram()
     const result = await new Promise<HookResult>((resolve) => {
-      const child = spawn(process.execPath, [file], { env: pinnedEnv(), windowsHide: true })
+      const child = spawn(process.execPath, [file], { env: pinnedEnv(shell), windowsHide: true })
       let stdout = ''
       let stderr = ''
       child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString('utf8')))
@@ -183,17 +194,17 @@ describe('pool PreToolUse interpreter pin', () => {
   })
 
   it('records one bounded audit line per rewrite and never the command text', async () => {
-    const { dir, file } = await hookProgram()
+    const { dir, file, shell } = await hookProgram()
     const audit = join(dir, 'audit.ndjson')
     await runHook(
       file,
-      pinnedEnv({ [POOL_SHELL_AUDIT_VARIABLE]: audit }),
+      pinnedEnv(shell, { [POOL_SHELL_AUDIT_VARIABLE]: audit }),
       preToolUse({ cmd: 'curl -H "Authorization: Bearer secret"', shell: 'pwsh' }),
     )
     const line = JSON.parse((await readFile(audit, 'utf8')).trim())
     expect(line).toMatchObject({
       tool_call_id: 'call-1',
-      shell: resolveGitBashPath().replace(/\\/gu, '/'),
+      shell,
       shell_args: [...POOL_GIT_BASH_ARGS],
       rewrote: true,
     })
@@ -202,7 +213,7 @@ describe('pool PreToolUse interpreter pin', () => {
     await writeFile(audit, 'x'.repeat(POOL_AUDIT_MAX_BYTES + 1), 'utf8')
     await runHook(
       file,
-      pinnedEnv({ [POOL_SHELL_AUDIT_VARIABLE]: audit }),
+      pinnedEnv(shell, { [POOL_SHELL_AUDIT_VARIABLE]: audit }),
       preToolUse({ cmd: 'again' }),
     )
     const rotated = await readFile(audit, 'utf8')
@@ -210,8 +221,8 @@ describe('pool PreToolUse interpreter pin', () => {
   })
 
   it('never writes an audit trail when no audit path is configured', async () => {
-    const { file } = await hookProgram()
-    const result = await runHook(file, pinnedEnv(), preToolUse({ cmd: 'echo hi' }))
+    const { file, shell } = await hookProgram()
+    const result = await runHook(file, pinnedEnv(shell), preToolUse({ cmd: 'echo hi' }))
     expect(result.code).toBe(0)
   })
 })

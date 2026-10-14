@@ -25,6 +25,34 @@ const SERVER = fileURLToPath(
   new URL('../../../src/execution/host/adapters/muse/muse-bash-mcp.mjs', import.meta.url),
 )
 
+/**
+ * Whether this host is the Windows Git Bash runtime that most of this file describes.
+ *
+ * The interpreter pinning, the absolute-path/existing-file refusals and the process-tree
+ * teardown are Windows-only branches *in the tool*: `resolveBash` returns the platform
+ * shell untouched off Windows, and the kill reaches MSYS descendants only through
+ * `taskkill` plus an MSYS process-group signal. A POSIX `bash` cannot stand in for that,
+ * because it exercises the early return instead of the branch under test — so those
+ * tests run on Windows only. Every other assertion here stays portable and still runs.
+ */
+const onWindows = process.platform === 'win32'
+
+/**
+ * Whether a real `git` is on PATH.
+ *
+ * Driving a real external CLI through the tool is worth proving, but the suite must not
+ * assume any particular machine installed one, so the git-backed tests are skipped
+ * rather than failed when the binary is genuinely absent.
+ */
+const gitAvailable = await (async () => {
+  try {
+    const { stdout } = await exec('git', ['--version'], { windowsHide: true, timeout: 15_000 })
+    return /^git version \d+\.\d+/u.test(stdout)
+  } catch {
+    return false
+  }
+})()
+
 let workspace = ''
 let bash = ''
 
@@ -70,7 +98,7 @@ async function waitFor(predicate: () => Promise<boolean>, timeoutMs = 15_000): P
 }
 
 describe('Muse Bash tool: interpreter selection', () => {
-  it('pins a real Git Bash and proves it is an MSYS shell', async () => {
+  it.runIf(onWindows)('pins a real Git Bash and proves it is an MSYS shell', async () => {
     const resolved = await museBashEnvironment(process.env)
     expect(resolved.shell).toMatch(/bash\.exe$/iu)
     expect(resolved.env[MUSE_BASH_ENV]).toBe(resolved.shell)
@@ -106,7 +134,7 @@ describe('Muse Bash tool: interpreter selection', () => {
     expect(result.stdout).toMatch(/中文 空格/u)
   })
 
-  it('runs a real external Git command end to end', async () => {
+  it.runIf(gitAvailable)('runs a real external Git command end to end', async () => {
     const repo = join(workspace, 'git-repo')
     await mkdir(repo, { recursive: true })
     const { shell } = await museBashEnvironment(process.env)
@@ -161,7 +189,7 @@ describe('Muse Bash tool: refusal without a fallback interpreter', () => {
     )
   })
 
-  it('refuses a bash path that does not exist, naming no substitute', async () => {
+  it.runIf(onWindows)('refuses a bash path that does not exist, naming no substitute', async () => {
     const missing = join(workspace, 'no-such', 'bash.exe')
     await expect(
       runBashCommand({ command: 'echo hi' }, { ...process.env, [MUSE_BASH_ENV]: missing }),
@@ -172,7 +200,7 @@ describe('Muse Bash tool: refusal without a fallback interpreter', () => {
     ).rejects.toThrow(/^(?!.*(?:PowerShell|WSL)).*$/su)
   })
 
-  it('refuses a relative interpreter path rather than resolving it', async () => {
+  it.runIf(onWindows)('refuses a relative interpreter path rather than resolving it', async () => {
     await expect(
       runBashCommand({ command: 'echo hi' }, { ...process.env, [MUSE_BASH_ENV]: 'bash' }),
     ).rejects.toThrow(/is not an absolute path/)
@@ -191,7 +219,7 @@ describe('Muse Bash tool: refusal without a fallback interpreter', () => {
 })
 
 describe('Muse Bash tool: timeout and process cleanup', () => {
-  it('kills a timed-out command and says so', async () => {
+  it.runIf(onWindows)('kills a timed-out command and says so', async () => {
     const started = Date.now()
     const result = await runBashCommand({ command: 'sleep 30', timeoutMs: 1500 }, env())
     expect(result.timedOut).toBe(true)
@@ -200,7 +228,7 @@ describe('Muse Bash tool: timeout and process cleanup', () => {
     expect(result.exitCode).not.toBe(0)
   })
 
-  it('leaves no descendant process behind after a timeout', async () => {
+  it.runIf(onWindows)('leaves no descendant process behind after a timeout', async () => {
     // `sleep.exe` exists on this host only as what these probes start, so a clean
     // baseline plus an empty count afterwards is a direct check of tree teardown —
     // and unlike a canary write it cannot lose a race with the kill.
@@ -212,26 +240,29 @@ describe('Muse Bash tool: timeout and process cleanup', () => {
     expect(await sleepProcessCount()).toBe(0)
   })
 
-  it('stops a cancelled command, awaits its close and reports the cancellation', async () => {
-    expect(await sleepProcessCount()).toBe(0)
-    const control = new CancellationControl()
-    const started = Date.now()
-    // A timeout far longer than the test budget: if the kill failed, the call would run
-    // to it, so a quick settle is itself evidence the kill worked.
-    const pending = runBashCommand(
-      { command: 'sleep 300 & wait', timeoutMs: 60_000 },
-      env(),
-      control,
-    )
-    control.cancel()
-    const result = await pending
-    expect(result.cancelled).toBe(true)
-    expect(result.timedOut).toBe(false)
-    expect(result.killConfirmed).toBe(true)
-    expect(Date.now() - started).toBeLessThan(30_000)
-    await waitFor(async () => (await sleepProcessCount()) === 0)
-    expect(await sleepProcessCount()).toBe(0)
-  })
+  it.runIf(onWindows)(
+    'stops a cancelled command, awaits its close and reports the cancellation',
+    async () => {
+      expect(await sleepProcessCount()).toBe(0)
+      const control = new CancellationControl()
+      const started = Date.now()
+      // A timeout far longer than the test budget: if the kill failed, the call would run
+      // to it, so a quick settle is itself evidence the kill worked.
+      const pending = runBashCommand(
+        { command: 'sleep 300 & wait', timeoutMs: 60_000 },
+        env(),
+        control,
+      )
+      control.cancel()
+      const result = await pending
+      expect(result.cancelled).toBe(true)
+      expect(result.timedOut).toBe(false)
+      expect(result.killConfirmed).toBe(true)
+      expect(Date.now() - started).toBeLessThan(30_000)
+      await waitFor(async () => (await sleepProcessCount()) === 0)
+      expect(await sleepProcessCount()).toBe(0)
+    },
+  )
 })
 
 /** Drive the MCP server over stdio, exactly the way the official CLI does. */
@@ -308,27 +339,35 @@ describe('Muse Bash tool: MCP protocol surface', () => {
     }
   })
 
-  it('runs a real command through a tool call and reports the exit code', async () => {
-    const { child, call } = driveTool(bash)
-    try {
-      await call('initialize', { protocolVersion: '2025-06-18' })
-      const called = await call('tools/call', {
-        name: 'run',
-        arguments: {
-          command: 'printf "MUSE_MCP_BASH=%s\\n" "$BASH_VERSION"; uname -s; git --version',
-        },
-      })
-      const text = called.result.content[0].text as string
-      expect(text).toMatch(/^exit=0/u)
-      expect(text).toContain(`shell=${bash}`)
-      expect(text).toMatch(/MUSE_MCP_BASH=/u)
-      expect(text).toMatch(/(?:MINGW64|MSYS)_NT-/u)
-      expect(text).toMatch(/git version \d+\.\d+/u)
-      expect(called.result.isError).toBe(false)
-    } finally {
-      child.kill()
-    }
-  })
+  it.runIf(gitAvailable)(
+    'runs a real command through a tool call and reports the exit code',
+    async () => {
+      const { child, call } = driveTool(bash)
+      try {
+        await call('initialize', { protocolVersion: '2025-06-18' })
+        const called = await call('tools/call', {
+          name: 'run',
+          arguments: {
+            command: 'printf "MUSE_MCP_BASH=%s\\n" "$BASH_VERSION"; uname -s; git --version',
+          },
+        })
+        const text = called.result.content[0].text as string
+        expect(text).toMatch(/^exit=0/u)
+        expect(text).toContain(`shell=${bash}`)
+        expect(text).toMatch(/MUSE_MCP_BASH=/u)
+        // `uname -s` is the interpreter's own answer, so the tool reports a real shell on
+        // both platforms rather than a hard-coded identity: an MSYS build on Windows, the
+        // POSIX kernel elsewhere. Asserting the host's own name keeps that honest.
+        expect(text).toMatch(
+          onWindows ? /(?:MINGW(?:32|64)|MSYS)_NT-/u : /^(?:Linux|Darwin|FreeBSD)$/mu,
+        )
+        expect(text).toMatch(/git version \d+\.\d+/u)
+        expect(called.result.isError).toBe(false)
+      } finally {
+        child.kill()
+      }
+    },
+  )
 
   it('reports a failing command as an error without pretending it succeeded', async () => {
     const { child, call } = driveTool(bash)
@@ -358,33 +397,37 @@ describe('Muse Bash tool: MCP protocol surface', () => {
     }
   })
 
-  it('cancels the call named by requestId and stops its descendants', async () => {
-    expect(await sleepProcessCount()).toBe(0)
-    const { child, call, callWithId, stderr } = driveTool(bash)
-    try {
-      await call('initialize', { protocolVersion: '2025-06-18' })
-      const { id, promise } = callWithId('tools/call', {
-        name: 'run',
-        arguments: { command: 'sleep 300 & wait', timeoutMs: 60_000 },
-      })
-      // The cancellation has to name the request it withdraws; counting notifications
-      // left the command running and still writing.
-      child.stdin.write(
-        `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: id } })}
-`,
-      )
-      const answer = await promise
-      const text = answer.result.content[0].text as string
-      expect(text).toContain('cancelled')
-      expect(text).toContain('killConfirmed=true')
-      expect(answer.result.isError).toBe(true)
-      await waitFor(async () => (await sleepProcessCount()) === 0)
+  it.runIf(onWindows)(
+    'cancels the call named by requestId and stops its descendants',
+    async () => {
       expect(await sleepProcessCount()).toBe(0)
-      expect(stderr.join('')).not.toMatch(/没有对应的运行中调用/)
-    } finally {
-      child.kill()
-    }
-  }, 30_000)
+      const { child, call, callWithId, stderr } = driveTool(bash)
+      try {
+        await call('initialize', { protocolVersion: '2025-06-18' })
+        const { id, promise } = callWithId('tools/call', {
+          name: 'run',
+          arguments: { command: 'sleep 300 & wait', timeoutMs: 60_000 },
+        })
+        // The cancellation has to name the request it withdraws; counting notifications
+        // left the command running and still writing.
+        child.stdin.write(
+          `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: id } })}
+`,
+        )
+        const answer = await promise
+        const text = answer.result.content[0].text as string
+        expect(text).toContain('cancelled')
+        expect(text).toContain('killConfirmed=true')
+        expect(answer.result.isError).toBe(true)
+        await waitFor(async () => (await sleepProcessCount()) === 0)
+        expect(await sleepProcessCount()).toBe(0)
+        expect(stderr.join('')).not.toMatch(/没有对应的运行中调用/)
+      } finally {
+        child.kill()
+      }
+    },
+    30_000,
+  )
 
   it('says so when a cancellation names no running call, instead of claiming success', async () => {
     const { child, call, stderr } = driveTool(bash)
@@ -402,20 +445,23 @@ describe('Muse Bash tool: MCP protocol surface', () => {
     }
   })
 
-  it('exits with its own code when the interpreter is unusable, and serves nothing', async () => {
-    const { child, call, exited } = driveTool(join(workspace, 'absent', 'bash.exe'))
-    try {
-      // The tool never answers a call; it fails at launch instead of leaving the model
-      // with a server that appears healthy.
-      const outcome = await Promise.race([
-        call('initialize', { protocolVersion: '2025-06-18' }).then(() => 'answered'),
-        exited.then((code) => `exited:${code}`),
-      ])
-      expect(outcome).toBe(`exited:${EXIT_NO_BASH}`)
-    } finally {
-      child.kill()
-    }
-  })
+  it.runIf(onWindows)(
+    'exits with its own code when the interpreter is unusable, and serves nothing',
+    async () => {
+      const { child, call, exited } = driveTool(join(workspace, 'absent', 'bash.exe'))
+      try {
+        // The tool never answers a call; it fails at launch instead of leaving the model
+        // with a server that appears healthy.
+        const outcome = await Promise.race([
+          call('initialize', { protocolVersion: '2025-06-18' }).then(() => 'answered'),
+          exited.then((code) => `exited:${code}`),
+        ])
+        expect(outcome).toBe(`exited:${EXIT_NO_BASH}`)
+      } finally {
+        child.kill()
+      }
+    },
+  )
 })
 
 describe('Muse Bash tool: registration shape the official CLI reads', () => {

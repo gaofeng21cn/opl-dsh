@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -42,8 +42,12 @@ beforeAll(async () => {
   stubBinary = join(home, 'muse-stub.mjs')
   await rm(stubBinary, { force: true }).catch(() => {})
   // `executablePath` must find something real; the file is never executed here.
-  const { writeFile } = await import('node:fs/promises')
-  await writeFile(stubBinary, '// stub\n')
+  await writeFile(stubBinary, '#!/usr/bin/env node\n// stand-in, never executed\n')
+  // The executable bit is load-bearing off Windows: the resolver probes a configured
+  // path with `X_OK` on POSIX hosts and `F_OK` on Windows, so a plain 0644 file
+  // resolves on the dev machine and is reported as a missing CLI on every other host.
+  // `chmod` is a no-op on Windows, so this keeps one fixture for both platforms.
+  await chmod(stubBinary, 0o755)
 })
 
 afterAll(async () => {

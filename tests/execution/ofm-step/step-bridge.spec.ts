@@ -8,14 +8,15 @@
  * itself, so there is no sleep-and-hope race.
  *
  * The working directory used throughout mixes non-ASCII characters and a space, and the
- * stub runs a genuine external `git` command through the verified Git Bash, so quoting,
- * PATH and non-ASCII paths are exercised rather than asserted.
+ * stub runs a genuine external `git` command through the shell the bridge pinned, so
+ * quoting, PATH and non-ASCII paths are exercised rather than asserted.
  */
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { execFile } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import { fileURLToPath } from 'node:url'
 import { resolveGitBashPath } from '../../../src/shell/host/git-bash.ts'
 import {
   STEP_AGENT_DIR_ENV,
@@ -42,7 +43,9 @@ import {
 vi.setConfig({ testTimeout: 60_000 })
 
 const exec = promisify(execFile)
-const STUB = join(process.cwd(), 'tests/execution/ofm-step/fixtures/stub-step-rpc.mjs')
+// Module-relative, not `process.cwd()`-relative: the suite must launch this stub the same
+// way no matter which directory the runner was started from.
+const STUB = fileURLToPath(new URL('./fixtures/stub-step-rpc.mjs', import.meta.url))
 
 interface Launch {
   agent: StepAgent
@@ -118,8 +121,20 @@ async function launch(
   return { agent, home, cwd, env }
 }
 
-/** The verified Git Bash, or an empty string on hosts without one. */
+/**
+ * The shell the bridge is told to pin: the verified Git Bash on Windows, and a real
+ * absolute POSIX shell elsewhere.
+ *
+ * `resolveGitBashPath()` answers the bare name `bash` on a POSIX host, which is right for
+ * the POSIX provider but is not something the tool can execute: the RPC stub, like the
+ * official tool call it stands in for, refuses any pinned path that is not an existing
+ * file. Left at `bash`, the real-turn case on a Linux runner would stop at
+ * `NO_SHELL_CONFIGURED` instead of running the real external `git` command.
+ */
+const POSIX_SHELLS = ['/bin/bash', '/usr/bin/bash', '/bin/sh', '/usr/bin/sh']
+
 function safeBash(): string {
+  if (process.platform !== 'win32') return POSIX_SHELLS.find((path) => existsSync(path)) ?? ''
   try {
     return resolveGitBashPath()
   } catch {
@@ -273,7 +288,7 @@ describe('StepCode bridge: a real turn', () => {
       // The real external git command completed (not merely started) in this directory.
       expect(updates).toContain('tool_call_update')
       expect(updates).not.toContain('NO_SHELL_CONFIGURED')
-      // A real external git command ran through the verified Git Bash, in a directory
+      // A real external git command ran through the shell the bridge pinned, in a directory
       // whose name contains non-ASCII characters and a space.
       expect(updates).toContain('agent_message_chunk')
       expect(updates).toContain('tool_call')
