@@ -1,21 +1,22 @@
-import { describe, it, expect, vi } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { afterAll, describe, it, expect, vi } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
 const held = vi.hoisted(() => ({
   shell: undefined as undefined | (() => Promise<{ env: Record<string, string>; shell: string }>),
 }))
-vi.mock(
-  'C:/Users/root/Documents/Codex/repair-20261013/post-pr-features/repo/src/execution/host/adapters/step/step-bash.ts',
-  async (load) => ({
-    ...(await load<Record<string, unknown>>()),
-    stepBashEnvironment: () =>
-      held.shell?.() ?? Promise.resolve({ env: {}, shell: 'C:/Program Files/Git/bin/bash.exe' }),
-  }),
-)
-import { createStepCodeAdapter } from 'C:/Users/root/Documents/Codex/repair-20261013/post-pr-features/repo/src/execution/host/adapters/step/step.ts'
-import { ExternalModelSources } from 'C:/Users/root/Documents/Codex/repair-20261013/post-pr-features/repo/src/execution/host/model-sources.ts'
-import { stepRecord } from 'C:/Users/root/Documents/Codex/repair-20261013/post-pr-features/repo/tests/execution/ofm-step/fixtures/records.ts'
+vi.mock('../../../src/execution/host/adapters/step/step-bash.ts', async (load) => ({
+  ...(await load<Record<string, unknown>>()),
+  stepBashEnvironment: () =>
+    held.shell?.() ?? Promise.resolve({ env: {}, shell: 'C:/Program Files/Git/bin/bash.exe' }),
+}))
+import { createStepCodeAdapter } from '../../../src/execution/host/adapters/step/step.ts'
+import { ExternalModelSources } from '../../../src/execution/host/model-sources.ts'
+import { stepRecord } from './fixtures/records.ts'
+const home = mkdtempSync(join(tmpdir(), 'opl-step-chief-'))
+afterAll(() => rmSync(home, { recursive: true, force: true }))
 const model = 'step-5-preview-free',
   ref = { provider: 'our-free-model', model }
 const record = stepRecord(ref, { acpSessionId: 'chief-step', reasoningEffort: 'high' })
@@ -24,7 +25,7 @@ const ctx = { effect: (fn: () => unknown) => fn() } as never
 const options = (s: ExternalModelSources) =>
   ({
     command: process.execPath,
-    home: 'C:/Users/root/Documents/Codex/repair-20261013/ofm-harness-adaptation/step/tmp/chief-owned',
+    home,
     modelSources: s,
   }) as never
 const config = (m: string, thinking: string) => [
@@ -96,7 +97,7 @@ describe('Chief Step final checks', () => {
   })
   it('relays a permission-like select during a running task instead of auto-answering by title text', () => {
     const source = readFileSync(
-      'C:/Users/root/Documents/Codex/repair-20261013/post-pr-features/repo/src/execution/host/adapters/step/step-bridge.ts',
+      new URL('../../../src/execution/host/adapters/step/step-bridge.ts', import.meta.url),
       'utf8',
     )
     const start = source.indexOf('function handleDialog('),
