@@ -255,6 +255,29 @@ const handle = async (message) => {
       event({ type: 'agent_start' })
       event({ type: 'turn_start' })
       event({ type: 'message_start', message: { role: 'assistant' } })
+      if (knobs.terminalError === true) {
+        event({
+          type: 'message_end',
+          message: {
+            role: 'assistant',
+            stopReason: 'error',
+            errorMessage: '429 daily limit exceeded',
+          },
+        })
+        event({ type: 'turn_end', message: { role: 'assistant' }, toolResults: [] })
+        event({ type: 'agent_end', messages: [], willRetry: true })
+        event({
+          type: 'auto_retry_start',
+          attempt: 1,
+          maxAttempts: 1,
+          delayMs: 1,
+          errorMessage: '429 daily limit exceeded',
+        })
+        event({ type: 'auto_retry_end', success: false, finalError: '429 daily limit exceeded' })
+        event({ type: 'agent_settled' })
+        streaming = false
+        return
+      }
       if (message.message.includes('/think')) {
         event({
           type: 'message_update',

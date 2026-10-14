@@ -21,6 +21,8 @@ export type ProviderScript =
   | 'stall'
   /** Answer immediately with text and no tool call. */
   | 'answer-only'
+  /** Refuse every attempt with an explicit upstream quota failure. */
+  | 'rate-limit'
 
 export interface ControlledProvider {
   /** Base URL to hand to the official `models.json`. */
@@ -77,6 +79,13 @@ export async function startControlledProvider(
     let body = ''
     req.on('data', (chunk) => (body += chunk))
     req.on('end', () => {
+      if (script === 'rate-limit') {
+        res.writeHead(429, { 'content-type': 'application/json' })
+        res.end(
+          JSON.stringify({ error: { message: 'Rate limit exceeded', type: 'rate_limit_error' } }),
+        )
+        return
+      }
       // Hold the socket open: the turn stays in flight until the client aborts it.
       if (script === 'stall') return
       let parsed: any = {}

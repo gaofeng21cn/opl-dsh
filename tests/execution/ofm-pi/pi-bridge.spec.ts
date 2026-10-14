@@ -73,7 +73,7 @@ async function launch(
     thinking?: string
     shell?: string
     baseURL?: string
-    script?: 'tool-then-answer' | 'stall' | 'answer-only'
+    script?: 'tool-then-answer' | 'stall' | 'answer-only' | 'rate-limit'
     cwd?: string
     windowsShim?: boolean
   } = {},
@@ -120,6 +120,25 @@ async function launch(
 afterAll(() => piTestCleanup())
 
 describe('Pi bridge: initialization and pinning over the official CLI', () => {
+  it.runIf(realCli)('reports the official exhausted retry as a provider failure', async () => {
+    const run = await launch({ script: 'rate-limit' })
+    try {
+      await run.agent.acp.request('initialize', { protocolVersion: 1, clientCapabilities: {} })
+      const session = (await run.agent.acp.request('session/new', {
+        cwd: run.cwd,
+        mcpServers: [],
+      })) as { sessionId: string }
+      await expect(
+        run.agent.acp.request('session/prompt', {
+          sessionId: session.sessionId,
+          prompt: [{ type: 'text', text: 'Reply OK.' }],
+        }),
+      ).rejects.toThrow('官方渠道限流或配额已达上限')
+    } finally {
+      await run.agent.dispose()
+      await run.provider.close()
+    }
+  })
   it.runIf(process.platform === 'win32' && !!realCli)(
     'passes RPC arguments through a Windows CLI shim with spaces',
     async () => {

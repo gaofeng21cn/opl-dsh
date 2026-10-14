@@ -22,6 +22,7 @@ import {
   messageEditDefinition,
 } from './message-edit-view.ts'
 import { allowProjectlessSessions } from './fresh-session.ts'
+import { ProjectlessHeroChoice } from './ProjectlessHeroChoice.tsx'
 import { HARNESS_TRANSCRIPT_TOOL } from '../contracts/tool-display.ts'
 import { remoteCall } from '../../shared/client/remote-call.ts'
 export const inject = [
@@ -72,6 +73,15 @@ export function apply(ctx: Context): void {
   ctx.effect(() => installMessageEditViews(ctx.uiConversation.views))
   ctx.effect(() => installMessageEditNavigation(ctx))
   ctx.effect(() => ctx.uiConversation.events.register(messageEditDefinition))
+  ctx.slots.inject('conversation.hero.agentPreset', () =>
+    ctx.slots.register(
+      {
+        name: 'conversation.hero.agentPreset',
+        inject: () => ({ create: () => ctx.uiWorkspace.startSession() }),
+      },
+      ProjectlessHeroChoice,
+    ),
+  )
   const editors = new Map<
     string,
     { selection: () => EditSelection | undefined; accepted: () => void }

@@ -28,6 +28,20 @@ const harnessFailure = (code: unknown) => {
       return '所选渠道长时间没有返回首个响应，已停止本轮请求。请检查渠道状态后再手动发起新指令；原任务未自动重发。'
     case 'HARNESS_NETWORK':
       return '所选渠道连接中断，重试后仍未收到响应，已停止本轮请求。请检查网络或切换已配置的渠道；原任务未自动重发。'
+    case 'HARNESS_EXECUTION':
+      return '官方 Harness 报告本轮执行失败，原任务未自动重发。'
+    case 'HARNESS_PROVIDER':
+      return '官方渠道报告本轮请求失败，已停止本轮请求；原任务未自动重发。'
+    case 'HARNESS_PROVIDER_AUTH':
+      return '官方渠道认证失败或权限不足，原任务未自动重发。'
+    case 'HARNESS_PROVIDER_MODEL':
+      return '官方渠道不接受所选模型，原任务未自动重发。'
+    case 'HARNESS_PROVIDER_RATE_LIMIT':
+      return '官方渠道限流或配额已达上限，原任务未自动重发。'
+    case 'HARNESS_PROVIDER_TIMEOUT':
+      return '官方渠道请求超时，原任务未自动重发。'
+    case 'HARNESS_PROVIDER_NETWORK':
+      return '官方渠道连接或响应流中断，原任务未自动重发。'
     case -32700:
     case -32600:
     case -32601:
@@ -35,9 +49,28 @@ const harnessFailure = (code: unknown) => {
     case -32602:
       return '官方 Harness 拒绝了本次请求参数，请检查所选模型与固定组合是否匹配。原任务未自动重发。'
     case -32603:
-      return '官方 Harness 处理本次请求时返回内部错误。若使用官方账号登录的 CLI，请确认已登录且模型可用。原任务未自动重发。'
+      return '官方 Harness 返回内部错误，尚不能确定是渠道还是请求处理问题。原任务未自动重发。'
     default:
       return 'Harness 执行未完成，请检查官方 CLI 的安装、登录与模型配置。原任务未自动重发。'
+  }
+}
+/** Fixed request stages; unknown extension names never enter diagnostics. */
+function requestStage(method: string): string {
+  switch (method) {
+    case 'initialize':
+      return '初始化'
+    case 'session/new':
+      return '新建会话'
+    case 'session/load':
+      return '恢复会话'
+    case 'session/set_config_option':
+    case 'session/set_model':
+    case 'session/set_mode':
+      return '配置会话'
+    case 'session/prompt':
+      return '等待本轮结果'
+    default:
+      return '扩展请求'
   }
 }
 export class HarnessTransportError extends Error {}
@@ -55,6 +88,7 @@ export class AcpProcess {
       resolve: (v: unknown) => void
       reject: (e: Error) => void
       timer: ReturnType<typeof setTimeout>
+      method: string
     }
   >()
   private sequence = 0
@@ -100,7 +134,11 @@ export class AcpProcess {
         clearTimeout(p.timer)
         this.pending.delete(m.id)
         if (m.error) {
-          p.reject(new HarnessTransportError(harnessFailure(object(m.error).code)))
+          p.reject(
+            new HarnessTransportError(
+              `${harnessFailure(object(m.error).code)}（${requestStage(p.method)}）`,
+            ),
+          )
         } else p.resolve(m.result)
       } else if (m.method === 'session/update') this.update(m.params)
       else if (typeof m.id === 'string' || typeof m.id === 'number') {
@@ -121,7 +159,7 @@ export class AcpProcess {
     this.closed = true
     for (const p of this.pending.values()) {
       clearTimeout(p.timer)
-      p.reject(new Error(message))
+      p.reject(new HarnessTransportError(`${message}（${requestStage(p.method)}）`))
     }
     this.pending.clear()
     this.onExit()
@@ -144,10 +182,10 @@ export class AcpProcess {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
-        reject(new Error('Harness ACP 请求超时'))
+        reject(new HarnessTransportError(`Harness ACP 请求超时（${requestStage(method)}）`))
         void this.dispose()
       }, timeoutMs)
-      this.pending.set(id, { resolve, reject, timer })
+      this.pending.set(id, { resolve, reject, timer, method })
       try {
         this.send({ id, method, params })
       } catch (e) {
