@@ -46,11 +46,41 @@ export interface AcpSessionConfigureResult {
   /** Config options advertised after pinning; the caller keeps them for later checks. */
   configOptions?: unknown
 }
+/**
+ * What one settled turn actually produced, as observed on this turn alone.
+ *
+ * Only this round's own observations are exposed. A provider's error text is
+ * deliberately absent: a transport that reports `end_turn` for a request the
+ * model never answered reports no text either, so nothing here can be mistaken
+ * for a recovered upstream error.
+ */
+export interface HarnessTurnOutcome {
+  /** The transport's own `session/prompt` stop reason, verbatim. */
+  readonly stopReason: string
+  /**
+   * Body text this turn delivered. Reasoning is excluded by construction, so a
+   * turn that only thought reads as empty body rather than as an answer.
+   */
+  readonly text: string
+  /** Tool calls this turn reported, each with the status it ended in. */
+  readonly tools: readonly { readonly status: string }[]
+}
+export interface HarnessResultVerdict {
+  readonly accepted: boolean
+  /**
+   * Why a reported success was refused. This is shown to the user, so it must
+   * describe what this suite observed rather than repeat provider diagnostics
+   * that may carry arbitrary content.
+   */
+  readonly reason?: string
+}
 export interface HarnessAdapter {
   id: string
   capabilities: HarnessCapabilities
   transport: 'dsh' | 'acp'
   matches(ref: ModelRef): boolean
+  /** CLI-local model identity for ACP readback; defaults to the provider's wire model ID. */
+  acpModelId?(ref: ModelRef): string
   available(ctx: Context, options: AdapterOptions): Promise<{ available: boolean; reason?: string }>
   prepare?(ctx: Context, record: HarnessSession, options: AdapterOptions): Promise<AdapterLaunch>
   /**
@@ -69,4 +99,15 @@ export interface HarnessAdapter {
    * writing. Runs before every prompt so a session that drifted fails closed.
    */
   verifySession?(record: HarnessSession, snapshot: AcpSessionSnapshot): void
+  /**
+   * Adjudicate one turn whose stop reason the transport mapped to success.
+   *
+   * `run` calls this after `session/prompt` settles and before the terminal turn
+   * state is committed, and only when that mapping produced a completion. A
+   * transport may report `end_turn` for a request that produced nothing at all;
+   * refusing it is an adapter's own rule, never a shared one, so an adapter
+   * without this hook keeps exactly the empty-reply semantics it always had and
+   * no other harness' completion changes. Cancellation is never routed here.
+   */
+  acceptResult?(outcome: HarnessTurnOutcome): HarnessResultVerdict | void
 }

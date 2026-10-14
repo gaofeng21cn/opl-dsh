@@ -7,6 +7,15 @@ import { minimaxCodeAdapter, MINIMAX_CODE_HARNESS } from './minimax.ts'
 import { withMinimaxPermissions } from './minimax-permissions.ts'
 import { zcodeAdapter } from './zcode.ts'
 import { withZcodePermissions } from './zcode-permissions.ts'
+import { zcodeOfmAdapter } from './zcode-ofm/index.ts'
+import { kimiCodeAdapter } from './kimi/index.ts'
+import { mimoCodeAdapter } from './mimo/index.ts'
+import { poolAdapter } from './pool/index.ts'
+import { stepCodeAdapter } from './step/index.ts'
+import { museCodeAdapter } from './muse/index.ts'
+import { openCodeAdapter } from './opencode/index.ts'
+import { piAdapter } from './pi/index.ts'
+import { kiloAdapter } from './kilo/index.ts'
 import type { HarnessAdapter } from './types.ts'
 import type { ExternalModelSources } from '../model-sources.ts'
 /**
@@ -14,12 +23,34 @@ import type { ExternalModelSources } from '../model-sources.ts'
  * combination must bind one of these instead of the DSH loop, because DSH cannot
  * route a model that belongs to an external official CLI account.
  */
-const externalHarnessIds: readonly string[] = ['codex', 'claude', MINIMAX_CODE_HARNESS, 'zcode']
+const externalHarnessIds: readonly string[] = [
+  'codex',
+  'claude',
+  MINIMAX_CODE_HARNESS,
+  'zcode',
+  'kimi-code',
+  'mimo-code',
+  'pool',
+  'step-code',
+  'muse-code',
+  'opencode',
+  'pi',
+  'kilo',
+]
 export const harnessAdapters: readonly HarnessAdapter[] = [
   codexAdapter,
   claudeAdapter,
   withMinimaxPermissions(minimaxCodeAdapter),
   withZcodePermissions(zcodeAdapter),
+  zcodeOfmAdapter,
+  kimiCodeAdapter,
+  mimoCodeAdapter,
+  poolAdapter,
+  stepCodeAdapter,
+  museCodeAdapter,
+  openCodeAdapter,
+  piAdapter,
+  kiloAdapter,
   grokAdapter,
   dshAdapter,
 ]

@@ -208,8 +208,10 @@ export function CombinationSelect({
     : undefined
   const reasoning = currentModel?.reasoning
   const effortSwitch = reasoning === undefined ? undefined : thinkingSwitch(reasoning)
+  const externalCliControlsEffort = selected?.combination.harnessRef !== 'dsh'
   const effectiveEffort =
-    selection.current?.reasoningEffort ?? modelDefaultEffort(currentModel?.id ?? '', reasoning)
+    selection.current?.reasoningEffort ??
+    (externalCliControlsEffort ? undefined : modelDefaultEffort(currentModel?.id ?? '', reasoning))
   /**
    * A thinking switch reads as one state, not as a ladder: the trigger and the
    * drill-down cell both say 开启思考 / 关闭思考, so the top summary always names

@@ -849,7 +849,7 @@ const _one_person_lab_dsh_opl_oplExecution_harness_installations_result$schema =
   'permissions': z.array(z.union([z.literal("read-only"), z.literal("workspace"), z.literal("full-access")])),
   'sessionLoad': z.boolean(),
   'cancel': z.boolean(),
-  'reasoning': z.union([z.literal("model-declared"), z.literal("cli-advertised")]),
+  'reasoning': z.union([z.literal("model-declared"), z.literal("cli-advertised"), z.literal("none")]),
   'autoReview': z.union([z.literal("official"), z.literal("codex-auto-review"), z.literal("unsupported")]),
 }).optional(),
   'installed': z.boolean(),

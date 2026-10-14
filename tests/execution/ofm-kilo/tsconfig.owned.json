@@ -1,0 +1,10 @@
+{
+  "extends": "../../../tsconfig.host.json",
+  "include": [
+    "../../../src/execution/host/adapters/kilo/**/*.ts",
+    "../../../tests/execution/ofm-kilo/**/*.ts",
+    "../../../src/execution/contracts/**/*.ts",
+    "../../../src/contracts/**/*.ts",
+    "../../../src/shared/models.ts"
+  ]
+}

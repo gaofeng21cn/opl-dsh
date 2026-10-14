@@ -76,7 +76,7 @@ import {
   minimaxCodeModels,
   minimaxReasoning,
 } from './adapters/minimax.ts'
-import type { AdapterOptions } from './adapters/types.ts'
+import type { AdapterOptions, HarnessAdapter } from './adapters/types.ts'
 import { HarnessSessionStore } from './session-store.ts'
 import { NativeHarnessConversations, harnessRequestId } from './native-conversations.ts'
 import {
@@ -205,6 +205,8 @@ interface Active {
   >
   /** `initialize` result, kept for adapter capability and version diagnostics. */
   agentInfo?: Record<string, any>
+  /** Actual `session/new` or `session/load` response owned by this connection. */
+  sessionInfo?: Record<string, any>
   /** Latest config options the agent advertised for this ACP session. */
   configOptions?: unknown
   /** Catalog launch settings used by this connection, compared before the next turn. */
@@ -356,12 +358,12 @@ export class HarnessService {
   private conversationBinding(session: Session, definition: CombinationDefinition) {
     if (!session.header.cwd) throw Error('请先选择项目目录')
     const policy = this.ctx.agents.get(session.id)?.ctx.get('sandboxPolicy')?.resolve({ session })
+    const preset = this.ctx.permissionPresets.current(session)
+    const mode = policy?.mode ?? preset
     const sandbox =
-      (definition.permissionPolicy === 'read-only' && !definition.generated) ||
-      !policy ||
-      policy.mode === 'read-only'
+      (definition.permissionPolicy === 'read-only' && !definition.generated) || mode === 'read-only'
         ? 'read-only'
-        : policy.mode === 'danger-full-access' && harnessAllowsFullAccess(definition.harnessRef)
+        : mode === 'danger-full-access' && harnessAllowsFullAccess(definition.harnessRef)
           ? 'full-access'
           : 'workspace'
     return {
@@ -558,7 +560,7 @@ export class HarnessService {
     await this.ready
     const catalog = await this.executionCatalog()
     const availability = new Map<string, { available: boolean; reason?: string }>()
-    const probes = new Map<string, Promise<{ available: boolean; reason?: string }>>()
+    const probes = new Map<HarnessAdapter, Promise<{ available: boolean; reason?: string }>>()
     for (const combination of catalog.combinations) {
       const model = catalog.models.find(
         (item) => modelRefKey(item.ref) === modelRefKey(combination.modelRef),
@@ -576,15 +578,15 @@ export class HarnessService {
           reason: '该模型与 Harness 尚无兼容适配器',
         })
       else {
-        if (!probes.has(adapter.id))
+        if (!probes.has(adapter))
           probes.set(
-            adapter.id,
+            adapter,
             adapter.available(
               this.ctx,
               this.adapterOptions(harness.command, harness.prefix, harness?.codexRuntime),
             ),
           )
-        availability.set(combination.id, await probes.get(adapter.id)!)
+        availability.set(combination.id, await probes.get(adapter)!)
       }
     }
     return catalogView(catalog, availability)
@@ -1112,7 +1114,8 @@ export class HarnessService {
       ],
       () => [],
     )
-    const wireModel = record.modelRef.model.split('::').at(-1)!
+    const wireModel =
+      adapter.acpModelId?.(record.modelRef) ?? record.modelRef.model.split('::').at(-1)!
     const acp = new AcpProcess(
       launch.command,
       launch.args,
@@ -1166,6 +1169,7 @@ export class HarnessService {
       // after the session exists and before any prompt can be sent. A refusal to honor
       // the pinned values must abort the connection rather than run on other settings.
       active.configOptions = object(session).configOptions
+      active.sessionInfo = session
       if (adapter.configureSession) {
         const configured = await adapter.configureSession(acp, record, {
           agent: init,
@@ -1589,7 +1593,7 @@ export class HarnessService {
     if (!acp) throw Error('Harness 连接已关闭，无法在发送任务前确认固定模型')
     const snapshot = {
       agent: active.agentInfo ?? {},
-      session: {},
+      session: active.sessionInfo ?? {},
       configOptions: active.configOptions,
     }
     const selectedRecord = effort === undefined ? record : { ...record, reasoningEffort: effort }
@@ -1635,6 +1639,24 @@ export class HarnessService {
             : turn.stopReason === 'cancelled'
               ? 'cancelled'
               : 'failed'
+        // A transport can report success for a request that produced nothing. Only an
+        // adapter that declares its own completion rule may refuse that reading, so a
+        // refusal stays scoped to the combination that declared it. Cancellation and
+        // every non-success stop reason are already settled above and never reach this.
+        if (turn.state === 'completed') {
+          const adapter = adapterFor(record.harnessRef, record.modelRef, this.modelSources)
+          const verdict = adapter?.acceptResult?.({
+            stopReason: turn.stopReason,
+            text: turn.text,
+            tools: turn.tools.map((tool) => ({ status: tool.status })),
+          })
+          if (verdict && !verdict.accepted) {
+            turn.state = 'failed'
+            turn.error =
+              verdict.reason ??
+              'Harness 报告成功但本轮没有结果，原任务未自动重发，也未改用其他模型或渠道。'
+          }
+        }
       } else {
         const unlisten = this.ctx.on(
           'session/event',
@@ -3155,7 +3177,20 @@ export class HarnessService {
     // selector until the Session supplies its own next-request model.
     const current = projection?.next ?? projection?.lastUsed ?? bound?.modelRef ?? catalog.default
     const selected = this.combinationFor(sessionId, executionCatalog, current)
-    return { current, groups: catalog.groups, ...(selected ? { combination: selected.id } : {}) }
+    const adapter =
+      selected && adapterFor(selected.harnessRef, selected.modelRef, this.modelSources)
+    const groups =
+      adapter?.capabilities.reasoning === 'none'
+        ? catalog.groups.map((group) => ({
+            ...group,
+            models: group.models.map((model) => {
+              if (group.id !== current.provider || model.id !== current.model) return model
+              const { reasoning: _, ...cliModel } = model
+              return cliModel
+            }),
+          }))
+        : catalog.groups
+    return { current, groups, ...(selected ? { combination: selected.id } : {}) }
   }
   /**
    * Resolve the combination bound to a DSH session.
@@ -3195,6 +3230,9 @@ export class HarnessService {
   }
   /** Restore this Session's choice for the exact model, using its live default if absent or retired. */
   private async selectionForModel(session: Session, ref: ModelRef): Promise<ModelSelection> {
+    const selected = this.combinationFor(session.id, await this.executionCatalog(), ref)
+    const adapter = selected && adapterFor(selected.harnessRef, ref, this.modelSources)
+    if (adapter?.capabilities.reasoning === 'none') return ref
     const catalog = (await this.ctx.typertGateway.invoke({
       namespace: 'session',
       method: 'modelCatalog',
@@ -3222,7 +3260,16 @@ export class HarnessService {
           : undefined
     const effort = previous?.reasoningEffort
     const supported = effort !== undefined && reasoning?.efforts.some((item) => item.id === effort)
-    const reasoningEffort = supported ? effort : modelDefaultEffort(ref.model, reasoning)
+    // External ACP CLIs advertise their own effort vocabulary at session setup.
+    // Do not invent a suite default before that advertisement exists: Poolside
+    // may expose no thought_level at all, and a model such as Kimi K3 may omit
+    // `high`. The adapter will still reject an explicitly selected stale value.
+    const reasoningEffort =
+      supported || adapter?.capabilities.reasoning !== 'cli-advertised'
+        ? supported
+          ? effort
+          : modelDefaultEffort(ref.model, reasoning)
+        : undefined
     return { ...ref, ...(reasoningEffort === undefined ? {} : { reasoningEffort }) }
   }
   async selectCombination(input: { sessionId: string; combination: string }) {
@@ -3259,23 +3306,15 @@ export class HarnessService {
       await this.bindSelection(session.id, definition.id)
       return { kind: 'native', sessionId: session.id }
     }
-    const binding = this.conversationBinding(session, definition)
-    const child = await this.start(
-      {
-        combination: definition.id,
-        cwd: binding.cwd,
-        origin: { kind: 'dsh', sessionId: session.id },
-        taskId: binding.taskId,
-        sandbox: binding.sandbox,
-      },
-      true,
-    )
     await this.native('selectModel', {
       sessionId: session.id,
       ...selection,
     })
     await this.bindSelection(session.id, definition.id)
-    return { kind: 'external', sessionId: child.id }
+    // Do not create the external session from the picker. The user may still
+    // change the DSH permission before sending the first prompt; the first
+    // prompt creates the binding with the permission that is actually active.
+    return { kind: 'external', sessionId: session.id }
   }
   /** Bridge external official Harness output through the official conversation stream. */
   async *conversationStream(
@@ -3322,11 +3361,29 @@ export class HarnessService {
         'ZCode 审批模式已改变，请新建对话；原会话不会绕过审批。',
         'HARNESS_PERMISSION',
       )
-    if (bound && bound.sandbox !== binding.sandbox)
-      throw new LlmError(
-        '官方会话权限与原外部任务不一致，请恢复原权限后继续；不会自动扩大权限。',
-        'HARNESS_PERMISSION',
-      )
+    if (bound && bound.sandbox !== binding.sandbox) {
+      // A previous picker implementation persisted a zero-turn record before
+      // the first prompt. It is safe to refresh that unused record; once a
+      // prompt has been admitted, changing its permission remains forbidden.
+      if (bound.turns.length !== 0)
+        throw new LlmError(
+          '官方会话权限与原外部任务不一致，请恢复原权限后继续；不会自动扩大权限。',
+          'HARNESS_PERMISSION',
+        )
+      const active = this.active.get(bound.id)
+      if (active?.turn)
+        throw new LlmError(
+          '官方会话权限与原外部任务不一致，请恢复原权限后继续；不会自动扩大权限。',
+          'HARNESS_PERMISSION',
+        )
+      if (active) {
+        await active.acp?.dispose()
+        await active.bridgeStop?.()
+        this.active.delete(bound.id)
+      }
+      bound.sandbox = binding.sandbox
+      await this.save(bound)
+    }
     const started = bound
       ? this.view(bound)
       : await this.start(
@@ -3341,16 +3398,6 @@ export class HarnessService {
         )
     const record = this.records.get(started.id)!
     await this.connect(record)
-    // The official session's materialized request effort is the setting the user chose in
-    // the picker. Recording it on the bound Harness session is what makes that choice
-    // real: the adapter writes it over `session/set_config_option` before every prompt.
-    // An absent value leaves the record alone, so a delegate created before reasoning was
-    // selectable keeps the Harness default rather than being back-filled here.
-    const chosen = typeof options.reasoningEffort === 'string' ? options.reasoningEffort.trim() : ''
-    if (chosen && record.reasoningEffort !== chosen) {
-      record.reasoningEffort = chosen
-      await this.save(record)
-    }
     const user =
       options.messages.findLast(
         (message) =>
@@ -3366,6 +3413,10 @@ export class HarnessService {
         'rpcId' in user.source &&
         user.source.rpcId === harnessRequestId(record, turn),
     )
+    // Managed turns retain their submitted setting. The native picker value is
+    // not an external CLI capability and must not be copied into a new
+    // external session (for example, Kimi may not advertise `high`).
+    const requestEffort = admitted?.reasoningEffort
     const operationId = admitted?.operationId ?? 'conversation:' + hash(user)
     const previous = record.turns.find((turn) => turn.operationId === operationId)
     const messages =
@@ -3391,7 +3442,7 @@ export class HarnessService {
       if (admitted && this.active.get(record.id)?.turn === admitted) {
         void this.run(record, this.active.get(record.id)!, admitted)
       } else {
-        await this.prompt({ sessionId: record.id, text, operationId }, options.reasoningEffort)
+        await this.prompt({ sessionId: record.id, text, operationId }, requestEffort)
       }
       const conversationTurn = record.turns.find((item) => item.operationId === operationId)!
       const rpcId =

@@ -492,7 +492,8 @@ try {
   await mkdir(profile, { recursive: true })
   await writeFile(
     join(profile, 'cordis.patch.yml'),
-    '- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n',
+    // A fresh test profile must not import the operator's legacy keyring.
+    '- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n- id: llm-pi-ai\n  config:\n    huaweiKeyringMigrated: true\n    huaweiCredentialsMigrated: true\n',
     { mode: 0o600 },
   )
   if (suppliedApp)

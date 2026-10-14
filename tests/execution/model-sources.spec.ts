@@ -33,7 +33,7 @@ describe('external model-source ownership', () => {
     remove()
     await expect(sources.resolve('codex', ref, 'responses')).rejects.toThrow('尚未适配')
   })
-  it('does not treat OFM names or virtual routes as official account access', () => {
+  it('does not treat arbitrary OFM names or virtual routes as official account access', () => {
     const sources = new ExternalModelSources(ctx)
     for (const model of ['gpt-6', 'MiniMax-M3.1-Flash-Preview', 'combo:free'])
       expect(adapterFor('codex', { provider: 'our-free-model', model }, sources)).toBeUndefined()

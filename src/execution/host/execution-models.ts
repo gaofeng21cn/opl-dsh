@@ -22,6 +22,7 @@ import {
   MINIMAX_CODE_HARNESS,
   MINIMAX_CODE_PROVIDER,
 } from './adapters/minimax.ts'
+import { OFM_PROVIDERS, isExcludedOfmModel, isExcludedOfmRef } from './ofm-source/provider.ts'
 export class ExecutionModelResolver {
   constructor(
     private readonly ctx: Context,
@@ -37,6 +38,10 @@ export class ExecutionModelResolver {
   ) {}
   async resolve(): Promise<ExecutionCatalog> {
     let catalog = await this.store.get()
+    // Keep non-conversational OFM entries out of the live picker. The owner may
+    // still publish these ids for moderation or decision APIs, but DSH's model
+    // selector only advertises models that can answer an ordinary conversation.
+    catalog.combinations = catalog.combinations.filter((item) => !isExcludedOfmRef(item.modelRef))
     // Remove combinations from old releases before projecting the live model
     // registry. The write is idempotent and keeps the on-disk catalog clean so
     // retired entries cannot return after a restart.
@@ -93,6 +98,7 @@ export class ExecutionModelResolver {
       try {
         for (const model of await this.ctx.llm.listModels(provider.id)) {
           if (provider.id === 'opl-gateway' && model.id === 'codex::codex-auto-review') continue
+          if (OFM_PROVIDERS.includes(provider.id) && isExcludedOfmModel(model.id)) continue
           const ref = { provider: provider.id, model: model.id }
           if (isRetiredModel(ref)) continue
           const external =

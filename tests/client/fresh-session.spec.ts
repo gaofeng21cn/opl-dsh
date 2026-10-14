@@ -1,6 +1,11 @@
 import { expect, it, vi } from 'vitest'
-import { protectEditBranchesFromNewSession } from '../../src/execution/client/fresh-session.ts'
+import {
+  allowProjectlessSessions,
+  protectEditBranchesFromNewSession,
+} from '../../src/execution/client/fresh-session.ts'
 import type { StopEditState } from '../../src/execution/contracts/stop-edit.ts'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 
 const workspaceId = 'workspace-1' as Parameters<
   Parameters<typeof protectEditBranchesFromNewSession>[0]['connectWorkspace']
@@ -102,4 +107,36 @@ it('disposal does not overwrite a later service resolver', () => {
   f.workspace.connectWorkspace = later
   f.dispose()
   expect(f.workspace.connectWorkspace).toBe(later)
+})
+
+it('creates an unattached Session for the global new-conversation action', async () => {
+  const original = vi.fn()
+  const openSession = vi.fn()
+  const workspace = { startSession: original, openSession } as Pick<
+    UiWorkspace,
+    'startSession' | 'openSession'
+  >
+  const fresh = 'projectless-session' as Awaited<ReturnType<ISessions['create']>>
+  const sessions = { create: vi.fn(async () => fresh) } as Pick<ISessions, 'create'>
+  const dispose = allowProjectlessSessions(workspace, sessions)
+  workspace.startSession()
+  await vi.waitFor(() => expect(openSession).toHaveBeenCalledExactlyOnceWith(fresh))
+  expect(sessions.create).toHaveBeenCalledExactlyOnceWith({})
+  expect(original).not.toHaveBeenCalled()
+  dispose()
+})
+
+it('leaves workspace-targeted new sessions on the official path', () => {
+  const original = vi.fn()
+  const workspace = { startSession: original, openSession: vi.fn() } as Pick<
+    UiWorkspace,
+    'startSession' | 'openSession'
+  >
+  const sessions = { create: vi.fn() } as Pick<ISessions, 'create'>
+  const dispose = allowProjectlessSessions(workspace, sessions)
+  const workspaceId = 'workspace-1' as Parameters<UiWorkspace['startSession']>[0]
+  workspace.startSession(workspaceId)
+  expect(original).toHaveBeenCalledExactlyOnceWith(workspaceId, undefined)
+  expect(sessions.create).not.toHaveBeenCalled()
+  dispose()
 })

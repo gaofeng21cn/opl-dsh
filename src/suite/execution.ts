@@ -18,6 +18,20 @@ import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { modelDefaultEffort } from '../shared/model-reasoning.ts'
 import type { AutoReviewMaintenance } from '../auto-review/contracts/maintenance.ts'
 import { EXTERNAL_REVIEW_BINDING_SERVICE } from '../auto-review/host/index.ts'
+import { createOfmOwnerApiReader } from '../execution/host/ofm-owner-api.ts'
+import {
+  applyOfmModelSource,
+  createOfmApiConnection,
+  OFM_PROVIDER,
+} from '../execution/host/ofm-source/index.ts'
+import z from '@deepseek-ai/schemastery'
+
+export interface Config {
+  ofmConnectionTimeoutMs: number
+}
+export const Config = z.object({
+  ofmConnectionTimeoutMs: z.number().step(1).min(100).max(120_000).default(10_000),
+})
 
 export const inject = [
   'llm',
@@ -39,9 +53,17 @@ export const inject = [
 /** Keep admission, model selection, tools and permissions in the official Host.
  * @param ctx - Official Host context.
  */
-export function apply(ctx: Context, _config: Record<string, never>): void {
+export function apply(ctx: Context, config: Config): void {
   const harness = createHarnessService(ctx)
   ctx.provide('oplExternalModelSources', harness.modelSources)
+  const ofmOwner = createOfmOwnerApiReader(ctx, config.ofmConnectionTimeoutMs)
+  applyOfmModelSource(ctx, {
+    providers: [OFM_PROVIDER],
+    connection: createOfmApiConnection(async (request) => {
+      if (request.url !== '/api/our-free-model/clients') throw Error('OFM 连接读取路径无效')
+      return { status: 200, body: await ofmOwner.read('/clients') }
+    }, ''),
+  })
   const reviewerMaintenance: AutoReviewMaintenance = {
     change: (operation) => harness.changeReviewerSettings(operation),
   }

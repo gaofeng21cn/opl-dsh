@@ -80,6 +80,12 @@ export function MessageEditControl({
   const [error, setError] = useState('')
   const root = useRef<HTMLDivElement>(null)
   const selected = useRef<EditSelection>()
+  const callRef = useRef(call)
+  const bindPromptRef = useRef(bindPrompt)
+  const subscribeSessionRef = useRef(subscribeSession)
+  callRef.current = call
+  bindPromptRef.current = bindPrompt
+  subscribeSessionRef.current = subscribeSession
   const draft = useInput((input) => input.draft) ?? ''
   selected.current = selection
   useEffect(() => {
@@ -105,7 +111,7 @@ export function MessageEditControl({
     const load = async () => {
       const current = ++generation
       try {
-        const value = await call('message-edit-state', { sessionId })
+        const value = await callRef.current('message-edit-state', { sessionId })
         if (!live || generation !== current) return
         setState(value)
         if (
@@ -118,8 +124,8 @@ export function MessageEditControl({
         if (live && generation === current) setError(copy.failed)
       }
     }
-    const offPrompt = bindPrompt(sessionId, () => selected.current, clear)
-    const off = subscribeSession?.(sessionId, () => void load())
+    const offPrompt = bindPromptRef.current(sessionId, () => selected.current, clear)
+    const off = subscribeSessionRef.current?.(sessionId, () => void load())
     void load()
     return () => {
       live = false
@@ -127,7 +133,7 @@ export function MessageEditControl({
       offPrompt()
       off?.()
     }
-  }, [sessionId, call, bindPrompt, subscribeSession])
+  }, [sessionId])
   useEffect(() => {
     onActiveChange?.(open)
     return () => onActiveChange?.(false)

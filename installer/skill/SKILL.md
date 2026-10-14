@@ -133,6 +133,12 @@ Shell 配置按实际 Harness 分别确认：Claude 使用官方 `CLAUDE_CODE_GI
 
 读取 `delegate-snapshot --operation` 后仍须在 turns 中找到完全相同的 operationId；响应可能包含其他轮次，不能用最后一轮替代不存在的目标轮次。验收接口只接受最新已完成轮次；旧通知被后续轮次覆盖时，独立记录旧产物核验与覆盖关系，再关闭通知，不伪造旧轮次的 accepted。
 
+## Our Free Model 的外部执行组合
+
+免费模型可使用已适配的 Kimi Code、MiMo Code、Poolside、ZCode、StepCode、OpenCode、Pi 和 Kilo。先用 `delegate-list` 核对当前模型与程序可用性，再派发返回的精确组合；程序路径在执行引擎设置管理，连接仍由 OFM 的公开接口提供。需在 OFM 设置启用本地免费转发，账号车道不借用免费端点。Muse Code 通过官方 `endpoint_transport` 设置和 MSP 桥接接入 Responses 端点，Git Bash 通过 MCP 执行。来源没有有效端点或凭据时仍拒绝启动。MiMo 的空正文且无成功工具结果会标为失败，不自动重发。
+
+这些新组合仅在已有明确完全访问授权时派发，不自动使用 Auto 或提升权限。Kimi Plan 是工具层只读，不作为操作系统沙箱证据。OpenCode 当前没有可用的官方取消接口，取消请求会明确拒绝；Poolside 的 shell hook 启动自检也不代表后续 hook 故障会安全停止。实际工具、恢复和取消分别核验，不把受控 provider 检查当作联网模型质量结果。
+
 ## Windows 本地验证补丁
 
 原生 `dispatch` 支持显式 `--preset danger-full-access`；只有用户已授权该权限时才能使用。创建响应须包含有效权限，helper 在登记反馈和发送 prompt 前核对。官方 rc.2 的权限读写由 OPL 控制桥调用官方 `permissionPresets` 服务，运行中的 Session 拒绝切换。`--cwd` 先在官方 Workspace registry 中创建或复用项目，再用 Workspace id 创建 Session；不要在创建后调用 `workspace.moveSession`，官方 Desktop 没有这个 Remote 方法。需要把独立 worktree 归入另一个项目时，当前官方 API 无法表达该关系，应停止派发并改用同一工作目录或显式项目外模式。旧 helper 的 `session/permissions` 和 `session.create.permissionPreset` 也经过同一适配。

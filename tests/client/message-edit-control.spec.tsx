@@ -135,3 +135,33 @@ it('offers explicit recovery when replaced history has no edit choices, without 
   expect(call).toHaveBeenNthCalledWith(2, 'message-edit-send', recovery)
   expect(container.textContent).not.toContain('重试未确认的编辑')
 })
+
+it('keeps the edit button when the parent recreates callback props', async () => {
+  const state = {
+    sessionId: 'rerender-edit',
+    supported: true,
+    busy: false,
+    pending: false,
+    head: 4,
+    choices: [{ seq: 3, text: '可编辑消息' }],
+  }
+  const container = dom.container()
+  root = createRoot(container as unknown as HTMLElement)
+  const render = () =>
+    root.render(
+      createElement(MessageEditControl, {
+        sessionId: state.sessionId,
+        call: vi.fn(async (method: string) =>
+          method === 'message-edit-state' ? state : { accepted: true },
+        ) as ExecutionCall,
+        inputActions: { setDraft: vi.fn() },
+        useInput: ((selector: (value: InputState) => unknown) =>
+          selector({ draft: '' } as InputState)) as SnapshotSelectorHook<InputState>,
+        bindPrompt: () => () => {},
+      }),
+    )
+  await act(async () => render())
+  expect(container.textContent).toContain('编辑消息')
+  await act(async () => render())
+  expect(container.textContent).toContain('编辑消息')
+})

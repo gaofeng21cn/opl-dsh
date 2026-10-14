@@ -7,13 +7,20 @@ import { execFileSync } from 'node:child_process'
 import { generateRpc } from './scripts/generate-rpc.mjs'
 import { buildNativeBridge } from './scripts/build-native-bridge.mjs'
 const root = import.meta.dirname
-const output = join(root, 'dist')
+const output = process.env.OPL_DIST_DIR ? resolve(process.env.OPL_DIST_DIR) : join(root, 'dist')
 const project = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
 const version = project.version
+
+/** Let Node write esbuild output so Windows endpoint policy cannot block the helper executable. */
+async function bundle(options) {
+  const result = await build({ ...options, write: false })
+  for (const file of result.outputFiles ?? []) await writeFile(file.path, file.contents)
+  return result
+}
 await generateRpc({ root })
 await rm(join(output, 'package'), { recursive: true, force: true })
 await mkdir(join(output, 'package/lib'), { recursive: true })
-const hostBuild = await build({
+const hostBuild = await bundle({
   metafile: true,
   entryPoints: [join(root, 'src/suite/host.ts')],
   bundle: true,
@@ -25,8 +32,8 @@ const hostBuild = await build({
   tsconfig: join(root, 'tsconfig.host.json'),
   outfile: join(output, 'package/lib/index.js'),
 })
-await buildNativeBridge(root)
-await build({
+await buildNativeBridge(root, output)
+await bundle({
   entryPoints: [join(root, 'src/execution/host/adapters/zcode-harness-bridge.ts')],
   bundle: true,
   platform: 'node',
@@ -34,7 +41,23 @@ await build({
   target: 'node24',
   outfile: join(output, 'package/lib/zcode-harness-bridge.mjs'),
 })
-const clientBuild = await build({
+for (const [directory, name] of [
+  ['step', 'step-bridge'],
+  ['pi', 'pi-bridge'],
+  ['zcode-ofm', 'zcode-ofm-bridge'],
+]) {
+  await bundle({
+    entryPoints: [join(root, `src/execution/host/adapters/${directory}/${name}.ts`)],
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    target: 'node24',
+    outfile: join(output, `package/lib/${name}.mjs`),
+  })
+}
+for (const name of ['muse-bridge.mjs', 'muse-bash-mcp.mjs', 'muse-endpoint.mjs'])
+  await cp(join(root, 'src/execution/host/adapters/muse', name), join(output, 'package/lib', name))
+const clientBuild = await bundle({
   metafile: true,
   entryPoints: [join(root, 'src/suite/client.tsx')],
   bundle: true,
