@@ -585,6 +585,43 @@ describe('MiniMax Code model menu labels', () => {
     expect(view.menuText()).toContain('推理强度')
   })
 
+  it('hides a remembered max when the live CLI advertises only thinking-off', async () => {
+    const base = fixture({ model: M3_FLASH, reasoningEffort: 'max' })
+    const call = (async (method: string, args?: unknown) =>
+      method === 'reasoning-preflight'
+        ? { status: 'known', efforts: [{ id: 'off', name: 'off' }] }
+        : base.call(method as never, args as never)) as ExecutionCall
+    const face = createFace({
+      lastUsed: null,
+      next: { provider: PROVIDER, model: M3_FLASH, reasoningEffort: 'max' },
+    })
+    const view = await mount({ call, source: () => face.face })
+    expect(view.trigger.textContent).not.toContain('最大')
+    await view.open()
+    await view.click('思考')
+    expect(view.menuText()).toContain('关闭思考')
+    expect(view.menuText()).not.toContain('最大')
+    expect(view.menuText()).not.toContain('极高')
+  })
+
+  it('offers a read retry and no effort ladder after a preflight failure', async () => {
+    const base = fixture({ model: M3_FLASH, reasoningEffort: 'max' })
+    const call = (async (method: string, args?: unknown) => {
+      if (method === 'reasoning-preflight') throw Error('private provider detail')
+      return base.call(method as never, args as never)
+    }) as ExecutionCall
+    const face = createFace({
+      lastUsed: null,
+      next: { provider: PROVIDER, model: M3_FLASH, reasoningEffort: 'max' },
+    })
+    const view = await mount({ call, source: () => face.face })
+    await view.open()
+    expect(view.menuText()).toContain('重新读取推理设置')
+    expect(view.menuText()).not.toContain('推理强度')
+    expect(view.menuText()).not.toContain('private provider detail')
+    expect(view.trigger.textContent).not.toContain('最大')
+  })
+
   it('does not leak one Session selection into another', async () => {
     const first = fixture({ model: M3, reasoningEffort: 'on' })
     const second = fixture({ model: M3_FLASH, reasoningEffort: 'max' })

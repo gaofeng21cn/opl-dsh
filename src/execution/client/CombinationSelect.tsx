@@ -111,6 +111,7 @@ export function CombinationSelect({
   const [availability, setAvailability] = useState<HarnessCatalog['combinations']>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [preflightRevision, setPreflightRevision] = useState(0)
   const [preflight, setPreflight] = useState<
     | { key: string; state: 'loading' }
     | { key: string; state: 'ready'; value: HarnessReasoningPreflight }
@@ -215,7 +216,7 @@ export function CombinationSelect({
   const reasoning = currentModel?.reasoning
   const externalCliControlsEffort =
     selected !== undefined && selected.combination.harnessRef !== 'dsh'
-  const preflightKey = selected?.combination.id ?? ''
+  const preflightKey = `${sessionId}:${selected?.combination.id ?? ''}`
   const livePreflight =
     externalCliControlsEffort && preflight?.key === preflightKey && preflight.state === 'ready'
       ? preflight.value
@@ -295,6 +296,7 @@ export function CombinationSelect({
     focusIntent.current = selection.current === null ? 'drill' : null
     setPane(selection.current === null ? 'model' : 'root')
     setOpen(true)
+    setPreflightRevision((revision) => revision + 1)
     setError('')
     void reload(sessionId)
   }
@@ -303,10 +305,10 @@ export function CombinationSelect({
       setPreflight(undefined)
       return
     }
-    const key = selected.combination.id
+    const key = `${sessionId}:${selected.combination.id}`
     let current = true
     setPreflight({ key, state: 'loading' })
-    void call('reasoning-preflight', { sessionId, combination: key })
+    void call('reasoning-preflight', { sessionId, combination: selected.combination.id })
       .then((value: HarnessReasoningPreflight) => {
         if (current) setPreflight({ key, state: 'ready', value })
       })
@@ -321,7 +323,7 @@ export function CombinationSelect({
     return () => {
       current = false
     }
-  }, [call, selected?.combination.id, sessionId])
+  }, [call, selected?.combination.id, sessionId, preflightRevision])
   const drill = (next: 'model' | 'effort') => {
     focusIntent.current = 'drill'
     setPane(next)
@@ -571,6 +573,20 @@ export function CombinationSelect({
                     <span className={css.cellLabel}>{effortTitle}</span>
                     <span className={css.cellValue}>{currentEffortLabel ?? '默认'}</span>
                     <IconChevronRightOutlineRegular className={css.cellChevron} />
+                  </button>
+                )}
+                {externalCliControlsEffort && preflight?.state === 'loading' && (
+                  <div className={css.groupTitle} role="status">
+                    正在读取推理设置…
+                  </div>
+                )}
+                {externalCliControlsEffort && livePreflight?.status === 'unavailable' && (
+                  <button
+                    type="button"
+                    className={css.cell}
+                    onClick={() => setPreflightRevision((revision) => revision + 1)}
+                  >
+                    重新读取推理设置
                   </button>
                 )}
               </>

@@ -30,6 +30,7 @@ import { homedir } from 'node:os'
 import { EventEmitter } from 'node:events'
 import { ToolCallId, LlmError, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { Context } from '@deepseek-ai/cordis'
+import { probeHarnessReasoning, readHarnessReasoning } from './reasoning-preflight.ts'
 import type { HarnessReasoningPreflight, HarnessStartRequest } from '../../contracts/types.ts'
 import { STOP_EDIT_VERSION } from '../contracts/stop-edit.ts'
 export type { HarnessStartRequest } from '../../contracts/types.ts'
@@ -215,55 +216,6 @@ interface Active {
 
 export { grokConfiguration } from './adapters/grok.ts'
 export { nativeHarnessMatches, defaultHarness } from './adapters/index.ts'
-/** Read a reasoning select from the ACP advertisement without trusting its current value. */
-function advertisedReasoning(
-  configOptions: unknown,
-): Array<{ id: string; name: string }> | undefined {
-  if (!Array.isArray(configOptions)) return undefined
-  const ids = new Set([
-    'thinking',
-    'thinkingEffort',
-    'thought_level',
-    'thinking_effort',
-    'reasoning',
-    'reasoning_effort',
-    'effort',
-  ])
-  for (const raw of configOptions) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
-    const option = raw as { id?: unknown; options?: unknown }
-    if (typeof option.id !== 'string' || !ids.has(option.id)) continue
-    if (!Array.isArray(option.options)) return []
-    const values = option.options
-      .map((entry) => {
-        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return undefined
-        const value = (entry as { value?: unknown }).value
-        const name = (entry as { name?: unknown; label?: unknown }).name
-        const label = typeof name === 'string' ? name : (entry as { label?: unknown }).label
-        return typeof value === 'string' && value.length > 0
-          ? { id: value, name: typeof label === 'string' && label.length > 0 ? label : value }
-          : undefined
-      })
-      .filter((value): value is { id: string; name: string } => value !== undefined)
-    return values
-  }
-  return undefined
-}
-
-/** Use a fixed adapter declaration only where the official ACP has no separate effort option. */
-function preflightReasoning(
-  definition: CombinationDefinition,
-  configOptions: unknown,
-): Array<{ id: string; name: string }> | undefined {
-  const advertised = advertisedReasoning(configOptions)
-  if (advertised !== undefined) return advertised
-  if (definition.harnessRef === MINIMAX_CODE_HARNESS) {
-    const declared = minimaxReasoning(definition.modelRef)
-    if (declared?.spec.control.kind === 'thinking') return [...declared.spec.control.options]
-  }
-  return undefined
-}
-
 export class HarnessService {
   private readonly runtimeMaintenance = new RuntimeMaintenance()
   private selections: Record<string, string> = {}
@@ -901,7 +853,6 @@ export class HarnessService {
   private async startAdmitted(
     input: HarnessStartRequest,
     deferConnection = false,
-    ephemeral = false,
   ): Promise<HarnessSnapshot> {
     await this.ready
     if (this.disposed) throw Error('组合服务已关闭')
@@ -946,7 +897,7 @@ export class HarnessService {
     // Creating a combination session is a dispatch: it needs an addressable
     // reviewer. Resuming an existing record stays allowed, so a historical
     // session remains readable and continueable for its own origin.
-    if (prior === undefined && !parent && !ephemeral) this.requireExternalReviewer(origin)
+    if (prior === undefined && !parent) this.requireExternalReviewer(origin)
     if (prior && (prior.combination !== input.combination || prior.cwd !== cwd))
       throw Error('会话组合或项目与原记录不一致')
     if (
@@ -1012,7 +963,7 @@ export class HarnessService {
     // then resume the same mapping rather than orphaning an invisible session.
     this.records.set(id, record)
     const pending = this.save(record)
-      .then(() => (ephemeral ? undefined : this.ensureConversation(record)))
+      .then(() => this.ensureConversation(record))
       .then(() => (deferConnection ? undefined : this.connect(record)))
       .then(() => this.view(record))
       .finally(() => this.starting.delete(id))
@@ -3282,12 +3233,24 @@ export class HarnessService {
     const adapter = adapterFor(definition.harnessRef, definition.modelRef, this.modelSources)
     if (!adapter || adapter.capabilities.reasoning === 'none')
       return { status: 'not-applicable', efforts: [] }
+    if (['codex', 'claude'].includes(definition.harnessRef)) {
+      const nativeCatalog = (await this.ctx.typertGateway.invoke({
+        namespace: 'session',
+        method: 'modelCatalog',
+        args: {},
+      })) as ModelCatalog
+      const reasoning = nativeCatalog.groups
+        .find((group) => group.id === definition.modelRef.provider)
+        ?.models.find((model) => model.id === definition.modelRef.model)?.reasoning
+      return { status: 'known', efforts: reasoning ? [...reasoning.efforts] : [] }
+    }
+    if (adapter.capabilities.reasoning === 'model-declared') return { status: 'known', efforts: [] }
     const bound = [...this.records.values()].find(
       (record) => record.nativeSessionId === session.id && record.combination === definition.id,
     )
     const boundActive = bound ? this.active.get(bound.id) : undefined
-    if (boundActive?.configOptions !== undefined) {
-      const efforts = preflightReasoning(definition, boundActive.configOptions)
+    if (boundActive?.acp && !boundActive.acp.closed && boundActive.configOptions !== undefined) {
+      const efforts = readHarnessReasoning(bound!, boundActive.configOptions)
       return efforts === undefined
         ? { status: 'unavailable', efforts: [] }
         : { status: 'known', efforts }
@@ -3295,38 +3258,43 @@ export class HarnessService {
     if (this.ctx.agents.get(session.id)?.status === 'running')
       return { status: 'unavailable', efforts: [] }
     const binding = this.conversationBinding(session, definition)
-    const origin: HarnessOrigin = { kind: 'dsh', sessionId: session.id }
-    const taskId = `reasoning-preflight:${session.id}:${definition.id}`
-    const probeId = `harness-${hash([origin, taskId, binding.cwd, definition.id]).slice(0, 24)}`
-    let probe: HarnessSnapshot | undefined
+    const harness = catalog.harnesses.find((item) => item.id === definition.harnessRef)
+    const record: HarnessSession = {
+      id: 'reasoning-preflight-' + randomUUID(),
+      combination: definition.id,
+      harnessRef: definition.harnessRef,
+      modelRef: definition.modelRef,
+      cwd: binding.cwd,
+      origin: { kind: 'dsh', sessionId: session.id },
+      sandbox: binding.sandbox,
+      acpSessionId: '',
+      title: definition.name,
+      createdAt: now(),
+      updatedAt: now(),
+      turns: [],
+    }
     try {
-      probe = await this.startAdmitted(
-        {
-          combination: definition.id,
-          cwd: binding.cwd,
-          taskId,
-          origin,
-          sandbox: binding.sandbox,
-        },
-        false,
-        true,
+      const launch = await adapter.prepare!(
+        this.ctx,
+        record,
+        this.adapterOptions(harness?.command, harness?.prefix, harness?.codexRuntime),
       )
-      const active = this.active.get(probe.id)
-      const efforts = preflightReasoning(definition, active?.configOptions)
-      return efforts === undefined
-        ? { status: 'unavailable', efforts: [] }
-        : { status: 'known', efforts }
+      if (this.disposed) return { status: 'unavailable', efforts: [] }
+      const result = await probeHarnessReasoning(adapter, record, {
+        ...launch,
+        env: harnessProxyEnvironment(launch.env, harness?.proxy),
+      })
+      if (
+        this.disposed ||
+        this.conversationBinding(session, definition).sandbox !== binding.sandbox
+      )
+        return { status: 'unavailable', efforts: [] }
+      return result
     } catch {
       return { status: 'unavailable', efforts: [] }
-    } finally {
-      const active = this.active.get(probe?.id ?? probeId)
-      await active?.acp?.dispose().catch(() => {})
-      await active?.bridgeStop?.().catch(() => {})
-      this.active.delete(probe?.id ?? probeId)
-      this.records.delete(probe?.id ?? probeId)
-      await this.sessionStore.remove(probe?.id ?? probeId).catch(() => {})
     }
   }
+
   /**
    * Resolve the combination bound to a DSH session.
    *
@@ -3744,6 +3712,7 @@ export class HarnessService {
         await a.bridgeStop?.()
       }),
     )
+    await Promise.allSettled(this.reasoningPreflights.values())
     await this.writeQueue
     await Promise.all(this.titleUpdates.values())
     // Cancellation can update a record after its last normal save completed.
