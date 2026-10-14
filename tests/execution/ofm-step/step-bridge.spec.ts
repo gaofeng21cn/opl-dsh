@@ -336,6 +336,7 @@ describe('StepCode bridge: cancel, cleanup and drift', () => {
         prompt: [{ type: 'text', text: '不会被回答的请求' }],
       })
       // The official abort is what settles a turn that will not finish on its own.
+      await run.agent.waitForText('收到：')
       await run.agent.acp.cancel(session.sessionId)
       const turn = (await pending) as any
       expect(turn.stopReason).toBe('cancelled')

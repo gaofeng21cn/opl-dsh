@@ -426,7 +426,9 @@ describe('ZCode · Our Free Model cancellation, permission and cleanup', () => {
     )
     await bridge.request('initialize', {})
     await bridge.request('session/new', { cwd: process.cwd() })
+    const admitted = bridge.nextUpdate((u) => u.sessionUpdate === 'agent_message_chunk')
     const running = bridge.prompt('long task', process.cwd())
+    await admitted
     await bridge.request('session/cancel', { sessionId: 'sess-new' })
     await expect(running).resolves.toEqual({ stopReason: 'cancelled' })
     await bridge.close()
