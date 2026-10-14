@@ -105,9 +105,8 @@ export interface HarnessAdapter {
    * `run` calls this after `session/prompt` settles and before the terminal turn
    * state is committed, and only when that mapping produced a completion. A
    * transport may report `end_turn` for a request that produced nothing at all;
-   * refusing it is an adapter's own rule, never a shared one, so an adapter
-   * without this hook keeps exactly the empty-reply semantics it always had and
-   * no other harness' completion changes. Cancellation is never routed here.
+   * adapters may supply a specific refusal. Without a verdict, the shared check
+   * requires body text or a completed tool result. Cancellation is never routed here.
    */
   acceptResult?(outcome: HarnessTurnOutcome): HarnessResultVerdict | void
 }

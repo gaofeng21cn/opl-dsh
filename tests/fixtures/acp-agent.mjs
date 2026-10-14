@@ -60,9 +60,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       running = undefined
       return
     }
-    // A transport that reports success for a request that produced nothing at all. This
-    // is the shape official MiMo Code returns for a failed request; a harness that does
-    // not declare its own completion rule keeps this reading, unchanged.
+    // A CLI that reports end_turn without delivering an answer.
     if (text === 'empty-turn') {
       update({ sessionUpdate: 'available_commands_update', availableCommands: [] })
       update({ sessionUpdate: 'usage_update', usage: { totalTokens: 0 } })
@@ -70,6 +68,33 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         stopReason: 'end_turn',
         usage: { totalTokens: 0, inputTokens: 0, outputTokens: 0 },
       })
+      running = undefined
+      return
+    }
+    if (
+      [
+        'thought-only',
+        'blank-answer',
+        'tool-only-completed',
+        'tool-only-failed',
+        'tool-only-pending',
+      ].includes(text)
+    ) {
+      if (text === 'thought-only')
+        update({
+          sessionUpdate: 'agent_thought_chunk',
+          content: { type: 'text', text: 'thinking' },
+        })
+      else if (text === 'blank-answer') chunk('   \n')
+      else
+        update({
+          sessionUpdate: 'tool_call',
+          toolCallId: 'one',
+          title: 'read',
+          kind: 'read',
+          status: text.slice('tool-only-'.length),
+        })
+      answer(m.id, { stopReason: 'end_turn' })
       running = undefined
       return
     }

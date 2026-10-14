@@ -13,6 +13,7 @@ import { createHarnessService } from '../execution/host/harness.ts'
 import { MiniMaxCodeModelAdapter } from '../execution/host/adapters/minimax-models.ts'
 import { MINIMAX_CODE_PROVIDER } from '../execution/host/adapters/minimax.ts'
 import { installCollaborationTools } from '../collaboration/host/tools.ts'
+import { installPermissionMemory } from '../compat/host/permission-memory.ts'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { modelDefaultEffort } from '../shared/model-reasoning.ts'
@@ -54,6 +55,7 @@ export const inject = [
  * @param ctx - Official Host context.
  */
 export function apply(ctx: Context, config: Config): void {
+  ctx.effect(() => installPermissionMemory(ctx))
   const harness = createHarnessService(ctx)
   ctx.provide('oplExternalModelSources', harness.modelSources)
   const ofmOwner = createOfmOwnerApiReader(ctx, config.ofmConnectionTimeoutMs)

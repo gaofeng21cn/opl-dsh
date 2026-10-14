@@ -77,6 +77,13 @@ export function museToolWire(body) {
     },
     events(value) {
       const event = this.restore(value)
+      if (event.type === 'response.output_text.delta' && event.content_index === undefined)
+        event.content_index = 0
+      if (event.type === 'response.failed' && event.response?.error) {
+        const error = event.response.error
+        if (typeof error === 'object' && error.code === undefined)
+          event.response = { ...event.response, error: { ...error, code: 'server_error' } }
+      }
       if (event.type === 'response.output_item.added' && event.item?.type === 'function_call')
         announced.set(event.item.call_id, {
           item_id: event.item.item_id ?? event.item.id,
@@ -88,12 +95,14 @@ export function museToolWire(body) {
         for (const [output_index, item] of (event.response?.output ?? []).entries()) {
           if (item.type !== 'function_call' || settled.has(item.call_id)) continue
           settled.add(item.call_id)
+          const previous =
+            announced.get(item.call_id) ??
+            [...announced.values()].find((entry) => entry.output_index === output_index)
           events.push({
             ...item,
             type: 'response.function_call_arguments.done',
-            item_id:
-              item.item_id ?? item.id ?? announced.get(item.call_id)?.item_id ?? item.call_id,
-            output_index: announced.get(item.call_id)?.output_index ?? output_index,
+            item_id: previous?.item_id ?? item.item_id ?? item.id ?? item.call_id,
+            output_index: previous?.output_index ?? output_index,
           })
         }
       }

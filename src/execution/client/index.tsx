@@ -22,6 +22,7 @@ import {
   messageEditDefinition,
 } from './message-edit-view.ts'
 import { allowProjectlessSessions } from './fresh-session.ts'
+import { ProjectlessHeroChoice } from './ProjectlessHeroChoice.tsx'
 import { HARNESS_TRANSCRIPT_TOOL } from '../contracts/tool-display.ts'
 import { remoteCall } from '../../shared/client/remote-call.ts'
 export const inject = [
@@ -197,6 +198,22 @@ export function apply(ctx: Context): void {
         inject: () => ({ call }),
       },
       ExecutionCatalogSection,
+    ),
+  )
+  // Register this optional hero contribution after the execution settings are
+  // declared. Some official Desktop builds expose the hero slot lazily; a
+  // contribution failure must never suppress the plugin's required settings
+  // sections and their verification surface.
+  ctx.slots.inject('conversation.hero.agentPreset', () =>
+    ctx.slots.register(
+      {
+        name: 'conversation.hero.agentPreset',
+        // The official preset control owns the primary cell when present. Keep
+        // this optional projectless affordance as a fallback so a single-slot
+        // collision can never unload the execution settings contribution.
+        priority: 1,
+      },
+      () => <ProjectlessHeroChoice create={() => ctx.uiWorkspace.startSession()} />,
     ),
   )
 }

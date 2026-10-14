@@ -320,6 +320,25 @@ describe('StepCode bridge: a real turn', () => {
       await run.agent.dispose()
     }
   })
+
+  it('preserves an official terminal error instead of reporting an empty success', async () => {
+    const run = await launch({ knobs: { terminalError: true } })
+    try {
+      await run.agent.acp.request('initialize', { protocolVersion: 1, clientCapabilities: {} })
+      const session = (await run.agent.acp.request('session/new', {
+        cwd: run.cwd,
+        mcpServers: [],
+      })) as any
+      await expect(
+        run.agent.acp.request('session/prompt', {
+          sessionId: session.sessionId,
+          prompt: [{ type: 'text', text: '触发官方终态错误' }],
+        }),
+      ).rejects.toThrow('官方渠道限流或配额已达上限')
+    } finally {
+      await run.agent.dispose()
+    }
+  })
 })
 
 describe('StepCode bridge: cancel, cleanup and drift', () => {

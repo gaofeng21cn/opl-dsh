@@ -41,8 +41,60 @@ function alive(pid) {
     throw error
   }
 }
-if (existsSync(bindingPath) && alive(JSON.parse(readFileSync(bindingPath, 'utf8')).pid))
-  throw new Error('请先退出 DeepSeek Harness，再重新运行安装器。')
+function desktopProcessesAlive() {
+  const result = spawnSync('tasklist.exe', ['/FI', 'IMAGENAME eq DeepSeek Harness.exe', '/NH'], {
+    encoding: 'utf8',
+    windowsHide: true,
+  })
+  return result.status === 0 && result.stdout.includes('DeepSeek Harness.exe')
+}
+async function idleTasks(binding) {
+  const response = await fetch(binding.endpoint, {
+    method: 'POST',
+    headers: { authorization: 'Bearer ' + binding.token, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      namespace: 'taskFeedback',
+      method: 'tasks',
+      args: {},
+      timeoutMs: 150000,
+    }),
+    signal: AbortSignal.timeout(155000),
+  })
+  const result = await response.json()
+  if (!result.ok) throw new Error(result.error || '无法读取 DSH 任务状态')
+  const tasks = result.value
+  if (!Array.isArray(tasks)) throw new Error('DSH 任务状态不是有效列表')
+  const active = tasks.filter((task) =>
+    [
+      'queued',
+      'running',
+      'waiting_approval',
+      'waiting_input',
+      'waiting_child',
+      'interrupted',
+    ].includes(task.state),
+  )
+  if (active.length) throw new Error(`仍有 ${active.length} 个 DSH 任务活动，已停止安装`)
+}
+async function closeDesktop(pid) {
+  if (process.platform !== 'win32') return
+  spawnSync('taskkill.exe', ['/PID', String(pid), '/T'], { windowsHide: true })
+  spawnSync('taskkill.exe', ['/IM', 'DeepSeek Harness.exe', '/T'], { windowsHide: true })
+  for (let i = 0; i < 40 && (alive(pid) || desktopProcessesAlive()); i++)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  if (alive(pid) || desktopProcessesAlive())
+    spawnSync('taskkill.exe', ['/IM', 'DeepSeek Harness.exe', '/T', '/F'], { windowsHide: true })
+  for (let i = 0; i < 40 && (alive(pid) || desktopProcessesAlive()); i++)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  if (alive(pid) || desktopProcessesAlive()) throw new Error('DSH 无法退出，已停止安装')
+}
+if (existsSync(bindingPath)) {
+  const binding = JSON.parse(readFileSync(bindingPath, 'utf8'))
+  if (alive(binding.pid)) {
+    await idleTasks(binding)
+    await closeDesktop(binding.pid)
+  }
+}
 const artifact = JSON.parse(readFileSync(join(payload, 'artifact.json'), 'utf8'))
 if (!/^opl-dsh-enhancements-[a-zA-Z0-9.-]+\.tgz$/.test(artifact.name))
   throw new Error('安装清单无效')

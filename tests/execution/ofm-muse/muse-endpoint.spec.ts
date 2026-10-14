@@ -17,6 +17,48 @@ const declaration = {
   ],
 }
 describe('Muse OFM Responses translation', () => {
+  it('normalizes OFM text and failure fields without changing existing values', () => {
+    const wire = museToolWire({ tools: [] })
+    expect(wire.events({ type: 'response.output_text.delta', delta: 'OK' })[0]).toMatchObject({
+      content_index: 0,
+      delta: 'OK',
+    })
+    expect(
+      wire.events({ type: 'response.output_text.delta', content_index: 2, delta: 'OK' })[0],
+    ).toMatchObject({ content_index: 2 })
+    expect(
+      wire.events({ type: 'response.failed', response: { error: { message: 'refused' } } })[0],
+    ).toMatchObject({ response: { error: { code: 'server_error', message: 'refused' } } })
+    expect(
+      wire.events({
+        type: 'response.failed',
+        response: { error: { code: 'quota', message: 'refused' } },
+      })[0],
+    ).toMatchObject({ response: { error: { code: 'quota' } } })
+  })
+  it('settles OFM calls against the announced item when final call ids differ', () => {
+    const wire = museToolWire({ tools: [declaration] })
+    const name = wire.body.tools[0].name
+    wire.events({
+      type: 'response.output_item.added',
+      output_index: 0,
+      item: { type: 'function_call', id: 'fc_0', call_id: 'initial_call', name },
+    })
+    const final = wire.events({
+      type: 'response.completed',
+      response: {
+        output: [
+          { type: 'function_call', id: 'final_item', call_id: 'final_call', name, arguments: '{}' },
+        ],
+      },
+    })
+    expect(final[0]).toMatchObject({
+      type: 'response.function_call_arguments.done',
+      item_id: 'fc_0',
+      output_index: 0,
+    })
+    expect(final[1].type).toBe('response.completed')
+  })
   it('flattens declared tools and history, then restores namespace calls', () => {
     const wire = museToolWire({
       tools: [declaration],

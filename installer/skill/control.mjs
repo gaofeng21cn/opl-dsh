@@ -7,8 +7,13 @@ import { promisify } from 'node:util'
 import { launchIndependent } from './windows-lifecycle.mjs'
 const execFile = promisify(execFileCallback)
 const config = JSON.parse(await readFile(new URL('./config.json', import.meta.url), 'utf8'))
-const [requestedCommand, ...argv] = process.argv.slice(2)
+const rawArgs = process.argv.slice(2)
+const requestedCommand = rawArgs.shift()
+const noAutostart = rawArgs.includes('--no-autostart')
+const argv = rawArgs.filter((value) => value !== '--no-autostart')
 const command = requestedCommand === 'resume-failed' ? 'resumeFailed' : requestedCommand
+if (noAutostart && !['tasks', 'outbox', 'receipts', 'flush'].includes(command))
+  throw new Error('--no-autostart 仅用于只读状态查询')
 const feedbackRequestCommands = ['task', 'receive', 'consume', 'resumeFailed']
 const args = {}
 const positional = []
@@ -106,6 +111,7 @@ async function connected() {
   }
 }
 if (!(await connected())) {
+  if (noAutostart) throw new Error('DSH 未运行；已跳过自动启动')
   if (config.autoStart === false) throw new Error('自动启动已关闭，请先打开 OPL DSH')
   // wscript owns the whole launcher subtree, so starting it outside the caller's
   // Job frees the desktop, setup.mjs and every helper they start. launch.vbs

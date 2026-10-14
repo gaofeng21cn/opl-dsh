@@ -141,6 +141,8 @@ Shell 配置按实际 Harness 分别确认：Claude 使用官方 `CLAUDE_CODE_GI
 
 ## Windows 本地验证补丁
 
+安装流程在确认公开任务状态没有运行中或等待中的任务后，会自动关闭当前 OPL DSH Desktop，再继续安装。状态审计使用 `control.mjs tasks --no-autostart`，因此安装前的空闲核验不会因为 Desktop 已退出而重新启动它。
+
 原生 `dispatch` 支持显式 `--preset danger-full-access`；只有用户已授权该权限时才能使用。创建响应须包含有效权限，helper 在登记反馈和发送 prompt 前核对。官方 rc.2 的权限读写由 OPL 控制桥调用官方 `permissionPresets` 服务，运行中的 Session 拒绝切换。`--cwd` 先在官方 Workspace registry 中创建或复用项目，再用 Workspace id 创建 Session；不要在创建后调用 `workspace.moveSession`，官方 Desktop 没有这个 Remote 方法。需要把独立 worktree 归入另一个项目时，当前官方 API 无法表达该关系，应停止派发并改用同一工作目录或显式项目外模式。旧 helper 的 `session/permissions` 和 `session.create.permissionPreset` 也经过同一适配。
 
 Windows 增强包将 `ctx.shell` 切换到 Git for Windows 的 `bash.exe`，并保留官方 sandbox 与 subprocess 生命周期；Git Bash 不存在时启动失败并给出安装或 `OPL_GIT_BASH_PATH` 指引。工作目录使用 `workspace-write` 前，如果官方 Windows ACL 后端报告 Win32 5，可在管理员 PowerShell 中显式运行：

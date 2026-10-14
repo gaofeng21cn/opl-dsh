@@ -304,18 +304,16 @@ describe('MiMo Code 空成功拒绝', () => {
   }, 30_000)
 })
 
-describe('其他 Harness 的空回复语义不变', () => {
-  it('同一份空 end_turn 线形，在没有声明完成判定的 Harness 上仍然算完成', async () => {
+describe('其他 Harness 的空回复检查', () => {
+  it('没有专属判定的 Harness 也拒绝空 end_turn', async () => {
     const { service, session } = await grokSetup()
 
     const settled = await turn(service, session.id, 'empty-turn')
 
     expect(settled.stopReason).toBe('end_turn')
     expect(settled.text).toBe('')
-    // No completion rule is declared for this harness, so the transport's own
-    // reading stands exactly as before this change.
-    expect(settled.state).toBe('completed')
-    expect(settled.error).toBeUndefined()
+    expect(settled.state).toBe('failed')
+    expect(settled.error).toContain('没有正文或完成的工具结果')
   })
 })
 

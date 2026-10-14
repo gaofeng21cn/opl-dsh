@@ -130,6 +130,34 @@ const start = (s: HarnessService, cwd: string, taskId = 'task') =>
   })
 const wait = (s: HarnessService, id: string) => s.wait({ sessionId: id }, AbortSignal.timeout(8000))
 
+describe('external completion observations', () => {
+  it.each(['empty-turn', 'thought-only', 'blank-answer', 'tool-only-failed', 'tool-only-pending'])(
+    'refuses %s before persisting completion',
+    async (prompt) => {
+      const { service, root, options } = await setup()
+      const session = await start(service, root)
+      await service.prompt({ sessionId: session.id, text: prompt, operationId: 'result-check' })
+      const snapshot = await wait(service, session.id)
+      expect(snapshot.state).toBe('failed')
+      expect(snapshot.turns[0]?.error).toContain('没有正文或完成的工具结果')
+      await service.dispose()
+      const stored = await new HarnessSessionStore(options.home).load()
+      expect(stored.find((record) => record.id === session.id)?.turns[0]?.state).toBe('failed')
+      expect(await readFile(join(root, 'calls.txt'), 'utf8')).toBe(prompt + '\n')
+    },
+  )
+  it('accepts a completed tool without prose', async () => {
+    const { service, root } = await setup()
+    const session = await start(service, root)
+    await service.prompt({
+      sessionId: session.id,
+      text: 'tool-only-completed',
+      operationId: 'tool',
+    })
+    expect((await wait(service, session.id)).state).toBe('completed')
+  })
+})
+
 describe('ACP model namespaces', () => {
   it('keeps the actual new and loaded session observations through pre-prompt verification', async () => {
     const { service, root, ctx, options } = await setup()

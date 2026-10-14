@@ -126,6 +126,27 @@ it('creates an unattached Session for the global new-conversation action', async
   dispose()
 })
 
+it('keeps the official global new-conversation draft option projectless', async () => {
+  const original = vi.fn()
+  const openSession = vi.fn()
+  const workspace = { startSession: original, openSession } as Pick<
+    UiWorkspace,
+    'startSession' | 'openSession'
+  >
+  const sessions = { create: vi.fn(async () => sessionId('projectless-with-option')) } as Pick<
+    ISessions,
+    'create'
+  >
+  const dispose = allowProjectlessSessions(workspace, sessions)
+  workspace.startSession(undefined, { clearPreviousDraft: false })
+  await vi.waitFor(() =>
+    expect(openSession).toHaveBeenCalledExactlyOnceWith('projectless-with-option'),
+  )
+  expect(sessions.create).toHaveBeenCalledExactlyOnceWith({})
+  expect(original).not.toHaveBeenCalled()
+  dispose()
+})
+
 it('leaves workspace-targeted new sessions on the official path', () => {
   const original = vi.fn()
   const workspace = { startSession: original, openSession: vi.fn() } as Pick<

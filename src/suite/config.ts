@@ -6,6 +6,8 @@ import type { Volatile } from '@deepseek-ai/cordis'
 import type { LoginChoice } from '../setup/contracts.ts'
 export type { LoginChoice } from '../setup/contracts.ts'
 export interface Config {
+  /** Last built-in permission preset selected by the user for future native Sessions. */
+  lastPermissionPreset: Volatile<'read-only' | 'workspace-write' | 'danger-full-access'>
   toolAutoReview: Volatile<import('../auto-review/host/settings.ts').Config>
   cooperation: Volatile<{ autoReview: boolean; maxRevisions: number; externalCodex: boolean }>
   gatewayGroups: Volatile<Record<string, boolean>>
@@ -19,6 +21,10 @@ export interface Config {
   wakeDistro: Volatile<string>
 }
 export const Config = z.object({
+  lastPermissionPreset: z
+    .union(['read-only', 'workspace-write', 'danger-full-access'])
+    .default('workspace-write')
+    .volatile(),
   toolAutoReview: AutoReviewConfig.default({}).volatile(),
   cooperation: z
     .object({

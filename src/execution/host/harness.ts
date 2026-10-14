@@ -14,6 +14,7 @@ import type {
 } from '../contracts/codex-runtime.ts'
 import { ExternalModelSources } from './model-sources.ts'
 import { harnessAdapters } from './adapters/index.ts'
+import { acceptVisibleCliResult } from './adapters/visible-result.ts'
 import { GATEWAY_GROUPS } from '../../gateway/contracts/groups.ts'
 /** Owns mappings and transport only; each official Harness owns its agent loop. */
 import { createHash, randomUUID } from 'node:crypto'
@@ -1641,18 +1642,16 @@ export class HarnessService {
             : turn.stopReason === 'cancelled'
               ? 'cancelled'
               : 'failed'
-        // A transport can report success for a request that produced nothing. Only an
-        // adapter that declares its own completion rule may refuse that reading, so a
-        // refusal stays scoped to the combination that declared it. Cancellation and
-        // every non-success stop reason are already settled above and never reach this.
+        // A CLI's end_turn alone does not establish a delivered answer or tool result.
         if (turn.state === 'completed') {
           const adapter = adapterFor(record.harnessRef, record.modelRef, this.modelSources)
-          const verdict = adapter?.acceptResult?.({
+          const outcome = {
             stopReason: turn.stopReason,
             text: turn.text,
             tools: turn.tools.map((tool) => ({ status: tool.status })),
-          })
-          if (verdict && !verdict.accepted) {
+          }
+          const verdict = adapter?.acceptResult?.(outcome) ?? acceptVisibleCliResult(outcome)
+          if (!verdict.accepted) {
             turn.state = 'failed'
             turn.error =
               verdict.reason ??

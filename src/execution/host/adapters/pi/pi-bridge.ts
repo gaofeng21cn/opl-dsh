@@ -56,6 +56,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { StringDecoder } from 'node:string_decoder'
 import { join } from 'node:path'
 import { commandLaunch } from '../../harness-registry.ts'
+import { RpcTurnOutcome } from '../rpc-turn-outcome.ts'
 import { PI_CREDENTIAL_ENV, buildPiModelsConfig, buildPiSettings } from './pi-config.ts'
 
 // ── Launch contract ────────────────────────────────────────────────────────────────
@@ -113,6 +114,13 @@ function acpErrorCode(error: unknown): string | number {
       return -32602
     case 'HARNESS_TIMEOUT':
       return 'HARNESS_TIMEOUT'
+    case 'HARNESS_PROVIDER':
+    case 'HARNESS_PROVIDER_AUTH':
+    case 'HARNESS_PROVIDER_MODEL':
+    case 'HARNESS_PROVIDER_RATE_LIMIT':
+    case 'HARNESS_PROVIDER_TIMEOUT':
+    case 'HARNESS_PROVIDER_NETWORK':
+      return error.code
     case 'HARNESS_TRANSPORT':
       // The official process went away: a broken connection, not a bad request.
       return 'HARNESS_NETWORK'
@@ -148,6 +156,7 @@ let cancelled = false
 let cancelLatched = false
 let resolveTurn: ((value: unknown) => void) | undefined
 let rejectTurn: ((error: Error) => void) | undefined
+const turnOutcome = new RpcTurnOutcome()
 /** Permission asks currently with the host, keyed by the ACP request id. */
 const asks = new Map<string, (optionId: string | undefined) => void>()
 
@@ -395,6 +404,10 @@ function handleEvent(event: any): void {
         rawOutput: event.result ?? null,
       })
       return
+    case 'message_end':
+    case 'auto_retry_end':
+      if (resolveTurn) turnOutcome.accept(event)
+      return
     case 'auto_retry_start':
       // Surfaced so a stalled turn stays visibly alive instead of looking hung.
       emit({
@@ -422,7 +435,11 @@ function handleEvent(event: any): void {
       // continuation remains. `agent_end` is deliberately not a turn end — the probe saw
       // `auto_retry_start` after one, and the docs list retries, compaction and follow-ups
       // as things that can still follow it.
-      resolveTurn?.({ stopReason: cancelled ? 'cancelled' : 'end_turn' })
+      const failure = turnOutcome.failure
+      turnOutcome.reset()
+      if (!cancelled && failure)
+        rejectTurn?.(new PiBridgeError('官方渠道报告本轮请求失败', failure))
+      else resolveTurn?.({ stopReason: cancelled ? 'cancelled' : 'end_turn' })
       resolveTurn = undefined
       rejectTurn = undefined
       return
@@ -690,6 +707,7 @@ async function invoke(method: string, params: any): Promise<unknown> {
       .join('\n')
     // Re-read the live identity before every send, so a session that drifted cannot run.
     await assertModel()
+    turnOutcome.reset()
     const done = new Promise<unknown>((resolve, reject) => {
       resolveTurn = resolve
       rejectTurn = reject
@@ -707,11 +725,12 @@ async function invoke(method: string, params: any): Promise<unknown> {
       rejectTurn = undefined
       return { stopReason: cancelled ? 'cancelled' : 'end_turn' }
     }
-    const result = await done
-    // Cleared only once the turn is over, so a cancel during the turn is never lost and a
-    // cancel cannot leak into the next one.
-    cancelled = false
-    return result
+    try {
+      return await done
+    } finally {
+      cancelled = false
+      turnOutcome.reset()
+    }
   }
 
   throw configuration(`不支持的调用：${method}`)
