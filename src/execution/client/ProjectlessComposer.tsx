@@ -25,7 +25,7 @@ export function ProjectlessComposer({ session, input, inputActions, useWorkspace
   )
 
   useEffect(() => {
-    if (!projectless || !session.blank) return
+    if (!projectless) return
     const dock = document.querySelector<HTMLElement>(
       `[data-opl-projectless-composer="${session.sessionId}"]`,
     )
@@ -37,9 +37,9 @@ export function ProjectlessComposer({ session, input, inputActions, useWorkspace
     return () => {
       bar.hidden = false
     }
-  }, [projectless, session.blank, session.sessionId])
+  }, [projectless, session.sessionId])
 
-  if (!projectless || !session.blank) return null
+  if (!projectless) return null
 
   return (
     <div
