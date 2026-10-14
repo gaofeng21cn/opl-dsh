@@ -24,6 +24,11 @@ export interface HarnessSelection {
   groups: import('@deepseek-ai/dsh-api-session-controller/types').ModelCatalog['groups']
   combination?: string
 }
+/** Live reasoning values advertised by the selected external Harness. */
+export interface HarnessReasoningPreflight {
+  status: 'known' | 'unavailable' | 'not-applicable'
+  efforts: Array<{ id: string; name: string }>
+}
 export interface SessionRequest {
   sessionId: string
 }

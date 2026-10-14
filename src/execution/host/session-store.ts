@@ -285,6 +285,18 @@ export class HarnessSessionStore {
     await write
     return changed
   }
+  /** Remove one ephemeral record after a read-only Harness probe. */
+  async remove(id: string): Promise<void> {
+    const filename = this.filename(id)
+    const write = this.queue.then(async () => {
+      await rm(filename, { force: true }).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error
+      })
+      this.persisted.delete(id)
+    })
+    this.queue = write.catch(() => {})
+    await write
+  }
   async dispose(): Promise<void> {
     await this.queue
   }

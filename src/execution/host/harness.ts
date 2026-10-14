@@ -30,7 +30,7 @@ import { homedir } from 'node:os'
 import { EventEmitter } from 'node:events'
 import { ToolCallId, LlmError, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { Context } from '@deepseek-ai/cordis'
-import type { HarnessStartRequest } from '../../contracts/types.ts'
+import type { HarnessReasoningPreflight, HarnessStartRequest } from '../../contracts/types.ts'
 import { STOP_EDIT_VERSION } from '../contracts/stop-edit.ts'
 export type { HarnessStartRequest } from '../../contracts/types.ts'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
@@ -215,6 +215,55 @@ interface Active {
 
 export { grokConfiguration } from './adapters/grok.ts'
 export { nativeHarnessMatches, defaultHarness } from './adapters/index.ts'
+/** Read a reasoning select from the ACP advertisement without trusting its current value. */
+function advertisedReasoning(
+  configOptions: unknown,
+): Array<{ id: string; name: string }> | undefined {
+  if (!Array.isArray(configOptions)) return undefined
+  const ids = new Set([
+    'thinking',
+    'thinkingEffort',
+    'thought_level',
+    'thinking_effort',
+    'reasoning',
+    'reasoning_effort',
+    'effort',
+  ])
+  for (const raw of configOptions) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const option = raw as { id?: unknown; options?: unknown }
+    if (typeof option.id !== 'string' || !ids.has(option.id)) continue
+    if (!Array.isArray(option.options)) return []
+    const values = option.options
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return undefined
+        const value = (entry as { value?: unknown }).value
+        const name = (entry as { name?: unknown; label?: unknown }).name
+        const label = typeof name === 'string' ? name : (entry as { label?: unknown }).label
+        return typeof value === 'string' && value.length > 0
+          ? { id: value, name: typeof label === 'string' && label.length > 0 ? label : value }
+          : undefined
+      })
+      .filter((value): value is { id: string; name: string } => value !== undefined)
+    return values
+  }
+  return undefined
+}
+
+/** Use a fixed adapter declaration only where the official ACP has no separate effort option. */
+function preflightReasoning(
+  definition: CombinationDefinition,
+  configOptions: unknown,
+): Array<{ id: string; name: string }> | undefined {
+  const advertised = advertisedReasoning(configOptions)
+  if (advertised !== undefined) return advertised
+  if (definition.harnessRef === MINIMAX_CODE_HARNESS) {
+    const declared = minimaxReasoning(definition.modelRef)
+    if (declared?.spec.control.kind === 'thinking') return [...declared.spec.control.options]
+  }
+  return undefined
+}
+
 export class HarnessService {
   private readonly runtimeMaintenance = new RuntimeMaintenance()
   private selections: Record<string, string> = {}
@@ -230,6 +279,7 @@ export class HarnessService {
   private readonly active = new Map<string, Active>()
   private readonly starting = new Map<string, Promise<HarnessSnapshot>>()
   private readonly connecting = new Map<string, Promise<void>>()
+  private readonly reasoningPreflights = new Map<string, Promise<HarnessReasoningPreflight>>()
   private readonly events = new EventEmitter()
   private writeQueue: Promise<void> = Promise.resolve()
   private readonly ready: Promise<void>
@@ -851,6 +901,7 @@ export class HarnessService {
   private async startAdmitted(
     input: HarnessStartRequest,
     deferConnection = false,
+    ephemeral = false,
   ): Promise<HarnessSnapshot> {
     await this.ready
     if (this.disposed) throw Error('组合服务已关闭')
@@ -895,7 +946,7 @@ export class HarnessService {
     // Creating a combination session is a dispatch: it needs an addressable
     // reviewer. Resuming an existing record stays allowed, so a historical
     // session remains readable and continueable for its own origin.
-    if (prior === undefined && !parent) this.requireExternalReviewer(origin)
+    if (prior === undefined && !parent && !ephemeral) this.requireExternalReviewer(origin)
     if (prior && (prior.combination !== input.combination || prior.cwd !== cwd))
       throw Error('会话组合或项目与原记录不一致')
     if (
@@ -961,7 +1012,7 @@ export class HarnessService {
     // then resume the same mapping rather than orphaning an invisible session.
     this.records.set(id, record)
     const pending = this.save(record)
-      .then(() => this.ensureConversation(record))
+      .then(() => (ephemeral ? undefined : this.ensureConversation(record)))
       .then(() => (deferConnection ? undefined : this.connect(record)))
       .then(() => this.view(record))
       .finally(() => this.starting.delete(id))
@@ -3193,6 +3244,90 @@ export class HarnessService {
     return { current, groups, ...(selected ? { combination: selected.id } : {}) }
   }
   /**
+   * Read an external Harness's live reasoning advertisement without sending a prompt.
+   *
+   * A probe is ephemeral: it uses the current conversation permission, starts the ACP
+   * session only long enough to read `configOptions`, then disposes the process and record.
+   * An unknown advertisement is returned as unavailable so the client cannot display a
+   * generic DSH effort that the selected CLI may reject.
+   */
+  async reasoningPreflight(input: {
+    sessionId: string
+    combination: string
+  }): Promise<HarnessReasoningPreflight> {
+    await this.ready
+    const key = `${input.sessionId}\0${input.combination}`
+    const existing = this.reasoningPreflights.get(key)
+    if (existing) return existing
+    const pending = this.runtimeMaintenance
+      .admit(() => this.reasoningPreflightAdmitted(input))
+      .finally(() => this.reasoningPreflights.delete(key))
+    this.reasoningPreflights.set(key, pending)
+    return pending
+  }
+  private async reasoningPreflightAdmitted(input: {
+    sessionId: string
+    combination: string
+  }): Promise<HarnessReasoningPreflight> {
+    const session = this.ctx.sessions.get(
+      asSessionId<SessionId>(required(input.sessionId, 'sessionId')),
+    )
+    if (!session) throw Error('对话不存在')
+    const catalog = await this.executionCatalog()
+    const definition = catalog.combinations.find(
+      (item) => item.id === input.combination && item.enabled,
+    )
+    if (!definition || definition.harnessRef === 'dsh')
+      return { status: 'not-applicable', efforts: [] }
+    const adapter = adapterFor(definition.harnessRef, definition.modelRef, this.modelSources)
+    if (!adapter || adapter.capabilities.reasoning === 'none')
+      return { status: 'not-applicable', efforts: [] }
+    const bound = [...this.records.values()].find(
+      (record) => record.nativeSessionId === session.id && record.combination === definition.id,
+    )
+    const boundActive = bound ? this.active.get(bound.id) : undefined
+    if (boundActive?.configOptions !== undefined) {
+      const efforts = preflightReasoning(definition, boundActive.configOptions)
+      return efforts === undefined
+        ? { status: 'unavailable', efforts: [] }
+        : { status: 'known', efforts }
+    }
+    if (this.ctx.agents.get(session.id)?.status === 'running')
+      return { status: 'unavailable', efforts: [] }
+    const binding = this.conversationBinding(session, definition)
+    const origin: HarnessOrigin = { kind: 'dsh', sessionId: session.id }
+    const taskId = `reasoning-preflight:${session.id}:${definition.id}`
+    const probeId = `harness-${hash([origin, taskId, binding.cwd, definition.id]).slice(0, 24)}`
+    let probe: HarnessSnapshot | undefined
+    try {
+      probe = await this.startAdmitted(
+        {
+          combination: definition.id,
+          cwd: binding.cwd,
+          taskId,
+          origin,
+          sandbox: binding.sandbox,
+        },
+        false,
+        true,
+      )
+      const active = this.active.get(probe.id)
+      const efforts = preflightReasoning(definition, active?.configOptions)
+      return efforts === undefined
+        ? { status: 'unavailable', efforts: [] }
+        : { status: 'known', efforts }
+    } catch {
+      return { status: 'unavailable', efforts: [] }
+    } finally {
+      const active = this.active.get(probe?.id ?? probeId)
+      await active?.acp?.dispose().catch(() => {})
+      await active?.bridgeStop?.().catch(() => {})
+      this.active.delete(probe?.id ?? probeId)
+      this.records.delete(probe?.id ?? probeId)
+      await this.sessionStore.remove(probe?.id ?? probeId).catch(() => {})
+    }
+  }
+  /**
    * Resolve the combination bound to a DSH session.
    *
    * An explicit matching binding preserves the user's chosen channel. Without a
@@ -3550,6 +3685,11 @@ export class HarnessService {
         return this.selectCombination(p as { sessionId: string; combination: string })
       case 'model-selection':
         return this.modelSelection(p.sessionId)
+      case 'reasoning-preflight':
+        return this.reasoningPreflight({
+          sessionId: required(p.sessionId, 'sessionId'),
+          combination: required(p.combination, 'combination'),
+        })
       case 'select-effort':
         return this.native('selectModel', {
           sessionId: required(p.sessionId, 'sessionId'),

@@ -14,6 +14,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ExecutionCatalog, CombinationDefinition } from '../contracts/catalog.ts'
 import type { HarnessCatalog } from '../contracts/sessions.ts'
+import type { HarnessReasoningPreflight } from '../../contracts/types.ts'
 import { useModelSelection } from './use-model-selection.ts'
 import type { SelectionSource } from './use-model-selection.ts'
 import css from './CombinationSelect.module.css'
@@ -110,6 +111,11 @@ export function CombinationSelect({
   const [availability, setAvailability] = useState<HarnessCatalog['combinations']>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [preflight, setPreflight] = useState<
+    | { key: string; state: 'loading' }
+    | { key: string; state: 'ready'; value: HarnessReasoningPreflight }
+    | undefined
+  >()
   const [pendingChoice, setPendingChoice] = useState<Choice>()
   const [open, setOpen] = useState(false)
   const [pane, setPane] = useState<'root' | 'model' | 'effort'>('root')
@@ -207,11 +213,27 @@ export function CombinationSelect({
         ?.models.find((model) => model.id === selection.current?.model)
     : undefined
   const reasoning = currentModel?.reasoning
-  const effortSwitch = reasoning === undefined ? undefined : thinkingSwitch(reasoning)
-  const externalCliControlsEffort = selected?.combination.harnessRef !== 'dsh'
-  const effectiveEffort =
-    selection.current?.reasoningEffort ??
-    (externalCliControlsEffort ? undefined : modelDefaultEffort(currentModel?.id ?? '', reasoning))
+  const externalCliControlsEffort =
+    selected !== undefined && selected.combination.harnessRef !== 'dsh'
+  const preflightKey = selected?.combination.id ?? ''
+  const livePreflight =
+    externalCliControlsEffort && preflight?.key === preflightKey && preflight.state === 'ready'
+      ? preflight.value
+      : undefined
+  const displayedReasoning = externalCliControlsEffort
+    ? livePreflight?.status === 'known' && livePreflight.efforts.length > 0
+      ? { efforts: livePreflight.efforts }
+      : undefined
+    : reasoning
+  const effortSwitch =
+    displayedReasoning === undefined ? undefined : thinkingSwitch(displayedReasoning)
+  const effectiveEffort = externalCliControlsEffort
+    ? livePreflight?.status === 'known' &&
+      selection.current?.reasoningEffort !== undefined &&
+      livePreflight.efforts.some((effort) => effort.id === selection.current?.reasoningEffort)
+      ? selection.current.reasoningEffort
+      : undefined
+    : (selection.current?.reasoningEffort ?? modelDefaultEffort(currentModel?.id ?? '', reasoning))
   /**
    * A thinking switch reads as one state, not as a ladder: the trigger and the
    * drill-down cell both say 开启思考 / 关闭思考, so the top summary always names
@@ -232,7 +254,7 @@ export function CombinationSelect({
       ? undefined
       : effortLabel(
           effectiveEffort,
-          reasoning?.efforts.find((effort) => effort.id === effectiveEffort)?.name ??
+          displayedReasoning?.efforts.find((effort) => effort.id === effectiveEffort)?.name ??
             effectiveEffort,
         ))
   const modelLabel = selected
@@ -241,7 +263,7 @@ export function CombinationSelect({
   /** The row title differs by control kind: a switch is not a strength level. */
   const effortTitle = effortSwitch === undefined ? '推理强度' : '思考'
   const effortChoices =
-    reasoning === undefined
+    displayedReasoning === undefined
       ? []
       : effortSwitch !== undefined
         ? [
@@ -252,7 +274,7 @@ export function CombinationSelect({
               ? []
               : [{ key: 'switch:off', effort: effortSwitch.off, label: '关闭思考' }]),
           ]
-        : reasoning.efforts
+        : displayedReasoning.efforts
             .filter((effort) => effort.id !== 'default')
             .map((effort) => ({
               key: `effort:${effort.id}`,
@@ -276,6 +298,30 @@ export function CombinationSelect({
     setError('')
     void reload(sessionId)
   }
+  useEffect(() => {
+    if (!selected || selected.combination.harnessRef === 'dsh') {
+      setPreflight(undefined)
+      return
+    }
+    const key = selected.combination.id
+    let current = true
+    setPreflight({ key, state: 'loading' })
+    void call('reasoning-preflight', { sessionId, combination: key })
+      .then((value: HarnessReasoningPreflight) => {
+        if (current) setPreflight({ key, state: 'ready', value })
+      })
+      .catch(() => {
+        if (current)
+          setPreflight({
+            key,
+            state: 'ready',
+            value: { status: 'unavailable', efforts: [] },
+          })
+      })
+    return () => {
+      current = false
+    }
+  }, [call, selected?.combination.id, sessionId])
   const drill = (next: 'model' | 'effort') => {
     focusIntent.current = 'drill'
     setPane(next)
@@ -514,7 +560,7 @@ export function CombinationSelect({
                   <span className={css.cellValue}>{modelLabel}</span>
                   <IconChevronRightOutlineRegular className={css.cellChevron} />
                 </button>
-                {reasoning !== undefined && (
+                {displayedReasoning !== undefined && (
                   <button
                     ref={itemRef()}
                     type="button"

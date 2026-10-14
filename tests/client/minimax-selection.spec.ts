@@ -160,6 +160,11 @@ function fixture(initial: { model: string; reasoningEffort?: string }) {
     if (method === 'catalog') return catalog
     if (method === 'combinations')
       return catalog.combinations.map((item) => ({ id: item.id, available: true }))
+    if (method === 'reasoning-preflight')
+      return {
+        status: 'known',
+        efforts: initial.model === M3 ? m3Reasoning.efforts : flashReasoning.efforts,
+      }
     if (method === 'select-effort') {
       const input = args as { reasoningEffort?: string }
       current = {
@@ -507,6 +512,7 @@ describe('MiniMax Code model menu labels', () => {
     expect(view.trigger.textContent).toContain('开启思考')
 
     await view.open()
+    expect(view.trigger.textContent).toContain('开启思考')
     await view.click('思考')
     const open = view.menuText()
     // A switch, labeled by its state — never "推理强度" with on/off levels.
@@ -588,6 +594,8 @@ describe('MiniMax Code model menu labels', () => {
     })
     const view = await mount({ call: first.call, source: () => mine.face })
     expect(view.trigger.textContent).toContain(`${M3} · ${HARNESS_NAME}`)
+    expect(view.trigger.textContent).toContain('开启思考')
+    await view.open()
     expect(view.trigger.textContent).toContain('开启思考')
 
     // The other Session resolves to the other model; this view keeps its own.

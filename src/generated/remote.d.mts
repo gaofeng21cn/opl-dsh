@@ -3,7 +3,7 @@ import type {
   RemoteResult,
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, CodexRuntimeRequest, CodexRuntimeResult, ContextBudgetRequest, ContextBudgetSnapshot, CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, MessageEditSend, MessageEditState, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
+import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, CodexRuntimeRequest, CodexRuntimeResult, ContextBudgetRequest, ContextBudgetSnapshot, CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessReasoningPreflight, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, MessageEditSend, MessageEditState, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$6f706c4175746f526576696577 {
@@ -35,6 +35,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'message-edit-state': (request: { sessionId: string; }) => Promise<RemoteResult<MessageEditState>>
     'model-selection': (request: SessionRequest) => Promise<RemoteResult<HarnessSelection>>
     prompt: (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
+    'reasoning-preflight': (request: { sessionId: string; combination: string; }) => Promise<RemoteResult<HarnessReasoningPreflight>>
     report: (request: ReportRequest) => Promise<RemoteResult<{ saved: boolean; operationId: string; }>>
     result: (request: { origin: HarnessOrigin; sessionId: string; operationId?: string; wait?: boolean; }, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
     'retry-delivery': (request: SessionRequest) => Promise<RemoteResult<HarnessSnapshot>>
@@ -111,6 +112,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/message-edit-state': (request: { sessionId: string; }) => Promise<RemoteResult<MessageEditState>>
     'oplExecution/model-selection': (request: SessionRequest) => Promise<RemoteResult<HarnessSelection>>
     'oplExecution/prompt': (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
+    'oplExecution/reasoning-preflight': (request: { sessionId: string; combination: string; }) => Promise<RemoteResult<HarnessReasoningPreflight>>
     'oplExecution/report': (request: ReportRequest) => Promise<RemoteResult<{ saved: boolean; operationId: string; }>>
     'oplExecution/result': (request: { origin: HarnessOrigin; sessionId: string; operationId?: string; wait?: boolean; }, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
     'oplExecution/retry-delivery': (request: SessionRequest) => Promise<RemoteResult<HarnessSnapshot>>

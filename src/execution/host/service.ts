@@ -29,6 +29,7 @@ import type {
   StopEditStateRequest,
   CooperationSettings,
   HarnessOrigin,
+  HarnessReasoningPreflight,
   DelegateRequest,
   ReviewRequest,
   ReportRequest,
@@ -160,6 +161,13 @@ export class ExecutionService extends TypertRemoteService {
   @Remote('model-selection')
   modelSelection(request: SessionRequest): Promise<HarnessSelection> {
     return this.execution.modelSelection(request.sessionId)
+  }
+  @Remote('reasoning-preflight')
+  reasoningPreflight(request: {
+    sessionId: string
+    combination: string
+  }): Promise<HarnessReasoningPreflight> {
+    return this.execution.reasoningPreflight(request)
   }
   @Remote('select-combination')
   selectCombination(request: {

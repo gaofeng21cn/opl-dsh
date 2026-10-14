@@ -1,0 +1,3 @@
+# Live external Harness reasoning options
+
+The model catalogue describes the native DSH effort vocabulary, while an external CLI owns its own advertised configuration. The model picker therefore reads the selected ACP session's live reasoning option before showing external effort controls. The read uses an ephemeral, permission-matched ACP session with no prompt; the process and durable probe record are disposed after the advertisement is read. If the CLI does not expose a reasoning option, the picker hides the control rather than presenting a native default that the CLI may reject. MiniMax's thinking on/off model is the one fixed adapter declaration retained because its official protocol encodes the switch in the model variant rather than a separate effort option.
