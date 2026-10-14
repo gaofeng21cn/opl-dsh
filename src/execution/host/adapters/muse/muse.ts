@@ -57,6 +57,7 @@ import {
   museLane,
 } from './muse-models.ts'
 import { musePermissionPlan, museSandboxArgs } from './muse-permissions.ts'
+import { acceptVisibleCliResult } from '../visible-result.ts'
 import type { ModelRef } from '../../../contracts/catalog.ts'
 import type { HarnessSession } from '../../../contracts/sessions.ts'
 import type {
@@ -344,6 +345,7 @@ export function createMuseCodeAdapter(
       autoReview: 'unsupported',
     },
     matches: (ref) => museLane(ref) !== undefined,
+    acceptResult: acceptVisibleCliResult,
     async available(_ctx, options) {
       if (!supportsSourceEndpoint)
         return { available: false, reason: '官方 Muse Code 尚不支持模型来源的自定义端点' }
