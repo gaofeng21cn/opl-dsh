@@ -209,6 +209,10 @@ export function apply(ctx: Context): void {
     ctx.slots.register(
       {
         name: 'conversation.hero.agentPreset',
+        // The official preset control owns the primary cell when present. Keep
+        // this optional projectless affordance as a fallback so a single-slot
+        // collision can never unload the execution settings contribution.
+        priority: 1,
       },
       () => <ProjectlessHeroChoice create={() => ctx.uiWorkspace.startSession()} />,
     ),
