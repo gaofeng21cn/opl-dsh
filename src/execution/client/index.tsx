@@ -77,9 +77,8 @@ export function apply(ctx: Context): void {
     ctx.slots.register(
       {
         name: 'conversation.hero.agentPreset',
-        inject: () => ({ create: () => ctx.uiWorkspace.startSession() }),
       },
-      ProjectlessHeroChoice,
+      () => <ProjectlessHeroChoice create={() => ctx.uiWorkspace.startSession()} />,
     ),
   )
   const editors = new Map<
