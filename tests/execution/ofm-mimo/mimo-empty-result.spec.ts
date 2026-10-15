@@ -23,7 +23,7 @@
  * Every wait is condition-driven. No case sleeps for a fixed duration and then
  * assumes an event happened.
  */
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -285,16 +285,21 @@ describe('MiMo Code 空成功拒绝', () => {
   }, 30_000)
 
   it('取消仍然是取消，不被完成判定改成失败', async () => {
-    const { service, session } = await mimoSetup()
+    const { service, session, journal } = await mimoSetup()
 
     await service.prompt({ sessionId: session.id, text: 'hold', operationId: 'op-hold' })
     // Cancel only after the turn is genuinely in flight, so the receipt is the
     // agent's own answer rather than a race against admission.
-    await vi.waitFor(async () =>
-      expect((await service.snapshot({ sessionId: session.id })).turns.at(-1)!.state).toBe(
-        'running',
-      ),
-    )
+    // Host running state precedes model pinning and does not prove ACP delivery.
+    await vi.waitFor(async () => {
+      const frames = (await readFile(journal, 'utf8'))
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line))
+      expect(
+        frames.some((frame) => frame.method === 'session/prompt' && frame.params.text === 'hold'),
+      ).toBe(true)
+    })
     await service.cancel({ sessionId: session.id })
     const settled = (await waitFor(service, session.id)).turns.at(-1)!
 

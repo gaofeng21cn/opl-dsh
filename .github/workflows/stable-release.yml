@@ -134,6 +134,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Verify Windows launcher and ACL regressions
         if: runner.os == 'Windows'
+        shell: bash
         run: |
           npm run build:bridge
           node node_modules/vitest/vitest.mjs run tests/execution/harness-registry.spec.ts -t "probes a cmd shim"
