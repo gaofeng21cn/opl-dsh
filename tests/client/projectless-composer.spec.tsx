@@ -12,7 +12,7 @@ afterEach(async () => {
   root = undefined
 })
 
-async function render(projectless: boolean) {
+async function render(projectless: boolean, blank = true) {
   const container = dom.container()
   const setDraft = vi.fn()
   const submit = vi.fn()
@@ -20,7 +20,7 @@ async function render(projectless: boolean) {
   await act(async () =>
     root!.render(
       createElement(ProjectlessComposer, {
-        session: { sessionId: 'session-projectless', blank: true } as never,
+        session: { sessionId: 'session-projectless', blank } as never,
         input: { draft: '', phase: 'plain' } as never,
         inputActions: { setDraft, submit } as never,
         useWorkspaces: (
@@ -42,4 +42,8 @@ it('renders a working draft and submit surface for an ungrouped blank Session', 
 
 it('does not add a second composer inside a Workspace', async () => {
   expect((await render(true)).container.textContent).toBe('')
+})
+
+it('returns to the official composer after the first prompt', async () => {
+  expect((await render(false, false)).container.textContent).toBe('')
 })
