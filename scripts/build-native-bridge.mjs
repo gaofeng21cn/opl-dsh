@@ -1,6 +1,6 @@
 import { build } from 'esbuild'
-import { writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** Build the regression-test bridge without rewriting platform-dependent RPC sources. */
@@ -17,7 +17,10 @@ export async function buildNativeBridge(root, output = join(root, 'dist')) {
     },
     write: false,
   })
-  for (const file of result.outputFiles ?? []) await writeFile(file.path, file.contents)
+  for (const file of result.outputFiles ?? []) {
+    await mkdir(dirname(file.path), { recursive: true })
+    await writeFile(file.path, file.contents)
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
