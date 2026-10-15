@@ -21,9 +21,8 @@ import {
   installMessageEditNavigation,
   messageEditDefinition,
 } from './message-edit-view.ts'
-import { allowProjectlessSessions } from './fresh-session.ts'
-import { ProjectlessHeroChoice } from './ProjectlessHeroChoice.tsx'
-import { ProjectlessComposer } from './ProjectlessComposer.tsx'
+import { allowProjectlessSessions, markProjectlessSession } from './fresh-session.ts'
+import { installProjectlessOfficialComposer } from './ProjectlessOfficialComposer.tsx'
 import { HARNESS_TRANSCRIPT_TOOL } from '../contracts/tool-display.ts'
 import { remoteCall } from '../../shared/client/remote-call.ts'
 export const inject = [
@@ -34,6 +33,7 @@ export const inject = [
   'remote.oplExecution',
   'remote.session',
 ]
+
 /**
  * The official durable model selection of one Session.
  *
@@ -70,7 +70,22 @@ function sessionChanges(ctx: Context, sessionId: string, listener: () => void): 
 
 export function apply(ctx: Context): void {
   const call = remoteCall(ctx.remote.oplExecution)
-  ctx.effect(() => allowProjectlessSessions(ctx.uiWorkspace, ctx.sessions))
+  const workspace = ctx.uiWorkspace
+  const sessions = ctx.sessions
+  ctx.effect(() =>
+    allowProjectlessSessions(workspace, async () => {
+      // Reserve the projectless path in the OPL Host, then let the official
+      // Session Controller create/adopt the exact identity and publish it to
+      // the navigator before the Workspace service retains it.
+      const result = await call('projectless-session')
+      const sessionId = await sessions.create({
+        sessionId: result.sessionId as SessionId,
+        cwd: result.cwd,
+      })
+      markProjectlessSession(sessionId)
+      return sessionId
+    }),
+  )
   ctx.effect(() => installMessageEditViews(ctx.uiConversation.views))
   ctx.effect(() => installMessageEditNavigation(ctx))
   ctx.effect(() => ctx.uiConversation.events.register(messageEditDefinition))
@@ -201,30 +216,11 @@ export function apply(ctx: Context): void {
       ExecutionCatalogSection,
     ),
   )
-  // Register this optional hero contribution after the execution settings are
-  // declared. Some official Desktop builds expose the hero slot lazily; a
-  // contribution failure must never suppress the plugin's required settings
-  // sections and their verification surface.
-  ctx.slots.inject('conversation.hero.agentPreset', () =>
-    ctx.slots.register(
-      {
-        name: 'conversation.hero.agentPreset',
-        // The official preset control owns the primary cell when present. Keep
-        // this optional projectless affordance as a fallback so a single-slot
-        // collision can never unload the execution settings contribution.
-        priority: 1,
-      },
-      () => <ProjectlessHeroChoice create={() => ctx.uiWorkspace.startSession()} />,
-    ),
-  )
-  ctx.slots.inject('conversation.input.dock', () =>
-    ctx.slots.register(
-      {
-        name: 'conversation.input.dock',
-        id: 'opl-projectless-composer',
-        order: -100,
-      },
-      ProjectlessComposer,
+  const slots = ctx.slots
+  ctx.effect(() =>
+    installProjectlessOfficialComposer(
+      () => slots.entries('conversation.composer.bar'),
+      (listener) => slots.subscribe('conversation.composer.bar', listener),
     ),
   )
 }

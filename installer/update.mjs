@@ -33,6 +33,9 @@ export async function refreshEnhancements(root, application) {
   } catch {
     return
   }
+  // Keep a locally built candidate installed for manual acceptance. A normal
+  // release installation clears this flag and resumes automatic updates.
+  if (current.localCandidate === true) return
   // Never change a profile used by an existing app, even if its task looks idle.
   try {
     const b = JSON.parse(

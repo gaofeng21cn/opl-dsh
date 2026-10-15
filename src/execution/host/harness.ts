@@ -301,6 +301,14 @@ export class HarnessService {
     }, 2000)
     this.tick.unref()
   }
+
+  /** Reserve one ordinary Session identity and its projectless working directory. */
+  async createProjectlessSession(): Promise<{ sessionId: string; cwd: string }> {
+    await this.ready
+    const sessionId = asSessionId(`session-${randomUUID()}`)
+    const cwd = join(this.directory, 'tasks', sessionId)
+    return { sessionId, cwd }
+  }
   private async loadSelections() {
     try {
       const value = JSON.parse(

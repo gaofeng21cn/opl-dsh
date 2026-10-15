@@ -3,6 +3,36 @@ import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { StopEditState } from '../contracts/stop-edit.ts'
 
+const PROJECTLESS_SESSION_STORAGE = 'opl.projectless-session-ids'
+const projectlessSessionIds = new Set<string>()
+
+try {
+  const stored = JSON.parse(globalThis.localStorage?.getItem(PROJECTLESS_SESSION_STORAGE) ?? '[]')
+  if (Array.isArray(stored)) {
+    for (const id of stored) if (typeof id === 'string') projectlessSessionIds.add(id)
+  }
+} catch {
+  // A blocked or malformed browser store only loses the convenience marker.
+}
+
+/** Remember a Session created without a Workspace across a Desktop reload. */
+export function markProjectlessSession(sessionId: string): void {
+  projectlessSessionIds.add(sessionId)
+  try {
+    globalThis.localStorage?.setItem(
+      PROJECTLESS_SESSION_STORAGE,
+      JSON.stringify([...projectlessSessionIds]),
+    )
+  } catch {
+    // The live in-memory marker still covers the creation navigation.
+  }
+}
+
+/** @returns whether this Session was created through the projectless flow. */
+export function isProjectlessSession(sessionId: string): boolean {
+  return projectlessSessionIds.has(sessionId)
+}
+
 type WorkspaceId = Parameters<UiWorkspace['connectWorkspace']>[0]
 type SessionId = Awaited<ReturnType<UiWorkspace['connectWorkspace']>>
 
@@ -58,12 +88,12 @@ export function protectEditBranchesFromNewSession(
  * no-argument shortcut creates an unattached Session through the public `cwd`-optional API and
  * opens it directly, so it appears in the official Ungrouped group without inventing a project.
  * @param workspace - official navigation service.
- * @param sessions - official Session creation service.
+ * @param createProjectless - create and catalogue an unattached ordinary Session.
  * @returns disposer restoring the original start action.
  */
 export function allowProjectlessSessions(
   workspace: Pick<UiWorkspace, 'startSession' | 'openSession'>,
-  sessions: Pick<ISessions, 'create'>,
+  createProjectless: () => Promise<SessionId>,
 ): () => void {
   const original = workspace.startSession
   let disposed = false
@@ -79,8 +109,7 @@ export function allowProjectlessSessions(
       original.call(workspace, workspaceId, options)
       return
     }
-    void sessions
-      .create({})
+    void createProjectless()
       .then((sessionId) => {
         if (!disposed) workspace.openSession(sessionId)
       })
