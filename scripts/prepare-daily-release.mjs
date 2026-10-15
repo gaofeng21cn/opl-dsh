@@ -73,6 +73,31 @@ export async function planDailyRelease(root, latest) {
     const frozen = JSON.parse(git(root, ['show', `${currentTag}:package.json`]))
     if (frozen.version !== project.version)
       throw Error('Pending tag has a different package version')
+    const productChanges = git(root, [
+      'diff',
+      '--name-only',
+      currentTag,
+      'HEAD',
+      '--',
+      ...productPaths,
+    ])
+    if (productChanges) {
+      // A frozen tag keeps its original product bytes. Later product fixes need
+      // a new identity; runner/docs-only repairs can still resume the old tag.
+      const parts = project.version.split('.').map(Number)
+      do {
+        parts[2]++
+      } while (
+        spawnSync(
+          'git',
+          ['show-ref', '--verify', '--quiet', `refs/tags/opl-dsh-v${parts.join('.')}`],
+          {
+            cwd: root,
+          },
+        ).status === 0
+      )
+      return { action: 'prepare', version: parts.join('.'), baseline: latest?.tag_name }
+    }
     return { action: 'resume', tag: currentTag, sourceCommit: tagged.stdout.trim() }
   }
   return { action: 'prepare', version: project.version, baseline: latest?.tag_name }
