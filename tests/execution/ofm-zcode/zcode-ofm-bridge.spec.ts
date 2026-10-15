@@ -15,8 +15,8 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { existsSync, readFileSync } from 'node:fs'
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -531,13 +531,16 @@ describe('ZCode · Our Free Model in a Chinese and spaced project path', () => {
       home,
     )
     await bridge.request('initialize', {})
-    await bridge.request('session/new', { cwd: workspace })
+    const alias = join(home, 'project-link')
+    await symlink(workspace, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    await expect(bridge.request('session/new', { cwd: home })).rejects.toThrow()
+    await bridge.request('session/new', { cwd: alias })
     const running = bridge.prompt('commit the file', workspace)
     const result = await bridge.nextUpdate((u) => u.sessionUpdate === 'tool_call_update')
     await running
     // The real `git` binary ran in the real, Chinese-and-spaced directory.
     expect(result.status).toBe('completed')
-    expect(result.rawOutput.cwd).toBe(workspace)
+    expect(realpathSync(result.rawOutput.cwd)).toBe(realpathSync(workspace))
     expect(result.rawOutput.init).toBe(0)
     expect(result.rawOutput.add).toBe(0)
     expect(result.rawOutput.stdout).toContain('中文 文件.txt')

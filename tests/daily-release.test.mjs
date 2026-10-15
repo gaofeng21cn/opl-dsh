@@ -78,6 +78,24 @@ test('dirty or divergent source and nonstable Latest fail before allocating a ve
   assert.equal(JSON.parse(await readFile(join(root, 'package.json'))).version, '0.2.21')
 })
 
+test('product fixes after a failed frozen candidate allocate a new patch without moving the tag', async (t) => {
+  const { root, git, latest, commit } = await fixture(t)
+  await writeFile(join(root, 'package.json'), JSON.stringify({ version: '0.3.0' }))
+  commit()
+  git('tag', 'opl-dsh-v0.3.0')
+  const frozen = git('rev-parse', 'opl-dsh-v0.3.0')
+  await writeFile(join(root, 'src/plugin.ts'), 'export const value = 3\n')
+  commit()
+  assert.deepEqual(await planDailyRelease(root, latest), {
+    action: 'prepare',
+    version: '0.3.1',
+    baseline: latest.tag_name,
+  })
+  assert.equal(git('rev-parse', 'opl-dsh-v0.3.0'), frozen)
+  git('tag', 'opl-dsh-v0.3.1')
+  assert.equal((await planDailyRelease(root, latest)).version, '0.3.2')
+})
+
 test('automatic Chinese release notes retain original commit text and render all provenance fields', () => {
   const changes =
     '- fix: preserve draft ([查看提交](https://github.com/gaofeng21cn/opl-dsh/commit/abc))'
