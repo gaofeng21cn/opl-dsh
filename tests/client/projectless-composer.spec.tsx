@@ -12,7 +12,7 @@ afterEach(async () => {
   root = undefined
 })
 
-async function render(projectless: boolean) {
+async function render() {
   const container = dom.container()
   const setDraft = vi.fn()
   const submit = vi.fn()
@@ -20,26 +20,19 @@ async function render(projectless: boolean) {
   await act(async () =>
     root!.render(
       createElement(ProjectlessComposer, {
-        session: { sessionId: 'session-projectless', blank: true } as never,
-        input: { draft: '', phase: 'plain' } as never,
+        session: { sessionId: 'session-projectless' } as never,
+        pendingInteraction: undefined,
+        matched: {},
+        useInput: (select: (state: { draft: string; phase: string }) => unknown) =>
+          select({ draft: '', phase: 'plain' }),
         inputActions: { setDraft, submit } as never,
-        useWorkspaces: (
-          select: (state: { items: readonly { sessionIds: readonly string[] }[] }) => unknown,
-        ) =>
-          select(
-            projectless ? { items: [{ sessionIds: ['session-projectless'] }] } : { items: [] },
-          ),
       }),
     ),
   )
   return { container, setDraft, submit }
 }
 
-it('renders a working draft and submit surface for an ungrouped blank Session', async () => {
-  const { container } = await render(false)
+it('renders a working draft and submit surface for an ungrouped Session', async () => {
+  const { container } = await render()
   expect(container.textContent).toContain('发送')
-})
-
-it('does not add a second composer inside a Workspace', async () => {
-  expect((await render(true)).container.textContent).toBe('')
 })

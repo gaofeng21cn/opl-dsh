@@ -301,6 +301,18 @@ export class HarnessService {
     }, 2000)
     this.tick.unref()
   }
+
+  /** Create one regular Session below the harness home without Workspace membership. */
+  async createProjectlessSession(): Promise<{ sessionId: string }> {
+    await this.ready
+    const sessionId = asSessionId(`session-${randomUUID()}`)
+    const cwd = join(this.directory, 'tasks', sessionId)
+    const created = await this.ctx.sessionController.create({
+      sessionId: sessionId as SessionId,
+      cwd,
+    })
+    return { sessionId: created.sessionId }
+  }
   private async loadSelections() {
     try {
       const value = JSON.parse(

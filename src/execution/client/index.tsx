@@ -1,5 +1,7 @@
 import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
 import type { Context } from '@deepseek-ai/cordis'
+import type { ChainSelect } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { watchStopEditSession } from './stop-edit-session-watch.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
@@ -21,8 +23,11 @@ import {
   installMessageEditNavigation,
   messageEditDefinition,
 } from './message-edit-view.ts'
-import { allowProjectlessSessions } from './fresh-session.ts'
-import { ProjectlessHeroChoice } from './ProjectlessHeroChoice.tsx'
+import {
+  allowProjectlessSessions,
+  markProjectlessSession,
+  isProjectlessSession,
+} from './fresh-session.ts'
 import { ProjectlessComposer } from './ProjectlessComposer.tsx'
 import { HARNESS_TRANSCRIPT_TOOL } from '../contracts/tool-display.ts'
 import { remoteCall } from '../../shared/client/remote-call.ts'
@@ -34,6 +39,15 @@ export const inject = [
   'remote.oplExecution',
   'remote.session',
 ]
+
+const selectProjectlessComposer: ChainSelect<ComposerChainProps, object> = (owner) => {
+  const session = owner.session
+  return session !== undefined &&
+    owner.pendingInteraction === undefined &&
+    isProjectlessSession(session.sessionId)
+    ? {}
+    : null
+}
 /**
  * The official durable model selection of one Session.
  *
@@ -70,7 +84,14 @@ function sessionChanges(ctx: Context, sessionId: string, listener: () => void): 
 
 export function apply(ctx: Context): void {
   const call = remoteCall(ctx.remote.oplExecution)
-  ctx.effect(() => allowProjectlessSessions(ctx.uiWorkspace, ctx.sessions))
+  ctx.effect(() =>
+    allowProjectlessSessions(ctx.uiWorkspace, async () => {
+      const result = await ctx.remote.oplExecution['projectless-session']()
+      if (!result.ok) throw new Error(result.error.message)
+      markProjectlessSession(result.value.sessionId)
+      return result.value.sessionId as SessionId
+    }),
+  )
   ctx.effect(() => installMessageEditViews(ctx.uiConversation.views))
   ctx.effect(() => installMessageEditNavigation(ctx))
   ctx.effect(() => ctx.uiConversation.events.register(messageEditDefinition))
@@ -201,28 +222,12 @@ export function apply(ctx: Context): void {
       ExecutionCatalogSection,
     ),
   )
-  // Register this optional hero contribution after the execution settings are
-  // declared. Some official Desktop builds expose the hero slot lazily; a
-  // contribution failure must never suppress the plugin's required settings
-  // sections and their verification surface.
-  ctx.slots.inject('conversation.hero.agentPreset', () =>
+  ctx.slots.inject('conversation.composer', () =>
     ctx.slots.register(
       {
-        name: 'conversation.hero.agentPreset',
-        // The official preset control owns the primary cell when present. Keep
-        // this optional projectless affordance as a fallback so a single-slot
-        // collision can never unload the execution settings contribution.
-        priority: 1,
-      },
-      () => <ProjectlessHeroChoice create={() => ctx.uiWorkspace.startSession()} />,
-    ),
-  )
-  ctx.slots.inject('conversation.input.dock', () =>
-    ctx.slots.register(
-      {
-        name: 'conversation.input.dock',
-        id: 'opl-projectless-composer',
-        order: -100,
+        name: 'conversation.composer',
+        select: selectProjectlessComposer,
+        inject: () => ({}),
       },
       ProjectlessComposer,
     ),

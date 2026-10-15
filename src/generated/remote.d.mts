@@ -34,6 +34,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'message-edit-send': (request: MessageEditSend) => Promise<RemoteResult<SessionPromptValue>>
     'message-edit-state': (request: { sessionId: string; }) => Promise<RemoteResult<MessageEditState>>
     'model-selection': (request: SessionRequest) => Promise<RemoteResult<HarnessSelection>>
+    'projectless-session': () => Promise<RemoteResult<{ sessionId: string; }>>
     prompt: (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
     'reasoning-preflight': (request: { sessionId: string; combination: string; }) => Promise<RemoteResult<HarnessReasoningPreflight>>
     report: (request: ReportRequest) => Promise<RemoteResult<{ saved: boolean; operationId: string; }>>
@@ -111,6 +112,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/message-edit-send': (request: MessageEditSend) => Promise<RemoteResult<SessionPromptValue>>
     'oplExecution/message-edit-state': (request: { sessionId: string; }) => Promise<RemoteResult<MessageEditState>>
     'oplExecution/model-selection': (request: SessionRequest) => Promise<RemoteResult<HarnessSelection>>
+    'oplExecution/projectless-session': () => Promise<RemoteResult<{ sessionId: string; }>>
     'oplExecution/prompt': (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
     'oplExecution/reasoning-preflight': (request: { sessionId: string; combination: string; }) => Promise<RemoteResult<HarnessReasoningPreflight>>
     'oplExecution/report': (request: ReportRequest) => Promise<RemoteResult<{ saved: boolean; operationId: string; }>>

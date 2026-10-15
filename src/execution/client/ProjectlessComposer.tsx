@@ -1,49 +1,27 @@
-import { useEffect } from 'react'
-import type { InputActions, InputZone } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {
+  ComposerChainProps,
+  InputActions,
+  InputState,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-store'
 
-interface WorkspaceState {
-  readonly items: readonly {
-    readonly sessionIds: readonly string[]
-  }[]
-}
-
-type Props = InputZone & {
-  inputActions: InputActions
-  useWorkspaces: <Selected>(selector: (state: WorkspaceState) => Selected) => Selected
+type Props = ComposerChainProps & {
+  readonly matched: object
+  readonly useInput: SnapshotSelectorHook<InputState>
+  readonly inputActions: InputActions
 }
 
 /**
- * Provides the first draft surface for an ungrouped blank Session.
- *
- * The official Conversation intentionally disables its Hero composer until a
- * Workspace is selected. An ungrouped Session is already created and selected,
- * so this small surface owns only its initial text and submit action.
+ * The projectless Session composer occupies the official composer chain, so
+ * it replaces the resident bar in that Session instead of adding a second
+ * dialog beside it. Workspace Sessions decline the chain and keep the
+ * official composer unchanged.
  */
-export function ProjectlessComposer({ session, input, inputActions, useWorkspaces }: Props) {
-  const projectless = useWorkspaces(
-    (state) => !state.items.some((workspace) => workspace.sessionIds.includes(session.sessionId)),
-  )
-
-  useEffect(() => {
-    if (!projectless) return
-    const dock = document.querySelector<HTMLElement>(
-      `[data-opl-projectless-composer="${session.sessionId}"]`,
-    )
-    const bar = dock?.parentElement?.querySelector<HTMLElement>(
-      '[data-slot="conversation.composer.bar"]',
-    )
-    if (!bar) return
-    bar.hidden = true
-    return () => {
-      bar.hidden = false
-    }
-  }, [projectless, session.sessionId])
-
-  if (!projectless) return null
-
+export function ProjectlessComposer({ useInput, inputActions }: Props) {
+  const input = useInput((state) => state)
   return (
     <div
-      data-opl-projectless-composer={session.sessionId}
+      data-opl-projectless-composer=""
       style={{ display: 'flex', gap: 8, padding: '8px 12px 6px', width: '100%' }}
     >
       <textarea
