@@ -42,6 +42,30 @@ test('stable versions advance numerically without downgrades or prereleases', ()
     assert.equal(newer(value, '0.2.0'), false)
   assert.equal(newer('0.2.19', '0.2.18-minimax.20261008.2'), false)
 })
+test('a local candidate stays installed until replaced by an accepted release', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'opl-update-candidate-'))
+  const originalFetch = globalThis.fetch
+  try {
+    const installation = JSON.stringify({
+      home: join(root, 'data'),
+      suiteVersion: '0.2.29',
+      release: join(root, 'candidate'),
+      localCandidate: true,
+    })
+    await writeFile(join(root, 'installation.json'), installation)
+    let calls = 0
+    globalThis.fetch = async () => {
+      calls++
+      throw Error('must not replace local candidate')
+    }
+    await refreshEnhancements(root, 'unused')
+    assert.equal(calls, 0)
+    assert.equal(await readFile(join(root, 'installation.json'), 'utf8'), installation)
+  } finally {
+    globalThis.fetch = originalFetch
+    await rm(root, { recursive: true, force: true })
+  }
+})
 test('updates preserve the installed release while running, offline, or on checksum mismatch', async () => {
   const root = await mkdtemp(join(tmpdir(), 'opl-update-')),
     home = join(root, 'data')

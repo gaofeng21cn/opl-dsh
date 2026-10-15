@@ -40,9 +40,9 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 export class ExecutionService extends TypertRemoteService {
-  /** Create a regular Session with an explicit non-Workspace working directory. */
+  /** Reserve a regular Session identity with an explicit non-Workspace working directory. */
   @Remote('projectless-session')
-  projectlessSession(): Promise<{ sessionId: string }> {
+  projectlessSession(): Promise<{ sessionId: string; cwd: string }> {
     return this.execution.createProjectlessSession()
   }
   /** Read same-conversation edit choices without changing history. */

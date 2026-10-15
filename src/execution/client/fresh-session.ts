@@ -88,7 +88,7 @@ export function protectEditBranchesFromNewSession(
  * no-argument shortcut creates an unattached Session through the public `cwd`-optional API and
  * opens it directly, so it appears in the official Ungrouped group without inventing a project.
  * @param workspace - official navigation service.
- * @param sessions - official Session creation service.
+ * @param createProjectless - create and catalogue an unattached ordinary Session.
  * @returns disposer restoring the original start action.
  */
 export function allowProjectlessSessions(

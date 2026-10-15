@@ -205,6 +205,7 @@ const installation = {
       ? previousInstallation?.release
       : previousInstallation?.previousRelease,
   suiteVersion: artifact.enhancementVersion ?? artifact.version,
+  localCandidate: artifact.sourceDirty === true,
   officialVersion,
   app,
   home,

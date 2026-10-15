@@ -1,7 +1,5 @@
 import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
 import type { Context } from '@deepseek-ai/cordis'
-import type { ChainSelect } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { watchStopEditSession } from './stop-edit-session-watch.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
@@ -23,12 +21,8 @@ import {
   installMessageEditNavigation,
   messageEditDefinition,
 } from './message-edit-view.ts'
-import {
-  allowProjectlessSessions,
-  markProjectlessSession,
-  isProjectlessSession,
-} from './fresh-session.ts'
-import { ProjectlessComposer } from './ProjectlessComposer.tsx'
+import { allowProjectlessSessions, markProjectlessSession } from './fresh-session.ts'
+import { installProjectlessOfficialComposer } from './ProjectlessOfficialComposer.tsx'
 import { HARNESS_TRANSCRIPT_TOOL } from '../contracts/tool-display.ts'
 import { remoteCall } from '../../shared/client/remote-call.ts'
 export const inject = [
@@ -40,14 +34,6 @@ export const inject = [
   'remote.session',
 ]
 
-const selectProjectlessComposer: ChainSelect<ComposerChainProps, object> = (owner) => {
-  const session = owner.session
-  return session !== undefined &&
-    owner.pendingInteraction === undefined &&
-    isProjectlessSession(session.sessionId)
-    ? {}
-    : null
-}
 /**
  * The official durable model selection of one Session.
  *
@@ -84,12 +70,20 @@ function sessionChanges(ctx: Context, sessionId: string, listener: () => void): 
 
 export function apply(ctx: Context): void {
   const call = remoteCall(ctx.remote.oplExecution)
+  const workspace = ctx.uiWorkspace
+  const sessions = ctx.sessions
   ctx.effect(() =>
-    allowProjectlessSessions(ctx.uiWorkspace, async () => {
-      const result = await ctx.remote.oplExecution['projectless-session']()
-      if (!result.ok) throw new Error(result.error.message)
-      markProjectlessSession(result.value.sessionId)
-      return result.value.sessionId as SessionId
+    allowProjectlessSessions(workspace, async () => {
+      // Reserve the projectless path in the OPL Host, then let the official
+      // Session Controller create/adopt the exact identity and publish it to
+      // the navigator before the Workspace service retains it.
+      const result = await call('projectless-session')
+      const sessionId = await sessions.create({
+        sessionId: result.sessionId as SessionId,
+        cwd: result.cwd,
+      })
+      markProjectlessSession(sessionId)
+      return sessionId
     }),
   )
   ctx.effect(() => installMessageEditViews(ctx.uiConversation.views))
@@ -222,14 +216,11 @@ export function apply(ctx: Context): void {
       ExecutionCatalogSection,
     ),
   )
-  ctx.slots.inject('conversation.composer', () =>
-    ctx.slots.register(
-      {
-        name: 'conversation.composer',
-        select: selectProjectlessComposer,
-        inject: () => ({}),
-      },
-      ProjectlessComposer,
+  const slots = ctx.slots
+  ctx.effect(() =>
+    installProjectlessOfficialComposer(
+      () => slots.entries('conversation.composer.bar'),
+      (listener) => slots.subscribe('conversation.composer.bar', listener),
     ),
   )
 }

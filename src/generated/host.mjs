@@ -1089,6 +1089,7 @@ const _one_person_lab_dsh_opl_oplExecution_model_selection_result$schema = () =>
 let _one_person_lab_dsh_opl_oplExecution_projectless_session_result$schema$value
 const _one_person_lab_dsh_opl_oplExecution_projectless_session_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_projectless_session_result$schema$value ??= z.object({
   'sessionId': z.string(),
+  'cwd': z.string(),
 }))
 let _one_person_lab_dsh_opl_oplExecution_prompt_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_prompt_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_prompt_parameter_0$schema$value ??= z.object({
