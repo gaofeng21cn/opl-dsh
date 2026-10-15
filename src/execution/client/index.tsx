@@ -23,6 +23,7 @@ import {
 } from './message-edit-view.ts'
 import { allowProjectlessSessions } from './fresh-session.ts'
 import { ProjectlessHeroChoice } from './ProjectlessHeroChoice.tsx'
+import { ProjectlessComposer } from './ProjectlessComposer.tsx'
 import { HARNESS_TRANSCRIPT_TOOL } from '../contracts/tool-display.ts'
 import { remoteCall } from '../../shared/client/remote-call.ts'
 export const inject = [
@@ -214,6 +215,16 @@ export function apply(ctx: Context): void {
         priority: 1,
       },
       () => <ProjectlessHeroChoice create={() => ctx.uiWorkspace.startSession()} />,
+    ),
+  )
+  ctx.slots.inject('conversation.input.dock', () =>
+    ctx.slots.register(
+      {
+        name: 'conversation.input.dock',
+        id: 'opl-projectless-composer',
+        order: -100,
+      },
+      ProjectlessComposer,
     ),
   )
 }
