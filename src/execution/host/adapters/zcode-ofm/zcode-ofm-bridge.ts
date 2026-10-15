@@ -25,7 +25,7 @@
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, resolve as resolvePath } from 'node:path'
 import { commandLaunch } from '../../harness-registry.ts'
@@ -91,7 +91,7 @@ const reasoningLevel = process.env.OPL_ZCODE_OFM_REASONING_LEVEL!
 if (!(ZCODE_OFM_REASONING_LEVELS as readonly string[]).includes(reasoningLevel))
   throw Error('Our Free Model 组合的推理档位不在官方声明的取值内')
 const reasoning = reasoningLevel as ZcodeOfmReasoningLevel
-const cwd = process.cwd()
+const cwd = realpathSync(process.cwd())
 
 /** OPL-owned bridge-only requests. No caller-selected credential ref is accepted. */
 const OFM_CREDENTIAL_REQUESTS = {
@@ -467,7 +467,13 @@ async function invoke(method: string, p: any) {
     }
   }
   if (method === 'session/new' || method === 'session/load') {
-    if (p.cwd !== cwd) throw Error('不能改变已绑定项目')
+    let sameWorkspace = false
+    try {
+      sameWorkspace = typeof p.cwd === 'string' && realpathSync(p.cwd) === cwd
+    } catch {
+      // A missing or inaccessible path cannot be the already bound workspace.
+    }
+    if (!sameWorkspace) throw Error('不能改变已绑定项目')
     const workspace = { workspacePath: cwd, workspaceKey: cwd }
     // Both lifecycle calls answer with the official session state snapshot; the session
     // id lives at `snapshot.session.sessionId`.
