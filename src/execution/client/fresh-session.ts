@@ -98,13 +98,12 @@ export function allowProjectlessSessions(
   const original = workspace.startSession
   let disposed = false
   const start: UiWorkspace['startSession'] = (workspaceId, options) => {
-    // The official sidebar passes `{ clearPreviousDraft: false }` for its global
-    // New Conversation action. That call still has no Workspace target and must
-    // remain projectless; only a prompt-bearing draft needs the official path.
-    const projectless =
-      workspaceId === undefined &&
-      (options === undefined || options.clearPreviousDraft === false) &&
-      options?.prompt === undefined
+    // Both the global action and the ungrouped group's plus button have no
+    // Workspace target. They may differ in `clearPreviousDraft`, but neither
+    // should be routed through the official workspace-only resolver. A prompt
+    // already attached to the call is the only case that must keep the
+    // official path, because it carries an explicit draft target.
+    const projectless = workspaceId === undefined && options?.prompt === undefined
     if (!projectless) {
       original.call(workspace, workspaceId, options)
       return

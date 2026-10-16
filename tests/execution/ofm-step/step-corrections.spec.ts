@@ -42,6 +42,8 @@ interface Run {
   updates: unknown[]
   /** Permission requests the bridge raised, i.e. approvals it declined to answer. */
   permissions(): unknown[]
+  /** Resolve when the official side has emitted the first assistant update. */
+  waitForText(text: string): Promise<void>
 }
 
 /**
@@ -107,6 +109,7 @@ async function start(
     acp: agent.acp,
     updates: agent.all(),
     permissions: agent.permissions,
+    waitForText: agent.waitForText,
   }
 }
 
@@ -227,6 +230,10 @@ describe('session and turn lifecycle', () => {
         sessionId: session.sessionId,
         prompt: [{ type: 'text', text: '第一轮' }],
       })
+      // The stub keeps this turn pending only after it has emitted its first
+      // assistant update. Synchronize on that protocol event before sending the
+      // competing request so slow CI cannot race the bridge's busy guard.
+      await run.waitForText('收到：')
       await expect(
         run.acp.request('session/prompt', {
           sessionId: session.sessionId,

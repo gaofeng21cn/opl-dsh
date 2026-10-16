@@ -11,7 +11,6 @@ import * as execution from '../execution/client/index.tsx'
 import * as collaboration from '../collaboration/client/index.tsx'
 import * as setup from '../setup/client/index.tsx'
 import * as notifications from '../notifications/client/index.tsx'
-import * as contextBudget from '../context-budget/client/index.tsx'
 import * as autoReview from '../auto-review/client/index.tsx'
 import * as todoStatus from '../todo-status/client/index.tsx'
 import * as settingsNavigation from '../compat/client/settings-navigation.ts'
@@ -44,14 +43,6 @@ export async function apply(ctx: Context): Promise<void> {
           save: (request) => call('save', request),
         },
       })
-    },
-  })
-  ctx.plugin({
-    name: 'opl-context-budget-client',
-    inject: ['remote.oplContextBudget'],
-    apply(scope: Context) {
-      const readBudget = remoteCall(scope.remote.oplContextBudget)
-      scope.plugin(contextBudget, { read: (sessionId) => readBudget('read', { sessionId }) })
     },
   })
   ctx.plugin(setup, {

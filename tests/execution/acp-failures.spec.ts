@@ -49,3 +49,14 @@ it('keeps a request timeout actionable without reporting an extension name', asy
   expect(String(failure)).toContain('请求超时（扩展请求）')
   expect(String(failure)).not.toContain('synthetic-private-method')
 })
+
+it('reports a client-only free channel without suggesting a CLI login problem', async () => {
+  const instance =
+    connect(`require('node:readline').createInterface({input:process.stdin}).on('line', line => {
+    const request=JSON.parse(line)
+    process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:request.id,error:{code:'HARNESS_PROVIDER_CLIENT_REQUIRED',message:'synthetic-private-key'}})+String.fromCharCode(10))
+  })`)
+  const failure = await instance.request('session/prompt', {}).catch((error: unknown) => error)
+  expect(String(failure)).toContain('指定的官方客户端')
+  expect(String(failure)).not.toMatch(/synthetic-private-key|登录/)
+})

@@ -93,6 +93,33 @@ function setup() {
 }
 
 describe('ordinary official conversations for external tasks', () => {
+  it('does not open already imported historical Sessions while restoring the task index', async () => {
+    const { ctx, bridge, record } = setup()
+    Object.assign(ctx, { logger: { warn: vi.fn() } })
+    const resolveAgent = vi.spyOn(ctx.sessionController, 'resolveAgent')
+    const root = await mkdtemp(join(tmpdir(), 'opl-bound-history-'))
+    let service: HarnessService | undefined
+    try {
+      const store = new HarnessSessionStore(root)
+      await store.saveChanged(
+        Array.from({ length: 40 }, (_, i) => ({
+          ...structuredClone(record),
+          id: `history-${i}`,
+          nativeSessionId: `session-history-${i}`,
+        })),
+      )
+      service = new HarnessService(ctx, { home: root }, bridge)
+      await service.sessions()
+      expect(resolveAgent).not.toHaveBeenCalled()
+      expect(ctx.workspaceRegistry.create).not.toHaveBeenCalled()
+      expect(ctx.typertGateway.invoke).not.toHaveBeenCalled()
+      expect(await store.load()).toHaveLength(40)
+    } finally {
+      await service?.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('restores history without invoking the model picker or replacing a later user selection', async () => {
     const { ctx, bridge, record, invoke, sessions } = setup()
     Object.assign(ctx, { logger: { warn: vi.fn() } })

@@ -12,36 +12,45 @@ import {
 } from '../contracts/catalog.ts'
 import { harnessAllowsFullAccess } from './permissions.ts'
 import { normalizeHarnessProxy } from './proxy.ts'
+import { OFM_INACTIVE_DEFAULT_HARNESSES } from './ofm-source/selection-policy.ts'
 import type { CodexGitBashRuntime } from '../contracts/codex-runtime.ts'
 export type { ExecutionCatalog } from '../contracts/catalog.ts'
 export const defaultExecutionCatalog = (): ExecutionCatalog => ({
   version: 2,
   models: [],
-  harnesses: [
-    { id: 'dsh', name: 'DSH', kind: 'dsh', adapter: 'native-session' },
-    { id: 'codex', name: 'Codex CLI', kind: 'acp', command: 'codex' },
-    { id: 'claude', name: 'Claude Code', kind: 'acp', command: 'claude' },
-    { id: 'grok-build', name: 'Grok Build', kind: 'grok-build', adapter: 'acp-v1' },
-    { id: 'antigravity', name: 'Antigravity CLI', kind: 'acp', command: 'agy' },
-    // The official MiniMax Code CLI signs in with its own account; the suite never
-    // supplies an OPL Gateway key for it.
-    { id: 'minimax-code', name: 'MiniMax Code', kind: 'acp', command: 'mcode', adapter: 'acp-v1' },
-    { id: 'zcode', name: 'ZCode', kind: 'acp', command: 'zcode', adapter: 'zcode-protocol-v1' },
-    { id: 'kimi-code', name: 'Kimi Code', kind: 'acp', command: 'kimi', adapter: 'acp-v1' },
-    { id: 'mimo-code', name: 'MiMo Code', kind: 'acp', command: 'mimo', adapter: 'acp-v1' },
-    { id: 'pool', name: 'Poolside', kind: 'acp', command: 'pool', adapter: 'acp-v1' },
-    { id: 'step-code', name: 'StepCode', kind: 'acp', command: 'step', adapter: 'step-rpc-v1' },
-    {
-      id: 'muse-code',
-      name: 'Muse Code',
-      kind: 'acp',
-      command: 'muse',
-      adapter: 'muse-protocol-v1',
-    },
-    { id: 'opencode', name: 'OpenCode', kind: 'acp', command: 'opencode', adapter: 'acp-v1' },
-    { id: 'pi', name: 'Pi Coding Agent', kind: 'acp', command: 'pi', adapter: 'pi-rpc-v1' },
-    { id: 'kilo', name: 'Kilo Code', kind: 'acp', command: 'kilo', adapter: 'acp-v1' },
-  ],
+  harnesses: (
+    [
+      { id: 'dsh', name: 'DSH', kind: 'dsh', adapter: 'native-session' },
+      { id: 'codex', name: 'Codex CLI', kind: 'acp', command: 'codex' },
+      { id: 'claude', name: 'Claude Code', kind: 'acp', command: 'claude' },
+      { id: 'grok-build', name: 'Grok Build', kind: 'grok-build', adapter: 'acp-v1' },
+      { id: 'antigravity', name: 'Antigravity CLI', kind: 'acp', command: 'agy' },
+      // The official MiniMax Code CLI signs in with its own account; the suite never
+      // supplies an OPL Gateway key for it.
+      {
+        id: 'minimax-code',
+        name: 'MiniMax Code',
+        kind: 'acp',
+        command: 'mcode',
+        adapter: 'acp-v1',
+      },
+      { id: 'zcode', name: 'ZCode', kind: 'acp', command: 'zcode', adapter: 'zcode-protocol-v1' },
+      { id: 'kimi-code', name: 'Kimi Code', kind: 'acp', command: 'kimi', adapter: 'acp-v1' },
+      { id: 'mimo-code', name: 'MiMo Code', kind: 'acp', command: 'mimo', adapter: 'acp-v1' },
+      { id: 'pool', name: 'Poolside', kind: 'acp', command: 'pool', adapter: 'acp-v1' },
+      { id: 'step-code', name: 'StepCode', kind: 'acp', command: 'step', adapter: 'step-rpc-v1' },
+      {
+        id: 'muse-code',
+        name: 'Muse Code',
+        kind: 'acp',
+        command: 'muse',
+        adapter: 'muse-protocol-v1',
+      },
+      { id: 'opencode', name: 'OpenCode', kind: 'acp', command: 'opencode', adapter: 'acp-v1' },
+      { id: 'pi', name: 'Pi Coding Agent', kind: 'acp', command: 'pi', adapter: 'pi-rpc-v1' },
+      { id: 'kilo', name: 'Kilo Code', kind: 'acp', command: 'kilo', adapter: 'acp-v1' },
+    ] satisfies ExecutionCatalog['harnesses']
+  ).filter((harness) => !OFM_INACTIVE_DEFAULT_HARNESSES.includes(harness.id)),
   combinations: [
     {
       id: DSH_COMBINATION,

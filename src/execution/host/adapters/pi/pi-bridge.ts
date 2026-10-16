@@ -115,6 +115,7 @@ function acpErrorCode(error: unknown): string | number {
     case 'HARNESS_TIMEOUT':
       return 'HARNESS_TIMEOUT'
     case 'HARNESS_PROVIDER':
+    case 'HARNESS_PROVIDER_CLIENT_REQUIRED':
     case 'HARNESS_PROVIDER_AUTH':
     case 'HARNESS_PROVIDER_MODEL':
     case 'HARNESS_PROVIDER_RATE_LIMIT':

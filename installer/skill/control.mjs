@@ -45,13 +45,20 @@ if (args['write-scope-file']) {
 let feedbackRequest
 if (feedbackRequestCommands.includes(command)) {
   const allowed =
-    command === 'consume' ? ['request-file', 'consumer', 'epoch'] : ['request-file', 'consumer']
+    command === 'consume'
+      ? ['request-file', 'consumer', 'epoch']
+      : command === 'receive'
+        ? ['request-file', 'consumer', 'delivery']
+        : ['request-file', 'consumer']
   for (const name of Object.keys(args))
     if (!allowed.includes(name)) throw Error('未知反馈参数 --' + name)
   if (args['request-file']) {
     if (positional.length || Object.keys(args).length !== 1)
       throw Error('--request-file 不能与位置参数或其他反馈参数混用')
     feedbackRequest = JSON.parse(await readFile(args['request-file'], 'utf8'))
+  } else if (args.delivery) {
+    if (positional.length || !args.delivery.trim())
+      throw Error('--delivery 不能与位置参数混用，且必须为非空 deliveryId')
   } else {
     const expected = command === 'task' ? 1 : 2
     if (positional.length !== expected)
@@ -455,6 +462,16 @@ if (command === 'codex-runtime-select') {
 } else if (['tasks', 'outbox', 'wake', 'receipts', 'flush'].includes(command)) {
   console.log(JSON.stringify(await rpc(command, {}, 150000, 'taskFeedback')))
 } else if (feedbackRequestCommands.includes(command)) {
+  if (args.delivery) {
+    const deliveries = await rpc('outbox', {}, 150000, 'taskFeedback')
+    const matches = deliveries.filter((delivery) => delivery.deliveryId === args.delivery)
+    if (matches.length !== 1) throw Error('未找到唯一 delivery；请通过 outbox 核对标识')
+    feedbackRequest = {
+      taskId: matches[0].taskId,
+      deliveryId: args.delivery,
+      ...(args.consumer ? { consumerId: args.consumer } : {}),
+    }
+  }
   console.log(JSON.stringify(await rpc(command, feedbackRequest, 150000, 'taskFeedback')))
 } else
   throw new Error(

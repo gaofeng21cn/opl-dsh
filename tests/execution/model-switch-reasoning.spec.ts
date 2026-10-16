@@ -144,7 +144,7 @@ async function setup() {
       sessionId: session.id,
       combination: external ? 'minimax-code/' + model : channel + '/' + model,
     })
-  return { service, session, select, choose, create, groups, ctx }
+  return { service, session, select, choose, create, groups, ctx, root }
 }
 
 describe('per-model reasoning in the conversation picker', () => {
@@ -288,6 +288,75 @@ describe('per-model reasoning in the conversation picker', () => {
       provider: 'other-channel',
       model: 'optional',
     })
+  })
+})
+
+describe('CLI effort selection independent of source provider', () => {
+  async function fixture() {
+    const f = await setup()
+    const adapter = adapterFor('minimax-code', { provider, model: flash })!
+    vi.spyOn(f.service as any, 'cliOwnsEffort').mockImplementation(
+      (d: any) => d.harnessRef === 'minimax-code',
+    )
+    // The same path serves OFM Step/Pi/Pool/Kimi; source metadata deliberately lacks balanced.
+    vi.spyOn(f.service, 'reasoningPreflight').mockResolvedValue({
+      status: 'known',
+      efforts: [{ id: 'balanced', name: 'Balanced' }],
+    })
+    await f.choose(flash)
+    return f
+  }
+  it('stores advertised balanced without submitting it to the provider controller', async () => {
+    const f = await fixture()
+    await f.service.invoke('select-effort', {
+      sessionId: f.session.id,
+      provider,
+      model: flash,
+      reasoningEffort: 'balanced',
+    })
+    expect(f.select.mock.calls.at(-1)?.[0]).not.toHaveProperty('reasoningEffort')
+    expect((await f.service.modelSelection(f.session.id)).current.reasoningEffort).toBe('balanced')
+    expect(f.service.start).not.toHaveBeenCalled()
+    await f.service.dispose()
+    const restored = await f.create()
+    vi.spyOn(restored as any, 'cliOwnsEffort').mockReturnValue(true)
+    expect((await restored.modelSelection(f.session.id)).current.reasoningEffort).toBe('balanced')
+    await restored.invoke('select-effort', { sessionId: f.session.id, provider, model: flash })
+    expect((await restored.modelSelection(f.session.id)).current.reasoningEffort).toBeUndefined()
+  })
+  it('rejects an unadvertised choice before changing provider selection', async () => {
+    const f = await fixture()
+    f.select.mockClear()
+    await expect(
+      f.service.invoke('select-effort', {
+        sessionId: f.session.id,
+        provider,
+        model: flash,
+        reasoningEffort: 'max',
+      }),
+    ).rejects.toThrow('未提供')
+    expect(f.select).not.toHaveBeenCalled()
+  })
+  it('rejects a preflight result after another combination was selected', async () => {
+    const f = await fixture()
+    let release!: (value: any) => void
+    vi.mocked(f.service.reasoningPreflight).mockImplementation(
+      () =>
+        new Promise((r) => {
+          release = r
+        }),
+    )
+    const pending = f.service.invoke('select-effort', {
+      sessionId: f.session.id,
+      provider,
+      model: flash,
+      reasoningEffort: 'balanced',
+    })
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    await f.choose(m3)
+    release({ status: 'known', efforts: [{ id: 'balanced', name: 'Balanced' }] })
+    await expect(pending).rejects.toThrow('状态已改变')
+    expect((await f.service.modelSelection(f.session.id)).current.model).toBe(m3)
   })
 })
 

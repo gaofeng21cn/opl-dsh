@@ -34,6 +34,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { probeHarnessReasoning, readHarnessReasoning } from './reasoning-preflight.ts'
 import type { HarnessReasoningPreflight, HarnessStartRequest } from '../../contracts/types.ts'
 import { STOP_EDIT_VERSION } from '../contracts/stop-edit.ts'
+import { projectlessSessionCwd } from './projectless-path.ts'
 export type { HarnessStartRequest } from '../../contracts/types.ts'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -51,6 +52,7 @@ import type {
 import { NO_SESSION_TARGET_THREAD_ID } from '../../collaboration/host/feedback/types.ts'
 import { harnessTaskIdOf, harnessTaskStateOf } from '../../collaboration/host/feedback/state.ts'
 import { AcpProcess, HarnessConfigurationError, HarnessTransportError, object } from './acp.ts'
+import { nativeFailureMessage } from './native-failure.ts'
 import {
   externalAskFromToolCall,
   type HarnessExternalApprovalBinding,
@@ -67,6 +69,7 @@ import {
   type HarnessTurn,
   type CollaborationReport,
 } from '../contracts/sessions.ts'
+import { ExternalEffortStore } from './external-effort-store.ts'
 import { ExecutionModelResolver } from './execution-models.ts'
 import { modelDefaultEffort } from '../../shared/model-reasoning.ts'
 import type { CombinationDefinition, ModelRef } from '../contracts/catalog.ts'
@@ -220,6 +223,8 @@ export { nativeHarnessMatches, defaultHarness } from './adapters/index.ts'
 export class HarnessService {
   private readonly runtimeMaintenance = new RuntimeMaintenance()
   private selections: Record<string, string> = {}
+  private readonly externalEfforts: ExternalEffortStore
+  private readonly effortChanges = new Map<string, symbol>()
   private readonly conversationOwners = new Map<
     string,
     { sessionId: string; signal?: AbortSignal }
@@ -236,6 +241,7 @@ export class HarnessService {
   private readonly events = new EventEmitter()
   private writeQueue: Promise<void> = Promise.resolve()
   private readonly ready: Promise<void>
+  private readonly selectionsReady: Promise<void>
   private disposed = false
   private pumping = false
   private readonly observed = new Set<string>()
@@ -252,6 +258,8 @@ export class HarnessService {
   private connectionGeneration = 0
   private readonly catalogStore: ExecutionCatalogStore
   private readonly modelResolver: ExecutionModelResolver
+  /** Share one catalog build among the parallel catalog/combination/selection reads. */
+  private executionCatalogPending: Promise<ExecutionCatalog> | undefined
   private readonly stopEdits: StopEditService
   private readonly stopEditIntents: StopEditIntentStore
   private readonly messageEditStore: MessageEditStore
@@ -278,9 +286,13 @@ export class HarnessService {
     this.messageEditStore = new MessageEditStore(this.directory)
     this.messageEdits = new MessageEditTransactions(this.messageEditStore)
     this.stopEdits = new StopEditService(this.stopEditHost())
+    this.externalEfforts = new ExternalEffortStore(this.directory)
+    this.selectionsReady = Promise.all([this.loadSelections(), this.externalEfforts.ready]).then(
+      () => {},
+    )
     this.ready = Promise.all([
       this.load(),
-      this.loadSelections(),
+      this.selectionsReady,
       // 编辑意图台账必须先恢复，否则一次未完成的编辑会被当成从未发生过。
       this.stopEditIntents.load(),
       this.messageEditStore.load(),
@@ -288,6 +300,13 @@ export class HarnessService {
       if (!this.conversations) return
       for (const record of this.records.values()) {
         try {
+          // A persisted native identity already belongs to the official Session
+          // store. Reopen that Session when it is used, not every desktop startup.
+          if (record.nativeSessionId) {
+            if (this.selections[record.nativeSessionId] === undefined)
+              await this.bindSelection(record.nativeSessionId, record.combination)
+            continue
+          }
           await this.ensureConversation(record)
         } catch (error) {
           // An unavailable historical project or model must not erase its record
@@ -306,7 +325,7 @@ export class HarnessService {
   async createProjectlessSession(): Promise<{ sessionId: string; cwd: string }> {
     await this.ready
     const sessionId = asSessionId(`session-${randomUUID()}`)
-    const cwd = join(this.directory, 'tasks', sessionId)
+    const cwd = projectlessSessionCwd(this.directory, sessionId)
     return { sessionId, cwd }
   }
   private async loadSelections() {
@@ -568,10 +587,10 @@ export class HarnessService {
     return { ...state }
   }
   async combinations(): Promise<HarnessCatalog['combinations']> {
-    await this.ready
     const catalog = await this.executionCatalog()
     const availability = new Map<string, { available: boolean; reason?: string }>()
     const probes = new Map<HarnessAdapter, Promise<{ available: boolean; reason?: string }>>()
+    const pending = new Map<string, Promise<{ available: boolean; reason?: string }>>()
     for (const combination of catalog.combinations) {
       const model = catalog.models.find(
         (item) => modelRefKey(item.ref) === modelRefKey(combination.modelRef),
@@ -592,14 +611,21 @@ export class HarnessService {
         if (!probes.has(adapter))
           probes.set(
             adapter,
-            adapter.available(
-              this.ctx,
-              this.adapterOptions(harness.command, harness.prefix, harness?.codexRuntime),
+            Promise.resolve().then(() =>
+              adapter.available(
+                this.ctx,
+                this.adapterOptions(harness.command, harness.prefix, harness?.codexRuntime),
+              ),
             ),
           )
-        availability.set(combination.id, await probes.get(adapter)!)
+        pending.set(combination.id, probes.get(adapter)!)
       }
     }
+    await Promise.all(
+      [...pending].map(async ([id, probe]) => {
+        availability.set(id, await probe)
+      }),
+    )
     return catalogView(catalog, availability)
   }
   /** Legacy external callers may still request full snapshots. UI uses pages. */
@@ -691,8 +717,19 @@ export class HarnessService {
     })
   }
   async executionCatalog(): Promise<ExecutionCatalog> {
-    await this.ready
-    return this.modelResolver.resolve()
+    if (this.disposed) throw Error('组合服务已关闭')
+    if (this.executionCatalogPending) return this.executionCatalogPending
+    const pending = this.modelResolver.resolve()
+    this.executionCatalogPending = pending
+    void pending.then(
+      () => {
+        if (this.executionCatalogPending === pending) this.executionCatalogPending = undefined
+      },
+      () => {
+        if (this.executionCatalogPending === pending) this.executionCatalogPending = undefined
+      },
+    )
+    return pending
   }
   /**
    * Availability of a model owned by an external official CLI rather than by the OPL
@@ -1468,6 +1505,7 @@ export class HarnessService {
       if (group && !gatewayGroupEnabled(this.ctx, group.id))
         throw Error('此分组已停用，请在账号页激活')
     }
+    await this.ensureConversation(record)
     await this.connect(record)
     const active = this.active.get(record.id)!
     // Recheck after async connection so overlapping callers cannot race.
@@ -1739,6 +1777,8 @@ export class HarnessService {
                 ? 'cancelled'
                 : 'failed'
           turn.stopReason = result.outcome.kind
+          if (result.outcome.kind === 'failed')
+            turn.error = nativeFailureMessage(result.outcome.code)
         } finally {
           unlisten()
           offQuestions()
@@ -3168,6 +3208,7 @@ export class HarnessService {
     }
   }
   async modelSelection(sessionId: string) {
+    await this.selectionsReady
     const session = this.ctx.sessions.get(asSessionId<SessionId>(required(sessionId, 'sessionId')))
     const catalog = (await this.ctx.typertGateway.invoke({
       namespace: 'session',
@@ -3199,8 +3240,80 @@ export class HarnessService {
             }),
           }))
         : catalog.groups
-    return { current, groups, ...(selected ? { combination: selected.id } : {}) }
+    const choice =
+      selected && this.cliOwnsEffort(selected)
+        ? this.externalEfforts.get(sessionId, selected.id)
+        : undefined
+    const { reasoningEffort: _providerEffort, ...ref } = current as ModelSelection
+    const displayed =
+      selected && this.cliOwnsEffort(selected)
+        ? { ...ref, ...(choice ? { reasoningEffort: choice } : {}) }
+        : current
+    return { current: displayed, groups, ...(selected ? { combination: selected.id } : {}) }
   }
+  /** CLI-advertised controls for third-party sources are not native provider effort IDs. */
+  private cliOwnsEffort(definition: CombinationDefinition): boolean {
+    return (
+      definition.modelRef.provider !== MINIMAX_CODE_PROVIDER &&
+      adapterFor(definition.harnessRef, definition.modelRef, this.modelSources)?.capabilities
+        .reasoning === 'cli-advertised'
+    )
+  }
+  private async selectEffort(input: ModelSelection & { sessionId: string }): Promise<unknown> {
+    await this.ready
+    const session = this.ctx.sessions.get(asSessionId<SessionId>(input.sessionId))
+    if (!session) throw Error('对话不存在')
+    const selected = await this.modelSelection(input.sessionId)
+    if (modelRefKey(selected.current) !== modelRefKey(input))
+      throw Error('模型选择已改变，请重新选择推理档位')
+    const definition = (await this.executionCatalog()).combinations.find(
+      (c) => c.id === selected.combination,
+    )
+    if (!definition || !this.cliOwnsEffort(definition)) {
+      const { sessionId, ...request } = input
+      return this.native('selectModel', { sessionId, ...request })
+    }
+    const token = Symbol()
+    this.effortChanges.set(input.sessionId, token)
+    const binding = this.selections[input.sessionId]
+    const current = () => {
+      if (
+        this.disposed ||
+        this.effortChanges.get(input.sessionId) !== token ||
+        this.selections[input.sessionId] !== binding ||
+        this.ctx.agents.get(asSessionId<SessionId>(input.sessionId))?.status === 'running'
+      )
+        throw Error('会话状态已改变，请重新选择推理档位')
+      const projection = this.ctx.sessionProjections.snapshot(session, ['modelSelection']).values
+        .modelSelection
+      const ref = projection?.next ?? projection?.lastUsed
+      if (ref && modelRefKey(ref) !== modelRefKey(input))
+        throw Error('模型选择已改变，请重新选择推理档位')
+    }
+    current()
+    if (input.reasoningEffort !== undefined) {
+      const advertised = await this.reasoningPreflight({
+        sessionId: input.sessionId,
+        combination: definition.id,
+      })
+      current()
+      if (
+        advertised.status !== 'known' ||
+        !advertised.efforts.some((e) => e.id === input.reasoningEffort)
+      )
+        throw Error('当前 Harness 未提供所选推理档位，请重新选择')
+    }
+    // Clear any previous native effort while leaving provider defaults to its controller.
+    await this.native('selectModel', {
+      sessionId: input.sessionId,
+      provider: input.provider,
+      model: input.model,
+    })
+    current()
+    await this.externalEfforts.set(input.sessionId, definition.id, input.reasoningEffort, current)
+    return { selected: (await this.modelSelection(input.sessionId)).current }
+  }
+
   /**
    * Read an external Harness's live reasoning advertisement without sending a prompt.
    *
@@ -3342,6 +3455,7 @@ export class HarnessService {
   private async selectionForModel(session: Session, ref: ModelRef): Promise<ModelSelection> {
     const selected = this.combinationFor(session.id, await this.executionCatalog(), ref)
     const adapter = selected && adapterFor(selected.harnessRef, ref, this.modelSources)
+    if (selected && this.cliOwnsEffort(selected)) return ref
     if (adapter?.capabilities.reasoning === 'none') return ref
     const catalog = (await this.ctx.typertGateway.invoke({
       namespace: 'session',
@@ -3526,7 +3640,11 @@ export class HarnessService {
     // Managed turns retain their submitted setting. The native picker value is
     // not an external CLI capability and must not be copied into a new
     // external session (for example, Kimi may not advertise `high`).
-    const requestEffort = admitted?.reasoningEffort
+    const requestEffort = admitted
+      ? admitted.reasoningEffort
+      : this.cliOwnsEffort(definition)
+        ? (this.externalEfforts.get(session.id, definition.id) ?? undefined)
+        : undefined
     const operationId = admitted?.operationId ?? 'conversation:' + hash(user)
     const previous = record.turns.find((turn) => turn.operationId === operationId)
     const messages =
@@ -3666,7 +3784,7 @@ export class HarnessService {
           combination: required(p.combination, 'combination'),
         })
       case 'select-effort':
-        return this.native('selectModel', {
+        return this.selectEffort({
           sessionId: required(p.sessionId, 'sessionId'),
           provider: required(p.provider, 'provider'),
           model: required(p.model, 'model'),
@@ -3721,6 +3839,7 @@ export class HarnessService {
     )
     await Promise.allSettled(this.reasoningPreflights.values())
     await this.writeQueue
+    await this.externalEfforts.drain()
     await Promise.all(this.titleUpdates.values())
     // Cancellation can update a record after its last normal save completed.
     // Drain the dirty set after all active turns are settled so shutdown never

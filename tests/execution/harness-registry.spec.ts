@@ -84,4 +84,20 @@ describe('Harness executable discovery', () => {
       maintenanceAction: 'install',
     })
   })
+
+  it('does not launch the ZCode desktop entry point during discovery', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opl-zcode-discovery-'))
+    roots.push(root)
+    const command = join(root, process.platform === 'win32' ? 'zcode.cmd' : 'zcode')
+    await writeFile(
+      command,
+      process.platform === 'win32'
+        ? '@echo off\r\necho zcode-gui-would-open\r\n'
+        : '#!/bin/sh\nprintf "zcode-gui-would-open\\n"\n',
+    )
+    await chmod(command, 0o700)
+    const item = await inspectHarness({ id: 'zcode', name: 'ZCode', kind: 'acp', command }, root)
+    expect(item).toMatchObject({ installed: true, runnable: true, path: command })
+    expect(item).not.toHaveProperty('version')
+  })
 })

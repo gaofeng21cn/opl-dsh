@@ -203,6 +203,7 @@ async function mount(props: { call: ExecutionCall; source: () => unknown; sessio
     root.render(
       React.createElement(CombinationSelect as never, {
         call: props.call,
+        loadingLabel: '正在加载模型…',
         sessionId,
         locked: false,
         available: true,

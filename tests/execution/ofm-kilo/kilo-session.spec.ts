@@ -237,6 +237,7 @@ describe('Kilo 会话固定模型', () => {
       'dots-studio/dots-3-note-preview:free',
       'stealth/glyph-cluster',
       'kilo-auto/free',
+      'nvidia/nemotron-3.5-super-vl:free',
     ]) {
       const sources = new ExternalModelSources({} as never, () => {})
       sources.register({ effect: (fn: () => unknown) => fn() } as never, {

@@ -317,6 +317,11 @@ export async function inspectHarness(
     ...(maintenanceAction ? { maintenanceAction: maintenanceAction as 'install' | 'update' } : {}),
   }
   if (!path) return { ...base, error: '未找到可执行文件；可使用一键安装或查看官方入口' }
+  // ZCode's launcher is a desktop entry point on some installations. Running
+  // `zcode --version` during settings discovery can briefly open its window.
+  // Presence is enough for the settings card; version discovery belongs to the
+  // official CLI and must never make opening Settings visible.
+  if (harness.id === 'zcode') return { ...base, path, ...(detectedBy ? { detectedBy } : {}) }
   try {
     const launch = commandLaunch(path, [...(harness.prefix ?? []), '--version'])
     const { stdout, stderr } = await exec(launch.command, launch.args, {

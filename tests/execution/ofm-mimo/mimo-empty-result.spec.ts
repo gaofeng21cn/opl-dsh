@@ -52,6 +52,24 @@ import type {
 } from '../../../src/execution/host/model-sources.ts'
 
 const MIMO_FIXTURE = resolve('tests/execution/ofm-mimo/mimo-empty-agent.mjs')
+
+// Retained MiMo sessions still use this completion rule; picker eligibility is tested separately.
+vi.mock('../../../src/execution/host/ofm-source/selection-policy.ts', async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import('../../../src/execution/host/ofm-source/selection-policy.ts')
+    >()
+  return {
+    ...actual,
+    OFM_INACTIVE_DEFAULT_HARNESSES: actual.OFM_INACTIVE_DEFAULT_HARNESSES.filter(
+      (id) => id !== 'mimo-code',
+    ),
+    isHiddenOfmSelection: (ref: { provider: string; model: string }) =>
+      ref.provider === 'our-free-model' && ref.model === 'mimo-v2.6-flash-free'
+        ? false
+        : actual.isHiddenOfmSelection(ref),
+  }
+})
 const GROK_FIXTURE = resolve('tests/fixtures/acp-agent.mjs')
 const MIMO_COMBINATION = `${MIMO_CODE_HARNESS}/${MIMO_OFM_MODEL}`
 /** Never a real secret; these cases only prove where a credential can and cannot appear. */

@@ -63,14 +63,21 @@ describe('short notices and on-demand review details', () => {
     'keeps %s notices short without embedding result or question text',
     (state) => {
       const notice = composeWakeMessage({ ...payload, state }, `task@${state}`)
-      expect(notice.split('\n')).toHaveLength(3)
-      expect(notice).toContain(`receive task task@${state} --consumer <stable id>`)
-      expect(notice).toContain('review/resume: read reviewInstructions; busy/skip: stop')
+      expect(notice.split('\n')).toHaveLength(2)
+      expect(notice).toContain(`receive --delivery task@${state} --consumer <stable-id>`)
+      expect(notice.match(/task/g)).toHaveLength(1)
       expect(notice).not.toContain(payload.acceptance)
       expect(notice).not.toContain(payload.summary)
       expect(notice).not.toContain('resume-failed')
     },
   )
+
+  it('includes a long task identity only once', () => {
+    const taskId = 'harness-task:' + 'a'.repeat(64)
+    const notice = composeWakeMessage({ ...payload, taskId }, `${taskId}@failed`)
+    expect(notice.split(taskId)).toHaveLength(2)
+    expect(notice.length).toBeLessThan(180)
+  })
 
   it('retains bounded failure, unexecuted tool, evidence and recovery instructions in the claimed details', () => {
     const detail = composeDeliveryReview(payload, 'task@failed', 8)

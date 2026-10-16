@@ -1,6 +1,8 @@
 /** Fixed error categories for official RPC agents; provider text never leaves this classifier. */
 export function rpcProviderFailure(errorMessage: unknown): string {
   const text = typeof errorMessage === 'string' ? errorMessage : ''
+  if (/OpenCode's free tier can only be used from within OpenCode/i.test(text))
+    return 'HARNESS_PROVIDER_CLIENT_REQUIRED'
   if (/\b(?:401|403)\b|unauthor|forbidden|invalid[ _-]?api[ _-]?key/i.test(text))
     return 'HARNESS_PROVIDER_AUTH'
   if (/\b404\b|not found|unknown model|no such model/i.test(text)) return 'HARNESS_PROVIDER_MODEL'

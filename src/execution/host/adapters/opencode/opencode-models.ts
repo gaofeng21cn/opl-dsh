@@ -19,6 +19,14 @@ import type { ModelRef } from '../../../contracts/catalog.ts'
 export const OPENCODE_HARNESS = 'opencode'
 /** Provider id of the model source that owns these models' accounts and channels. */
 export const OPENCODE_OFM_PROVIDER = 'our-free-model'
+/** OPL Gateway provider used by the Gemini combinations below. */
+export const OPENCODE_GATEWAY_PROVIDER = 'opl-gateway'
+/** Gateway model ids this OpenCode route intentionally exposes. */
+export const OPENCODE_GATEWAY_GEMINI_MODELS: readonly string[] = [
+  'gemini-4-argon',
+  'gemini-3.8-flash',
+  'gemini-3.1-pro',
+]
 /**
  * Wire method that selects the model in this CLI.
  *
@@ -43,6 +51,8 @@ export const OPENCODE_MODEL_OPTION = 'model'
  */
 export const OPENCODE_OFM_MODELS: readonly string[] = [
   'cat-jam-free',
+  'mimo-v2.6-flash-free',
+  'muse-spark-1.3-contributor-free',
   'ling-3.1-flash-free',
   'inclusionai/ling-3.1-flash',
   'longcat-2.5-preview-free',
@@ -51,6 +61,8 @@ export const OPENCODE_OFM_MODELS: readonly string[] = [
   'nvidia/nemotron-3.5-lightning:free',
   'nvidia/nemotron-3-ultra-550b-a55b:free',
   'nvidia/nemotron-3-super-120b-a12b:free',
+  'nvidia/nemotron-3.5-super-vl:free',
+  'deepseek-v4.1-flash-free',
   'space-bunny-free',
   'openrouter/free',
 ]
@@ -62,6 +74,24 @@ export const openCodeModels = (): readonly ModelRef[] =>
 /** True only for the exact provider/model pair this adapter declares. */
 export const isOpenCodeModel = (ref: ModelRef): boolean =>
   ref.provider === OPENCODE_OFM_PROVIDER && OPENCODE_OFM_MODELS.includes(ref.model)
+
+/**
+ * Match only the three Gemini ids in the OPL Gateway Gemini group.
+ *
+ * Gateway references carry the group prefix (`gemini::<id>`); the prefix is
+ * resolved by the Gateway execution owner and is never sent to OpenCode.
+ */
+export const isOpenCodeGatewayGeminiModel = (ref: ModelRef): boolean =>
+  ref.provider === OPENCODE_GATEWAY_PROVIDER &&
+  ref.model.startsWith('gemini::') &&
+  OPENCODE_GATEWAY_GEMINI_MODELS.includes(ref.model.slice('gemini::'.length))
+
+/** The model id OpenCode must send for an exact supported reference. */
+export const openCodeWireModel = (ref: ModelRef): string | undefined => {
+  if (isOpenCodeModel(ref)) return ref.model
+  if (isOpenCodeGatewayGeminiModel(ref)) return ref.model.slice('gemini::'.length)
+  return undefined
+}
 
 const text = (value: unknown): string => (typeof value === 'string' ? value : '')
 

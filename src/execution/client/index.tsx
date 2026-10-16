@@ -22,11 +22,18 @@ import {
   messageEditDefinition,
 } from './message-edit-view.ts'
 import { allowProjectlessSessions, markProjectlessSession } from './fresh-session.ts'
-import { installProjectlessOfficialComposer } from './ProjectlessOfficialComposer.tsx'
+import {
+  installProjectlessOfficialComposer,
+  PROJECTLESS_COMPOSER_NAMESPACE,
+  projectlessComposerZh,
+  projectlessComposerEn,
+  installProjectlessUngroupedPlus,
+} from './ProjectlessOfficialComposer.tsx'
 import { HARNESS_TRANSCRIPT_TOOL } from '../contracts/tool-display.ts'
 import { remoteCall } from '../../shared/client/remote-call.ts'
 export const inject = [
   'slots',
+  'locale',
   'sessions',
   'uiConversation',
   'uiWorkspace',
@@ -69,6 +76,13 @@ function sessionChanges(ctx: Context, sessionId: string, listener: () => void): 
 }
 
 export function apply(ctx: Context): void {
+  ctx.effect(() =>
+    ctx.locale.register(PROJECTLESS_COMPOSER_NAMESPACE, {
+      zh: projectlessComposerZh,
+      en: projectlessComposerEn,
+    }),
+  )
+  const composerText = ctx.locale.bind(PROJECTLESS_COMPOSER_NAMESPACE)
   const call = remoteCall(ctx.remote.oplExecution)
   const workspace = ctx.uiWorkspace
   const sessions = ctx.sessions
@@ -170,6 +184,7 @@ export function apply(ctx: Context): void {
         inject: (sessionId) => ({
           call,
           sessionId,
+          loadingLabel: composerText('loadingModels'),
           available: ctx.sessions.subagentAddress(sessionId as SessionId) === undefined,
           selectionSource: (id: string) => modelSelectionFace(ctx, id),
         }),
@@ -217,10 +232,17 @@ export function apply(ctx: Context): void {
     ),
   )
   const slots = ctx.slots
+  ctx.slots.inject('sidebar.workspaces', () =>
+    installProjectlessUngroupedPlus(
+      () => slots.entries('sidebar.workspaces'),
+      (listener) => slots.subscribe('sidebar.workspaces', listener),
+    ),
+  )
   ctx.effect(() =>
     installProjectlessOfficialComposer(
       () => slots.entries('conversation.composer.bar'),
       (listener) => slots.subscribe('conversation.composer.bar', listener),
+      () => composerText('restoring'),
     ),
   )
 }

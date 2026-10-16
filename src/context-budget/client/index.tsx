@@ -1,9 +1,7 @@
 /**
- * Client context-budget view: one compact entry in the official composer
- * control row (`conversation.input.left`) rendering the read-only observations
- * returned by {@link Config.read}. The plugin owns no transport — the wiring
- * supplies the read seam. A local, default-off preference controls display and
- * reading without changing Host configuration or context policy.
+ * Optional advanced context-budget diagnostics client. The normal suite leaves
+ * daily occupancy and token usage to the official DSH meter; this module remains
+ * available for a future diagnostics surface without changing Host observations.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'

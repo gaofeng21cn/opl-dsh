@@ -79,6 +79,7 @@ export const KILO_OFM_MODELS: readonly string[] = [
   'dots-studio/dots-3-note-preview:free',
   'stealth/glyph-cluster',
   'kilo-auto/free',
+  'nvidia/nemotron-3.5-super-vl:free',
 ]
 
 /** The declared models, as catalog entries an execution combination can bind. */

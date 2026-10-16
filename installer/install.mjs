@@ -159,8 +159,19 @@ if (!process.env.OPL_DESKTOP_LAUNCHER) {
         'utf16le',
       ),
     )
-    const script =
-      "$s = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath('Programs')) 'OPL DSH.lnk')); $s.TargetPath = 'wscript.exe'; $s.Arguments = [char]34 + $env:OPL_SHORTCUT_SCRIPT + [char]34; $s.IconLocation = $env:OPL_SHORTCUT_ICON; $s.Save()"
+    const script = `
+$shell = New-Object -ComObject WScript.Shell
+foreach ($folder in @('Programs', 'Desktop')) {
+  $directory = [Environment]::GetFolderPath($folder)
+  if (-not $directory) { throw "Cannot locate $folder for the OPL DSH shortcut" }
+  $shortcut = $shell.CreateShortcut((Join-Path $directory 'DeepSeek Harness.lnk'))
+  $shortcut.TargetPath = Join-Path $env:SystemRoot 'System32\\wscript.exe'
+  $shortcut.Arguments = [char]34 + $env:OPL_SHORTCUT_SCRIPT + [char]34
+  $shortcut.WorkingDirectory = Split-Path -Parent $env:OPL_SHORTCUT_SCRIPT
+  $shortcut.IconLocation = $env:OPL_SHORTCUT_ICON
+  $shortcut.Save()
+}
+`
     run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
       OPL_SHORTCUT_SCRIPT: compatibilityLauncher,
       OPL_SHORTCUT_ICON: executable,

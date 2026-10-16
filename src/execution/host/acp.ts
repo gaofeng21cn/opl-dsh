@@ -30,6 +30,8 @@ const harnessFailure = (code: unknown) => {
       return '所选渠道连接中断，重试后仍未收到响应，已停止本轮请求。请检查网络或切换已配置的渠道；原任务未自动重发。'
     case 'HARNESS_EXECUTION':
       return '官方 Harness 报告本轮执行失败，原任务未自动重发。'
+    case 'HARNESS_PROVIDER_CLIENT_REQUIRED':
+      return '所选免费渠道要求通过其指定的官方客户端访问，当前转发请求被拒绝。原任务未自动重发。'
     case 'HARNESS_PROVIDER':
       return '官方渠道报告本轮请求失败，已停止本轮请求；原任务未自动重发。'
     case 'HARNESS_PROVIDER_AUTH':

@@ -22,7 +22,7 @@ import {
   MINIMAX_CODE_HARNESS,
   MINIMAX_CODE_PROVIDER,
 } from './adapters/minimax.ts'
-import { OFM_PROVIDERS, isExcludedOfmModel, isExcludedOfmRef } from './ofm-source/provider.ts'
+import { isHiddenOfmSelection, officialOpenCodeModel } from './ofm-source/selection-policy.ts'
 export class ExecutionModelResolver {
   constructor(
     private readonly ctx: Context,
@@ -38,10 +38,6 @@ export class ExecutionModelResolver {
   ) {}
   async resolve(): Promise<ExecutionCatalog> {
     let catalog = await this.store.get()
-    // Keep non-conversational OFM entries out of the live picker. The owner may
-    // still publish these ids for moderation or decision APIs, but DSH's model
-    // selector only advertises models that can answer an ordinary conversation.
-    catalog.combinations = catalog.combinations.filter((item) => !isExcludedOfmRef(item.modelRef))
     // Remove combinations from old releases before projecting the live model
     // registry. The write is idempotent and keeps the on-disk catalog clean so
     // retired entries cannot return after a restart.
@@ -52,86 +48,105 @@ export class ExecutionModelResolver {
     if (retired.length || legacyDefault) {
       catalog = await this.store.cleanLegacyCombinations()
     }
+    catalog.combinations = catalog.combinations.filter(
+      (item) => !isHiddenOfmSelection(item.modelRef),
+    )
     const providers = this.ctx.llm?.listProviders() ?? []
-    for (const provider of providers) {
-      if (internalGatewayProvider(provider.id)) continue
-      const directory = this.ctx.llm
-        .listConfigurableProviders()
-        .find((item) => item.provider === provider.id)
-      let configured = true
-      if (directory && provider.id !== 'opl-gateway') {
-        let profile = this.ctx
-          .get('settings')
-          ?.describe()
-          .find((item) => item.ns === directory.settingsNs)?.value as any
-        for (const key of directory.settingsPath) profile = profile?.[key]
-        // ZCode owns Huawei readiness and only needs credential presence here;
-        // resolving its secret is reserved for the actual request bridge.
-        if (profile?.apiKeyEnv && provider.id !== HUAWEI_ZCODE_MODEL.provider)
-          configured = !!(
-            await this.ctx.get('credentials')?.resolve(credentialRef(profile.apiKeyEnv))
-          )?.value
-      }
-      // The official DeepSeek adapter always exposes its built-in catalog, but
-      // that catalog is not a usable connection until a key is configured.
-      // A missing descriptor therefore means "not configured", rather than a
-      // reason to populate the combination picker with empty models.
-      if ((provider.id === 'deepseek-official' || provider.id === 'deepseek') && !directory)
-        configured = false
-      if (provider.id === 'deepseek-account') {
-        try {
-          configured =
-            (
-              (await this.ctx.typertGateway.invoke({
-                namespace: 'account',
-                method: 'getState',
-                args: {},
-              })) as { status: string }
-            ).status === 'credential-stored'
-        } catch {
-          configured = false
-        }
-        // Account model discovery requires a signed-in connection. Saved model
-        // references remain visible as unavailable below without making that request.
-        if (!configured) continue
-      }
-      try {
-        for (const model of await this.ctx.llm.listModels(provider.id)) {
-          if (provider.id === 'opl-gateway' && model.id === 'codex::codex-auto-review') continue
-          if (OFM_PROVIDERS.includes(provider.id) && isExcludedOfmModel(model.id)) continue
-          const ref = { provider: provider.id, model: model.id }
-          if (isRetiredModel(ref)) continue
-          const external =
-            provider.id === MINIMAX_CODE_PROVIDER || provider.id === HUAWEI_ZCODE_MODEL.provider
-              ? ((await this.probeExternal?.(ref)) ?? {
-                  available: false,
-                  reason: '外部 Harness 未就绪',
-                })
-              : undefined
-          const source =
-            provider.id === 'deepseek-account'
-              ? 'DeepSeek 官方'
-              : provider.id === 'opl-gateway'
-                ? 'OPL Gateway'
-                : provider.name
-          catalog.models.push({
-            ref,
-            name: displayModelName(ref, model.name),
-            source,
-            available: external?.available ?? configured,
-            ...(external
-              ? external.available
-                ? {}
-                : { reason: external.reason ?? '外部 Harness 未就绪' }
-              : !configured
-                ? { reason: '凭据未配置' }
-                : {}),
-          })
-        }
-      } catch {
-        /* Keep saved references visible as unavailable below. */
-      }
+    const configurable = this.ctx.llm?.listConfigurableProviders() ?? []
+    const settings = this.ctx.get('settings')
+    const externalAvailability = new Map<string, Promise<{ available: boolean; reason?: string }>>()
+    const probeExternal = (ref: ModelRef) => {
+      const model = modelRefKey(ref)
+      const existing = externalAvailability.get(model)
+      if (existing) return existing
+      const pending =
+        this.probeExternal?.(ref) ??
+        Promise.resolve({ available: false, reason: '外部 Harness 未就绪' })
+      externalAvailability.set(model, pending)
+      return pending
     }
+    const providerModels = await Promise.all(
+      providers.map(async (provider) => {
+        if (internalGatewayProvider(provider.id)) return []
+        const directory = configurable.find((item) => item.provider === provider.id)
+        let configured = true
+        if (directory && provider.id !== 'opl-gateway') {
+          let profile = settings?.describe().find((item) => item.ns === directory.settingsNs)
+            ?.value as any
+          for (const key of directory.settingsPath) profile = profile?.[key]
+          // ZCode owns Huawei readiness and only needs credential presence here;
+          // resolving its secret is reserved for the actual request bridge.
+          if (profile?.apiKeyEnv && provider.id !== HUAWEI_ZCODE_MODEL.provider)
+            configured = !!(
+              await this.ctx.get('credentials')?.resolve(credentialRef(profile.apiKeyEnv))
+            )?.value
+        }
+        // The official DeepSeek adapter always exposes its built-in catalog, but
+        // that catalog is not a usable connection until a key is configured.
+        // A missing descriptor therefore means "not configured", rather than a
+        // reason to populate the combination picker with empty models.
+        if ((provider.id === 'deepseek-official' || provider.id === 'deepseek') && !directory)
+          configured = false
+        if (provider.id === 'deepseek-account') {
+          try {
+            configured =
+              (
+                (await this.ctx.typertGateway.invoke({
+                  namespace: 'account',
+                  method: 'getState',
+                  args: {},
+                })) as { status: string }
+              ).status === 'credential-stored'
+          } catch {
+            configured = false
+          }
+          // Account model discovery requires a signed-in connection. Saved model
+          // references remain visible as unavailable below without making that request.
+          if (!configured) return []
+        }
+        try {
+          const models = await this.ctx.llm.listModels(provider.id)
+          return await Promise.all(
+            models.flatMap((model) => {
+              if (provider.id === 'opl-gateway' && model.id === 'codex::codex-auto-review')
+                return []
+              if (isHiddenOfmSelection({ provider: provider.id, model: model.id })) return []
+              const ref = { provider: provider.id, model: model.id }
+              if (isRetiredModel(ref)) return []
+              const external =
+                provider.id === MINIMAX_CODE_PROVIDER || provider.id === HUAWEI_ZCODE_MODEL.provider
+                  ? probeExternal(ref)
+                  : undefined
+              const source =
+                provider.id === 'deepseek-account'
+                  ? 'DeepSeek 官方'
+                  : provider.id === 'opl-gateway'
+                    ? 'OPL Gateway'
+                    : provider.name
+              return [
+                Promise.resolve(external).then((availability) => ({
+                  ref,
+                  name: displayModelName(ref, model.name),
+                  source: officialOpenCodeModel(ref) ? 'OpenCode 官方免费通道' : source,
+                  available: availability?.available ?? configured,
+                  ...(availability
+                    ? availability.available
+                      ? {}
+                      : { reason: availability.reason ?? '外部 Harness 未就绪' }
+                    : !configured
+                      ? { reason: '凭据未配置' }
+                      : {}),
+                })),
+              ]
+            }),
+          )
+        } catch {
+          /* Keep saved references visible as unavailable below. */
+          return []
+        }
+      }),
+    )
+    for (const models of providerModels) catalog.models.push(...models)
     if (this.ctx.get('settings')) {
       const configured = await gatewayModelSettings(this.ctx)
       for (const group of configured.groups)
@@ -157,10 +172,9 @@ export class ExecutionModelResolver {
     // Gateway key never hides them and an absent CLI never advertises them.
     for (const model of minimaxCodeModels())
       if (!catalog.models.some((item) => modelRefKey(item.ref) === modelRefKey(model))) {
-        const probe = (await this.probeExternal?.(model)) ?? {
-          available: false,
-          reason: '尚未安装官方 MiniMax Code CLI',
-        }
+        const probe = this.probeExternal
+          ? await probeExternal(model)
+          : { available: false, reason: '尚未安装官方 MiniMax Code CLI' }
         catalog.models.push({
           ref: model,
           name: displayModelName(model),
@@ -222,7 +236,11 @@ export class ExecutionModelResolver {
           harnessName = catalog.harnesses.find((h) => h.id === harnessRef)?.name ?? 'DSH'
         catalog.combinations.push({
           id: 'auto:' + modelRefKey(model.ref),
-          name: displayModelName(model.ref, model.name) + ' + ' + harnessName,
+          name:
+            displayModelName(model.ref, model.name) +
+            ' + ' +
+            harnessName +
+            (officialOpenCodeModel(model.ref) ? '（官方免费通道）' : ''),
           modelRef: model.ref,
           harnessRef,
           permissionPolicy: 'read-only',

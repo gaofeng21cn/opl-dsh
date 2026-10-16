@@ -99,6 +99,7 @@ export function CombinationSelect({
   locked,
   available,
   selectionSource,
+  loadingLabel,
 }: {
   available: boolean
   call: Call
@@ -106,8 +107,11 @@ export function CombinationSelect({
   locked: boolean
   /** Official per-Session `modelSelection` projection face; absent without a retained Session. */
   selectionSource?: SelectionSource | undefined
+  loadingLabel: string
 }) {
   const [catalog, setCatalog] = useState<ExecutionCatalog>()
+  const [loadingCatalog, setLoadingCatalog] = useState(true)
+  const [loadingSelection, setLoadingSelection] = useState(true)
   const [availability, setAvailability] = useState<HarnessCatalog['combinations']>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -133,6 +137,12 @@ export function CombinationSelect({
     reads.current += 1
   }
   const id = `opl-combination-${sessionId.replaceAll(/[^a-zA-Z0-9_-]/g, '-')}`
+  useEffect(
+    () => () => {
+      reads.current += 1
+    },
+    [call, sessionId, available],
+  )
 
   // The official selection projection is the authority; the RPC only bootstraps the
   // display and resolves the OPL combination bound to that official selection.
@@ -143,16 +153,27 @@ export function CombinationSelect({
     onError: setError,
     load: async (id: string) => {
       const read = ++reads.current
-      const [nextCatalog, nextAvailability, nextSelection] = await Promise.all([
-        call('catalog'),
-        call('combinations'),
-        call('model-selection', { sessionId: id }),
-      ])
-      if (id !== addressed.current || read !== reads.current) return nextSelection
-      setCatalog(nextCatalog)
-      setAvailability(nextAvailability)
-      setError('')
-      return nextSelection
+      const current = () => id === addressed.current && read === reads.current
+      setLoadingCatalog(true)
+      setLoadingSelection(true)
+      void Promise.all([call('catalog'), call('combinations')])
+        .then(([nextCatalog, nextAvailability]) => {
+          if (!current()) return
+          setCatalog(nextCatalog)
+          setAvailability(nextAvailability)
+          setError('')
+        })
+        .catch((cause: unknown) => {
+          if (current()) setError(cause instanceof Error ? cause.message : '无法读取组合')
+        })
+        .finally(() => {
+          if (current()) setLoadingCatalog(false)
+        })
+      try {
+        return await call('model-selection', { sessionId: id })
+      } finally {
+        if (current()) setLoadingSelection(false)
+      }
     },
   })
 
@@ -260,7 +281,9 @@ export function CombinationSelect({
         ))
   const modelLabel = selected
     ? choiceLabel(selected)
-    : (currentModel?.name ?? selection.current?.model ?? '请选择模型')
+    : (currentModel?.name ??
+      selection.current?.model ??
+      (loadingSelection ? loadingLabel : '请选择模型'))
   /** The row title differs by control kind: a switch is not a strength level. */
   const effortTitle = effortSwitch === undefined ? '推理强度' : '思考'
   const effortChoices =
@@ -632,7 +655,9 @@ export function CombinationSelect({
                     </section>
                   ))}
                   {visibleChoices.length === 0 && (
-                    <div className={css.empty}>当前没有可用的模型组合</div>
+                    <div className={css.empty} role={loadingCatalog ? 'status' : undefined}>
+                      {loadingCatalog ? loadingLabel : '当前没有可用的模型组合'}
+                    </div>
                   )}
                 </div>
               </>

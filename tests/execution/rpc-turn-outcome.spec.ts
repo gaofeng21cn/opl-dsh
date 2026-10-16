@@ -1,6 +1,17 @@
 import { expect, it } from 'vitest'
 import { RpcTurnOutcome } from '../../src/execution/host/adapters/rpc-turn-outcome.ts'
 
+it('classifies an explicit client restriction without retaining provider text', () => {
+  const outcome = new RpcTurnOutcome()
+  outcome.accept({
+    type: 'auto_retry_end',
+    success: false,
+    finalError: "OpenCode's free tier can only be used from within OpenCode. private-test-key",
+  })
+  expect(outcome.failure).toBe('HARNESS_PROVIDER_CLIENT_REQUIRED')
+  expect(JSON.stringify(outcome)).not.toContain('private-test-key')
+})
+
 it('retains failure after partial text and waits through intermediate agent_end', () => {
   const outcome = new RpcTurnOutcome()
   outcome.accept({

@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
 
-async function fixture(t) {
+async function fixture(t, deliveries = []) {
   const root = await mkdtemp(join(tmpdir(), 'opl-feedback-cli-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const requests = []
@@ -17,7 +17,12 @@ async function fixture(t) {
     const request = JSON.parse(body)
     requests.push(request)
     res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ ok: true, value: { request: request.args.request } }))
+    res.end(
+      JSON.stringify({
+        ok: true,
+        value: request.method === 'outbox' ? deliveries : { request: request.args.request },
+      }),
+    )
   })
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   t.after(() => new Promise((resolve) => server.close(resolve)))
@@ -69,6 +74,38 @@ test('notification receipt syntax preserves task, delivery, owner and claim gene
       ['taskFeedback', 'resumeFailed', { taskId, deliveryId, consumerId: 'reviewer' }],
     ],
   )
+})
+
+test('delivery-only receipt resolves the exact stored task without parsing its identifier', async (t) => {
+  const { requests, run } = await fixture(t, [
+    { taskId: 'task@with-separators', deliveryId: 'opaque-notice' },
+  ])
+  assert.equal(
+    (await run(['receive', '--delivery', 'opaque-notice', '--consumer', 'reviewer'])).code,
+    0,
+  )
+  assert.deepEqual(
+    requests.map((r) => r.method),
+    ['outbox', 'receive'],
+  )
+  assert.deepEqual(requests[1].args.request, {
+    taskId: 'task@with-separators',
+    deliveryId: 'opaque-notice',
+    consumerId: 'reviewer',
+  })
+})
+
+test('unknown or ambiguous delivery-only receipt never claims another task', async (t) => {
+  const { requests, run } = await fixture(t, [
+    { taskId: 'a', deliveryId: 'duplicate' },
+    { taskId: 'b', deliveryId: 'duplicate' },
+  ])
+  for (const delivery of ['missing', 'duplicate'])
+    assert.notEqual(
+      (await run(['receive', '--delivery', delivery, '--consumer', 'reviewer'])).code,
+      0,
+    )
+  assert.ok(requests.every((r) => r.method === 'outbox'))
 })
 
 test('request-file remains compatible and ambiguous or invalid receipt flags never reach the bridge', async (t) => {

@@ -186,6 +186,7 @@ async function mount(props: {
   const source = props.source
   const element = React.createElement(CombinationSelect as never, {
     call: props.call,
+    loadingLabel: '正在加载模型…',
     sessionId: props.sessionId,
     locked: false,
     available: props.available ?? true,
@@ -209,6 +210,7 @@ async function mount(props: {
         root.render(
           React.createElement(CombinationSelect as never, {
             call: next.call,
+            loadingLabel: '正在加载模型…',
             sessionId: next.sessionId,
             locked: false,
             available: next.available ?? true,
@@ -220,6 +222,17 @@ async function mount(props: {
 }
 
 describe('OPL model button selection projection', () => {
+  it('shows the current selection while Harness availability is still pending', async () => {
+    const { call, pending } = fixture()
+    const held = deferred()
+    pending.set('combinations', held)
+    const view = await mount({ sessionId: 'loading-models', call })
+    expect(view.text()).toContain('DeepSeek Flash')
+    expect(view.text()).not.toContain('请选择模型')
+    await act(async () => held.settle([{ id: combination.id, available: true }]))
+    expect(view.text()).toContain('DeepSeek Flash')
+  })
+
   it('shows the effective default with an empty new-session projection instead of the first menu item', async () => {
     const face = createFace({ next: null, lastUsed: null })
     const aws = {

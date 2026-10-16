@@ -1,14 +1,15 @@
+import { officialOpenCodeModel } from '../../ofm-source/selection-policy.ts'
 /**
- * Official OpenCode CLI (`opencode`) adapter for the Our Free Model source.
+ * Official OpenCode CLI (`opencode`) adapter for explicit model-source routes.
  *
  * The CLI runs its own agent loop over ACP; this adapter contributes only protocol,
  * permission, and pinning rules, exactly as the other external harnesses do. It never
  * implements a loop of its own and never guesses work the public interface already owns.
  *
- * Authentication is not the official OpenCode account: the model belongs to a registered
- * model source, so the credential is read by that plugin and reaches this adapter only as
- * a resolved route. Nothing here reads, copies, or logs the key, and the key is never
- * written to a file, a profile, or a repository path.
+ * Authentication is not the official OpenCode account: OFM credentials are supplied by the
+ * registered source, while OPL Gateway credentials are resolved by the Gateway owner. Both
+ * routes reach this adapter only as a resolved route. Nothing here reads, copies, or logs the
+ * key, and the key is never written to a file, a profile, or a repository path.
  *
  * ## What the official CLI genuinely offers, as measured on `opencode-ai@1.19.0`
  *
@@ -41,6 +42,7 @@
 import { join } from 'node:path'
 import { commandLaunch, executablePath } from '../../harness-registry.ts'
 import { HarnessConfigurationError } from '../../acp.ts'
+import { resolveGatewayExecution } from '../../../../gateway/host/execution-access.ts'
 import type { ModelRef } from '../../../contracts/catalog.ts'
 import type { HarnessSession } from '../../../contracts/sessions.ts'
 import { systemEnvironment } from '../environment.ts'
@@ -53,7 +55,10 @@ import {
 import {
   assertOpenCodeModelOffered,
   assertOpenCodeModelPinned,
+  isOpenCodeGatewayGeminiModel,
   isOpenCodeModel,
+  openCodeWireModel,
+  OPENCODE_GATEWAY_GEMINI_MODELS,
   OPENCODE_HARNESS,
   OPENCODE_MODEL_OPTION,
   OPENCODE_SET_CONFIG_OPTION,
@@ -65,7 +70,15 @@ import type {
   HarnessAdapter,
 } from '../types.ts'
 
-export { OPENCODE_HARNESS, OPENCODE_OFM_PROVIDER, OPENCODE_OFM_MODELS } from './opencode-models.ts'
+export {
+  OPENCODE_HARNESS,
+  OPENCODE_GATEWAY_PROVIDER,
+  OPENCODE_GATEWAY_GEMINI_MODELS,
+  OPENCODE_OFM_PROVIDER,
+  OPENCODE_OFM_MODELS,
+  isOpenCodeGatewayGeminiModel,
+  openCodeWireModel,
+} from './opencode-models.ts'
 export {
   OPENCODE_ROUTE_PROVIDER_ID,
   OPENCODE_SUPPORTED_PROTOCOLS,
@@ -103,9 +116,10 @@ function failure(message: string, snapshot: AcpSessionSnapshot): Error {
  * entries — must not become the target.
  */
 function expectedModelValue(record: HarnessSession, describe: (message: string) => Error): string {
-  if (!isOpenCodeModel(record.modelRef))
+  const wireModel = openCodeWireModel(record.modelRef)
+  if (!wireModel)
     throw describe('此模型不属于本适配声明的 OpenCode 组合；已停止，不会改用其他模型。')
-  return openCodeModelValue(record.modelRef.model)
+  return officialOpenCodeModel(record.modelRef) ?? openCodeModelValue(wireModel)
 }
 
 /**
@@ -177,7 +191,7 @@ function launch(path: string, cwd: string, prefix: readonly string[] = []) {
 }
 
 export const openCodeAdapter: HarnessAdapter = {
-  acpModelId: (ref) => openCodeModelValue(ref.model),
+  acpModelId: (ref) => openCodeModelValue(openCodeWireModel(ref) ?? ref.model),
   id: OPENCODE_HARNESS,
   transport: 'acp',
   capabilities: {
@@ -197,8 +211,8 @@ export const openCodeAdapter: HarnessAdapter = {
     reasoning: 'model-declared',
     autoReview: 'unsupported',
   },
-  matches: (ref: ModelRef) => isOpenCodeModel(ref),
-  async available(_ctx, options) {
+  matches: (ref: ModelRef) => isOpenCodeModel(ref) || isOpenCodeGatewayGeminiModel(ref),
+  async available(ctx, options) {
     const path = await openCodePath(options)
     if (!path)
       return {
@@ -206,13 +220,23 @@ export const openCodeAdapter: HarnessAdapter = {
         reason:
           '未找到官方 OpenCode CLI（opencode）。请用官方安装器安装（npm 包 opencode-ai 提供各平台二进制），安装后重新检测；未安装时可直接在执行引擎里登记其绝对路径。',
       }
-    if (!options.modelSources)
+    if (options.modelSources) return { available: true }
+    try {
+      await resolveGatewayExecution(
+        ctx,
+        {
+          provider: 'opl-gateway',
+          model: `gemini::${OPENCODE_GATEWAY_GEMINI_MODELS[0]}`,
+        },
+        options.resolveKey,
+      )
+      return { available: true }
+    } catch {
       return {
         available: false,
-        reason:
-          '当前没有已注册的外部模型来源，Our Free Model 尚未声明与官方 opencode 的配对；凭据由模型来源插件管理。',
+        reason: '没有已注册的外部模型来源，且 OPL Gateway Gemini 分组凭据未就绪或已停用。',
       }
-    return { available: true }
+    }
   },
   async prepare(_ctx, record, options) {
     if (record.sandbox !== 'full-access')
@@ -228,6 +252,7 @@ export const openCodeAdapter: HarnessAdapter = {
       )
     const path = await openCodePath(options)
     if (!path) throw Error('未找到官方 OpenCode CLI（opencode），无法启动此组合')
+    const gatewayGemini = isOpenCodeGatewayGeminiModel(record.modelRef)
     if (!options.modelSources)
       throw new HarnessConfigurationError('该模型来源尚未适配此 Harness，已停止，未启动 OpenCode。')
 
@@ -235,19 +260,26 @@ export const openCodeAdapter: HarnessAdapter = {
     // a source that is unloaded or re-registered mid-preparation cannot still yield a
     // launch. The registry's own re-check inside `resolve` does not cover the awaits this
     // adapter performs after it.
-    const lease = options.modelSources.lease(OPENCODE_HARNESS, record.modelRef)
-    const route = await options.modelSources.resolve(
-      OPENCODE_HARNESS,
-      record.modelRef,
-      OPENCODE_SUPPORTED_PROTOCOLS[0],
-    )
-    const config = buildOpenCodeRouteConfig(route, record.modelRef.model)
+    const lease = gatewayGemini
+      ? undefined
+      : options.modelSources.lease(OPENCODE_HARNESS, record.modelRef)
+    const nativeModel = officialOpenCodeModel(record.modelRef)
+    const route = nativeModel
+      ? undefined
+      : await options.modelSources.resolve(
+          OPENCODE_HARNESS,
+          record.modelRef,
+          OPENCODE_SUPPORTED_PROTOCOLS[0],
+        )
+    const config = nativeModel
+      ? { content: '{}' }
+      : buildOpenCodeRouteConfig(route!, openCodeWireModel(record.modelRef)!)
     const started = launch(path, record.cwd, options.prefix ?? [])
     // The shell check spawns a real process and is therefore an await point the shared
     // registry cannot cover. A source unloaded, replaced, or re-registered while the probe
     // runs must not still produce a launch.
     const binding = await openCodeShellBinding(systemEnvironment())
-    lease.assertCurrent()
+    lease?.assertCurrent()
     return {
       home: options.home,
       command: started.command,

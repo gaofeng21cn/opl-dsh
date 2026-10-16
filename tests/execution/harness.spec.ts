@@ -130,6 +130,21 @@ const start = (s: HarnessService, cwd: string, taskId = 'task') =>
   })
 const wait = (s: HarnessService, id: string) => s.wait({ sessionId: id }, AbortSignal.timeout(8000))
 
+it('shares concurrent execution catalog reads', async () => {
+  const { service } = await setup()
+  const resolver = (service as unknown as { modelResolver: { resolve: () => Promise<unknown> } })
+    .modelResolver
+  const resolve = vi.spyOn(resolver, 'resolve')
+  const [first, second, third] = await Promise.all([
+    service.executionCatalog(),
+    service.executionCatalog(),
+    service.executionCatalog(),
+  ])
+  expect(resolve).toHaveBeenCalledTimes(1)
+  expect(second).toBe(first)
+  expect(third).toBe(first)
+})
+
 describe('external completion observations', () => {
   it.each(['empty-turn', 'thought-only', 'blank-answer', 'tool-only-failed', 'tool-only-pending'])(
     'refuses %s before persisting completion',
@@ -593,7 +608,7 @@ describe('native conversation combinations', () => {
       [
         { id: 'jev-1.13-free', name: 'Jev 1.13' },
         { id: 'nvidia/nemotron-3.5-content-safety:free', name: 'Nemotron Content Safety' },
-        { id: 'cat-jam-free', name: 'Cat Jam' },
+        { id: 'kilo-auto/free', name: 'Kilo Auto' },
       ],
       [{ id: 'our-free-model', name: 'Our Free Model' }],
     )
@@ -604,7 +619,7 @@ describe('native conversation combinations', () => {
     expect(catalog.combinations.map((item) => item.modelRef.model)).not.toEqual(
       expect.arrayContaining(['jev-1.13-free', 'nvidia/nemotron-3.5-content-safety:free']),
     )
-    expect(catalog.models.map((item) => item.ref.model)).toContain('cat-jam-free')
+    expect(catalog.models.map((item) => item.ref.model)).toContain('kilo-auto/free')
   })
   it('does not expose the built-in DeepSeek catalog without its own credential', async () => {
     const { service } = await nativeSetup(
@@ -665,6 +680,28 @@ describe('native conversation combinations', () => {
     expect(catalog.models.filter((item) => item.available).map((item) => item.source)).toEqual([
       'OPL Gateway',
       'OPL Gateway',
+    ])
+  })
+  it('binds the selected OPL Gateway Gemini models to OpenCode', async () => {
+    vi.stubEnv('USERPROFILE', join(tmpdir(), 'opl-gemini-opencode-absent-cli'))
+    vi.stubEnv('HOME', join(tmpdir(), 'opl-gemini-opencode-absent-cli'))
+    vi.stubEnv('PATH', '')
+    const { service } = await nativeSetup([
+      { id: 'gemini::gemini-4-argon', name: 'Gemini 4 Argon' },
+      { id: 'gemini::gemini-3.8-flash', name: 'Gemini 3.8 Flash' },
+      { id: 'gemini::gemini-3.1-pro', name: 'Gemini 3.1 Pro' },
+      { id: 'gemini::gemini-3.7-flash', name: 'Gemini 3.7 Flash' },
+    ])
+    const catalog = await service.executionCatalog()
+    expect(
+      catalog.combinations
+        .filter((item) => item.modelRef.model.startsWith('gemini::'))
+        .map((item) => [item.modelRef.model, item.harnessRef]),
+    ).toEqual([
+      ['gemini::gemini-4-argon', 'opencode'],
+      ['gemini::gemini-3.8-flash', 'opencode'],
+      ['gemini::gemini-3.1-pro', 'opencode'],
+      ['gemini::gemini-3.7-flash', 'dsh'],
     ])
   })
   it('restores the chosen combination among bindings to the same model without elevating permissions', async () => {

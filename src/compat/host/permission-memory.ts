@@ -35,9 +35,14 @@ function presetFrom(event: SessionEvent): RememberedPreset | undefined {
 export function installPermissionMemory(ctx: Context): () => void {
   const known = new Set<string>()
   for (const session of ctx.sessions.list()) known.add(session.id)
+  let remembered = rememberedPreset(ctx)
   let writes = Promise.resolve()
 
   const persist = (preset: RememberedPreset) => {
+    // Keep the in-process default ahead of the asynchronous settings write. A user
+    // can create the next Session before the settings service has published its
+    // updated revision.
+    remembered = preset
     writes = writes
       .then(async () => {
         const descriptor = ctx.settings.describe().find((item) => item.ns === SETTINGS_NS)
@@ -60,10 +65,27 @@ export function installPermissionMemory(ctx: Context): () => void {
   const disposeCreated = ctx.on('session/created', (session) => {
     const fresh = !known.has(session.id)
     known.add(session.id)
-    if (!fresh || session.snapshotEvents().length > 1) return
-    const preset = rememberedPreset(ctx)
-    if (!preset || ctx.permissionPresets.current(session) === preset) return
-    ctx.permissionPresets.set(session, preset)
+    if (
+      !fresh ||
+      session.header.isSeeded ||
+      session.snapshotEvents().some((event) => event.type === 'session/end-seed')
+    )
+      return
+    // The official permission service pins its composition default from an earlier
+    // session/created listener. Apply the remembered choice after that synchronous
+    // initialization, while the session is still idle and before the UI observes it.
+    queueMicrotask(() => {
+      if (!known.has(session.id)) return
+      const preset = remembered
+      if (!preset || ctx.permissionPresets.current(session) === preset) return
+      try {
+        ctx.permissionPresets.set(session, preset)
+      } catch (error) {
+        ctx.logger.warn(
+          `permission memory apply failed: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+    })
   })
   const disposeEvent = ctx.on('session/event', (session, event) => {
     if (!known.has(session.id)) return
