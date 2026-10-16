@@ -682,6 +682,28 @@ describe('native conversation combinations', () => {
       'OPL Gateway',
     ])
   })
+  it('binds the selected OPL Gateway Gemini models to OpenCode', async () => {
+    vi.stubEnv('USERPROFILE', join(tmpdir(), 'opl-gemini-opencode-absent-cli'))
+    vi.stubEnv('HOME', join(tmpdir(), 'opl-gemini-opencode-absent-cli'))
+    vi.stubEnv('PATH', '')
+    const { service } = await nativeSetup([
+      { id: 'gemini::gemini-4-argon', name: 'Gemini 4 Argon' },
+      { id: 'gemini::gemini-3.8-flash', name: 'Gemini 3.8 Flash' },
+      { id: 'gemini::gemini-3.1-pro', name: 'Gemini 3.1 Pro' },
+      { id: 'gemini::gemini-3.7-flash', name: 'Gemini 3.7 Flash' },
+    ])
+    const catalog = await service.executionCatalog()
+    expect(
+      catalog.combinations
+        .filter((item) => item.modelRef.model.startsWith('gemini::'))
+        .map((item) => [item.modelRef.model, item.harnessRef]),
+    ).toEqual([
+      ['gemini::gemini-4-argon', 'opencode'],
+      ['gemini::gemini-3.8-flash', 'opencode'],
+      ['gemini::gemini-3.1-pro', 'opencode'],
+      ['gemini::gemini-3.7-flash', 'dsh'],
+    ])
+  })
   it('restores the chosen combination among bindings to the same model without elevating permissions', async () => {
     const { service, ctx, options, session, changeModel } = await nativeSetup()
     const setPermission = vi.fn()

@@ -34,6 +34,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { probeHarnessReasoning, readHarnessReasoning } from './reasoning-preflight.ts'
 import type { HarnessReasoningPreflight, HarnessStartRequest } from '../../contracts/types.ts'
 import { STOP_EDIT_VERSION } from '../contracts/stop-edit.ts'
+import { projectlessSessionCwd } from './projectless-path.ts'
 export type { HarnessStartRequest } from '../../contracts/types.ts'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -324,7 +325,7 @@ export class HarnessService {
   async createProjectlessSession(): Promise<{ sessionId: string; cwd: string }> {
     await this.ready
     const sessionId = asSessionId(`session-${randomUUID()}`)
-    const cwd = join(this.directory, 'tasks', sessionId)
+    const cwd = projectlessSessionCwd(this.directory, sessionId)
     return { sessionId, cwd }
   }
   private async loadSelections() {

@@ -84,9 +84,12 @@ it('assigns the new Nemotron Super VL lane to OpenCode instead of native DSH', a
         item.modelRef.model === 'nvidia/nemotron-3.5-super-vl:free' && item.harnessRef === 'dsh',
     ),
   ).toBe(false)
+  expect(
+    resolved.models.find((item) => item.ref.model === 'nvidia/nemotron-3.5-super-vl:free'),
+  ).toMatchObject({ source: 'Our Free Model' })
 })
 
-it('maps Nemotron Super VL to the exact official OpenCode model id', async () => {
+it('keeps Nemotron Super VL in the OFM channel while using the OpenCode harness', async () => {
   const { officialOpenCodeModel } = await import(
     '../../src/execution/host/ofm-source/selection-policy.ts'
   )
@@ -95,7 +98,30 @@ it('maps Nemotron Super VL to the exact official OpenCode model id', async () =>
       provider: 'our-free-model',
       model: 'nvidia/nemotron-3.5-super-vl:free',
     }),
-  ).toBe('opencode/nemotron-3.5-super-vl-free')
+  ).toBeUndefined()
+})
+
+it('keeps native DSH combinations for models supplied by the OFM plugin', async () => {
+  const ctx = {
+    get: () => undefined,
+    llm: {
+      listProviders: () => [{ id: 'our-free-model', name: 'Our Free Model' }],
+      listConfigurableProviders: () => [],
+      listModels: async () => [{ id: 'opl-qualification-free' }],
+    },
+  }
+  const catalog = defaultExecutionCatalog()
+  const store = {
+    get: async () => catalog,
+    cleanLegacyCombinations: async () => catalog,
+  }
+  const resolved = await new ExecutionModelResolver(ctx as never, store as never).resolve()
+  expect(resolved.combinations).toContainEqual(
+    expect.objectContaining({
+      modelRef: { provider: 'our-free-model', model: 'opl-qualification-free' },
+      harnessRef: 'dsh',
+    }),
+  )
 })
 
 it('omits empty default harness setups but retains an explicitly configured existing engine', () => {

@@ -23,7 +23,6 @@ import {
   MINIMAX_CODE_PROVIDER,
 } from './adapters/minimax.ts'
 import { isHiddenOfmSelection, officialOpenCodeModel } from './ofm-source/selection-policy.ts'
-import { OFM_PROVIDERS } from './ofm-source/provider.ts'
 export class ExecutionModelResolver {
   constructor(
     private readonly ctx: Context,
@@ -235,11 +234,6 @@ export class ExecutionModelResolver {
       if (!isRetiredModel(model.ref) && model.available && !hasDefault) {
         const harnessRef = defaultHarness(model.ref),
           harnessName = catalog.harnesses.find((h) => h.id === harnessRef)?.name ?? 'DSH'
-        // An OFM model without a verified external Harness must not be presented
-        // as a native DSH combination. DSH cannot infer the owning channel's
-        // credentials or wire protocol; leave the model to its explicit source
-        // pairing instead of generating a misleading fallback.
-        if (OFM_PROVIDERS.includes(model.ref.provider) && harnessRef === 'dsh') continue
         catalog.combinations.push({
           id: 'auto:' + modelRefKey(model.ref),
           name:

@@ -22,8 +22,6 @@ export const OFM_INACTIVE_DEFAULT_HARNESSES: readonly string[] = ['mimo-code', '
 /** OFM-discovered identities explicitly routed through OpenCode's built-in free provider. */
 export function officialOpenCodeModel(ref: ModelRef): string | undefined {
   if (ref.provider !== 'our-free-model') return undefined
-  if (ref.model === 'nvidia/nemotron-3.5-super-vl:free')
-    return 'opencode/nemotron-3.5-super-vl-free'
   return [
     'cat-jam-free',
     'mimo-v2.6-flash-free',

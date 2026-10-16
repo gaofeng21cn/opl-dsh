@@ -25,6 +25,7 @@
 | GPT-OSS 20B | Codex CLI | Responses |
 | Step 5 Preview，两条独立车道 | StepCode | Chat |
 | Ling、LongCat、North Mini Code、Nemotron 3.5、Space Bunny、OpenRouter Free | OpenCode | Chat |
+| OPL Gateway Gemini 4 Argon、Gemini 3.8 Flash、Gemini 3.1 Pro | OpenCode | Chat |
 | Nemotron Nano Omni、LFM、Inkling Small | Pi Coding Agent | Chat |
 | Dots、Glyph、Kilo Auto Free | Kilo Code | Chat |
 
