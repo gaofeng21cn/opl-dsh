@@ -301,6 +301,7 @@ describe('OpenCode 声明面', () => {
     expect(OPENCODE_OFM_MODELS).toContain('cat-jam-free')
     expect(OPENCODE_OFM_MODELS).toContain('nvidia/nemotron-3-ultra-550b-a55b:free')
     expect(OPENCODE_OFM_MODELS).toContain('nvidia/nemotron-3-super-120b-a12b:free')
+    expect(OPENCODE_OFM_MODELS).toContain('nvidia/nemotron-3.5-super-vl:free')
     expect(OPENCODE_OFM_MODELS).not.toContain('nvidia/nemotron-3.5-ultra-550b-a55b:free')
     expect(OPENCODE_OFM_MODELS).not.toContain('nvidia/nemotron-3.5-super-120b-a12b:free')
     expect(OPENCODE_OFM_MODELS).toContain('openrouter/free')
@@ -639,3 +640,41 @@ describe('OpenCode shell 绑定', () => {
     ).toThrow(/无法解析/)
   })
 })
+
+it.each(['nemotron-3.5-lightning-free', 'longcat-2.5-preview-free'])(
+  'pins %s to the official free provider without resolving OFM credentials',
+  async (model) => {
+    const { sources, source } = sourcesWith()
+    source.resolve = async () => {
+      throw Error('must not request OFM credentials')
+    }
+    shellBinding.current = async (env) => testBinding(env)
+    const session = record({ modelRef: { provider: OPENCODE_OFM_PROVIDER, model } })
+    const launch = await openCodeAdapter.prepare!({} as never, session, options(sources))
+    const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!)
+    expect(config.provider).toBeUndefined()
+    expect(config.shell).toBe(TEST_SHELL)
+    const target = 'opencode/' + model
+    const configOptions = [
+      {
+        id: 'model',
+        type: 'select',
+        currentValue: target,
+        options: [{ value: target, name: model }],
+      },
+    ]
+    const calls: unknown[] = []
+    const acp = {
+      request: async (_method: string, args: unknown) => {
+        calls.push(args)
+        return { configOptions }
+      },
+    }
+    const snapshot = { session: { sessionId: 'owned' }, configOptions }
+    await openCodeAdapter.configureSession!(acp as never, session, snapshot as never)
+    expect(calls).toEqual([{ sessionId: 'owned', configId: 'model', value: target }])
+    expect(() =>
+      openCodeAdapter.verifySession!(session, { ...snapshot, configOptions: [] } as never),
+    ).toThrow()
+  },
+)

@@ -117,8 +117,10 @@ describe('user model choices', () => {
         const combinations = projected.combinations.filter(
           (item) => JSON.stringify(item.modelRef) === JSON.stringify(ref),
         )
-        expect(combinations).toHaveLength(1)
-        expect(combinations[0]?.harnessRef).toBe('dsh')
+        const explicitDefault = provider.id === 'our-free-model' && model === 'combo:my-route'
+        const expectedCount = explicitDefault || !provider.id.startsWith('our-free-model') ? 1 : 0
+        expect(combinations).toHaveLength(expectedCount)
+        if (expectedCount) expect(combinations[0]?.harnessRef).toBe('dsh')
       }
     expect(
       projected.combinations.find((item) => item.id === 'user-default')?.permissionPolicy,

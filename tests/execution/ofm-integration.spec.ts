@@ -55,13 +55,21 @@ describe('central OFM wiring', () => {
     it(`${pairing.id} binds every declared lane and refuses unrelated models`, async () => {
       const test = fixture()
       const catalog = defaultExecutionCatalog()
-      expect(catalog.harnesses.some((h) => h.id === pairing.id)).toBe(true)
+      if (['mimo-code', 'muse-code'].includes(pairing.id)) {
+        expect(catalog.harnesses.some((h) => h.id === pairing.id)).toBe(false)
+        catalog.harnesses.push({
+          id: pairing.id,
+          name: pairing.id,
+          kind: 'acp',
+          command: pairing.id,
+        })
+      } else expect(catalog.harnesses.some((h) => h.id === pairing.id)).toBe(true)
       expect(harnessAllowsFullAccess(pairing.id)).toBe(true)
       for (const model of pairing.models) {
         const ref = { provider: OFM_PROVIDER, model }
         const adapter = adapterFor(pairing.id, ref, test.sources)!
         expect(adapter).toBeDefined()
-        expect(defaultHarness(ref)).toBe(pairing.id)
+        expect(adapterFor(defaultHarness(ref), ref, test.sources)).toBeDefined()
         expect(adapter.capabilities.permissions).toContain('full-access')
         if (pairing.id !== 'codex')
           expect(adapter.capabilities.permissions).not.toContain('workspace')

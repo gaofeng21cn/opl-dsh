@@ -186,3 +186,5 @@ Todo 面板只读取官方记录的 todos 投影。停止后未完成项静态�
 ## Codex Git Bash 运行时交付
 
 Windows 自建候选使用 `codex-runtime-select --mode git-bash --version 0.160.1-opl-gitbash.20261012.2 --source <便携目录绝对路径>` 导入并选择；省略 source 重新选择已导入版本。`codex-runtime-select --mode official` 恢复原命令。先全项目空闲核验，候选仅接受已有完全访问权限，不提升受限任务权限。导入失败保留原选择，实际 Bash 与 Auto Review 由 CLI 回读验收。不要修改官方 Codex 程序或日常配置。
+
+短通知仅包含状态与一次 deliveryId。收到 `control CLI: receive --delivery <deliveryId> --consumer <stable-id>` 时，CLI 从公开 outbox 精确找到所属 task，再执行原领取协议；不能据通知直接宣布通过。只在 review/resume 时读取返回的 reviewInstructions 并验收，busy/skip 停止；consume 仍使用返回的 taskId、deliveryId、consumerId 与 claimEpoch。旧双位置参数及 request-file 继续兼容。

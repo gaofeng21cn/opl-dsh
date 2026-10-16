@@ -130,6 +130,21 @@ const start = (s: HarnessService, cwd: string, taskId = 'task') =>
   })
 const wait = (s: HarnessService, id: string) => s.wait({ sessionId: id }, AbortSignal.timeout(8000))
 
+it('shares concurrent execution catalog reads', async () => {
+  const { service } = await setup()
+  const resolver = (service as unknown as { modelResolver: { resolve: () => Promise<unknown> } })
+    .modelResolver
+  const resolve = vi.spyOn(resolver, 'resolve')
+  const [first, second, third] = await Promise.all([
+    service.executionCatalog(),
+    service.executionCatalog(),
+    service.executionCatalog(),
+  ])
+  expect(resolve).toHaveBeenCalledTimes(1)
+  expect(second).toBe(first)
+  expect(third).toBe(first)
+})
+
 describe('external completion observations', () => {
   it.each(['empty-turn', 'thought-only', 'blank-answer', 'tool-only-failed', 'tool-only-pending'])(
     'refuses %s before persisting completion',
@@ -593,7 +608,7 @@ describe('native conversation combinations', () => {
       [
         { id: 'jev-1.13-free', name: 'Jev 1.13' },
         { id: 'nvidia/nemotron-3.5-content-safety:free', name: 'Nemotron Content Safety' },
-        { id: 'cat-jam-free', name: 'Cat Jam' },
+        { id: 'kilo-auto/free', name: 'Kilo Auto' },
       ],
       [{ id: 'our-free-model', name: 'Our Free Model' }],
     )
@@ -604,7 +619,7 @@ describe('native conversation combinations', () => {
     expect(catalog.combinations.map((item) => item.modelRef.model)).not.toEqual(
       expect.arrayContaining(['jev-1.13-free', 'nvidia/nemotron-3.5-content-safety:free']),
     )
-    expect(catalog.models.map((item) => item.ref.model)).toContain('cat-jam-free')
+    expect(catalog.models.map((item) => item.ref.model)).toContain('kilo-auto/free')
   })
   it('does not expose the built-in DeepSeek catalog without its own credential', async () => {
     const { service } = await nativeSetup(

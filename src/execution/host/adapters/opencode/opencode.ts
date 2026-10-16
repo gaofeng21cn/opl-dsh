@@ -1,3 +1,4 @@
+import { officialOpenCodeModel } from '../../ofm-source/selection-policy.ts'
 /**
  * Official OpenCode CLI (`opencode`) adapter for the Our Free Model source.
  *
@@ -105,7 +106,7 @@ function failure(message: string, snapshot: AcpSessionSnapshot): Error {
 function expectedModelValue(record: HarnessSession, describe: (message: string) => Error): string {
   if (!isOpenCodeModel(record.modelRef))
     throw describe('此模型不属于本适配声明的 OpenCode 组合；已停止，不会改用其他模型。')
-  return openCodeModelValue(record.modelRef.model)
+  return officialOpenCodeModel(record.modelRef) ?? openCodeModelValue(record.modelRef.model)
 }
 
 /**
@@ -236,12 +237,17 @@ export const openCodeAdapter: HarnessAdapter = {
     // launch. The registry's own re-check inside `resolve` does not cover the awaits this
     // adapter performs after it.
     const lease = options.modelSources.lease(OPENCODE_HARNESS, record.modelRef)
-    const route = await options.modelSources.resolve(
-      OPENCODE_HARNESS,
-      record.modelRef,
-      OPENCODE_SUPPORTED_PROTOCOLS[0],
-    )
-    const config = buildOpenCodeRouteConfig(route, record.modelRef.model)
+    const nativeModel = officialOpenCodeModel(record.modelRef)
+    const config = nativeModel
+      ? { content: '{}' }
+      : buildOpenCodeRouteConfig(
+          await options.modelSources.resolve(
+            OPENCODE_HARNESS,
+            record.modelRef,
+            OPENCODE_SUPPORTED_PROTOCOLS[0],
+          ),
+          record.modelRef.model,
+        )
     const started = launch(path, record.cwd, options.prefix ?? [])
     // The shell check spawns a real process and is therefore an await point the shared
     // registry cannot cover. A source unloaded, replaced, or re-registered while the probe

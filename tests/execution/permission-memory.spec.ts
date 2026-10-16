@@ -29,24 +29,42 @@ function fixture(lastPermissionPreset: string = 'workspace-write', existingIds: 
 
 afterEach(() => vi.restoreAllMocks())
 
-it('applies the remembered preset only to a new blank Session', () => {
-  const f = fixture('danger-full-access')
-  const session = {
-    id: 'fresh',
-    snapshotEvents: () => [{ type: 'permission/preset' }],
+function session(id: string, isSeeded = false, eventCount = 1) {
+  return {
+    id,
+    header: { isSeeded },
+    snapshotEvents: () => Array.from({ length: eventCount }, () => ({ type: 'permission/preset' })),
   }
-  f.handlers.get('session/created')!(session)
-  expect(f.permissionPresets.set).toHaveBeenCalledExactlyOnceWith(session, 'danger-full-access')
+}
+
+it('uses the in-process choice before its settings write resolves', async () => {
+  const f = fixture()
+  const current = session('current')
+  f.handlers.get('session/created')!(current)
+  f.handlers.get('session/event')!(current, {
+    type: 'permission/preset',
+    data: { preset: 'danger-full-access' },
+  })
+  const fresh = session('fresh', false, 3)
+  f.handlers.get('session/created')!(fresh)
+  await Promise.resolve()
+  expect(f.permissionPresets.set).toHaveBeenCalledWith(fresh, 'danger-full-access')
+  f.dispose()
+})
+
+it('applies the remembered preset after official initial permission pinning', async () => {
+  const f = fixture('danger-full-access')
+  const fresh = session('fresh', false, 3)
+  f.handlers.get('session/created')!(fresh)
+  await Promise.resolve()
+  expect(f.permissionPresets.set).toHaveBeenCalledExactlyOnceWith(fresh, 'danger-full-access')
   f.dispose()
 })
 
 it('does not widen an existing or seeded Session', () => {
   const f = fixture('danger-full-access', ['existing'])
-  const existing = { id: 'existing', snapshotEvents: () => [{ type: 'permission/preset' }] }
-  const seeded = {
-    id: 'seeded',
-    snapshotEvents: () => [{ type: 'permission/preset' }, { type: 'user/message' }],
-  }
+  const existing = session('existing')
+  const seeded = session('seeded', true, 2)
   f.handlers.get('session/created')!(existing)
   f.handlers.get('session/created')!(seeded)
   expect(f.permissionPresets.set).not.toHaveBeenCalled()
@@ -55,9 +73,9 @@ it('does not widen an existing or seeded Session', () => {
 
 it('persists only supported explicit preset events', async () => {
   const f = fixture()
-  const session = { id: 'known', snapshotEvents: () => [{ type: 'permission/preset' }] }
-  f.handlers.get('session/created')!(session)
-  f.handlers.get('session/event')!(session, {
+  const known = session('known')
+  f.handlers.get('session/created')!(known)
+  f.handlers.get('session/event')!(known, {
     type: 'permission/preset',
     data: { preset: 'danger-full-access' },
   })
@@ -68,7 +86,7 @@ it('persists only supported explicit preset events', async () => {
     4,
   )
   f.settings.mutate.mockClear()
-  f.handlers.get('session/event')!(session, {
+  f.handlers.get('session/event')!(known, {
     type: 'permission/preset',
     data: { preset: 'auto' },
   })

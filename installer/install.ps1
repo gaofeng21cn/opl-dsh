@@ -106,10 +106,11 @@ try {
   Assert-OfficialSignature $exe
   $env:ELECTRON_RUN_AS_NODE = '1'
   $env:NODE_USE_SYSTEM_CA = '1'
-  $installArgs = @((Join-Path $Payload 'install.mjs'), $app, $Root, $Payload, '--no-launch') | ForEach-Object { '"' + $_ + '"' }
+  $installArgs = @((Join-Path $Payload 'install.mjs'), $app, $Root, $Payload)
+  if ($NoLaunch -or $env:OPL_INSTALL_NO_LAUNCH -eq '1') { $installArgs += '--no-launch' }
+  $installArgs = $installArgs | ForEach-Object { '"' + $_ + '"' }
   $installed = Start-Process -FilePath $exe -ArgumentList $installArgs -Wait -PassThru
   if ($installed.ExitCode -ne 0) { throw 'OPL 增强安装失败。' }
-  if (-not $NoLaunch -and $env:OPL_INSTALL_NO_LAUNCH -ne '1') { Start-Process -FilePath 'wscript.exe' -ArgumentList ('"' + (Join-Path $Root 'launch.vbs') + '"') }
 } catch {
   Write-Error $_ -ErrorAction Continue
   exit 1

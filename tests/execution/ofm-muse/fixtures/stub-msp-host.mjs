@@ -75,7 +75,13 @@ createInterface({ input: process.stdin }).on('line', (line) => {
           notify('turn/completed', {
             sessionId: SESSION,
             turnId: 'stub-turn-1',
-            terminal: 'completed',
+            terminal: mode === 'provider-refusal' ? 'failed' : 'completed',
+            ...(mode === 'provider-refusal'
+              ? {
+                  reason:
+                    "server_error: OpenCode's free tier can only be used from within OpenCode. synthetic-private-key",
+                }
+              : {}),
           })
         },
         Number(process.env.STUB_TURN_MS ?? 1500),

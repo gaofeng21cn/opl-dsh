@@ -189,11 +189,12 @@ async function launchEnv(model = MODEL): Promise<Record<string, string>> {
 }
 
 describe('Kilo 声明面', () => {
-  it('只声明本轮点名的三个 OFM 来源模型配对', () => {
+  it('声明 Kilo 已验证的 OFM 来源模型配对', () => {
     expect(kiloModels().map((entry) => entry.model)).toEqual([
       'dots-studio/dots-3-note-preview:free',
       'stealth/glyph-cluster',
       'kilo-auto/free',
+      'nvidia/nemotron-3.5-super-vl:free',
     ])
     for (const entry of kiloModels()) expect(kiloAdapter.matches(entry)).toBe(true)
     // 每个 id 保持原样，不合并、不折叠、不拆分斜杠或冒号。
@@ -201,6 +202,7 @@ describe('Kilo 声明面', () => {
     expect(KILO_OFM_MODELS).toContain('stealth/glyph-cluster')
     // free/auto 路由条目按路由条目保留，不被替换成某个具体底层模型。
     expect(KILO_OFM_MODELS).toContain('kilo-auto/free')
+    expect(KILO_OFM_MODELS).toContain('nvidia/nemotron-3.5-super-vl:free')
     expect(kiloModelValue('kilo-auto/free')).toBe('oplkilo/kilo-auto/free')
   })
 

@@ -373,7 +373,7 @@ describe('combination notification path', () => {
       )
       const message = messages.find((text) => text.includes(taskId))
       expect(message, `no notification named seed ${String(index)}`).toBeDefined()
-      expect(message!.split('\n')).toHaveLength(3)
+      expect(message!.split('\n')).toHaveLength(2)
       expect(message).not.toContain('delegate-review')
       const received = await kit.feedback.receive({
         taskId,
@@ -457,11 +457,10 @@ describe('combination notification path', () => {
       timeout: 15_000,
     })
     const message = messagesOf(kit.transport)[0]!
-    expect(message).toContain('reached state "completed"')
-    expect(message.split('\n')).toHaveLength(3)
+    expect(message).toContain('DSH completed')
+    expect(message.split('\n')).toHaveLength(2)
     expect(message).not.toContain('summary')
-    expect(message).toContain('taskFeedback.receive')
-    expect(message).toContain('reviewInstructions')
+    expect(message).toContain('receive --delivery')
     expect(await linesOf(join(work, 'calls.txt'))).toEqual(['notify-one'])
     // The card mirrors the durable outbox stage rather than claiming a handoff
     // of its own, so it converges on the transport's acceptance.
@@ -516,7 +515,7 @@ describe('combination notification path', () => {
       timeout: 15_000,
     })
     const message = messagesOf(kit.transport)[0]!
-    expect(message).toContain('reached state "failed"')
+    expect(message).toContain('DSH failed')
     expect(message).not.toContain('the combination turn failed (stop reason error)')
     const failed = kit.feedback.deliveries()[0]!
     const received = await kit.feedback.receive({
@@ -561,8 +560,8 @@ describe('combination notification path', () => {
     })
     const approval = (await kit.harness.snapshot({ sessionId: child.id })).approvals[0]!
     const waiting = messagesOf(kit.transport)[0]!
-    expect(waiting).toContain('reached state "waiting_approval"')
-    expect(waiting.split('\n')).toHaveLength(3)
+    expect(waiting).toContain('DSH waiting_approval')
+    expect(waiting.split('\n')).toHaveLength(2)
     const pending = kit.feedback.deliveries()[0]!
     const received = await kit.feedback.receive({
       taskId: pending.taskId,
@@ -585,7 +584,7 @@ describe('combination notification path', () => {
       timeout: 15_000,
     })
     const finished = messagesOf(kit.transport)[1]!
-    expect(finished).toContain('reached state "completed"')
+    expect(finished).toContain('DSH completed')
     // The pause and the outcome are two deliveries, not one rewritten record.
     expect(new Set(deliveryIdsOf(kit.transport)).size).toBe(2)
   }, 40_000)
@@ -627,7 +626,7 @@ describe('combination notification path', () => {
       timeout: 15_000,
     })
     const followupTaskId = feedbackTaskId(child.id, 'task-loop', 'follow-up')
-    expect(messagesOf(kit.transport)[1]).toContain(`delivery: ${followupTaskId}@completed`)
+    expect(messagesOf(kit.transport)[1]).toContain(`--delivery ${followupTaskId}@completed`)
     const followup = await kit.feedback.receive({
       taskId: followupTaskId,
       deliveryId: `${followupTaskId}@completed`,

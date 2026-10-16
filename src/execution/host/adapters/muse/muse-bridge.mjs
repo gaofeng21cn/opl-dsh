@@ -389,9 +389,18 @@ function onMspMessage(message) {
         pending.resolve({ stopReason: 'end_turn' })
       } else
         pending.reject(
-          Error(
-            `官方 Muse Code 本轮以 ${terminal} 结束：${params.reason ?? params.error?.message ?? '未提供原因'}` +
-              (pending.cancelError ? `（取消请求同时被拒绝：${pending.cancelError}）` : ''),
+          Object.assign(
+            Error(
+              `官方 Muse Code 本轮以 ${terminal} 结束：${params.reason ?? params.error?.message ?? '未提供原因'}` +
+                (pending.cancelError ? `（取消请求同时被拒绝：${pending.cancelError}）` : ''),
+            ),
+            {
+              code: /OpenCode's free tier can only be used from within OpenCode/i.test(
+                params.reason ?? params.error?.message ?? '',
+              )
+                ? 'HARNESS_PROVIDER_CLIENT_REQUIRED'
+                : 'HARNESS_PROVIDER',
+            },
           ),
         )
       return
@@ -647,6 +656,14 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     .then((result) => acp.respond(id, result ?? null))
     .catch((error) => {
       log(`${message.method} 失败：${error.message}`)
-      acp.reject(id, -32000, error.message)
+      acp.reject(
+        id,
+        ['HARNESS_PROVIDER_CLIENT_REQUIRED', 'HARNESS_PROVIDER'].includes(error.code)
+          ? error.code
+          : -32000,
+        ['HARNESS_PROVIDER_CLIENT_REQUIRED', 'HARNESS_PROVIDER'].includes(error.code)
+          ? '官方 Muse Code 请求失败'
+          : error.message,
+      )
     })
 })

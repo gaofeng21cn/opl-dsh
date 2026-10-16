@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -235,4 +236,23 @@ describe('Muse bridge: cancellation never claims more than the runtime granted',
       child.kill()
     }
   }, 30_000)
+})
+
+it('keeps the official client restriction as a fixed failed category after body text', async () => {
+  const { child, request } = driveBridge('provider-refusal', 1)
+  try {
+    await request('initialize', { protocolVersion: 1 })
+    const created = await request('session/new', { cwd: workspace, mcpServers: [] })
+    const result = await request('session/prompt', {
+      sessionId: created.result.sessionId,
+      prompt: [{ type: 'text', text: 'OK' }],
+    })
+    expect(result.result).toBeUndefined()
+    expect(result.error.code).toBe('HARNESS_PROVIDER_CLIENT_REQUIRED')
+    expect(JSON.stringify(result)).not.toContain('synthetic-private-key')
+  } finally {
+    const closed = once(child, 'close')
+    child.stdin.end()
+    await closed
+  }
 })

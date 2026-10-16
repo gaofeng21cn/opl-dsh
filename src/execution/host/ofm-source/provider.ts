@@ -81,6 +81,8 @@ export const OFM_PINNED_HARNESS_MODELS: Readonly<Record<string, readonly string[
   'muse-code': ['muse-spark-1.2-contributor-free', 'muse-spark-1.3-contributor-free'],
   opencode: [
     'cat-jam-free',
+    'mimo-v2.6-flash-free',
+    'muse-spark-1.3-contributor-free',
     'ling-3.1-flash-free',
     'inclusionai/ling-3.1-flash',
     'longcat-2.5-preview-free',
@@ -89,6 +91,8 @@ export const OFM_PINNED_HARNESS_MODELS: Readonly<Record<string, readonly string[
     'nvidia/nemotron-3.5-lightning:free',
     'nvidia/nemotron-3-ultra-550b-a55b:free',
     'nvidia/nemotron-3-super-120b-a12b:free',
+    'nvidia/nemotron-3.5-super-vl:free',
+    'deepseek-v4.1-flash-free',
     'space-bunny-free',
     'openrouter/free',
   ],
@@ -97,7 +101,12 @@ export const OFM_PINNED_HARNESS_MODELS: Readonly<Record<string, readonly string[
     'liquid/lfm-2.5-2.6b:free',
     'thinkingmachines/inkling-small:free',
   ],
-  kilo: ['dots-studio/dots-3-note-preview:free', 'stealth/glyph-cluster', 'kilo-auto/free'],
+  kilo: [
+    'dots-studio/dots-3-note-preview:free',
+    'stealth/glyph-cluster',
+    'kilo-auto/free',
+    'nvidia/nemotron-3.5-super-vl:free',
+  ],
 }
 
 /** The canonical harness key a Harness id maps to for pinning lookups. */

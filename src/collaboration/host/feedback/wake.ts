@@ -140,9 +140,8 @@ function needsInputLines(notice: NeedsInputNotice, harness: HarnessExecution | n
  */
 export function composeWakeMessage(payload: DeliveryPayload, deliveryId: string): string {
   return [
-    `Task ${payload.taskId} reached state "${payload.state}" (pending review).`,
-    `delivery: ${deliveryId}`,
-    `read: taskFeedback.receive (control CLI: receive ${payload.taskId} ${deliveryId} --consumer <stable id>); review/resume: read reviewInstructions; busy/skip: stop.`,
+    `DSH ${payload.state} (pending review).`,
+    `control CLI: receive --delivery ${deliveryId} --consumer <stable-id>`,
   ].join('\n')
 }
 

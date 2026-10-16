@@ -43,6 +43,8 @@ export const OPENCODE_MODEL_OPTION = 'model'
  */
 export const OPENCODE_OFM_MODELS: readonly string[] = [
   'cat-jam-free',
+  'mimo-v2.6-flash-free',
+  'muse-spark-1.3-contributor-free',
   'ling-3.1-flash-free',
   'inclusionai/ling-3.1-flash',
   'longcat-2.5-preview-free',
@@ -51,6 +53,8 @@ export const OPENCODE_OFM_MODELS: readonly string[] = [
   'nvidia/nemotron-3.5-lightning:free',
   'nvidia/nemotron-3-ultra-550b-a55b:free',
   'nvidia/nemotron-3-super-120b-a12b:free',
+  'nvidia/nemotron-3.5-super-vl:free',
+  'deepseek-v4.1-flash-free',
   'space-bunny-free',
   'openrouter/free',
 ]

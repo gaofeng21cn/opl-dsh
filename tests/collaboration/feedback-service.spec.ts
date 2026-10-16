@@ -163,9 +163,9 @@ describe('feedback service durable lifecycle', () => {
     first.service.setWakeAdapter(transport)
     await first.service.flush()
     const message = transport.send.mock.calls[0]![0].message
-    expect(message.split('\n')).toHaveLength(3)
-    expect(message).toContain('receive task task@completed --consumer <stable id>')
-    expect(message).toContain('busy/skip: stop')
+    expect(message.split('\n')).toHaveLength(2)
+    expect(message).toContain('receive --delivery task@completed --consumer <stable-id>')
+    expect(message.match(/task/g)).toHaveLength(1)
     expect(message).not.toContain('verified outcome')
     expect(message).not.toContain('source-session')
     expect(message).not.toContain('taskFeedback.consume')

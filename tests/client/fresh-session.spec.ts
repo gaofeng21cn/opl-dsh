@@ -143,6 +143,22 @@ it('keeps the official global new-conversation draft option projectless', async 
   dispose()
 })
 
+it('keeps the ungrouped plus action projectless when it clears the previous draft', async () => {
+  const original = vi.fn()
+  const openSession = vi.fn()
+  const workspace = { startSession: original, openSession } as Pick<
+    UiWorkspace,
+    'startSession' | 'openSession'
+  >
+  const createProjectless = vi.fn(async () => sessionId('ungrouped-plus'))
+  const dispose = allowProjectlessSessions(workspace, createProjectless)
+  workspace.startSession(undefined, { clearPreviousDraft: true })
+  await vi.waitFor(() => expect(openSession).toHaveBeenCalledExactlyOnceWith('ungrouped-plus'))
+  expect(createProjectless).toHaveBeenCalledTimes(1)
+  expect(original).not.toHaveBeenCalled()
+  dispose()
+})
+
 it('leaves workspace-targeted new sessions on the official path', () => {
   const original = vi.fn()
   const workspace = { startSession: original, openSession: vi.fn() } as Pick<
