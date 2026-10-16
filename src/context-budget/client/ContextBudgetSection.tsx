@@ -13,21 +13,23 @@ export function ContextBudgetSection({
   const state = useSyncExternalStore(preference.state.subscribe, preference.state.getSnapshot)
   return (
     <section className={css.section} data-opl-panel="context-budget">
-      <div className={css.row}>
-        <h3 className={css.name}>{t('panelTitle')}</h3>
-        <Switch
-          label={t('enabled')}
-          checked={state.enabled}
-          onChange={(value) => preference.setEnabled(value)}
-        />
+      <div className={css.officialRow}>
+        <div className={css.row}>
+          <h3 className={css.name}>{t('panelTitle')}</h3>
+          <Switch
+            label={t('enabled')}
+            checked={state.enabled}
+            onChange={(value) => preference.setEnabled(value)}
+          />
+        </div>
+        <p className={css.muted}>{t('settingsIntro')}</p>
+        <p className={css.muted}>{t('settingsHelp')}</p>
+        {state.savingFailed ? (
+          <p role="alert" className={css.error}>
+            {t('savingFailure')}
+          </p>
+        ) : null}
       </div>
-      <p className={css.muted}>{t('settingsIntro')}</p>
-      <p className={css.muted}>{t('settingsHelp')}</p>
-      {state.savingFailed ? (
-        <p role="alert" className={css.error}>
-          {t('savingFailure')}
-        </p>
-      ) : null}
     </section>
   )
 }
