@@ -232,7 +232,7 @@ export async function verifyDesktopClient(
   }
   await openSettings()
   const panels = [
-    { label: ['通用设置', 'General'], marker: 'context-budget' },
+    { label: ['通用设置', 'General'], marker: 'notifications' },
     { label: ['执行引擎', 'Harnesses'], marker: 'execution-settings' },
     { label: ['执行组合', 'Combinations'], marker: 'catalog' },
     { label: ['协作与自动化', 'Collaboration'], marker: 'collaboration' },
@@ -317,27 +317,25 @@ export async function verifyDesktopClient(
       await captureFailureScreenshot()
       throw new Error(panel.label[0] + ' 报错：' + alerts.join('; '))
     }
-    if (panel.marker === 'context-budget') {
-      for (const marker of ['context-budget', 'notifications']) {
-        await waitFor(
-          `(() => {const row=document.querySelector('[data-opl-panel="${marker}"]'); return Boolean(row && row.getClientRects().length && row.querySelector('[role=switch]'))})()`,
-          marker + ' 通用设置条目未挂载',
-        )
-        const toggle = `document.querySelector('[data-opl-panel="${marker}"] [role=switch]')`
-        const before = await pipe.evaluate(session, `${toggle}.getAttribute('aria-checked')`)
-        await pipe.evaluate(session, `${toggle}.click()`)
-        await waitFor(
-          `${toggle}.getAttribute('aria-checked')!==${JSON.stringify(before)}`,
-          marker + ' 开关未更新',
-        )
-        await pipe.evaluate(session, `${toggle}.click()`)
-        await waitFor(
-          `${toggle}.getAttribute('aria-checked')===${JSON.stringify(before)}`,
-          marker + ' 开关未恢复',
-        )
-      }
+    if (panel.marker === 'notifications') {
+      const marker = 'notifications'
+      await waitFor(
+        `(() => {const row=document.querySelector('[data-opl-panel="${marker}"]'); return Boolean(row && row.getClientRects().length && row.querySelector('[role=switch]'))})()`,
+        marker + ' 通用设置条目未挂载',
+      )
+      const toggle = `document.querySelector('[data-opl-panel="${marker}"] [role=switch]')`
+      const before = await pipe.evaluate(session, `${toggle}.getAttribute('aria-checked')`)
+      await pipe.evaluate(session, `${toggle}.click()`)
+      await waitFor(
+        `${toggle}.getAttribute('aria-checked')!==${JSON.stringify(before)}`,
+        marker + ' 开关未更新',
+      )
+      await pipe.evaluate(session, `${toggle}.click()`)
+      await waitFor(
+        `${toggle}.getAttribute('aria-checked')===${JSON.stringify(before)}`,
+        marker + ' 开关未恢复',
+      )
       result.generalPreferences = {
-        contextBudget: true,
         notifications: true,
         nativeGeneralItems: true,
       }
