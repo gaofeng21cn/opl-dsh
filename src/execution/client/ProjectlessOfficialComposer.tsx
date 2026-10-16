@@ -4,6 +4,7 @@ import type { ComposerBarProps } from '@deepseek-ai/dsh-client-ui-conversation/c
 import type { WorkspaceBrowserProps } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
 import { StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { isProjectlessSession } from './fresh-session.ts'
 
 type ResidentComposerProps = ComposerBarProps & { readonly sessionId?: string }
 
@@ -70,7 +71,9 @@ export function installProjectlessOfficialComposer(
         )
       }
       if (props.blocked !== undefined) return createElement(component, props)
-      const workspaceLock = props.disabled === true && props.onRequestWorkspace !== undefined
+      const projectless = isProjectlessSession(props.sessionId)
+      const workspaceLock =
+        projectless && props.disabled === true && props.onRequestWorkspace !== undefined
       if (!workspaceLock) return createElement(component, props)
       const { onRequestWorkspace: _request, placeholder: _placeholder, ...unlocked } = props
       return createElement(component, { ...unlocked, disabled: false, workspacePickerOpen: false })

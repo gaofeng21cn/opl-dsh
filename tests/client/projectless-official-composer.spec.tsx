@@ -108,6 +108,7 @@ describe('official projectless composer adapter', () => {
       onRequestWorkspace: () => {},
       placeholder: 'workspace',
     }
+    markProjectlessSession(restored.sessionId)
     expect(render(f, restored).props).toMatchObject({
       sessionId: restored.sessionId,
       variant: restored.variant,
@@ -189,6 +190,7 @@ describe('official projectless composer adapter', () => {
     try {
       await act(async () => root.render(createElement(entry.component, props)))
       expect(container.textContent).toBe('正在恢复会话…')
+      markProjectlessSession('restored-session')
       await act(async () =>
         root.render(
           createElement(entry.component, {

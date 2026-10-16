@@ -238,7 +238,7 @@ export function apply(ctx: Context): void {
       (listener) => slots.subscribe('sidebar.workspaces', listener),
     ),
   )
-  ctx.slots.inject('conversation.composer.bar', () =>
+  ctx.effect(() =>
     installProjectlessOfficialComposer(
       () => slots.entries('conversation.composer.bar'),
       (listener) => slots.subscribe('conversation.composer.bar', listener),
