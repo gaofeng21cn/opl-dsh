@@ -1,4 +1,5 @@
 import { installSkill, verifySkill } from './skill-install.mjs'
+import { isLocalCandidateInstall } from './update.mjs'
 /** Install OPL-owned files into the official DSH profile, then launch the official app. */
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync } from 'node:fs'
@@ -216,7 +217,7 @@ const installation = {
       ? previousInstallation?.release
       : previousInstallation?.previousRelease,
   suiteVersion: artifact.enhancementVersion ?? artifact.version,
-  localCandidate: artifact.sourceDirty === true,
+  localCandidate: isLocalCandidateInstall(artifact, flags),
   officialVersion,
   app,
   home,
