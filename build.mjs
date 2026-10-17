@@ -44,6 +44,7 @@ await bundle({
 for (const [directory, name] of [
   ['step', 'step-bridge'],
   ['pi', 'pi-bridge'],
+  ['kimi', 'kimi-error-bridge'],
   ['zcode-ofm', 'zcode-ofm-bridge'],
 ]) {
   await bundle({

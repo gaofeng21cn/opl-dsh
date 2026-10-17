@@ -1,4 +1,5 @@
-import { commandLaunch, executablePath } from '../../harness-registry.ts'
+import { fileURLToPath } from 'node:url'
+import { executablePath } from '../../harness-registry.ts'
 import { HarnessConfigurationError } from '../../acp.ts'
 import { systemEnvironment } from '../environment.ts'
 import { assertKimiAcpVersion, kimiBashEnvironment } from './kimi-bash.ts'
@@ -213,13 +214,16 @@ export const kimiCodeAdapter: HarnessAdapter = {
     assertLeaseCurrent(lease.assertCurrent)
     await assertRouteStillCurrent(sources, ref, KIMI_PROTOCOL, route)
 
-    const started = commandLaunch(path, [...(options.prefix ?? []), 'acp'])
+    const bridge = fileURLToPath(new URL('./kimi-error-bridge.mjs', import.meta.url))
     return {
       home: options.home,
-      command: started.command,
-      args: started.args,
+      command: process.execPath,
+      args: [bridge],
       env: {
         ...env,
+        ELECTRON_RUN_AS_NODE: '1',
+        OPL_KIMI_COMMAND: path,
+        OPL_KIMI_ARGS: JSON.stringify([...(options.prefix ?? []), 'acp']),
         [KIMI_ROUTE_ENV.model]: route.model,
         [KIMI_ROUTE_ENV.apiKey]: route.apiKey,
         [KIMI_ROUTE_ENV.baseUrl]: route.baseURL,
@@ -230,7 +234,6 @@ export const kimiCodeAdapter: HarnessAdapter = {
         // account profile and needs no `kimi --login`.
         [KIMI_ROUTE_ENV.home]: options.home,
       },
-      ...(started.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     }
   },
   async configureSession(acp, record, snapshot): Promise<AcpSessionConfigureResult> {

@@ -115,8 +115,10 @@ describe('Kimi Code launch preparation', () => {
     expect(launch.env?.KIMI_LOOP_MAX_ATTEMPTS_PER_STEP).toBe('1')
     // The suite's own runtime root, so no Moonshot account profile is read or written.
     expect(launch.env?.[KIMI_ROUTE_ENV.home]).toBe(home)
-    expect(launch.args).toEqual(['acp'])
-    expect(launch.command).toBe(stubBinary)
+    expect(JSON.parse(launch.env.OPL_KIMI_ARGS!)).toEqual(['acp'])
+    expect(launch.args[0]).toMatch(/kimi-error-bridge\.mjs$/)
+    expect(launch.env.OPL_KIMI_COMMAND).toBe(stubBinary)
+    expect(launch.command).toBe(process.execPath)
   })
 
   it('never asks the user to log in, and never carries a Moonshot credential', async () => {
@@ -253,7 +255,7 @@ describe('Kimi Code launch preparation', () => {
       ...options(withSource()),
       prefix: ['--profile', 'suite'],
     })
-    expect(launch.args).toEqual(['--profile', 'suite', 'acp'])
+    expect(JSON.parse(launch.env.OPL_KIMI_ARGS!)).toEqual(['--profile', 'suite', 'acp'])
   })
 })
 
