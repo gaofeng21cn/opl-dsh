@@ -177,7 +177,7 @@ export class NativeHarnessConversations {
       await this.ctx.sessions.flush(handle.agent.session)
     }
     const workspace = await this.ctx.workspaceRegistry.create(record.cwd)
-    await this.native('create', { sessionId: id, workspaceId: workspace.id })
+    await workspace.attachSession(SessionId(id))
     const session = this.ctx.sessions.get(SessionId(id))
     if (!session || session.header.cwd !== record.cwd) throw Error('外部任务的官方会话项目不一致')
     if (this.ctx.agents.get(session.id)?.status === 'running')

@@ -168,6 +168,8 @@ node scripts/qualify-official-runtime.mjs \
 
 Host 内部 Remote 调用通过统一兼容入口携带官方 Peer：转发时保留调用者身份，后台调用使用官方 connection 创建、随所属 Context 释放的 owner Peer；旧桌面没有该工厂时沿用其内部调用方式。双平台隔离验收覆盖安装后的会话创建、模型请求和工具执行，开发依赖上的类型检查不能替代最新桌面验收。
 
+导入外部 Harness 历史后，使用官方 Workspace 的 `attachSession` 登记原会话；`session.create` 负责创建或复用空会话，不用于接管已有历史。
+
 Windows 的 `--download` 会安装官方程序并写入系统注册信息，只能在临时 GitHub Actions runner 使用；开发机使用 `--app`。发布工作流的 `--download` 会同时验证官方安装包 SHA-512、签名和实际版本。
 
 验收 JSON 必须满足：
