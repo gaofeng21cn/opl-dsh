@@ -12,9 +12,8 @@
  *   - `session/set_config_option` with `configId: "model"` really does write the selection
  *     and return the refreshed advertisement.
  *
- * No model is ever called: the spec stops after session configuration, so there is no
- * network traffic, no credential, and no provider involved. The controlled-provider probe
- * that exercises the shell and tool path lives in the owned report directory instead.
+ * Model requests use a keyless loopback fixture. The request-body assertion verifies the
+ * provider-qualified EAC model id without calling an upstream model or using credentials.
  *
  * The binary is not vendored into this repository. Point `OPENCODE_OFFICIAL_BINARY` at a
  * verified official install (or the pinned `opencode-windows-x64` build); when it is
@@ -22,6 +21,7 @@
  */
 import { execFile } from 'node:child_process'
 import { access, mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -39,6 +39,7 @@ const BINARY = process.env.OPENCODE_OFFICIAL_BINARY
 const PINNED_VERSION = '1.19.0'
 const MODEL = 'inclusionai/ling-3.1-flash'
 const MODEL_VALUE = openCodeModelValue(MODEL)
+const EAC_MODEL = 'opencode/glm-5.3-flash-free'
 
 interface Fixture {
   acp: AcpProcess
@@ -49,6 +50,8 @@ interface Fixture {
 let root = ''
 let harness: Fixture
 const booted: AcpProcess[] = []
+let server: Server | undefined
+const requests: { model: string }[] = []
 
 beforeAll(async () => {
   if (!BINARY) return
@@ -59,6 +62,30 @@ beforeAll(async () => {
   // A Chinese-plus-space working directory: the launch vector must carry it verbatim.
   const cwd = join(root, '中文 项目 dir')
   await mkdir(cwd, { recursive: true })
+  server = createServer(async (req, res) => {
+    if (req.url !== '/v1/chat/completions') {
+      res.writeHead(404).end()
+      return
+    }
+    const chunks: Buffer[] = []
+    for await (const chunk of req) chunks.push(Buffer.from(chunk))
+    requests.push(JSON.parse(Buffer.concat(chunks).toString()))
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    for (const choice of [
+      { delta: { role: 'assistant', content: 'EAC_ROUTE_OK' }, finish_reason: null },
+      { delta: {}, finish_reason: 'stop' },
+    ])
+      res.write(
+        `data: ${JSON.stringify({ id: 'eac-probe', object: 'chat.completion.chunk', created: 1, model: EAC_MODEL, choices: [{ index: 0, ...choice }] })}\n\n`,
+      )
+    res.end('data: [DONE]\n\n')
+  })
+  await new Promise<void>((resolve, reject) => {
+    server!.once('error', reject)
+    server!.listen(0, '127.0.0.1', resolve)
+  })
+  const address = server.address()
+  if (!address || typeof address === 'string') throw Error('Loopback fixture did not bind')
   const acp = new AcpProcess(
     BINARY,
     ['acp', '--cwd', cwd],
@@ -74,10 +101,8 @@ beforeAll(async () => {
           oplopencode: {
             npm: '@ai-sdk/openai-compatible',
             name: 'OPL Route',
-            // Loopback and keyless: this spec never reaches a model, and never holds a
-            // credential. The address only has to be well-formed for the CLI to load it.
-            options: { baseURL: 'http://127.0.0.1:9/v1', apiKey: 'probe-keyless' },
-            models: { [MODEL]: { name: MODEL } },
+            options: { baseURL: `http://127.0.0.1:${address.port}/v1`, apiKey: 'probe-keyless' },
+            models: { [MODEL]: { name: MODEL }, [EAC_MODEL]: { name: EAC_MODEL } },
           },
         },
       }),
@@ -93,6 +118,12 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const acp of booted.splice(0)) await acp.dispose()
+  if (server?.listening) {
+    server.closeAllConnections()
+    await new Promise<void>((resolve, reject) =>
+      server!.close((error) => (error ? reject(error) : resolve())),
+    )
+  }
   if (root) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
@@ -173,5 +204,43 @@ describe.skipIf(!BINARY)('官方 OpenCode CLI 实测面', () => {
       harness.acp.request('session/cancel', { sessionId: created.sessionId }),
     ).rejects.toThrow()
     await harness.acp.request('session/close', { sessionId: created.sessionId })
+  })
+
+  it('EAC GLM Flash Free can be pinned after both new and load without becoming the built-in free route', async () => {
+    const created = (await harness.acp.request('session/new', {
+      cwd: harness.cwd,
+      mcpServers: [],
+    })) as Record<string, any>
+    try {
+      const value = openCodeModelValue(EAC_MODEL)
+      expect(value).toBe('oplopencode/opencode/glm-5.3-flash-free')
+      for (const load of [false, true]) {
+        if (load)
+          await harness.acp.request('session/load', {
+            sessionId: created.sessionId,
+            cwd: harness.cwd,
+            mcpServers: [],
+          })
+        const written = (await harness.acp.request('session/set_config_option', {
+          sessionId: created.sessionId,
+          configId: OPENCODE_MODEL_OPTION,
+          value,
+        })) as Record<string, any>
+        expect(
+          written.configOptions.find((o: any) => o.id === OPENCODE_MODEL_OPTION).currentValue,
+        ).toBe(value)
+        const before = requests.length
+        const result = (await harness.acp.request('session/prompt', {
+          sessionId: created.sessionId,
+          prompt: [{ type: 'text', text: 'Reply EAC_ROUTE_OK without using tools.' }],
+        })) as Record<string, any>
+        expect(result.stopReason).toBe('end_turn')
+        const sent = requests.slice(before)
+        expect(sent).not.toHaveLength(0)
+        expect(sent.every((request) => request.model === EAC_MODEL)).toBe(true)
+      }
+    } finally {
+      await harness.acp.request('session/close', { sessionId: created.sessionId })
+    }
   })
 })

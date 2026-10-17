@@ -59,6 +59,7 @@ const loaded: CatalogState = {
       'openai/gpt-oss-20b',
       'reflection/beam-free',
       'xingchen-agi/xing4.0-29b-a4b:free',
+      'opencode/glm-5.3-flash-free',
     ],
     [OFM_REGION_PROVIDER]: ['muse-spark-1.2-contributor-free'],
   },
@@ -195,6 +196,17 @@ describe('OFM source pairing', () => {
 })
 
 describe('OFM source resolution', () => {
+  it('resolves EAC GLM Flash Free through the owner endpoint without removing its prefix', async () => {
+    const { sources } = harness(loaded, { connection: async () => facts })
+    const ref = { provider: OFM_PROVIDER, model: 'opencode/glm-5.3-flash-free' }
+    expect(adapterFor('opencode', ref, sources)?.id).toBe('opencode')
+    await expect(sources.resolve('opencode', ref, 'chat')).resolves.toEqual({
+      ...facts,
+      model: ref.model,
+      protocol: 'chat',
+    })
+  })
+
   it('resolves the exact live model with the harness protocol', async () => {
     const { sources } = harness(loaded, { connection: async () => facts })
     await expect(sources.resolve('kimi', ref, 'messages')).resolves.toEqual({

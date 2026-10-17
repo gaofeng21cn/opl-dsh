@@ -95,6 +95,7 @@ export const OFM_PINNED_HARNESS_MODELS: Readonly<Record<string, readonly string[
     'beam-free',
     'nemotron-3.5-super-vl-free',
     'glm-5.3-flash-free',
+    'opencode/glm-5.3-flash-free',
     'deepseek-v4.1-flash-free',
     'space-bunny-free',
     'openrouter/free',

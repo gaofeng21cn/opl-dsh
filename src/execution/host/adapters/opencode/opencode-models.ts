@@ -88,6 +88,8 @@ export const OPENCODE_OFM_MODELS: readonly string[] = [
   'beam-free',
   'nemotron-3.5-super-vl-free',
   'glm-5.3-flash-free',
+  // EAC publishes this qualified id; it uses OFM forwarding, not the bare free lane.
+  'opencode/glm-5.3-flash-free',
 ]
 
 /** The declared models, as catalog entries an execution combination can bind. */

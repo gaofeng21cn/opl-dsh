@@ -432,6 +432,21 @@ describe('OpenCode 启动参数与环境', () => {
     )
   })
 
+  it('EAC GLM Flash Free uses the owner endpoint and retains its qualified model id', async () => {
+    const model = 'opencode/glm-5.3-flash-free'
+    const { sources } = sourcesWith({ ...ROUTE, model })
+    const launch = await openCodeAdapter.prepare!(
+      {} as never,
+      record({ modelRef: { provider: OPENCODE_OFM_PROVIDER, model } }),
+      options(sources),
+    )
+    const config = JSON.parse(launch.env!.OPENCODE_CONFIG_CONTENT!)
+    const provider = config.provider[OPENCODE_ROUTE_PROVIDER_ID]
+    expect(provider.options).toEqual({ baseURL: ROUTE.baseURL, apiKey: FAKE_KEY })
+    expect(Object.keys(provider.models)).toEqual([model])
+    expect(openCodeWireModel({ provider: OPENCODE_OFM_PROVIDER, model })).toBe(model)
+  })
+
   it('受限权限与未知推理档位明确拒绝，不静默降级', async () => {
     const { sources } = sourcesWith()
     for (const sandbox of ['read-only', 'workspace'] as const) {

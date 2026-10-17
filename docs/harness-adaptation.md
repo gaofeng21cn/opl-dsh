@@ -21,7 +21,8 @@
 | Kimi K2.6、K3 | Kimi Code | Messages |
 | MiMo v2.6 Flash | MiMo Code | Chat |
 | Laguna S、XS 2.1 | Poolside | Chat |
-| GLM 5.3、5.3 Flash | ZCode | Chat |
+| GLM 5.3、5.3 Flash（z-ai 原始 ID） | ZCode | Chat |
+| EAC GLM 5.3 Flash Free（opencode/glm-5.3-flash-free） | OpenCode，经 OFM 转发 | Chat |
 | GPT-OSS 20B | Codex CLI | Responses |
 | Step 5 Preview，两条独立车道 | StepCode | Chat |
 | Ling、LongCat、North Mini Code、Nemotron 3.5、Space Bunny、OpenRouter Free | OpenCode | Chat |
