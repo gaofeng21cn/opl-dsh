@@ -8,7 +8,27 @@ import {
   verifyPayload,
   safeBinding,
   sha256,
+  installationDiagnostics,
 } from '../scripts/qualification-support.mjs'
+
+test('qualification retains bounded package failures before scratch cleanup', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'opl-dsh-accept-log-'))
+  try {
+    assert.deepEqual(await installationDiagnostics(root), [])
+    const logs = join(root, 'profiles/desktop/.plugin-manager/logs/operation-test')
+    await mkdir(logs, { recursive: true })
+    await writeFile(
+      join(logs, 'pnpm.log'),
+      'x'.repeat(10000) + '\nERR_PNPM_FETCH_403 Bearer fixture-secret\n',
+    )
+    const [result] = await installationDiagnostics(root)
+    assert.ok(result.length <= 8192)
+    assert.match(result, /ERR_PNPM_FETCH_403/)
+    assert.doesNotMatch(result, /fixture-secret/)
+  } finally {
+    await rm(root, { recursive: true })
+  }
+})
 
 test('qualification accepts only a real temporary acceptance tree', async () => {
   const root = await mkdtemp(join(tmpdir(), 'opl-dsh-accept-test-'))

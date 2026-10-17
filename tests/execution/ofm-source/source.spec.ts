@@ -57,6 +57,10 @@ const loaded: CatalogState = {
       'mimo-v2.6-flash-free',
       'poolside/laguna-s-2.1:free',
       'openai/gpt-oss-20b',
+      'reflection/beam-free',
+      'xingchen-agi/xing4.0-29b-a4b:free',
+      'opencode/glm-5.3-flash-free',
+      'opencode/deepseek-v4.1-flash-free',
     ],
     [OFM_REGION_PROVIDER]: ['muse-spark-1.2-contributor-free'],
   },
@@ -81,6 +85,8 @@ describe('OFM source pairing', () => {
       ['mimo', 'mimo-v2.6-flash-free'],
       ['pool', 'poolside/laguna-s-2.1:free'],
       ['codex', 'openai/gpt-oss-20b'],
+      ['kilo', 'reflection/beam-free'],
+      ['kilo', 'xingchen-agi/xing4.0-29b-a4b:free'],
       ['claude', 'mimo-v2.6-flash-free'],
     ] as const)
       expect(source.supports(harness, { provider: OFM_PROVIDER, model })).toBe(true)
@@ -191,6 +197,20 @@ describe('OFM source pairing', () => {
 })
 
 describe('OFM source resolution', () => {
+  it.each(['opencode/glm-5.3-flash-free', 'opencode/deepseek-v4.1-flash-free'])(
+    'resolves EAC %s through the owner endpoint without removing its prefix',
+    async (model) => {
+      const { sources } = harness(loaded, { connection: async () => facts })
+      const ref = { provider: OFM_PROVIDER, model }
+      expect(adapterFor('opencode', ref, sources)?.id).toBe('opencode')
+      await expect(sources.resolve('opencode', ref, 'chat')).resolves.toEqual({
+        ...facts,
+        model: ref.model,
+        protocol: 'chat',
+      })
+    },
+  )
+
   it('resolves the exact live model with the harness protocol', async () => {
     const { sources } = harness(loaded, { connection: async () => facts })
     await expect(sources.resolve('kimi', ref, 'messages')).resolves.toEqual({

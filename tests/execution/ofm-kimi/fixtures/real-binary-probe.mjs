@@ -166,6 +166,16 @@ const server = createServer((req, res) => {
       toolResultPreview: flattenToolResult(toolResults[0]),
     })
     markRequestSeen()
+    if (BEHAVIOUR === 'reject') {
+      res.writeHead(500, { 'content-type': 'application/json', 'x-should-retry': 'false' })
+      res.end(
+        JSON.stringify({
+          type: 'error',
+          error: { type: 'api_error', message: 'fixture server failure' },
+        }),
+      )
+      return
+    }
     if (HOLD) {
       // Never answer, so the turn stays active until the client cancels it.
       return
@@ -203,6 +213,7 @@ const env = {
   TEMP: `${ownedProfilePath}/tmp`,
   TMP: `${ownedProfilePath}/tmp`,
   KIMI_CODE_HOME: ownedProfilePath,
+  KIMI_LOOP_MAX_ATTEMPTS_PER_STEP: '1',
   // The shell this adapter would pin, so the official tool runs under it.
   KIMI_SHELL_PATH: SHELL,
   ...(OMIT

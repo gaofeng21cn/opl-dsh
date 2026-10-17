@@ -1,3 +1,4 @@
+import { invokeHostRemote } from '../../../compat/host/remote-invocation.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { setHarnessPermissions } from '../permissions.ts'
@@ -27,11 +28,16 @@ export async function connectDsh(
   persist: () => Promise<void>,
 ): Promise<void> {
   const native = (method: string, request: object) =>
-    ctx.typertGateway.invoke({ namespace: 'session', method, args: { request } })
+    invokeHostRemote(ctx, { namespace: 'session', method, args: { request } })
   const id = record.acpSessionId || `session-${record.id}`,
     isNew = !record.acpSessionId
   const workspace = await ctx.workspaceRegistry.create(record.cwd)
-  await native('create', { sessionId: id, workspaceId: workspace.id })
+  if (isNew) await native('create', { sessionId: id, workspaceId: workspace.id })
+  else {
+    const resolved = await ctx.sessionController.resolveAgent(id as SessionId)
+    if ('error' in resolved) throw resolved.error
+    await workspace.attachSession(id as SessionId)
+  }
   record.acpSessionId = id
   await persist()
   await native('selectModel', { sessionId: id, ...record.modelRef })

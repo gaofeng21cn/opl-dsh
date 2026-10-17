@@ -1,3 +1,4 @@
+import { invokeHostRemote } from '../../compat/host/remote-invocation.ts'
 /** Owns live model/combination projection; persisted catalog stores references only. */
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
@@ -91,7 +92,7 @@ export class ExecutionModelResolver {
           try {
             configured =
               (
-                (await this.ctx.typertGateway.invoke({
+                (await invokeHostRemote(this.ctx, {
                   namespace: 'account',
                   method: 'getState',
                   args: {},

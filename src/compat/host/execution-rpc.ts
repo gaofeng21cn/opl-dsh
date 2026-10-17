@@ -1,3 +1,4 @@
+import { invokeHostRemote } from './remote-invocation.ts'
 /** Legacy carriers share the generated owner contract with the native Client. */
 import type { Context } from '@deepseek-ai/cordis'
 import { TYPERT_REMOTE } from '../../generated/remote.mjs'
@@ -13,7 +14,7 @@ export async function invokeExecutionRpc(
   )
   if (!descriptor) throw Error('不支持的执行操作')
   const args = Object.fromEntries(descriptor.parameters.map((parameter) => [parameter.wire, input]))
-  const value = await ctx.typertGateway.invoke({
+  const value = await invokeHostRemote(ctx, {
     namespace: 'oplExecution',
     method,
     args,

@@ -36,6 +36,10 @@ const harnessFailure = (code: unknown) => {
       return '官方渠道报告本轮请求失败，已停止本轮请求；原任务未自动重发。'
     case 'HARNESS_PROVIDER_AUTH':
       return '官方渠道认证失败或权限不足，原任务未自动重发。'
+    case 'HARNESS_PROVIDER_RETIRED':
+      return '上游已停止提供所选模型，请选择其他模型。原任务未自动重发。'
+    case 'HARNESS_PROVIDER_ROUTE':
+      return '上游账户缺少所选模型的服务路由，请等待渠道修复。原任务未自动重发。'
     case 'HARNESS_PROVIDER_MODEL':
       return '官方渠道不接受所选模型，原任务未自动重发。'
     case 'HARNESS_PROVIDER_RATE_LIMIT':

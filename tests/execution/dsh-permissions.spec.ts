@@ -7,10 +7,12 @@ import { connectDsh } from '../../src/execution/host/adapters/dsh.ts'
 function setup(sandbox: HarnessSession['sandbox']) {
   const session = Session.create(SessionId('session-harness-permission'))
   const set = vi.fn()
+  const attachSession = vi.fn(async () => {})
   const ctx = {
     get: (name: string) => (name === 'permissionPresets' ? { set } : undefined),
     sessions: { get: () => session },
-    workspaceRegistry: { create: async () => ({ id: 'project' }) },
+    workspaceRegistry: { create: async () => ({ id: 'project', attachSession }) },
+    sessionController: { resolveAgent: vi.fn(async () => ({ agent: { session } })) },
     typertGateway: { invoke: vi.fn(async () => ({})) },
   } as unknown as Context
   const record = {
@@ -20,7 +22,7 @@ function setup(sandbox: HarnessSession['sandbox']) {
     modelRef: {},
     title: 'task',
   } as HarnessSession
-  return { ctx, record, session, set }
+  return { ctx, record, session, set, attachSession }
 }
 it.each([
   ['full-access', 'danger-full-access'],
@@ -35,10 +37,15 @@ it.each([
   },
 )
 it('does not overwrite a user-selected preset when reconnecting an existing DSH task', async () => {
-  const { ctx, record, set } = setup('full-access')
+  const { ctx, record, set, attachSession } = setup('full-access')
   record.acpSessionId = 'session-harness-permission'
   await connectDsh(ctx, record, async () => {})
   expect(set).not.toHaveBeenCalled()
+  expect(ctx.sessionController.resolveAgent).toHaveBeenCalledWith(record.acpSessionId)
+  expect(attachSession).toHaveBeenCalledWith(record.acpSessionId)
+  expect(ctx.typertGateway.invoke).not.toHaveBeenCalledWith(
+    expect.objectContaining({ method: 'create' }),
+  )
 })
 it('refuses missing official permission support before any task can be sent', async () => {
   const { ctx, record } = setup('full-access')

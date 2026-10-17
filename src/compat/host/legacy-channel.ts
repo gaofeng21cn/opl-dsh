@@ -1,3 +1,4 @@
+import { invokeHostRemote } from './remote-invocation.ts'
 /** One bounded compatibility reader for pre-modular UI automation. New clients use Remote. */
 import type { Context } from '@deepseek-ai/cordis'
 import { invokeExecutionRpc } from './execution-rpc.ts'
@@ -32,7 +33,7 @@ export function installLegacyHarnessChannel(ctx: Context): void {
           const { method, input } = message.payload
           const mapped = gatewayMethods[method]
           const value = mapped
-            ? await ctx.typertGateway.invoke({
+            ? await invokeHostRemote(ctx, {
                 namespace: 'oplGatewayModels',
                 method: mapped,
                 args: mapped === 'read' ? {} : { request: input },

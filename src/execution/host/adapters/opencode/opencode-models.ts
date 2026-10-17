@@ -12,6 +12,20 @@
  * the refreshed advertisement reports it back. Bare ids, ids containing `/`, ids
  * containing `/` more than once, and ids containing `:` were each pinned and read back
  * unchanged by the real binary.
+ *
+ * The free-directory ids added below were read from the OpenCode directory itself on
+ * 2026-10-17: the model/endpoint table and free-model list on `https://opencode.ai/docs/zen`,
+ * the live listing at `https://opencode.ai/inference/v1/models`, and the pinned CLI's own
+ * `opencode` provider catalog. Every added id is served by that directory on OpenAI Chat
+ * Completions, the one protocol the pinned CLI bridges for this route. A directory entry is
+ * a declaration of intent and of the wire shape only: it is evidence of neither a credential
+ * nor a successful call, and availability stays the owning plugin's live answer.
+ *
+ * `exo-free`, `big-pickle` and `ll-alpha-free` are in the same directory but are deliberately
+ * **not** declared here. The owning OFM plugin does not publish them as `our-free-model`
+ * lanes, so no exact provider/model combination exists for DSH to bind, pin, or verify: a
+ * directory id is not a combination, and inventing one would be guessing availability. They
+ * are recorded in `ofm-source/selection-policy.ts` and refused rather than approximated.
  */
 import type { ModelRef } from '../../../contracts/catalog.ts'
 
@@ -65,6 +79,18 @@ export const OPENCODE_OFM_MODELS: readonly string[] = [
   'deepseek-v4.1-flash-free',
   'space-bunny-free',
   'openrouter/free',
+  // Bare OpenCode free-directory lanes this round could actually pair: both are published
+  // by the owning OFM plugin's live free lane *and* present in the official OpenCode
+  // catalog, on Chat Completions. Each stays a distinct route — the bare
+  // `nemotron-3.5-super-vl-free` is not folded into, or substituted by, the qualified
+  // `nvidia/nemotron-3.5-super-vl:free` OFM channel route above — and nothing here adds
+  // or removes anything from the owning plugin's catalog.
+  'beam-free',
+  'nemotron-3.5-super-vl-free',
+  'glm-5.3-flash-free',
+  // EAC publishes this qualified id; it uses OFM forwarding, not the bare free lane.
+  'opencode/glm-5.3-flash-free',
+  'opencode/deepseek-v4.1-flash-free',
 ]
 
 /** The declared models, as catalog entries an execution combination can bind. */

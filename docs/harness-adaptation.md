@@ -21,7 +21,9 @@
 | Kimi K2.6、K3 | Kimi Code | Messages |
 | MiMo v2.6 Flash | MiMo Code | Chat |
 | Laguna S、XS 2.1 | Poolside | Chat |
-| GLM 5.3、5.3 Flash | ZCode | Chat |
+| GLM 5.3、5.3 Flash（z-ai 原始 ID） | ZCode | Chat |
+| EAC GLM 5.3 Flash Free（opencode/glm-5.3-flash-free） | OpenCode，经 OFM 转发 | Chat |
+| EAC DeepSeek V4.1 Flash Free（opencode/deepseek-v4.1-flash-free） | OpenCode，经 OFM 转发 | Chat |
 | GPT-OSS 20B | Codex CLI | Responses |
 | Step 5 Preview，两条独立车道 | StepCode | Chat |
 | Ling、LongCat、North Mini Code、Nemotron 3.5、Space Bunny、OpenRouter Free | OpenCode | Chat |
@@ -44,3 +46,4 @@ Muse Code 1.4.7-R6101.1 使用独占设置中的 `endpoint_transport` 接入模�
 `HarnessAcceptance` 复用真实适配器的新建、恢复、模型与推理档位核对、真实工具事件和取消检查。调用者负责进程生命周期、独立读取产物以及向 `observe` 传入 ACP 通知。文本声称执行成功不通过；恢复必须保留会话身份，取消回执必须等待原 prompt 确认取消。
 
 接入具体来源时依次验证：来源与协议负例、真实登录或 Key、真实模型工具调用、新建与恢复、取消、权限与人工审批、Auto Review、失败与卸载。不同 Harness 的协议适配仍需实现，通用注册和验收步骤不能代替这些证据。
+Kimi Code 的 OFM 组合通过官方 `KIMI_LOOP_MAX_ATTEMPTS_PER_STEP=1` 限制每步仅发起一次请求，避免将来源层恢复叠加为 CLI 默认的十次尝试。请求失败后由用户决定是否重发；该设置不改变权限或模型。

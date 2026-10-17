@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { newer, refreshEnhancements } from '../installer/update.mjs'
+import { newer, refreshEnhancements, isLocalCandidateInstall } from '../installer/update.mjs'
 import { validateReleaseManifest } from '../installer/release-manifest.mjs'
 
 test('stable release manifest binds the official desktop and OPL asset', () => {
@@ -43,6 +43,8 @@ test('stable versions advance numerically without downgrades or prereleases', ()
   assert.equal(newer('0.2.19', '0.2.18-minimax.20261008.2'), false)
 })
 test('a local candidate stays installed until replaced by an accepted release', async () => {
+  assert.equal(isLocalCandidateInstall({ sourceDirty: false }, []), false)
+  assert.equal(isLocalCandidateInstall({ sourceDirty: true }, []), true)
   const root = await mkdtemp(join(tmpdir(), 'opl-update-candidate-'))
   const originalFetch = globalThis.fetch
   try {
@@ -50,7 +52,7 @@ test('a local candidate stays installed until replaced by an accepted release', 
       home: join(root, 'data'),
       suiteVersion: '0.2.29',
       release: join(root, 'candidate'),
-      localCandidate: true,
+      localCandidate: isLocalCandidateInstall({ sourceDirty: false }, ['--local-candidate']),
     })
     await writeFile(join(root, 'installation.json'), installation)
     let calls = 0

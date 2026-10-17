@@ -31,6 +31,7 @@ import {
   kiloLaunch,
   kiloModelValue,
   KILO_HARNESS,
+  KILO_OFM_MODELS,
   KILO_OFM_PROVIDER,
 } from '../../../src/execution/host/adapters/kilo/index.ts'
 
@@ -233,12 +234,7 @@ describe('Kilo 会话固定模型', () => {
 
   it('每个声明模型都能逐字固定并回读，free/auto 路由不被替换', async () => {
     const dir = await workspace('opl-kilo-each-')
-    for (const model of [
-      'dots-studio/dots-3-note-preview:free',
-      'stealth/glyph-cluster',
-      'kilo-auto/free',
-      'nvidia/nemotron-3.5-super-vl:free',
-    ]) {
+    for (const model of KILO_OFM_MODELS) {
       const sources = new ExternalModelSources({} as never, () => {})
       sources.register({ effect: (fn: () => unknown) => fn() } as never, {
         provider: KILO_OFM_PROVIDER,

@@ -164,6 +164,12 @@ node scripts/qualify-official-runtime.mjs \
 
 隔离根目录必须由脚本使用 Node 的真实 `os.tmpdir()` 创建，并以 `opl-dsh-accept-` 开头；macOS 的 `/tmp` 可能解析到 `/private/var/...`，不能手写一个路径绕过 runner 的隔离检查。
 
+插件安装使用所选官方桌面 `runtime/primary-runtime/dependencies/pnpm/bin/pnpm.mjs`，兼容旧发行包 `runtime/pnpm/bin` 下的 `pnpm.mjs` 或 `pnpm.cjs`，不借用系统 pnpm。失败证据保留隔离 profile 中最多四份包管理器日志的末尾，便于区分官方运行时入口变化与依赖下载错误。
+
+Host 内部 Remote 调用通过统一兼容入口携带官方 Peer：转发时保留调用者身份，后台调用使用官方 connection 创建、随所属 Context 释放的 owner Peer；旧桌面没有该工厂时沿用其内部调用方式。双平台隔离验收覆盖安装后的会话创建、模型请求和工具执行，开发依赖上的类型检查不能替代最新桌面验收。
+
+导入外部 Harness 历史后，使用官方 Workspace 的 `attachSession` 登记原会话；`session.create` 负责创建或复用空会话，不用于接管已有历史。
+
 Windows 的 `--download` 会安装官方程序并写入系统注册信息，只能在临时 GitHub Actions runner 使用；开发机使用 `--app`。发布工作流的 `--download` 会同时验证官方安装包 SHA-512、签名和实际版本。
 
 验收 JSON 必须满足：
