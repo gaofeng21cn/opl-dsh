@@ -32,7 +32,12 @@ export async function connectDsh(
   const id = record.acpSessionId || `session-${record.id}`,
     isNew = !record.acpSessionId
   const workspace = await ctx.workspaceRegistry.create(record.cwd)
-  await native('create', { sessionId: id, workspaceId: workspace.id })
+  if (isNew) await native('create', { sessionId: id, workspaceId: workspace.id })
+  else {
+    const resolved = await ctx.sessionController.resolveAgent(id as SessionId)
+    if ('error' in resolved) throw resolved.error
+    await workspace.attachSession(id as SessionId)
+  }
   record.acpSessionId = id
   await persist()
   await native('selectModel', { sessionId: id, ...record.modelRef })
