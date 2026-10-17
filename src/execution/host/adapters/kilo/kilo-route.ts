@@ -90,7 +90,7 @@ export interface KiloRouteConfig {
  *
  * The provider declares exactly the bound model and no variants, so this namespace's model
  * option holds exactly one value and the pinned value is unambiguous — including when the
- * model id itself contains `/` or `:`. All three ids this adapter declares were pinned and
+ * model id itself contains `/` or `:`. Every id this adapter declares was pinned and
  * read back unchanged by the pinned binary.
  *
  * @param route - the route the owning source resolved.

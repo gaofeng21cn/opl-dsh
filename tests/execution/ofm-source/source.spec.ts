@@ -57,6 +57,8 @@ const loaded: CatalogState = {
       'mimo-v2.6-flash-free',
       'poolside/laguna-s-2.1:free',
       'openai/gpt-oss-20b',
+      'reflection/beam-free',
+      'xingchen-agi/xing4.0-29b-a4b:free',
     ],
     [OFM_REGION_PROVIDER]: ['muse-spark-1.2-contributor-free'],
   },
@@ -81,6 +83,8 @@ describe('OFM source pairing', () => {
       ['mimo', 'mimo-v2.6-flash-free'],
       ['pool', 'poolside/laguna-s-2.1:free'],
       ['codex', 'openai/gpt-oss-20b'],
+      ['kilo', 'reflection/beam-free'],
+      ['kilo', 'xingchen-agi/xing4.0-29b-a4b:free'],
       ['claude', 'mimo-v2.6-flash-free'],
     ] as const)
       expect(source.supports(harness, { provider: OFM_PROVIDER, model })).toBe(true)

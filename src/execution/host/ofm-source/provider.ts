@@ -109,6 +109,8 @@ export const OFM_PINNED_HARNESS_MODELS: Readonly<Record<string, readonly string[
     'stealth/glyph-cluster',
     'kilo-auto/free',
     'nvidia/nemotron-3.5-super-vl:free',
+    'reflection/beam-free',
+    'xingchen-agi/xing4.0-29b-a4b:free',
   ],
 }
 
