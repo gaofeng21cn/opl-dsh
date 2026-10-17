@@ -4,6 +4,7 @@ const { pathToFileURL } = require('node:url')
 const { createRequire } = require('node:module')
 const { mkdirSync, writeFileSync, existsSync } = require('node:fs')
 const { installModelPlugins, preserveModelPlugins } = require('./model-plugins.cjs')
+const { officialPnpm } = require('./official-pnpm.cjs')
 const [application, home, archive] = process.argv.slice(2)
 async function main() {
   const resources =
@@ -11,6 +12,7 @@ async function main() {
       ? join(application, 'resources')
       : join(application, 'Contents/Resources')
   const runtime = join(resources, 'app.asar/dsh')
+  const pnpm = officialPnpm(resources)
   const requireRuntime = createRequire(join(runtime, 'package.json'))
   const load = (name) => import(pathToFileURL(requireRuntime.resolve(name)).href)
   process.env.DSH_HOME = home
@@ -36,7 +38,7 @@ async function main() {
       args,
       {
         command: process.execPath,
-        args: ['--expose-internals', join(resources, 'runtime/pnpm/bin/pnpm.cjs')],
+        args: ['--expose-internals', pnpm],
         env: {
           ELECTRON_RUN_AS_NODE: '1',
           PATH: join(resources, 'runtime/bin') + delimiter + process.env.PATH,

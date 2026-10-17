@@ -158,6 +158,7 @@ for (const file of [
   'install.mjs',
   'profile.cjs',
   'model-plugins.cjs',
+  'official-pnpm.cjs',
   'migrate.cjs',
   'setup.mjs',
   'desktop-platform.mjs',
