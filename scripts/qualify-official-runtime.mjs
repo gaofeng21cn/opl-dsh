@@ -5,7 +5,13 @@ import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { parse as parseYaml } from 'yaml'
 import { setTimeout as delay } from 'node:timers/promises'
-import { assertIsolatedRoot, verifyPayload, safeBinding, sha256 } from './qualification-support.mjs'
+import {
+  assertIsolatedRoot,
+  verifyPayload,
+  safeBinding,
+  sha256,
+  installationDiagnostics,
+} from './qualification-support.mjs'
 import { DesktopPipe, verifyDesktopClient } from './qualification-client.mjs'
 import { startModelPluginFixture } from './qualification-model-plugins.mjs'
 import {
@@ -588,6 +594,9 @@ try {
 } catch (error) {
   // Keep output free of control bearer tokens and provider credentials.
   evidence.failure = String(error.message).replace(/Bearer\s+[^\s"']+/g, 'Bearer [REDACTED]')
+  evidence.installationDiagnostics = await installationDiagnostics(root).catch((failure) => [
+    String(failure.message),
+  ])
   process.exitCode = 1
 } finally {
   if (modelPluginFixture) await modelPluginFixture.close()
