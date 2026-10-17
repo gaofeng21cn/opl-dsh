@@ -1,4 +1,5 @@
 import { sessionPermissions } from '../../compat/host/session-permissions.ts'
+import { invokeHostRemote, streamHostRemote } from '../../compat/host/remote-invocation.ts'
 /** Optional external Codex transport; shares the internal collaboration owner. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
@@ -12,11 +13,10 @@ import { HARNESS_NAMESPACE, type HarnessService } from '../../execution/host/har
 import { invokeExecutionRpc } from '../../compat/host/execution-rpc.ts'
 const sessionId = (value: string) => value as SessionId
 export function installExternalCodex(ctx: Context, harness: HarnessService) {
-  const gateway = ctx.typertGateway
   const bridge = {
     stream: ((...args: Parameters<TypertGateway['stream']>) => {
       if (!harness.cooperationSettings().externalCodex) throw Error('外部 Codex 接入已关闭')
-      return gateway.stream(...args)
+      return streamHostRemote(ctx, args[0])
     }) as TypertGateway['stream'],
     invoke: async (request: Parameters<TypertGateway['invoke']>[0]) => {
       if (request.namespace === 'oplSuite' && request.method === 'setupUrl')
@@ -54,7 +54,10 @@ export function installExternalCodex(ctx: Context, harness: HarnessService) {
           nativeRequest.workspaceId = workspace.id
           delete nativeRequest.cwd
         }
-        const created = await gateway.invoke({ ...request, args: { request: nativeRequest } })
+        const created = await invokeHostRemote(ctx, {
+          ...request,
+          args: { request: nativeRequest },
+        })
         if (permissionPreset === undefined) return created
         if (typeof created !== 'object' || created === null || !('sessionId' in created))
           throw Error('Official session.create did not return sessionId')
@@ -89,7 +92,7 @@ export function installExternalCodex(ctx: Context, harness: HarnessService) {
       }
       if (request.namespace === HARNESS_NAMESPACE)
         return invokeExecutionRpc(ctx, request.method, request.args, request.signal)
-      return gateway.invoke(request)
+      return invokeHostRemote(ctx, request)
     },
   }
   ctx.effect(async () =>

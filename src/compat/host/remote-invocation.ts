@@ -16,6 +16,19 @@ const localPeers = new WeakMap<Context, PeerScope>()
  * @returns the official Gateway result.
  */
 export function invokeHostRemote(ctx: Context, request: Request): Promise<unknown> {
+  return ctx.typertGateway.invoke(withHostPeer(ctx, request))
+}
+
+/** Open a Remote stream with the same official caller identity as ordinary calls.
+ * @param ctx - Context owning the invocation and local Peer lifetime.
+ * @param request - Exact streaming Remote method and arguments.
+ * @returns the official Gateway stream.
+ */
+export function streamHostRemote(ctx: Context, request: Request): Promise<AsyncIterable<unknown>> {
+  return ctx.typertGateway.stream(withHostPeer(ctx, request))
+}
+
+function withHostPeer(ctx: Context, request: Request): Request {
   let peer = request.peer ?? ctx.get('invocation')?.peer
   if (!peer) {
     peer = localPeers.get(ctx)
@@ -27,5 +40,5 @@ export function invokeHostRemote(ctx: Context, request: Request): Promise<unknow
       }
     }
   }
-  return ctx.typertGateway.invoke({ ...request, ...(peer ? { peer } : {}) })
+  return { ...request, ...(peer ? { peer } : {}) }
 }
