@@ -217,28 +217,30 @@ it('keeps native DSH combinations for models supplied by the OFM plugin', async 
   )
 })
 
-it('binds EAC GLM Flash Free to OpenCode while preserving the OFM forwarding route', async () => {
-  const model = 'opencode/glm-5.3-flash-free'
-  const catalog = defaultExecutionCatalog()
-  const ctx = {
-    get: () => undefined,
-    llm: {
-      listProviders: () => [{ id: 'our-free-model', name: 'Our Free Model' }],
-      listConfigurableProviders: () => [],
-      listModels: async () => [{ id: model }],
-    },
-  }
-  const store = { get: async () => catalog, cleanLegacyCombinations: async () => catalog }
-  const resolved = await new ExecutionModelResolver(ctx as never, store as never).resolve()
-  expect(resolved.models.find((item) => item.ref.model === model)).toMatchObject({
-    source: 'Our Free Model',
-  })
-  const combinations = resolved.combinations.filter((item) => item.modelRef.model === model)
-  expect(combinations).not.toHaveLength(0)
-  expect(combinations.every((item) => item.harnessRef === 'opencode')).toBe(true)
-  expect(officialOpenCodeModel({ provider: 'our-free-model', model })).toBeUndefined()
-  expect(OPENCODE_OFM_MODELS).toContain(model)
-})
+it.each(['opencode/glm-5.3-flash-free', 'opencode/deepseek-v4.1-flash-free'])(
+  'binds EAC %s to OpenCode while preserving the OFM forwarding route',
+  async (model) => {
+    const catalog = defaultExecutionCatalog()
+    const ctx = {
+      get: () => undefined,
+      llm: {
+        listProviders: () => [{ id: 'our-free-model', name: 'Our Free Model' }],
+        listConfigurableProviders: () => [],
+        listModels: async () => [{ id: model }],
+      },
+    }
+    const store = { get: async () => catalog, cleanLegacyCombinations: async () => catalog }
+    const resolved = await new ExecutionModelResolver(ctx as never, store as never).resolve()
+    expect(resolved.models.find((item) => item.ref.model === model)).toMatchObject({
+      source: 'Our Free Model',
+    })
+    const combinations = resolved.combinations.filter((item) => item.modelRef.model === model)
+    expect(combinations).not.toHaveLength(0)
+    expect(combinations.every((item) => item.harnessRef === 'opencode')).toBe(true)
+    expect(officialOpenCodeModel({ provider: 'our-free-model', model })).toBeUndefined()
+    expect(OPENCODE_OFM_MODELS).toContain(model)
+  },
+)
 
 it('omits empty default harness setups but retains an explicitly configured existing engine', () => {
   const fresh = defaultExecutionCatalog()

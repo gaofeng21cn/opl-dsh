@@ -39,7 +39,7 @@ const BINARY = process.env.OPENCODE_OFFICIAL_BINARY
 const PINNED_VERSION = '1.19.0'
 const MODEL = 'inclusionai/ling-3.1-flash'
 const MODEL_VALUE = openCodeModelValue(MODEL)
-const EAC_MODEL = 'opencode/glm-5.3-flash-free'
+const EAC_MODELS = ['opencode/glm-5.3-flash-free', 'opencode/deepseek-v4.1-flash-free']
 
 interface Fixture {
   acp: AcpProcess
@@ -76,7 +76,7 @@ beforeAll(async () => {
       { delta: {}, finish_reason: 'stop' },
     ])
       res.write(
-        `data: ${JSON.stringify({ id: 'eac-probe', object: 'chat.completion.chunk', created: 1, model: EAC_MODEL, choices: [{ index: 0, ...choice }] })}\n\n`,
+        `data: ${JSON.stringify({ id: 'eac-probe', object: 'chat.completion.chunk', created: 1, model: requests.at(-1)!.model, choices: [{ index: 0, ...choice }] })}\n\n`,
       )
     res.end('data: [DONE]\n\n')
   })
@@ -102,7 +102,10 @@ beforeAll(async () => {
             npm: '@ai-sdk/openai-compatible',
             name: 'OPL Route',
             options: { baseURL: `http://127.0.0.1:${address.port}/v1`, apiKey: 'probe-keyless' },
-            models: { [MODEL]: { name: MODEL }, [EAC_MODEL]: { name: EAC_MODEL } },
+            models: {
+              [MODEL]: { name: MODEL },
+              ...Object.fromEntries(EAC_MODELS.map((model) => [model, { name: model }])),
+            },
           },
         },
       }),
@@ -206,41 +209,44 @@ describe.skipIf(!BINARY)('官方 OpenCode CLI 实测面', () => {
     await harness.acp.request('session/close', { sessionId: created.sessionId })
   })
 
-  it('EAC GLM Flash Free can be pinned after both new and load without becoming the built-in free route', async () => {
-    const created = (await harness.acp.request('session/new', {
-      cwd: harness.cwd,
-      mcpServers: [],
-    })) as Record<string, any>
-    try {
-      const value = openCodeModelValue(EAC_MODEL)
-      expect(value).toBe('oplopencode/opencode/glm-5.3-flash-free')
-      for (const load of [false, true]) {
-        if (load)
-          await harness.acp.request('session/load', {
+  it.each(EAC_MODELS)(
+    'EAC %s can be pinned after both new and load without becoming the built-in free route',
+    async (model) => {
+      const created = (await harness.acp.request('session/new', {
+        cwd: harness.cwd,
+        mcpServers: [],
+      })) as Record<string, any>
+      try {
+        const value = openCodeModelValue(model)
+        expect(value).toBe('oplopencode/' + model)
+        for (const load of [false, true]) {
+          if (load)
+            await harness.acp.request('session/load', {
+              sessionId: created.sessionId,
+              cwd: harness.cwd,
+              mcpServers: [],
+            })
+          const written = (await harness.acp.request('session/set_config_option', {
             sessionId: created.sessionId,
-            cwd: harness.cwd,
-            mcpServers: [],
-          })
-        const written = (await harness.acp.request('session/set_config_option', {
-          sessionId: created.sessionId,
-          configId: OPENCODE_MODEL_OPTION,
-          value,
-        })) as Record<string, any>
-        expect(
-          written.configOptions.find((o: any) => o.id === OPENCODE_MODEL_OPTION).currentValue,
-        ).toBe(value)
-        const before = requests.length
-        const result = (await harness.acp.request('session/prompt', {
-          sessionId: created.sessionId,
-          prompt: [{ type: 'text', text: 'Reply EAC_ROUTE_OK without using tools.' }],
-        })) as Record<string, any>
-        expect(result.stopReason).toBe('end_turn')
-        const sent = requests.slice(before)
-        expect(sent).not.toHaveLength(0)
-        expect(sent.every((request) => request.model === EAC_MODEL)).toBe(true)
+            configId: OPENCODE_MODEL_OPTION,
+            value,
+          })) as Record<string, any>
+          expect(
+            written.configOptions.find((o: any) => o.id === OPENCODE_MODEL_OPTION).currentValue,
+          ).toBe(value)
+          const before = requests.length
+          const result = (await harness.acp.request('session/prompt', {
+            sessionId: created.sessionId,
+            prompt: [{ type: 'text', text: 'Reply EAC_ROUTE_OK without using tools.' }],
+          })) as Record<string, any>
+          expect(result.stopReason).toBe('end_turn')
+          const sent = requests.slice(before)
+          expect(sent).not.toHaveLength(0)
+          expect(sent.every((request) => request.model === model)).toBe(true)
+        }
+      } finally {
+        await harness.acp.request('session/close', { sessionId: created.sessionId })
       }
-    } finally {
-      await harness.acp.request('session/close', { sessionId: created.sessionId })
-    }
-  })
+    },
+  )
 })
