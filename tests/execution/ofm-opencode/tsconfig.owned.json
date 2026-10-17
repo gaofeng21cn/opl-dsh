@@ -3,6 +3,7 @@
   "include": [
     "../../../src/execution/host/adapters/opencode/**/*.ts",
     "../../../tests/execution/ofm-opencode/**/*.ts",
+    "../../../tests/execution/ofm-selection-policy.spec.ts",
     "../../../src/execution/contracts/**/*.ts",
     "../../../src/contracts/**/*.ts",
     "../../../src/shared/models.ts",
