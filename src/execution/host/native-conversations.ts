@@ -1,3 +1,4 @@
+import { invokeHostRemote } from '../../compat/host/remote-invocation.ts'
 /** Real official conversations for delegated Harness tasks; importing history never executes it. */
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
@@ -128,7 +129,7 @@ export class NativeHarnessConversations {
   }
 
   private native(method: string, request: object) {
-    return this.ctx.typertGateway.invoke({ namespace: 'session', method, args: { request } })
+    return invokeHostRemote(this.ctx, { namespace: 'session', method, args: { request } })
   }
 
   private async prepare(record: HarnessSession, persist: () => Promise<void>) {

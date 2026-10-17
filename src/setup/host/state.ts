@@ -1,3 +1,4 @@
+import { invokeHostRemote } from '../../compat/host/remote-invocation.ts'
 /** First-run completion belongs to the Host; the desktop and browser share this channel. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
@@ -10,7 +11,7 @@ import type {} from '../../gateway/host/account-service.ts'
 
 import type { SetupStatus } from '../contracts.ts'
 export async function officialProvider(ctx: Context): Promise<string | undefined> {
-  const account = (await ctx.typertGateway.invoke({
+  const account = (await invokeHostRemote(ctx, {
     namespace: 'account',
     method: 'getState',
     args: {},
@@ -28,7 +29,7 @@ export async function setupStatus(ctx: Context): Promise<SetupStatus> {
     | { loginChoice?: LoginChoice; setupCompleted?: boolean }
     | undefined
   const gateway = await ctx.get('oplGatewayAccount')?.status()
-  const account = (await ctx.typertGateway.invoke({
+  const account = (await invokeHostRemote(ctx, {
     namespace: 'account',
     method: 'getState',
     args: {},
