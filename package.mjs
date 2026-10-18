@@ -6,7 +6,9 @@ const root=import.meta.dirname, dist=join(root,'dist'), payload=join(dist,'OPL D
 const artifact=JSON.parse(readFileSync(join(payload,'artifact.json'),'utf8'))
 const archive=join(dist,'OPL-DSH-Enhancements.zip')
 rmSync(archive,{force:true})
-execFileSync('python3',['-c',`import pathlib,sys,zipfile
+const pythonCommand = process.platform === 'win32' ? 'py' : 'python3'
+const pythonArgs = process.platform === 'win32' ? ['-3'] : []
+execFileSync(pythonCommand,[...pythonArgs,'-c',`import pathlib,sys,zipfile
 source=pathlib.Path(sys.argv[1])
 with zipfile.ZipFile(sys.argv[2],'w',compression=zipfile.ZIP_DEFLATED) as archive:
  for path in sorted(source.rglob('*')):
