@@ -1,3 +1,4 @@
+import { invokeHostRemote } from '../../compat/host/remote-invocation.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
@@ -32,7 +33,7 @@ export class SetupService extends TypertRemoteService {
   }
   @Remote('official-start')
   async startOfficial(): Promise<null> {
-    await this.ctx.typertGateway.invoke({
+    await invokeHostRemote(this.ctx, {
       namespace: 'account',
       method: 'startSignIn',
       args: {
@@ -49,13 +50,13 @@ export class SetupService extends TypertRemoteService {
   }
   @Remote('official-cancel')
   async cancelOfficial(): Promise<null> {
-    const state = (await this.ctx.typertGateway.invoke({
+    const state = (await invokeHostRemote(this.ctx, {
       namespace: 'account',
       method: 'getState',
       args: {},
     })) as { attempt?: { id?: string } }
     if (state.attempt?.id)
-      await this.ctx.typertGateway.invoke({
+      await invokeHostRemote(this.ctx, {
         namespace: 'account',
         method: 'cancelSignIn',
         args: { attemptId: state.attempt.id },

@@ -195,6 +195,8 @@ describe('Kilo 声明面', () => {
       'stealth/glyph-cluster',
       'kilo-auto/free',
       'nvidia/nemotron-3.5-super-vl:free',
+      'reflection/beam-free',
+      'xingchen-agi/xing4.0-29b-a4b:free',
     ])
     for (const entry of kiloModels()) expect(kiloAdapter.matches(entry)).toBe(true)
     // 每个 id 保持原样，不合并、不折叠、不拆分斜杠或冒号。
@@ -203,6 +205,8 @@ describe('Kilo 声明面', () => {
     // free/auto 路由条目按路由条目保留，不被替换成某个具体底层模型。
     expect(KILO_OFM_MODELS).toContain('kilo-auto/free')
     expect(KILO_OFM_MODELS).toContain('nvidia/nemotron-3.5-super-vl:free')
+    expect(KILO_OFM_MODELS).toContain('reflection/beam-free')
+    expect(KILO_OFM_MODELS).toContain('xingchen-agi/xing4.0-29b-a4b:free')
     expect(kiloModelValue('kilo-auto/free')).toBe('oplkilo/kilo-auto/free')
   })
 

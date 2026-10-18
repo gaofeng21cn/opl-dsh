@@ -80,6 +80,8 @@ export const KILO_OFM_MODELS: readonly string[] = [
   'stealth/glyph-cluster',
   'kilo-auto/free',
   'nvidia/nemotron-3.5-super-vl:free',
+  'reflection/beam-free',
+  'xingchen-agi/xing4.0-29b-a4b:free',
 ]
 
 /** The declared models, as catalog entries an execution combination can bind. */
@@ -193,7 +195,7 @@ export function assertKiloModelOffered(
  *
  * The exact value this suite constructed is compared, never a parsed or normalised form.
  * Kilo's own catalog uses `provider/model`, so a model id may itself contain `/` and `:` —
- * all three declared ids were pinned and read back unchanged by the real binary. Splitting
+ * all declared ids were pinned and read back unchanged by the real binary. Splitting
  * or normalising such an id could silently accept a different model; exact comparison is the
  * only check that cannot.
  *

@@ -1,9 +1,30 @@
 import { createHash } from 'node:crypto'
-import { readFile, realpath } from 'node:fs/promises'
+import { readFile, realpath, readdir } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
 export const sha256 = (value) => createHash('sha256').update(value).digest('hex')
+
+/** Retain bounded package-manager diagnostics from the disposable acceptance profile. */
+export async function installationDiagnostics(root) {
+  const directory = join(root, 'profiles/desktop/.plugin-manager/logs')
+  let entries
+  try {
+    entries = await readdir(directory, { withFileTypes: true })
+  } catch (error) {
+    if (error.code === 'ENOENT') return []
+    throw error
+  }
+  const logs = []
+  for (const entry of entries
+    .filter((entry) => entry.isDirectory())
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(-4)) {
+    const text = await readFile(join(directory, entry.name, 'pnpm.log'), 'utf8')
+    logs.push(text.slice(-8192).replace(/Bearer\s+[^\s"']+/g, 'Bearer [REDACTED]'))
+  }
+  return logs
+}
 
 export async function assertIsolatedRoot(root) {
   const actual = await realpath(root)

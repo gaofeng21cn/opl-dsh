@@ -31,6 +31,7 @@ function setup() {
     return { agent, dispose: vi.fn() }
   })
   const invoke = vi.fn(async () => ({}))
+  const attachSession = vi.fn(async () => {})
   const permissionSet = vi.fn((session: Session, preset: string) => {
     session.append('permission/preset', { preset })
     setSandboxMode(session, preset as 'read-only' | 'workspace-write' | 'danger-full-access')
@@ -45,7 +46,9 @@ function setup() {
       resolveAgent: async (id: string) =>
         agents.has(id) ? { agent: agents.get(id) } : { error: { code: 'session/not-found' } },
     },
-    workspaceRegistry: { create: vi.fn(async (path: string) => ({ id: 'workspace', path })) },
+    workspaceRegistry: {
+      create: vi.fn(async (path: string) => ({ id: 'workspace', path, attachSession })),
+    },
     typertGateway: { invoke },
   } as unknown as Context
   const record: HarnessSession = {
@@ -89,6 +92,7 @@ function setup() {
     agents,
     bridge: new NativeHarnessConversations(ctx),
     permissionSet,
+    attachSession,
   }
 }
 
@@ -183,13 +187,15 @@ describe('ordinary official conversations for external tasks', () => {
     },
   )
   it('imports historical turns before driver creation without executing them and preserves all original identities', async () => {
-    const { bridge, record, create, sessions } = setup()
+    const { bridge, record, create, sessions, attachSession, invoke } = setup()
     const original = structuredClone(record)
     const persist = vi.fn(async () => {})
     await Promise.all([bridge.ensure(record, persist), bridge.ensure(record, persist)])
     expect(create).toHaveBeenCalledTimes(1)
     expect(persist).toHaveBeenCalledTimes(1)
     expect(record).toEqual({ ...original, nativeSessionId: 'session-harness-history' })
+    expect(attachSession).toHaveBeenCalledExactlyOnceWith('session-harness-history')
+    expect(invoke.mock.calls.some(([request]) => request.method === 'create')).toBe(false)
     const seed = create.mock.calls[0]![0].seed
     expect(seed.find((event: any) => event.surfaceOp)?.type).toBe('system/message')
     const imported = sessions.get(record.nativeSessionId!)!

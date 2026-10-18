@@ -36,6 +36,7 @@ import {
   buildOpenCodeRouteConfig,
   createOpenCodeSource,
   isExcludedOpenCodeModel,
+  isOpenCodeModel,
   OPENCODE_EXCLUDED_MODELS,
   openCodeAdapter,
   openCodeLaunch,
@@ -44,6 +45,7 @@ import {
   openCodeProfileRoots,
   openCodeShellBinding,
   openCodeShellSelectionAccepts,
+  openCodeWireModel,
   OPENCODE_GIT_BASH_VARIABLE,
   OPENCODE_HARNESS,
   OPENCODE_OFM_MODELS,
@@ -305,6 +307,25 @@ describe('OpenCode 声明面', () => {
     expect(OPENCODE_OFM_MODELS).not.toContain('nvidia/nemotron-3.5-ultra-550b-a55b:free')
     expect(OPENCODE_OFM_MODELS).not.toContain('nvidia/nemotron-3.5-super-120b-a12b:free')
     expect(OPENCODE_OFM_MODELS).toContain('openrouter/free')
+    // The OpenCode free-directory lanes this round could pair, each as the exact bare id
+    // the directory publishes. `nemotron-3.5-super-vl-free` stays distinct from the
+    // provider-qualified `nvidia/nemotron-3.5-super-vl:free` twin asserted above.
+    for (const model of ['beam-free', 'nemotron-3.5-super-vl-free', 'glm-5.3-flash-free']) {
+      expect(OPENCODE_OFM_MODELS).toContain(model)
+      const ref = { provider: OPENCODE_OFM_PROVIDER, model }
+      expect(isOpenCodeModel(ref)).toBe(true)
+      expect(openCodeAdapter.matches(ref)).toBe(true)
+      expect(openCodeWireModel(ref)).toBe(model)
+    }
+    // Directory-only ids are not provider/model combinations: the owning OFM plugin
+    // publishes no lane for them, so this adapter must not claim one.
+    for (const model of ['exo-free', 'big-pickle', 'll-alpha-free']) {
+      expect(OPENCODE_OFM_MODELS).not.toContain(model)
+      const ref = { provider: OPENCODE_OFM_PROVIDER, model }
+      expect(isOpenCodeModel(ref)).toBe(false)
+      expect(openCodeAdapter.matches(ref)).toBe(false)
+      expect(openCodeWireModel(ref)).toBeUndefined()
+    }
   })
 
   it('不适配的模型明确拒绝，而不是当成别名', () => {
@@ -411,6 +432,23 @@ describe('OpenCode 启动参数与环境', () => {
     )
   })
 
+  it.each(['opencode/glm-5.3-flash-free', 'opencode/deepseek-v4.1-flash-free'])(
+    'EAC %s uses the owner endpoint and retains its qualified model id',
+    async (model) => {
+      const { sources } = sourcesWith({ ...ROUTE, model })
+      const launch = await openCodeAdapter.prepare!(
+        {} as never,
+        record({ modelRef: { provider: OPENCODE_OFM_PROVIDER, model } }),
+        options(sources),
+      )
+      const config = JSON.parse(launch.env!.OPENCODE_CONFIG_CONTENT!)
+      const provider = config.provider[OPENCODE_ROUTE_PROVIDER_ID]
+      expect(provider.options).toEqual({ baseURL: ROUTE.baseURL, apiKey: FAKE_KEY })
+      expect(Object.keys(provider.models)).toEqual([model])
+      expect(openCodeWireModel({ provider: OPENCODE_OFM_PROVIDER, model })).toBe(model)
+    },
+  )
+
   it('受限权限与未知推理档位明确拒绝，不静默降级', async () => {
     const { sources } = sourcesWith()
     for (const sandbox of ['read-only', 'workspace'] as const) {
@@ -494,6 +532,40 @@ describe('OpenCode 来源解析', () => {
     // The replacement really is registered, so the refusal came from comparing registration
     // identity rather than from the source having been dropped.
     expect(sources.supports(OPENCODE_HARNESS, record().modelRef)).toBe(true)
+  })
+
+  it('官方免费通道的新车道同样受来源代次约束：撤销后晚到的 launch 被拒绝', async () => {
+    // This lane never reaches `resolve` — the CLI's own free provider carries the wire
+    // value — so the captured lease is the only gate left. It must still fail after the
+    // owning source is unloaded: a model id appearing in the official directory never
+    // substitutes for the plugin that owns its discovery.
+    const { sources, release } = sourcesWith()
+    shellBinding.current = async () => {
+      release()
+      await tick()
+      return testBinding({})
+    }
+    const session = record({ modelRef: { provider: OPENCODE_OFM_PROVIDER, model: 'beam-free' } })
+    await expect(openCodeAdapter.prepare!({} as never, session, options(sources))).rejects.toThrow(
+      /模型来源已变更，请重新选择/,
+    )
+  })
+
+  it('官方免费通道的新车道在同一 source 对象注销再注册后仍拒绝旧 launch', async () => {
+    const { sources, release, source, owner } = sourcesWith()
+    shellBinding.current = async () => {
+      release()
+      sources.register(owner as never, source)
+      await tick()
+      return testBinding({})
+    }
+    const session = record({
+      modelRef: { provider: OPENCODE_OFM_PROVIDER, model: 'nemotron-3.5-super-vl-free' },
+    })
+    await expect(openCodeAdapter.prepare!({} as never, session, options(sources))).rejects.toThrow(
+      /模型来源已变更，请重新选择/,
+    )
+    expect(sources.supports(OPENCODE_HARNESS, session.modelRef)).toBe(true)
   })
 })
 
@@ -641,40 +713,43 @@ describe('OpenCode shell 绑定', () => {
   })
 })
 
-it.each(['nemotron-3.5-lightning-free', 'longcat-2.5-preview-free'])(
-  'pins %s to the official free provider without resolving OFM credentials',
-  async (model) => {
-    const { sources, source } = sourcesWith()
-    source.resolve = async () => {
-      throw Error('must not request OFM credentials')
-    }
-    shellBinding.current = async (env) => testBinding(env)
-    const session = record({ modelRef: { provider: OPENCODE_OFM_PROVIDER, model } })
-    const launch = await openCodeAdapter.prepare!({} as never, session, options(sources))
-    const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!)
-    expect(config.provider).toBeUndefined()
-    expect(config.shell).toBe(TEST_SHELL)
-    const target = 'opencode/' + model
-    const configOptions = [
-      {
-        id: 'model',
-        type: 'select',
-        currentValue: target,
-        options: [{ value: target, name: model }],
-      },
-    ]
-    const calls: unknown[] = []
-    const acp = {
-      request: async (_method: string, args: unknown) => {
-        calls.push(args)
-        return { configOptions }
-      },
-    }
-    const snapshot = { session: { sessionId: 'owned' }, configOptions }
-    await openCodeAdapter.configureSession!(acp as never, session, snapshot as never)
-    expect(calls).toEqual([{ sessionId: 'owned', configId: 'model', value: target }])
-    expect(() =>
-      openCodeAdapter.verifySession!(session, { ...snapshot, configOptions: [] } as never),
-    ).toThrow()
-  },
-)
+it.each([
+  'nemotron-3.5-lightning-free',
+  'longcat-2.5-preview-free',
+  'beam-free',
+  'nemotron-3.5-super-vl-free',
+  'glm-5.3-flash-free',
+])('pins %s to the official free provider without resolving OFM credentials', async (model) => {
+  const { sources, source } = sourcesWith()
+  source.resolve = async () => {
+    throw Error('must not request OFM credentials')
+  }
+  shellBinding.current = async (env) => testBinding(env)
+  const session = record({ modelRef: { provider: OPENCODE_OFM_PROVIDER, model } })
+  const launch = await openCodeAdapter.prepare!({} as never, session, options(sources))
+  const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!)
+  expect(config.provider).toBeUndefined()
+  expect(config.shell).toBe(TEST_SHELL)
+  const target = 'opencode/' + model
+  const configOptions = [
+    {
+      id: 'model',
+      type: 'select',
+      currentValue: target,
+      options: [{ value: target, name: model }],
+    },
+  ]
+  const calls: unknown[] = []
+  const acp = {
+    request: async (_method: string, args: unknown) => {
+      calls.push(args)
+      return { configOptions }
+    },
+  }
+  const snapshot = { session: { sessionId: 'owned' }, configOptions }
+  await openCodeAdapter.configureSession!(acp as never, session, snapshot as never)
+  expect(calls).toEqual([{ sessionId: 'owned', configId: 'model', value: target }])
+  expect(() =>
+    openCodeAdapter.verifySession!(session, { ...snapshot, configOptions: [] } as never),
+  ).toThrow()
+})

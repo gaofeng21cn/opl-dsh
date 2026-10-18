@@ -1,3 +1,4 @@
+import { invokeHostRemote } from '../../compat/host/remote-invocation.ts'
 import { gatewayGroupEnabled } from '../../gateway/host/group-settings.ts'
 import { inspectHarness } from './harness-registry.ts'
 import { maintainHarness } from './harness-maintenance.ts'
@@ -1585,7 +1586,7 @@ export class HarnessService {
     return this.view(record)
   }
   private native(method: string, request: object) {
-    return this.ctx.typertGateway.invoke({ namespace: 'session', method, args: { request } })
+    return invokeHostRemote(this.ctx, { namespace: 'session', method, args: { request } })
   }
   /** Admit delegated work through the real official Agent so its UI owns streaming and approvals. */
   private async runConversation(record: HarnessSession, active: Active, turn: HarnessTurn) {
@@ -3210,7 +3211,7 @@ export class HarnessService {
   async modelSelection(sessionId: string) {
     await this.selectionsReady
     const session = this.ctx.sessions.get(asSessionId<SessionId>(required(sessionId, 'sessionId')))
-    const catalog = (await this.ctx.typertGateway.invoke({
+    const catalog = (await invokeHostRemote(this.ctx, {
       namespace: 'session',
       method: 'modelCatalog',
       args: {},
@@ -3354,7 +3355,7 @@ export class HarnessService {
     if (!adapter || adapter.capabilities.reasoning === 'none')
       return { status: 'not-applicable', efforts: [] }
     if (['codex', 'claude'].includes(definition.harnessRef)) {
-      const nativeCatalog = (await this.ctx.typertGateway.invoke({
+      const nativeCatalog = (await invokeHostRemote(this.ctx, {
         namespace: 'session',
         method: 'modelCatalog',
         args: {},
@@ -3457,7 +3458,7 @@ export class HarnessService {
     const adapter = selected && adapterFor(selected.harnessRef, ref, this.modelSources)
     if (selected && this.cliOwnsEffort(selected)) return ref
     if (adapter?.capabilities.reasoning === 'none') return ref
-    const catalog = (await this.ctx.typertGateway.invoke({
+    const catalog = (await invokeHostRemote(this.ctx, {
       namespace: 'session',
       method: 'modelCatalog',
       args: {},

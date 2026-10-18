@@ -7,6 +7,10 @@ import { spawnSync } from 'node:child_process'
 import { validateReleaseManifest } from './release-manifest.mjs'
 const api = 'https://api.github.com/repos/gaofeng21cn/opl-dsh/releases/latest'
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex')
+/** Explicit local installs stay pinned even when their source commit is clean. */
+export function isLocalCandidateInstall(artifact, flags) {
+  return flags.includes('--local-candidate') || artifact.sourceDirty === true
+}
 export function newer(candidate, current) {
   const parse = (v) => (/^\d+\.\d+\.\d+$/.test(v) ? v.split('.').map(Number) : null)
   const a = parse(candidate),

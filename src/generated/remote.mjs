@@ -4497,7 +4497,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplSetup/finish:result',
         create: _one_person_lab_dsh_opl_oplSetup_finish_result$schema,
       },
-      sourceLocation: {"file":"src/setup/host/index.ts","line":29,"column":9},
+      sourceLocation: {"file":"src/setup/host/index.ts","line":30,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#oplSetup/official-cancel',
@@ -4513,7 +4513,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplSetup/official-cancel:result',
         create: _one_person_lab_dsh_opl_oplSetup_official_cancel_result$schema,
       },
-      sourceLocation: {"file":"src/setup/host/index.ts","line":51,"column":9},
+      sourceLocation: {"file":"src/setup/host/index.ts","line":52,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#oplSetup/official-key',
@@ -4539,7 +4539,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplSetup/official-key:result',
         create: _one_person_lab_dsh_opl_oplSetup_official_key_result$schema,
       },
-      sourceLocation: {"file":"src/setup/host/index.ts","line":66,"column":9},
+      sourceLocation: {"file":"src/setup/host/index.ts","line":67,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#oplSetup/official-start',
@@ -4555,7 +4555,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl#oplSetup/official-start:result',
         create: _one_person_lab_dsh_opl_oplSetup_official_start_result$schema,
       },
-      sourceLocation: {"file":"src/setup/host/index.ts","line":34,"column":9},
+      sourceLocation: {"file":"src/setup/host/index.ts","line":35,"column":9},
     },
     {
       id: '@one-person-lab/dsh-opl#oplSetup/status',
@@ -4570,7 +4570,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@one-person-lab/dsh-opl/types#SetupStatus',
         create: _one_person_lab_dsh_opl_oplSetup_status_result$schema,
       },
-      sourceLocation: {"file":"src/setup/host/index.ts","line":25,"column":3},
+      sourceLocation: {"file":"src/setup/host/index.ts","line":26,"column":3},
     },
     {
       id: '@one-person-lab/dsh-opl#taskFeedback/ack',

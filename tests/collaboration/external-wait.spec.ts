@@ -35,3 +35,24 @@ it('accepts both official helper and legacy control CLI wait arguments without f
   }
   expect(gateway.invoke).not.toHaveBeenCalled()
 })
+
+it('carries the official Peer through control bridge calls and subscriptions', async () => {
+  const peer = { id: 'control-owner' }
+  const createPeer = vi.fn(() => peer)
+  const gateway = { invoke: vi.fn(), stream: vi.fn() }
+  const ctx = {
+    typertGateway: gateway,
+    get: (name: string) => (name === 'connection' ? { createPeer } : undefined),
+    effect: (action: () => unknown) => action(),
+  }
+  const harness = { cooperationSettings: () => ({ externalCodex: true }) }
+  installExternalCodex(ctx as unknown as Context, harness as unknown as HarnessService)
+  const bridge = mocks.start.mock.calls.at(-1)![0] as Pick<TypertGateway, 'invoke' | 'stream'>
+  const read = { namespace: 'session', method: 'list', args: {} }
+  const follow = { namespace: 'workspace', method: 'follow', args: {} }
+  await bridge.invoke(read)
+  await bridge.stream(follow)
+  expect(gateway.invoke).toHaveBeenCalledWith({ ...read, peer })
+  expect(gateway.stream).toHaveBeenCalledWith({ ...follow, peer })
+  expect(createPeer).toHaveBeenCalledOnce()
+})
