@@ -8,7 +8,9 @@ OFM 目录新增了 Beam、Nemotron 3.5 Super VL 和 GLM 5.3 Flash，但目录�
 
 ## Decision
 
-将 Beam Free、Nemotron 3.5 Super VL Free 和 GLM 5.3 Flash Free 作为 `our-free-model` 的 OpenCode 内置免费通道，分别映射到精确的 `opencode/<model>` 值。`exo-free`、`big-pickle` 和 `ll-alpha-free` 仅存在于 OpenCode 目录时保持拒绝，不猜测 provider、端点或凭据。目录刷新不会覆盖该所有权判断。
+将 Beam Free、Nemotron 3.5 Super VL Free 和 GLM 5.3 Flash Free 作为 `our-free-model` 的 OpenCode 内置免费通道，分别映射到精确的 `opencode/<model>` 值。`exo-free` 和 `ll-alpha-free` 仅存在于 OpenCode 目录时保持拒绝，不猜测 provider、端点或凭据。目录刷新不会覆盖该所有权判断。
+
+后续变更（2026-10-19）：OFM 2.5.2 的实时目录开始把 `big-pickle` 发布为 `availability: "available"` 的 `our-free-model` 车道，因此它已从目录-only 拒绝列表移出，改为精确的 `opencode/big-pickle` 组合。详见 [Big Pickle 的官方 OpenCode 适配](2026-10-19-big-pickle-opencode.md)。本笔记原来对 `big-pickle` 的拒绝结论自此失效。
 
 ## Alternatives considered
 

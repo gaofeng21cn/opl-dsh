@@ -4,6 +4,11 @@
  * Audited candidates (see the owned report for sources and conclusions):
  *   beam-free, ll-alpha-free, exo-free, big-pickle, nemotron-3.5-super-vl-free
  *
+ * `big-pickle` was reclassified on 2026-10-19: the owning OFM plugin now publishes it as
+ * an available `our-free-model` lane, so it is declared by the adapter and pinned for
+ * OpenCode. The audit still drives all five ids over the CLI's wire surface; the
+ * directory-only refusal now covers only `exo-free` and `ll-alpha-free`.
+ *
  * The spec has two independent layers:
  *
  *  - **Offline (always runs).** DSH-side invariants that must hold whether or not these
@@ -154,7 +159,9 @@ describe('新版 OFM/OpenCode 免费车道：候选标识与排除面', () => {
 
   it('受限权限与推理档位仍然被拒绝，候选不改变适配器边界', () => {
     expect(openCodeAdapter.capabilities.permissions).toEqual(['full-access'])
-    expect(openCodeAdapter.capabilities.reasoning).toBe('model-declared')
+    // `big-pickle` is adapted since 2026-10-19, but the adapter still advertises no
+    // selectable effort: the declaration stays `none`.
+    expect(openCodeAdapter.capabilities.reasoning).toBe('none')
     expect(openCodeAdapter.capabilities.cancel).toBe(false)
   })
 })
