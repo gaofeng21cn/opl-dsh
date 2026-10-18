@@ -1,5 +1,13 @@
-import { expect, it } from 'vitest'
-import { defaultExecutionCatalog, normalizeCatalog } from '../../src/execution/host/catalog.ts'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, expect, it } from 'vitest'
+import { adapterFor, defaultHarness } from '../../src/execution/host/adapters/index.ts'
+import {
+  defaultExecutionCatalog,
+  ExecutionCatalogStore,
+  normalizeCatalog,
+} from '../../src/execution/host/catalog.ts'
 import { ExecutionModelResolver } from '../../src/execution/host/execution-models.ts'
 import {
   isHiddenOfmSelection,
@@ -8,13 +16,28 @@ import {
   OFM_OPENCODE_OFFICIAL_FREE_MODELS,
   officialOpenCodeModel,
 } from '../../src/execution/host/ofm-source/selection-policy.ts'
+import { OFM_PINNED_HARNESS_MODELS } from '../../src/execution/host/ofm-source/provider.ts'
 import { OPENCODE_OFM_MODELS } from '../../src/execution/host/adapters/opencode/opencode-models.ts'
+
+const roots: string[] = []
+afterEach(async () => {
+  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+})
+const workspace = async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'opl-big-pickle-'))
+  roots.push(dir)
+  return dir
+}
 
 /**
  * The OpenCode free-directory lanes this round could pair: each is published by the owning
  * OFM plugin's live free lane, so an exact `our-free-model` combination exists to bind.
  */
 const NEW_OPENCODE_FREE_LANES = ['beam-free', 'nemotron-3.5-super-vl-free', 'glm-5.3-flash-free']
+
+const BIG_PICKLE = { provider: 'our-free-model', model: 'big-pickle' } as const
+const BIG_PICKLE_AUTO = 'auto:["our-free-model","big-pickle"]'
+const QUALIFICATION_AUTO = 'auto:["our-free-model","opl-qualification-free"]'
 
 it('hides rejected OFM lanes and saved combinations after legacy cleanup, without hiding other sources', async () => {
   const stored = defaultExecutionCatalog()
@@ -146,19 +169,182 @@ it('never routes or re-admits an excluded lane through the free-provider mapping
   expect(OPENCODE_OFM_MODELS).not.toContain('openai/gpt-oss-20b')
 })
 
-it('records the directory-only ids as refused instead of inventing an OFM lane', () => {
-  // These exist in the official OpenCode directory but in no `our-free-model` lane — the
-  // owning plugin publishes no combination for them — so there is nothing for DSH to
-  // bind, pin, or verify. Recording the refusal is the decision; turning a directory id
-  // into an adapter id would be guessing availability.
-  expect(OFM_OPENCODE_DIRECTORY_ONLY_MODELS).toEqual(['exo-free', 'big-pickle', 'll-alpha-free'])
+it('maps Big Pickle to the official OpenCode lane, pinning table and default Harness', () => {
+  // The owning plugin publishes the exact `our-free-model` lane; the official directory
+  // serves it as `opencode/big-pickle` on Chat Completions. Nothing is aliased.
+  expect(officialOpenCodeModel(BIG_PICKLE)).toBe('opencode/big-pickle')
+  expect(OPENCODE_OFM_MODELS).toContain('big-pickle')
+  expect(OFM_OPENCODE_OFFICIAL_FREE_MODELS).toContain('big-pickle')
+  expect(OFM_PINNED_HARNESS_MODELS.opencode).toContain('big-pickle')
+  expect(isHiddenOfmSelection(BIG_PICKLE)).toBe(false)
+  // The OpenCode adapter declares it, the automatic Harness resolves to OpenCode, and the
+  // account-channel route still has no claim on it.
+  expect(adapterFor('opencode', BIG_PICKLE)?.id).toBe('opencode')
+  expect(defaultHarness(BIG_PICKLE)).toBe('opencode')
+  expect(
+    officialOpenCodeModel({ provider: 'our-free-model-region', model: 'big-pickle' }),
+  ).toBeUndefined()
+})
+
+it('binds Big Pickle to OpenCode while keeping the OFM source and its real id', async () => {
+  const catalog = defaultExecutionCatalog()
+  const ctx = {
+    get: () => undefined,
+    llm: {
+      listProviders: () => [{ id: 'our-free-model', name: 'Our Free Model' }],
+      listConfigurableProviders: () => [],
+      listModels: async () => [{ id: 'big-pickle' }],
+    },
+  }
+  const store = {
+    get: async () => catalog,
+    cleanLegacyCombinations: async () => catalog,
+  }
+  const resolved = await new ExecutionModelResolver(ctx as never, store as never).resolve()
+  expect(resolved.models.find((item) => item.ref.model === 'big-pickle')).toMatchObject({
+    ref: { provider: 'our-free-model', model: 'big-pickle' },
+    source: 'OpenCode 官方免费通道',
+    available: true,
+  })
+  const combinations = resolved.combinations.filter((item) => item.modelRef.model === 'big-pickle')
+  expect(combinations).not.toHaveLength(0)
+  expect(combinations.every((item) => item.harnessRef === 'opencode')).toBe(true)
+  // The default combination is generated for OpenCode; no Big Pickle + DSH default exists.
+  expect(
+    combinations.some((item) => item.generated && item.isDefault && item.harnessRef === 'opencode'),
+  ).toBe(true)
+  expect(combinations.some((item) => item.harnessRef === 'dsh')).toBe(false)
+})
+
+it('drops a generated Big Pickle DSH row before it can be persisted', () => {
+  const catalog = defaultExecutionCatalog()
+  catalog.combinations.push({
+    id: BIG_PICKLE_AUTO,
+    name: 'Big Pickle + DSH',
+    modelRef: { provider: 'our-free-model', model: 'big-pickle' },
+    harnessRef: 'dsh',
+    permissionPolicy: 'read-only',
+    isDefault: false,
+    enabled: true,
+    generated: true,
+  })
+  // The normal save/load path never writes a generated row; the persisted stale row is the
+  // separate migration case below.
+  expect(normalizeCatalog(catalog).combinations.some((item) => item.id === BIG_PICKLE_AUTO)).toBe(
+    false,
+  )
+})
+
+it('migrates a persisted automatic Big Pickle DSH row to the OpenCode combination', async () => {
+  const dir = await workspace()
+  const store = new ExecutionCatalogStore(dir)
+  try {
+    const catalog = defaultExecutionCatalog()
+    catalog.combinations.push(
+      {
+        id: BIG_PICKLE_AUTO,
+        name: 'Big Pickle + DSH',
+        modelRef: { provider: 'our-free-model', model: 'big-pickle' },
+        harnessRef: 'dsh',
+        // An automatic row that reached disk (edited, or written by an older release)
+        // carries no `generated` flag here. It must still be treated as stale.
+        permissionPolicy: 'read-only',
+        isDefault: true,
+        enabled: true,
+      },
+      {
+        id: 'user-big-pickle-dsh',
+        name: 'My Big Pickle DSH route',
+        modelRef: { provider: 'our-free-model', model: 'big-pickle' },
+        harnessRef: 'dsh',
+        permissionPolicy: 'workspace',
+        isDefault: false,
+        enabled: true,
+      },
+      {
+        id: QUALIFICATION_AUTO,
+        name: 'Qualification + DSH',
+        modelRef: { provider: 'our-free-model', model: 'opl-qualification-free' },
+        harnessRef: 'dsh',
+        permissionPolicy: 'read-only',
+        isDefault: true,
+        enabled: true,
+      },
+    )
+    await store.set(catalog)
+
+    const ctx = {
+      get: () => undefined,
+      llm: {
+        listProviders: () => [{ id: 'our-free-model', name: 'Our Free Model' }],
+        listConfigurableProviders: () => [],
+        listModels: async () => [{ id: 'big-pickle' }, { id: 'opl-qualification-free' }],
+      },
+    }
+    const resolved = await new ExecutionModelResolver(ctx as never, store).resolve()
+    const bigPickle = resolved.combinations.filter((item) => item.modelRef.model === 'big-pickle')
+    expect(bigPickle.some((item) => item.id === BIG_PICKLE_AUTO && item.harnessRef === 'dsh')).toBe(
+      false,
+    )
+    expect(bigPickle.some((item) => item.harnessRef === 'dsh' && item.generated)).toBe(false)
+    expect(
+      bigPickle.some(
+        (item) =>
+          item.id === BIG_PICKLE_AUTO &&
+          item.harnessRef === 'opencode' &&
+          item.generated &&
+          item.isDefault,
+      ),
+    ).toBe(true)
+    // A user-created route and another OFM model's automatic row are untouched.
+    expect(bigPickle.find((item) => item.id === 'user-big-pickle-dsh')).toMatchObject({
+      name: 'My Big Pickle DSH route',
+      harnessRef: 'dsh',
+      permissionPolicy: 'workspace',
+    })
+    expect(resolved.combinations.find((item) => item.id === QUALIFICATION_AUTO)).toMatchObject({
+      harnessRef: 'dsh',
+      isDefault: true,
+    })
+
+    // The cleanup persisted the removal, so a restart cannot bring the stale row back.
+    const saved = JSON.parse(await readFile(store.filename, 'utf8'))
+    expect(saved.combinations.some((item: any) => item.id === BIG_PICKLE_AUTO)).toBe(false)
+    expect(saved.combinations.some((item: any) => item.id === 'user-big-pickle-dsh')).toBe(true)
+    expect(saved.combinations.some((item: any) => item.id === QUALIFICATION_AUTO)).toBe(true)
+  } finally {
+    await store.dispose()
+  }
+})
+
+it('records the remaining directory-only ids as refused instead of inventing an OFM lane', () => {
+  // `exo-free` has no live free lane and `ll-alpha-free` is refused upstream for any
+  // client that is not OpenCode itself. Big Pickle was reclassified on 2026-10-19 and is
+  // asserted through the positive mapping above, not here.
+  expect(OFM_OPENCODE_DIRECTORY_ONLY_MODELS).toEqual(['exo-free', 'll-alpha-free'])
   for (const model of OFM_OPENCODE_DIRECTORY_ONLY_MODELS) {
     expect(OPENCODE_OFM_MODELS).not.toContain(model)
     expect(officialOpenCodeModel({ provider: 'our-free-model', model })).toBeUndefined()
-    // Not hidden as an OFM exclusion either: they are simply unpublished, not banned.
+    // Not hidden as an OFM exclusion either: the owner withholds the lane, it does not
+    // ban the model id.
     expect(isHiddenOfmSelection({ provider: 'our-free-model', model })).toBe(false)
     // A same-named model from another source keeps its own decision.
     expect(officialOpenCodeModel({ provider: 'custom', model })).toBeUndefined()
+  }
+  // The source's own pinning table must refuse them too, so a later edit to the routing
+  // list alone cannot make the lane callable.
+  expect(OFM_PINNED_HARNESS_MODELS.opencode).not.toContain('exo-free')
+  expect(OFM_PINNED_HARNESS_MODELS.opencode).not.toContain('ll-alpha-free')
+})
+
+it('keeps unknown and unavailable ids out of the OpenCode mapping', () => {
+  for (const model of ['big-pickle-preview', 'unknown-model', 'exo-free', 'll-alpha-free']) {
+    const ref = { provider: 'our-free-model', model }
+    expect(officialOpenCodeModel(ref)).toBeUndefined()
+    expect(OPENCODE_OFM_MODELS).not.toContain(model)
+    expect(adapterFor('opencode', ref, undefined)).toBeUndefined()
+    // The fallback is the native DSH loop, never a guessed OpenCode route.
+    expect(defaultHarness(ref)).toBe('dsh')
   }
 })
 

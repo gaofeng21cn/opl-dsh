@@ -208,7 +208,10 @@ export const openCodeAdapter: HarnessAdapter = {
     // the CLI does not implement would let a caller believe a turn was stopped.
     cancel: false,
     // The CLI advertises only `model` and `mode`; no effort exists to be selected.
-    reasoning: 'model-declared',
+    // Declaring `none` keeps a provider's native token-budget metadata (OFM publishes
+    // light/balanced/deep for some lanes) from being copied onto this combination as if
+    // the adapter could honour it; an explicit effort is still refused in `prepare`.
+    reasoning: 'none',
     autoReview: 'unsupported',
   },
   matches: (ref: ModelRef) => isOpenCodeModel(ref) || isOpenCodeGatewayGeminiModel(ref),

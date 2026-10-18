@@ -33,6 +33,12 @@ export const OFM_INACTIVE_DEFAULT_HARNESSES: readonly string[] = ['mimo-code', '
  * refuses to pin it. `beam-free` and `nemotron-3.5-super-vl-free` were added on 2026-10-17
  * from the owning plugin's live free lane plus the official directory; the directory
  * listing is a declaration, not proof of a call.
+ *
+ * `big-pickle` was added on 2026-10-19: the owning plugin's live catalog now publishes it
+ * as an exact `our-free-model` lane with `availability: "available"` and route
+ * `our-free-model`, and the official OpenCode/Zen directory serves the same id on its
+ * OpenAI-compatible Chat Completions surface. It keeps its real id and OFM attribution;
+ * this list only selects the official `opencode/big-pickle` wire value.
  */
 export const OFM_OPENCODE_OFFICIAL_FREE_MODELS: readonly string[] = [
   'cat-jam-free',
@@ -45,32 +51,32 @@ export const OFM_OPENCODE_OFFICIAL_FREE_MODELS: readonly string[] = [
   'beam-free',
   'nemotron-3.5-super-vl-free',
   'glm-5.3-flash-free',
+  'big-pickle',
 ]
 
 /**
- * OpenCode-directory ids the owning OFM plugin does **not** publish, refused rather than
+ * OpenCode-directory ids with no usable `our-free-model` lane, refused rather than
  * approximated.
  *
- * All three exist in the official OpenCode directory, but none is a `our-free-model` lane:
- * `exo-free` and `big-pickle` are absent from the plugin's live free lane — `big-pickle`
- * structurally, because that lane admits ids carrying a free token — and `ll-alpha-free` is
- * refused upstream for any client that is not OpenCode itself. A directory id is not a
- * provider/model combination, so there is nothing for DSH to bind, pin, or verify here, and
- * no endpoint, credential or availability may be inferred for them. They are named so the
- * refusal is a recorded decision that a later directory refresh cannot quietly undo.
+ * Both exist in the official OpenCode directory, but neither is a lane the owning plugin
+ * currently serves: `ll-alpha-free` is refused upstream for any client that is not
+ * OpenCode itself, and `exo-free` has no live free lane. A directory id is not a
+ * provider/model combination, so nothing may be inferred about endpoint, credential or
+ * availability. They are named so the refusal is a recorded decision that a later
+ * directory refresh cannot quietly undo.
+ *
+ * `big-pickle` was removed from this list on 2026-10-19, when the owning plugin began
+ * publishing it as an available `our-free-model` lane; it now routes through
+ * {@link OFM_OPENCODE_OFFICIAL_FREE_MODELS} instead of being refused.
  */
-export const OFM_OPENCODE_DIRECTORY_ONLY_MODELS: readonly string[] = [
-  'exo-free',
-  'big-pickle',
-  'll-alpha-free',
-]
+export const OFM_OPENCODE_DIRECTORY_ONLY_MODELS: readonly string[] = ['exo-free', 'll-alpha-free']
 
 /**
  * The `opencode/<id>` wire value for an exact built-in-free-provider lane.
  *
- * An excluded id is never routed, and neither is a directory-only id: the exclusion and the
- * missing owning lane are the decisions, and a directory refresh must not be able to
- * reintroduce either through this mapping. A qualified id such as
+ * An excluded id is never routed, and neither is a directory-only id: the exclusion and
+ * the absence of a usable owning lane are the decisions, and a directory refresh must not
+ * be able to reintroduce either through this mapping. A qualified id such as
  * `nvidia/nemotron-3.5-super-vl:free` is a different route and deliberately answers
  * `undefined`, so it keeps using its own channel instead of being silently rewritten into
  * the bare free lane.

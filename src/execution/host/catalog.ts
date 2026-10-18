@@ -7,6 +7,7 @@ import {
   displayModelSource,
   isRetiredModel,
   modelRefKey,
+  type CombinationDefinition,
   type ExecutionCatalog,
   type ModelRef,
 } from '../contracts/catalog.ts'
@@ -264,14 +265,21 @@ export class ExecutionCatalogStore {
   async dispose() {
     await this.queue
   }
-  /** Clean obsolete combination rows against the latest catalog, retaining its launch settings. */
-  async cleanLegacyCombinations() {
+  /**
+   * Clean obsolete combination rows against the latest catalog, retaining its launch settings.
+   *
+   * `stale` is supplied by the model resolver for automatic rows whose default Harness has
+   * changed. It is evaluated against the persisted rows only; a user-created combination is
+   * never auto-removed because its id never starts with the generated `auto:` prefix.
+   */
+  async cleanLegacyCombinations(stale: (item: CombinationDefinition) => boolean = () => false) {
     await this.ready
     const write = this.queue.then(async () => {
       const value = normalizeCatalog({
         ...this.value,
         combinations: this.value.combinations
           .filter((item) => !isRetiredModel(item.modelRef))
+          .filter((item) => !stale(item))
           .map((item) =>
             item.id === DSH_COMBINATION && item.name === 'DeepSeek + DSH'
               ? { ...item, name: 'DeepSeek-V4.1-Flash + DSH' }

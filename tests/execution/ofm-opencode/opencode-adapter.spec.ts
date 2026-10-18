@@ -17,6 +17,7 @@ import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AcpProcess } from '../../../src/execution/host/acp.ts'
 import { ExternalModelSources } from '../../../src/execution/host/model-sources.ts'
+import { readHarnessReasoning } from '../../../src/execution/host/reasoning-preflight.ts'
 import { resolveGitBashPath } from '../../../src/shell/host/git-bash.ts'
 import type {
   OpenCodeShellBinding,
@@ -317,9 +318,16 @@ describe('OpenCode 声明面', () => {
       expect(openCodeAdapter.matches(ref)).toBe(true)
       expect(openCodeWireModel(ref)).toBe(model)
     }
-    // Directory-only ids are not provider/model combinations: the owning OFM plugin
-    // publishes no lane for them, so this adapter must not claim one.
-    for (const model of ['exo-free', 'big-pickle', 'll-alpha-free']) {
+    // Big Pickle is now an exact OFM `our-free-model` lane and is served by the official
+    // OpenCode directory; it keeps its real id and binds the OpenCode Harness.
+    expect(OPENCODE_OFM_MODELS).toContain('big-pickle')
+    const bigPickle = { provider: OPENCODE_OFM_PROVIDER, model: 'big-pickle' }
+    expect(isOpenCodeModel(bigPickle)).toBe(true)
+    expect(openCodeAdapter.matches(bigPickle)).toBe(true)
+    expect(openCodeWireModel(bigPickle)).toBe('big-pickle')
+    // Directory-only ids are not provider/model combinations: `exo-free` has no live free
+    // lane and `ll-alpha-free` is refused upstream for every non-OpenCode client.
+    for (const model of ['exo-free', 'll-alpha-free']) {
       expect(OPENCODE_OFM_MODELS).not.toContain(model)
       const ref = { provider: OPENCODE_OFM_PROVIDER, model }
       expect(isOpenCodeModel(ref)).toBe(false)
@@ -349,7 +357,8 @@ describe('OpenCode 声明面', () => {
     expect(OPENCODE_SHELL_FACTS.advertisesShell).toBe(false)
     expect(OPENCODE_SHELL_FACTS.advertisesTerminal).toBe(false)
     // 实测：只有 model 与 mode，没有推理档位；没有 Auto Review；权限是转发不是沙箱。
-    expect(c.reasoning).toBe('model-declared')
+    // `none` 还阻止把来源模型的 light/balanced/deep token budget 当成可选档位复制过来。
+    expect(c.reasoning).toBe('none')
     expect(c.autoReview).toBe('unsupported')
     expect(c.permissions).toEqual(['full-access'])
     expect(c.protocols).toEqual(['chat'])
@@ -459,6 +468,39 @@ describe('OpenCode 启动参数与环境', () => {
     await expect(
       openCodeAdapter.prepare!({} as never, record({ reasoningEffort: 'max' }), options(sources)),
     ).rejects.toThrow(/未广告推理档位配置项/)
+  })
+
+  it('Big Pickle 不显示也不虚构推理档位：high/max/balanced 都拒绝', async () => {
+    // The owning OFM catalog publishes light/balanced/deep token budgets, but the official
+    // OpenCode CLI advertises no effort option. Those budgets must not become selectable
+    // `high`/`max` tiers on this combination.
+    expect(openCodeAdapter.capabilities.reasoning).toBe('none')
+    expect(
+      readHarnessReasoning(
+        record({ modelRef: { provider: OPENCODE_OFM_PROVIDER, model: 'big-pickle' } }),
+        [
+          {
+            id: 'model',
+            currentValue: 'opencode/big-pickle',
+            options: [{ value: 'opencode/big-pickle' }],
+          },
+          { id: 'mode', currentValue: 'build', options: [{ value: 'build' }, { value: 'plan' }] },
+        ],
+      ),
+    ).toEqual([])
+    const { sources } = sourcesWith()
+    for (const reasoningEffort of ['high', 'max', 'balanced', 'light', 'deep']) {
+      await expect(
+        openCodeAdapter.prepare!(
+          {} as never,
+          record({
+            modelRef: { provider: OPENCODE_OFM_PROVIDER, model: 'big-pickle' },
+            reasoningEffort,
+          }),
+          options(sources),
+        ),
+      ).rejects.toThrow(/未广告推理档位配置项/)
+    }
   })
 })
 

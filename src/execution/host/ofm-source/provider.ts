@@ -100,6 +100,7 @@ export const OFM_PINNED_HARNESS_MODELS: Readonly<Record<string, readonly string[
     'deepseek-v4.1-flash-free',
     'space-bunny-free',
     'openrouter/free',
+    'big-pickle',
   ],
   pi: [
     'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',

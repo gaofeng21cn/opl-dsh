@@ -21,11 +21,17 @@
  * a declaration of intent and of the wire shape only: it is evidence of neither a credential
  * nor a successful call, and availability stays the owning plugin's live answer.
  *
- * `exo-free`, `big-pickle` and `ll-alpha-free` are in the same directory but are deliberately
- * **not** declared here. The owning OFM plugin does not publish them as `our-free-model`
- * lanes, so no exact provider/model combination exists for DSH to bind, pin, or verify: a
- * directory id is not a combination, and inventing one would be guessing availability. They
- * are recorded in `ofm-source/selection-policy.ts` and refused rather than approximated.
+ * `exo-free` and `ll-alpha-free` are in the same directory but are deliberately **not**
+ * declared here. The owning OFM plugin publishes no usable `our-free-model` lane for
+ * them, so no exact provider/model combination exists for DSH to bind, pin, or verify: a
+ * directory id is not a combination, and inventing one would be guessing availability.
+ * They are recorded in `ofm-source/selection-policy.ts` and refused rather than
+ * approximated.
+ *
+ * `big-pickle` was declared on 2026-10-19 after that same owner began publishing it as an
+ * available `our-free-model` lane; the official OpenCode/Zen directory serves it on the
+ * same Chat Completions surface, so the adapter pins the official `opencode/big-pickle`
+ * wire value instead of refusing it. The id and attribution stay OFM's.
  */
 import type { ModelRef } from '../../../contracts/catalog.ts'
 
@@ -88,6 +94,11 @@ export const OPENCODE_OFM_MODELS: readonly string[] = [
   'beam-free',
   'nemotron-3.5-super-vl-free',
   'glm-5.3-flash-free',
+  // The owning plugin publishes `big-pickle` as an available `our-free-model` lane and
+  // the official OpenCode/Zen directory serves it on Chat Completions. It keeps that
+  // exact id here; the harness pins the directory's own `opencode/big-pickle` value and
+  // never maps it to a self-built endpoint or another model.
+  'big-pickle',
   // EAC publishes this qualified id; it uses OFM forwarding, not the bare free lane.
   'opencode/glm-5.3-flash-free',
   'opencode/deepseek-v4.1-flash-free',

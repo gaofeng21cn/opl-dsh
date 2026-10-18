@@ -12,6 +12,7 @@ import {
   displayModelSource,
   isRetiredModel,
   modelRefKey,
+  type CombinationDefinition,
   type ModelRef,
 } from '../contracts/catalog.ts'
 import { ExecutionCatalogStore, type ExecutionCatalog } from './catalog.ts'
@@ -24,6 +25,7 @@ import {
   MINIMAX_CODE_PROVIDER,
 } from './adapters/minimax.ts'
 import { isHiddenOfmSelection, officialOpenCodeModel } from './ofm-source/selection-policy.ts'
+import { OFM_PROVIDERS } from './ofm-source/provider.ts'
 export class ExecutionModelResolver {
   constructor(
     private readonly ctx: Context,
@@ -46,9 +48,25 @@ export class ExecutionModelResolver {
     const legacyDefault = catalog.combinations.find(
       (item) => item.id === DSH_COMBINATION && item.name === 'DeepSeek + DSH',
     )
-    if (retired.length || legacyDefault) {
-      catalog = await this.store.cleanLegacyCombinations()
+    // An automatic row is generated per model for the default Harness of that model.
+    // A persisted `auto:` row whose Harness no longer matches the current default is a
+    // stale copy (for example Big Pickle's old `auto:["our-free-model","big-pickle"]`
+    // DSH combination, generated when it was still treated as a DSH-only lane). Rows the
+    // user created carry their own id, so they are never selected here.
+    const staleAutomatic = (item: CombinationDefinition) =>
+      item.id.startsWith('auto:') &&
+      OFM_PROVIDERS.includes(item.modelRef.provider) &&
+      item.harnessRef !== defaultHarness(item.modelRef)
+    if (
+      retired.length ||
+      legacyDefault ||
+      catalog.combinations.some((item) => staleAutomatic(item))
+    ) {
+      catalog = await this.store.cleanLegacyCombinations(staleAutomatic)
     }
+    // The store's cleanup persists the removal; this in-memory filter also covers a
+    // store double that does not apply the predicate, so the projection is unchanged.
+    catalog.combinations = catalog.combinations.filter((item) => !staleAutomatic(item))
     catalog.combinations = catalog.combinations.filter(
       (item) => !isHiddenOfmSelection(item.modelRef),
     )
