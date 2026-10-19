@@ -20,6 +20,7 @@
  */
 
 import {
+  BAMBOO_STARTLUX_KEYRING_TARGET,
   HUAWEI_MAAS_KEYRING_TARGET,
   WINDOWS_KEYRING_SOURCE,
   type KeyringCredentialInfo,
@@ -40,6 +41,66 @@ export { HUAWEI_MAAS_KEYRING_TARGET } from '../contracts/windows-keyring.ts'
 
 /** Per-call knobs forwarded to the bridge. */
 export type HuaweiMaaSKeyringOptions = WincredBridgeOptions
+
+/** A fixed OS-keyring credential owned by this suite. */
+export interface SuiteKeyringCredential {
+  readonly target: string
+  readonly read: (options?: WincredBridgeOptions) => Promise<string | undefined>
+  readonly set: (value: string, options?: WincredBridgeOptions) => Promise<void>
+  readonly remove: (options?: WincredBridgeOptions) => Promise<boolean>
+  readonly describe: (options?: WincredBridgeOptions) => Promise<KeyringCredentialInfo>
+}
+
+function fixedKeyring(target: string): SuiteKeyringCredential {
+  return {
+    target,
+    read: async (options) => {
+      assertKeyringPlatform()
+      return wincredRead(target, options)
+    },
+    set: async (value, options) => {
+      assertKeyringPlatform()
+      return wincredWrite(target, value, options)
+    },
+    remove: async (options) => {
+      assertKeyringPlatform()
+      return wincredDelete(target, options)
+    },
+    describe: async (options) => {
+      if (!keyringSupported()) {
+        return {
+          configured: false,
+          source: WINDOWS_KEYRING_SOURCE,
+          supported: false,
+          available: false,
+          failure: 'unsupported-platform',
+        }
+      }
+      try {
+        return {
+          configured: await wincredExists(target, options),
+          source: WINDOWS_KEYRING_SOURCE,
+          supported: true,
+          available: true,
+        }
+      } catch (cause) {
+        return {
+          configured: false,
+          source: WINDOWS_KEYRING_SOURCE,
+          supported: true,
+          available: false,
+          failure:
+            cause instanceof Error && 'code' in cause
+              ? (cause.code as KeyringFailureCode)
+              : 'helper-failed',
+        }
+      }
+    },
+  }
+}
+
+/** Bamboo StartLux API key backed only by Windows Credential Manager. */
+export const bambooStartLuxKeyring = fixedKeyring(BAMBOO_STARTLUX_KEYRING_TARGET)
 
 /**
  * Read the stored Huawei MaaS key.
@@ -137,6 +198,7 @@ export async function describeHuaweiMaaSApiKey(
 
 /** The same four operations as one object. */
 export const huaweiMaaSKeyring = {
+  target: HUAWEI_MAAS_KEYRING_TARGET,
   read: readHuaweiMaaSApiKey,
   set: setHuaweiMaaSApiKey,
   remove: deleteHuaweiMaaSApiKey,

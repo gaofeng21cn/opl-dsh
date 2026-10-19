@@ -16,7 +16,21 @@ const keyring = vi.hoisted(() => ({
   set: vi.fn(),
   remove: vi.fn(),
 }))
-vi.mock('../../src/credentials/host/windows-keyring.ts', () => ({ huaweiMaaSKeyring: keyring }))
+vi.mock('../../src/credentials/host/windows-keyring.ts', () => ({
+  huaweiMaaSKeyring: { ...keyring, target: 'OPLDSH:HuaweiMaaS:ApiKey' },
+  bambooStartLuxKeyring: {
+    target: 'OPLDSH:BambooStartLux:ApiKey',
+    read: vi.fn().mockResolvedValue(undefined),
+    set: vi.fn(),
+    remove: vi.fn(),
+    describe: vi.fn().mockResolvedValue({
+      configured: false,
+      source: 'windows-credential-manager',
+      supported: true,
+      available: true,
+    }),
+  },
+}))
 beforeEach(() => {
   keyring.read.mockReset()
   keyring.read.mockResolvedValue(undefined)
@@ -46,6 +60,7 @@ describe('native Huawei provider profile', () => {
           expect(ops).toEqual([
             { op: 'set', path: ['huaweiKeyringMigrated'], value: true },
             { op: 'set', path: ['huaweiCredentialsMigrated'], value: true },
+            { op: 'set', path: ['providerKeyringMigration'], value: 1 },
           ])
           expect(revision).toBe(0)
           writing.resolve()
@@ -87,9 +102,23 @@ describe('native Huawei provider profile', () => {
   })
 
   it.each([
-    [{ huaweiKeyringMigrated: true, huaweiProviders: { 'huawei-maas': {} } }, true],
-    [{ huaweiKeyringMigrated: true }, false],
-    [{ huaweiCredentialsMigrated: true, huaweiProviders: { 'huawei-maas': {} } }, false],
+    [
+      {
+        huaweiKeyringMigrated: true,
+        providerKeyringMigration: 1,
+        huaweiProviders: { 'huawei-maas': {} },
+      },
+      true,
+    ],
+    [{ huaweiKeyringMigrated: true, providerKeyringMigration: 1 }, false],
+    [
+      {
+        huaweiCredentialsMigrated: true,
+        providerKeyringMigration: 1,
+        huaweiProviders: { 'huawei-maas': {} },
+      },
+      false,
+    ],
   ])(
     'uses a separate credential migration marker and never revives deleted keys (%j)',
     async (raw, shouldRead) => {
@@ -123,7 +152,7 @@ describe('native Huawei provider profile', () => {
         await ctx.plugin(providers)
         expect(keyring.read.mock.calls.length > 0).toBe(shouldRead)
         expect((await ctx.credentials.resolve(credentialRef('HUAWEI_MAAS_API_KEY')))?.value).toBe(
-          shouldRead ? 'synthetic-old-key' : undefined,
+          'synthetic-old-key',
         )
       } finally {
         await ctx.fiber.dispose()

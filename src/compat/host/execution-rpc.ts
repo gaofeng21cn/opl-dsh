@@ -3,13 +3,21 @@ import { invokeHostRemote } from './remote-invocation.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import { TYPERT_REMOTE } from '../../generated/remote.mjs'
 
+type RemoteDescriptor = {
+  namespace: string
+  method: string
+  parameters: readonly { wire: string }[]
+  result: { mode: string; create: () => { parse: (value: unknown) => unknown } }
+}
+
 export async function invokeExecutionRpc(
   ctx: Context,
   method: string,
   input: unknown,
   signal?: AbortSignal,
 ): Promise<unknown> {
-  const descriptor = TYPERT_REMOTE.descriptors.find(
+  const descriptors = TYPERT_REMOTE.descriptors as readonly RemoteDescriptor[]
+  const descriptor = descriptors.find(
     (item) => item.namespace === 'oplExecution' && item.method === method,
   )
   if (!descriptor) throw Error('不支持的执行操作')

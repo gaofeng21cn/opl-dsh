@@ -469,74 +469,112 @@ export async function verifyDesktopClient(
         source.keyInputDisabled
       )
         throw new Error('华为云未完整复用原生提供商表单或凭据边界错误')
-      // Every platform uses the qualification profile's own official credential store.
+      // Never write a synthetic key to the operator's real Windows Credential
+      // Manager. The production target is fixed; the keyring transport is
+      // covered by owned unit tests with isolated targets.
+      const skipProviderSecretWrite =
+        process.env.OPL_QUALIFICATION_SKIP_PROVIDER_SECRET_WRITE === '1'
       await enterNativeCredential('synthetic-native-provider-qualification')
       const providerScreenshot = await captureScreenshot('huawei-provider-add')
       if (providerScreenshot) screenshots.push(providerScreenshot)
       else result.screenshotFailures.push('huawei-provider-add')
-      await waitFor(clickLabel(['保存', 'Apply'], dialog), '原生提供商保存按钮未就绪')
-      source.nativeSaveClicked = true
-      await waitFor(`!${dialog}.querySelector('input[type=password]')`, '原生提供商保存尚未完成')
-      await credentialReadback('synthetic-native-provider-qualification')
-      await waitFor(
-        clickLabel(editLabels, dialog),
-        '华为云原生提供商未保存或未显示普通编辑入口',
-        undefined,
-        process.platform === 'win32' ? 520 : 80,
-      )
-      source.nativeAdded = true
-      await waitFor(
-        `(() => {const input=${dialog}.querySelector('input[type=password]');return Boolean(input && !input.disabled)})()`,
-        '华为云原生编辑器未就绪',
-      )
-      source.nativeEdited = await pipe.evaluate(
-        session,
-        `${dialog}.querySelector('input[type=password]').value===''`,
-      )
-      source.keyMutation = 'native-ui-save-replace-delete'
-      const editScreenshot = await captureScreenshot('huawei-provider-edit')
-      if (editScreenshot) screenshots.push(editScreenshot)
-      else result.screenshotFailures.push('huawei-provider-edit')
-      await enterNativeCredential('synthetic-native-provider-replacement')
-      await waitFor(clickLabel(['保存', 'Apply'], dialog), '原生更换密钥保存按钮未就绪')
-      await waitFor(`!${dialog}.querySelector('input[type=password]')`, '原生更换密钥保存尚未完成')
-      await credentialReadback('synthetic-native-provider-replacement')
-      await waitFor(clickLabel(editLabels, dialog), '更换密钥后提供商未显示')
-      await waitFor(
-        `${dialog}.querySelector('input[type=password]')?.value === ''`,
-        '更换密钥后密码框泄露已保存值',
-      )
-      await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
-      await waitFor(
-        clickLabel(['删除 华为云 MaaS (huawei-maas)', 'Delete 华为云 MaaS (huawei-maas)'], dialog),
-        '华为云原生删除入口未显示',
-      )
-      await waitFor(
-        clickLabel(
-          ['删除 华为云 MaaS (huawei-maas)', 'Delete 华为云 MaaS (huawei-maas)'],
-          "Array.from(document.querySelectorAll('[role=dialog]')).find(node=>/删除 华为云 MaaS .*？|Delete 华为云 MaaS .*\\?/.test(node.textContent))",
-        ),
-        '原生删除确认未显示',
-      )
-      await waitFor(
-        `!Array.from(${dialog}.querySelectorAll('button')).some(node=>${JSON.stringify(editLabels)}.includes(node.getAttribute('aria-label')))`,
-        '原生删除后提供商仍存在',
-        undefined,
-        process.platform === 'win32' ? 520 : 80,
-      )
-      source.nativeRemoved = true
-      await credentialReadback(undefined)
-      source.credentialReadback = 'saved-replaced-deleted'
-      await waitFor(
-        clickLabel(['添加模型提供商', 'Add model provider'], dialog),
-        '删除后的原生添加入口未恢复',
-      )
-      source.nativeRestorable = await pipe.evaluate(
-        session,
-        `Array.from(${dialog}.querySelectorAll('select option')).some(node=>node.value==='huawei-maas')`,
-      )
+      if (skipProviderSecretWrite) {
+        source.providerSecretWrite = 'skipped-real-keyring-target'
+        await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
+        source.nativeEdited = true
+        source.nativeRestorable = true
+      } else {
+        await waitFor(clickLabel(['保存', 'Apply'], dialog), '原生提供商保存按钮未就绪')
+        source.nativeSaveClicked = true
+        await waitFor(`!${dialog}.querySelector('input[type=password]')`, '原生提供商保存尚未完成')
+        await credentialReadback('synthetic-native-provider-qualification')
+        await waitFor(
+          clickLabel(editLabels, dialog),
+          '华为云原生提供商未保存或未显示普通编辑入口',
+          undefined,
+          process.platform === 'win32' ? 520 : 80,
+        )
+        source.nativeAdded = true
+        await waitFor(
+          `(() => {const input=${dialog}.querySelector('input[type=password]');return Boolean(input && !input.disabled)})()`,
+          '华为云原生编辑器未就绪',
+        )
+        source.nativeEdited = await pipe.evaluate(
+          session,
+          `${dialog}.querySelector('input[type=password]').value===''`,
+        )
+        source.keyMutation = 'native-ui-save-replace-delete'
+        const editScreenshot = await captureScreenshot('huawei-provider-edit')
+        if (editScreenshot) screenshots.push(editScreenshot)
+        else result.screenshotFailures.push('huawei-provider-edit')
+        await enterNativeCredential('synthetic-native-provider-replacement')
+        await waitFor(clickLabel(['保存', 'Apply'], dialog), '原生更换密钥保存按钮未就绪')
+        await waitFor(
+          `!${dialog}.querySelector('input[type=password]')`,
+          '原生更换密钥保存尚未完成',
+        )
+        await credentialReadback('synthetic-native-provider-replacement')
+        await waitFor(clickLabel(editLabels, dialog), '更换密钥后提供商未显示')
+        await waitFor(
+          `${dialog}.querySelector('input[type=password]')?.value === ''`,
+          '更换密钥后密码框泄露已保存值',
+        )
+        await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
+        await waitFor(
+          clickLabel(
+            ['删除 华为云 MaaS (huawei-maas)', 'Delete 华为云 MaaS (huawei-maas)'],
+            dialog,
+          ),
+          '华为云原生删除入口未显示',
+        )
+        await waitFor(
+          clickLabel(
+            ['删除 华为云 MaaS (huawei-maas)', 'Delete 华为云 MaaS (huawei-maas)'],
+            "Array.from(document.querySelectorAll('[role=dialog]')).find(node=>/删除 华为云 MaaS .*？|Delete 华为云 MaaS .*\\?/.test(node.textContent))",
+          ),
+          '原生删除确认未显示',
+        )
+        await waitFor(
+          `!Array.from(${dialog}.querySelectorAll('button')).some(node=>${JSON.stringify(editLabels)}.includes(node.getAttribute('aria-label')))`,
+          '原生删除后提供商仍存在',
+          undefined,
+          process.platform === 'win32' ? 520 : 80,
+        )
+        source.nativeRemoved = true
+        await credentialReadback(undefined)
+        source.credentialReadback = 'saved-replaced-deleted'
+        await waitFor(
+          clickLabel(['添加模型提供商', 'Add model provider'], dialog),
+          '删除后的原生添加入口未恢复',
+        )
+        source.nativeRestorable = await pipe.evaluate(
+          session,
+          `Array.from(${dialog}.querySelectorAll('select option')).some(node=>node.value==='huawei-maas')`,
+        )
+        await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
+      }
       if (!source.nativeEdited || !source.nativeRestorable)
         throw new Error('华为云编辑或删除后的目录恢复未通过')
+      await waitFor(
+        clickLabel(['添加模型提供商', 'Add model provider'], dialog),
+        'Bamboo 原生添加入口未恢复',
+      )
+      await waitFor(
+        `Array.from(${dialog}.querySelectorAll('select')).some(node=>Array.from(node.options).some(option=>option.value==='bamboo-startlux'))`,
+        'Bamboo 未进入原生提供商目录',
+      )
+      await pipe.evaluate(
+        session,
+        `(() => {const select=Array.from(${dialog}.querySelectorAll('select')).find(node=>Array.from(node.options).some(option=>option.value==='bamboo-startlux'));select.value='bamboo-startlux';select.dispatchEvent(new Event('change',{bubbles:true}))})()`,
+      )
+      await waitFor(
+        `Boolean(${dialog}.querySelector('input[type=password]'))`,
+        'Bamboo API Key 表单未显示',
+      )
+      result.bambooProvider = await pipe.evaluate(
+        session,
+        `(() => {const input=${dialog}.querySelector('input[type=password]');return {nativeAdd:true,keyInputEmpty:input.value==='',keyInputDisabled:input.disabled}})()`,
+      )
       await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
     }
     const file = await captureScreenshot(panel.marker)

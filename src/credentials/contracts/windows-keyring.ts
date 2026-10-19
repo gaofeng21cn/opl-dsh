@@ -30,6 +30,10 @@ export const KEYRING_TARGET_PREFIX = 'OPLDSH:'
  */
 export const HUAWEI_MAAS_KEYRING_TARGET = 'OPLDSH:HuaweiMaaS:ApiKey'
 
+/** Reference and Credential Manager target for Bamboo StartLux. */
+export const BAMBOO_STARTLUX_CREDENTIAL_REF = 'BAMBOO_STARTLUX_API_KEY'
+export const BAMBOO_STARTLUX_KEYRING_TARGET = 'OPLDSH:BambooStartLux:ApiKey'
+
 /** `CRED_MAX_GENERIC_TARGET_NAME_LENGTH`. */
 export const MAX_KEYRING_TARGET_LENGTH = 32767
 
