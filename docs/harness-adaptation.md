@@ -19,18 +19,22 @@
 | 模型                                                                       | 首选 Harness           | 协议      |
 | -------------------------------------------------------------------------- | ---------------------- | --------- |
 | Kimi K2.6、K3                                                              | Kimi Code              | Messages  |
-| MiMo v2.6 Flash                                                            | MiMo Code              | Chat      |
+| MiMo v2.6 Flash（mimo-v2.6-flash-free）                                    | OpenCode，官方免费通道 | Chat      |
 | Laguna S、XS 2.1                                                           | Poolside               | Chat      |
 | GLM 5.3、5.3 Flash（z-ai 原始 ID）                                         | ZCode                  | Chat      |
 | EAC GLM 5.3 Flash Free（opencode/glm-5.3-flash-free）                      | OpenCode，经 OFM 转发  | Chat      |
 | EAC DeepSeek V4.1 Flash Free（opencode/deepseek-v4.1-flash-free）          | OpenCode，经 OFM 转发  | Chat      |
 | Big Pickle（big-pickle）                                                   | OpenCode，官方免费通道 | Chat      |
 | GPT-OSS 20B                                                                | Codex CLI              | Responses |
-| Step 5 Preview，两条独立车道                                               | StepCode               | Chat      |
+| Kilo Step 5 Preview（stepfun/step-5-preview-free）                        | StepCode               | Chat      |
 | Ling、LongCat、North Mini Code、Nemotron 3.5、Space Bunny、OpenRouter Free | OpenCode               | Chat      |
 | OPL Gateway Gemini 4 Argon、Gemini 3.8 Flash、Gemini 3.1 Pro               | OpenCode               | Chat      |
 | Nemotron Nano Omni、LFM、Inkling Small                                     | Pi Coding Agent        | Chat      |
-| Dots、Glyph、Kilo Auto Free                                                | Kilo Code              | Chat      |
+| Dots、Glyph、Kilo Auto Free、Kilo Beam、Xing 4.0                           | Kilo Code              | Chat      |
+
+表格描述适配器配对，不是当前在线可用性承诺；模型必须仍在来源目录中且通过启动前检查。Cat Jam、MiMo v2.6 Flash、Muse Spark 1.3、Longcat 2.5、OpenCode 的 DeepSeek/GLM/Beam/Nemotron 免费条目、Space Bunny 和 Big Pickle 的精确裸 ID 使用 OpenCode 官方免费通道。带 EAC/Kilo 前缀的同名模型仍是独立 OFM 转发车道，不互相替换。
+
+`step-5-preview-free` 与 `muse-spark-1.2-contributor-free` 当前从 OPL 选择器隐藏；Jev 与 Content Safety 不作为编码组合提供。MiMo Code、Muse Code 没有可用默认组合，不默认登记或提示安装，已有程序与显式配置保留。
 
 这些组合保留 OFM 的原始模型 ID，只有当前目录仍提供的模型才可启动。Free/Auto 虚拟路由保留其虚拟身份，不声称已固定到某个底层模型。程序仍在「执行引擎」选择安装路径，凭据仍由 OFM 管理。MiMo Code 没有推理档位接口，模型菜单不显示其 provider 的原生档位；托管任务保留提交时的设置，不继承原生请求自动填入的档位。Big Pickle 使用 `our-free-model` 的精确 `big-pickle` 车道和官方 OpenCode 的 `opencode/big-pickle` wire 值；官方 OpenCode 适配器不广告推理档位，组合不显示推理强度，OFM 目录的 light/balanced/deep token budget 不会被映射成 `high`/`max`，显式档位会被拒绝。CLI 内部带 provider 前缀的模型 ID 由适配器显式映射，仍与回读值严格比对。新适配器支持明确选择的完全访问，缺少 Git Bash 时拒绝启动；不自动改变会话权限。Kimi 另可映射官方 Plan 模式，实测 Bash 写入被工具层拒绝，这不代表操作系统隔离。其余新适配器拒绝只读和工作区权限。它们不提供 DSH Auto Review。
 
