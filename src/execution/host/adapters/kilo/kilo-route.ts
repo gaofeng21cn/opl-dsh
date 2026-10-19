@@ -108,7 +108,14 @@ export function buildKiloRouteConfig(route: ExternalModelRoute, model: string): 
           npm: KILO_NPM,
           name: 'OPL Route',
           options: { baseURL: route.baseURL, apiKey: route.apiKey },
-          models: { [model]: { name: model } },
+          models: {
+            [model]: {
+              name: model,
+              ...(model === 'reflection/beam-free'
+                ? { interleaved: { field: 'reasoning_content' } }
+                : {}),
+            },
+          },
         },
       },
     }),

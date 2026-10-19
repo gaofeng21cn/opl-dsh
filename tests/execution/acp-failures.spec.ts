@@ -29,9 +29,30 @@ it('keeps internal failures inconclusive and does not reflect provider diagnosti
   `)
   const failure = await instance.request('session/prompt', {}).catch((error: unknown) => error)
   expect(failure).toBeInstanceOf(HarnessTransportError)
-  expect(String(failure)).toContain('等待本轮结果')
+  expect(String(failure)).toContain('执行本轮请求')
   expect(String(failure)).not.toMatch(/synthetic-private-key|登录/)
 })
+
+it.each([
+  ['APIError', '模型接口请求失败'],
+  ['ContextOverflowError', '上下文容量'],
+  ['StructuredOutputError', '结构化输出'],
+  ['synthetic-private-error-name', '尚不能确定'],
+])(
+  'interprets the official session error %s without echoing arbitrary diagnostics',
+  async (errorName, expected) => {
+    const instance = connect(`
+    require('node:readline').createInterface({input:process.stdin}).on('line', line => {
+      const request=JSON.parse(line)
+      process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:request.id,
+        error:{code:-32603,message:'synthetic-private-key',data:{service:'session',errorName:${JSON.stringify(errorName)},details:'synthetic-private-key'}}})+String.fromCharCode(10))
+    })
+  `)
+    const failure = await instance.request('session/prompt', {}).catch((error: unknown) => error)
+    expect(String(failure)).toContain(expected)
+    expect(String(failure)).not.toMatch(/synthetic-private|等待本轮结果/)
+  },
+)
 
 it('keeps process exit distinct from model failure', async () => {
   const instance = connect(`process.stdin.once('data', () => process.exit(2))`)

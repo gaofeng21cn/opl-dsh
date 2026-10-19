@@ -8,6 +8,7 @@ import type { HarnessSession } from '../contracts/sessions.ts'
  * Harnesses whose official CLI can carry an explicitly authorized full-access task.
  *
  * Each entry is backed by a real official mechanism rather than a loosened guard:
+ * - `dsh` uses the official persistent `danger-full-access` permission preset.
  * - `minimax-code` advertises a Full access mode matching the task authorization.
  * - `codex` and `claude` are projected through the native ACP bridge, which maps the
  *   authorization onto the official `danger-full-access` sandbox with `approval_policy
@@ -17,6 +18,7 @@ import type { HarnessSession } from '../contracts/sessions.ts'
  *   `bypassPermissions` mode; restricted Windows tasks are rejected by its adapter.
  */
 const FULL_ACCESS_HARNESSES: ReadonlySet<string> = new Set([
+  'dsh',
   'minimax-code',
   'codex',
   'claude',

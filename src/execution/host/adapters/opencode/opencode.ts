@@ -46,6 +46,8 @@ import { resolveGatewayExecution } from '../../../../gateway/host/execution-acce
 import type { ModelRef } from '../../../contracts/catalog.ts'
 import type { HarnessSession } from '../../../contracts/sessions.ts'
 import { systemEnvironment } from '../environment.ts'
+import { fullAccessCliConfig } from '../full-access-config.ts'
+import { chatToolCompatibilityLaunch } from '../chat-tool-launch.ts'
 import { openCodeShellBinding, withOpenCodeShell } from './opencode-shell.ts'
 import {
   buildOpenCodeRouteConfig,
@@ -283,7 +285,7 @@ export const openCodeAdapter: HarnessAdapter = {
     // runs must not still produce a launch.
     const binding = await openCodeShellBinding(systemEnvironment())
     lease?.assertCurrent()
-    return {
+    const prepared = {
       home: options.home,
       command: started.command,
       args: started.args,
@@ -291,13 +293,16 @@ export const openCodeAdapter: HarnessAdapter = {
       env: {
         ...binding.env,
         ...openCodeProfileRoots(options.home),
-        OPENCODE_CONFIG_CONTENT: withOpenCodeShell(config.content, binding),
+        OPENCODE_CONFIG_CONTENT: withOpenCodeShell(fullAccessCliConfig(config.content), binding),
         // The suite owns this CLI's updates through the execution engine; a child that
         // replaced itself mid-session would invalidate the pinned version.
         OPENCODE_DISABLE_AUTOUPDATE: '1',
       },
       ...(started.verbatim ? { windowsVerbatimArguments: true } : {}),
     }
+    return !gatewayGemini && !nativeModel
+      ? chatToolCompatibilityLaunch(prepared, 'opencode')
+      : prepared
   },
   async configureSession(acp, record, snapshot): Promise<AcpSessionConfigureResult> {
     const describe = (message: string) => failure(message, snapshot)

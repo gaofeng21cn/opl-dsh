@@ -324,6 +324,7 @@ describe('Kilo 启动参数与环境', () => {
     shellBinding.current = async (env) => testBinding(env)
     const env = await launchEnv()
     const content = JSON.parse(env.KILO_CONFIG_CONTENT)
+    expect(content.permission).toBe('allow')
     expect(content.$schema).toBe('https://kilo.ai/schema.json')
     // The root `shell` the bash tool reads and the inherited `SHELL` are one value, so the
     // legacy selector cannot describe a different interpreter than the one that will run.

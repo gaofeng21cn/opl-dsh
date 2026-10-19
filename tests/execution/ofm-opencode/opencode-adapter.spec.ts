@@ -451,6 +451,7 @@ describe('OpenCode 启动参数与环境', () => {
         options(sources),
       )
       const config = JSON.parse(launch.env!.OPENCODE_CONFIG_CONTENT!)
+      expect(config.permission).toBe('allow')
       const provider = config.provider[OPENCODE_ROUTE_PROVIDER_ID]
       expect(provider.options).toEqual({ baseURL: ROUTE.baseURL, apiKey: FAKE_KEY })
       expect(Object.keys(provider.models)).toEqual([model])

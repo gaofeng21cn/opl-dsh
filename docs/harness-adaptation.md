@@ -32,11 +32,21 @@
 | Nemotron Nano Omni、LFM、Inkling Small                                     | Pi Coding Agent        | Chat      |
 | Dots、Glyph、Kilo Auto Free                                                | Kilo Code              | Chat      |
 
+OPL Gateway 的 Gemini 模型列表使用 `Gemini 4 Argon`、`Gemini 3.8 Flash` 和 `Gemini 3.1 Pro`，执行组合统一附加 `OpenCode`；请求仍保留原始模型 ID。
+
+OpenCode 与 Kilo 的显式完全访问会话通过官方 `permission: "allow"` 配置执行工具，该配置只传给本次 CLI 进程；不会改写用户的配置文件。原生 DSH 组合同样支持显式完全访问，并使用官方持久化权限预设。受限权限与已有会话的权限不会因此升级。
+
+经 OFM 本地端点转发给 OpenCode/Kilo 的 Chat 流会合并先到的工具编号与后续函数分片，以兼容官方 CLI 的响应校验；不生成函数名、参数或完成标记。分片冲突或截断仍失败，HTTP 错误原样传递，不自动重试。兼容进程使用临时回环端口与独立密钥，随 CLI 关闭；直接连接 OpenCode 免费通道和 OPL Gemini 的请求不经过此处理。
+
+Kilo Beam 的工具后续请求要求 `reasoning_content` 字段，即使本次思考为空。该组合使用官方 `interleaved` 配置回传已保存的思考，不补写思考正文或改变推理档位。
+
 这些组合保留 OFM 的原始模型 ID，只有当前目录仍提供的模型才可启动。Free/Auto 虚拟路由保留其虚拟身份，不声称已固定到某个底层模型。程序仍在「执行引擎」选择安装路径，凭据仍由 OFM 管理。MiMo Code 没有推理档位接口，模型菜单不显示其 provider 的原生档位；托管任务保留提交时的设置，不继承原生请求自动填入的档位。Big Pickle 使用 `our-free-model` 的精确 `big-pickle` 车道和官方 OpenCode 的 `opencode/big-pickle` wire 值；官方 OpenCode 适配器不广告推理档位，组合不显示推理强度，OFM 目录的 light/balanced/deep token budget 不会被映射成 `high`/`max`，显式档位会被拒绝。CLI 内部带 provider 前缀的模型 ID 由适配器显式映射，仍与回读值严格比对。新适配器支持明确选择的完全访问，缺少 Git Bash 时拒绝启动；不自动改变会话权限。Kimi 另可映射官方 Plan 模式，实测 Bash 写入被工具层拒绝，这不代表操作系统隔离。其余新适配器拒绝只读和工作区权限。它们不提供 DSH Auto Review。
 
 Muse Code 1.4.7-R6101.1 使用独占设置中的 `endpoint_transport` 接入模型供应商的 Responses 端点。MSP 桥接负责会话、模型和思考档位回读，Git Bash 通过官方 MCP 工具接口执行；本机认证转发器转换工具命名与流事件，不替换官方执行循环。来源未提供端点或凭据、模型已移除或协议不匹配时拒绝启动。MiMo Code、Pi 和 StepCode 返回空正文且没有成功工具结果时，任务标为失败；官方未回报的上游错误不推测为某个 HTTP 状态。
 
 独占官方 CLI 与受控 provider 检查覆盖工具、模型回读、恢复、取消和 Git Bash；这些检查不等同于 OFM 联网模型质量验收。执行插件配置 `ofmConnectionTimeoutMs` 控制公开连接读取超时，默认 10000 毫秒。
+
+OpenCode/Kilo 的结构化错误类型可区分模型接口请求失败、上下文超限与结构化输出失败。未知内部错误保持未定性；接口失败未提供 HTTP 状态时，不推测为认证或限额问题，也不显示可能含凭据的原始错误文本。
 
 外部程序的过滤环境保留 Git 安装根目录与显式 `OPL_GIT_BASH_PATH`，即使 Desktop 的 PATH 不含 Git 也能解析后端。显式路径无效时拒绝启动，不改用其他 Shell。
 

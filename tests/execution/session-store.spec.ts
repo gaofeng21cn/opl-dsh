@@ -61,7 +61,7 @@ describe('per-session durable storage', () => {
     await writeFile(store.filename('ordinary'), JSON.stringify({ ...session, nativeSessionId: '' }))
     await expect(new HarnessSessionStore(root).load()).rejects.toThrow('官方对话引用')
   })
-  it.each(['minimax-code', 'codex', 'claude', 'grok-build'])(
+  it.each(['dsh', 'minimax-code', 'codex', 'claude', 'grok-build'])(
     'reloads authorized full-access %s sessions from both storage generations',
     async (harnessRef) => {
       const { root, store } = await fixture()
@@ -123,7 +123,7 @@ describe('per-session durable storage', () => {
   })
 
   it.each([
-    { sandbox: 'full-access' },
+    { sandbox: 'full-access', harnessRef: 'unverified-harness' },
     { origin: { kind: 'unknown', sessionId: 'parent' } },
     { modelRef: { provider: 'opl-gateway' } },
     {

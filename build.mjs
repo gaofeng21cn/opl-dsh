@@ -46,6 +46,7 @@ for (const [directory, name] of [
   ['pi', 'pi-bridge'],
   ['kimi', 'kimi-error-bridge'],
   ['zcode-ofm', 'zcode-ofm-bridge'],
+  ['.', 'chat-tool-bridge'],
 ]) {
   await bundle({
     entryPoints: [join(root, `src/execution/host/adapters/${directory}/${name}.ts`)],

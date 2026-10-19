@@ -9,14 +9,14 @@ export const object = (value: unknown): Record<string, any> =>
 /**
  * Map a JSON-RPC error to a controlled, actionable message.
  *
- * Only the error *code* is interpreted. The agent's own `message` and `data.details`
+ * Only the error code and recognized structured error names are interpreted. The agent's own `message` and `data.details`
  * are never reflected: an arbitrary provider string could carry credentials or account
  * identifiers, and a length- or pattern-based scrub cannot prove otherwise. The codes
  * below are the only provider-controlled input that reaches the user, and the
  * `HARNESS_*` families belong to this suite's own native bridge rather than to an
  * official CLI account, so a MiniMax login problem can never surface Gateway advice.
  */
-const harnessFailure = (code: unknown) => {
+const harnessFailure = (code: unknown, data?: unknown) => {
   switch (code) {
     case 'HARNESS_AUTH':
       return '所选渠道认证失败，请在 OPL Gateway 刷新账号后重试。原任务未自动重发。'
@@ -54,7 +54,19 @@ const harnessFailure = (code: unknown) => {
       return '官方 Harness 不支持本次请求的协议方法，请检查套件与官方 CLI 的版本是否匹配。原任务未自动重发。'
     case -32602:
       return '官方 Harness 拒绝了本次请求参数，请检查所选模型与固定组合是否匹配。原任务未自动重发。'
+    case -32000:
+      return '官方 Harness 要求认证，当前模型来源未通过认证。原任务未自动重发。'
     case -32603:
+      if (object(data).service === 'session') {
+        switch (object(data).errorName) {
+          case 'APIError':
+            return '官方 Harness 报告模型接口请求失败，尚未提供可确认的 HTTP 状态。原任务未自动重发。'
+          case 'ContextOverflowError':
+            return '官方 Harness 报告本轮请求超出模型上下文容量。原任务未自动重发。'
+          case 'StructuredOutputError':
+            return '官方 Harness 未能取得要求的结构化输出。原任务未自动重发。'
+        }
+      }
       return '官方 Harness 返回内部错误，尚不能确定是渠道还是请求处理问题。原任务未自动重发。'
     default:
       return 'Harness 执行未完成，请检查官方 CLI 的安装、登录与模型配置。原任务未自动重发。'
@@ -74,7 +86,7 @@ function requestStage(method: string): string {
     case 'session/set_mode':
       return '配置会话'
     case 'session/prompt':
-      return '等待本轮结果'
+      return '执行本轮请求'
     default:
       return '扩展请求'
   }
@@ -142,7 +154,7 @@ export class AcpProcess {
         if (m.error) {
           p.reject(
             new HarnessTransportError(
-              `${harnessFailure(object(m.error).code)}（${requestStage(p.method)}）`,
+              `${harnessFailure(object(m.error).code, object(m.error).data)}（${requestStage(p.method)}）`,
             ),
           )
         } else p.resolve(m.result)

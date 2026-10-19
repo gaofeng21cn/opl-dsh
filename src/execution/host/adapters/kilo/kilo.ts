@@ -52,6 +52,8 @@ import { HarnessConfigurationError } from '../../acp.ts'
 import type { ModelRef } from '../../../contracts/catalog.ts'
 import type { HarnessSession } from '../../../contracts/sessions.ts'
 import { systemEnvironment } from '../environment.ts'
+import { fullAccessCliConfig } from '../full-access-config.ts'
+import { chatToolCompatibilityLaunch } from '../chat-tool-launch.ts'
 import { kiloShellBinding, withKiloShell } from './kilo-shell.ts'
 import { buildKiloRouteConfig, kiloModelValue, KILO_SUPPORTED_PROTOCOLS } from './kilo-route.ts'
 import {
@@ -261,26 +263,29 @@ export const kiloAdapter: HarnessAdapter = {
     // runs must not still produce a launch.
     const binding = await kiloShellBinding(systemEnvironment())
     lease.assertCurrent()
-    return {
-      home: options.home,
-      command: started.command,
-      args: started.args,
-      // The key is carried in the child's own configuration variable and nowhere else.
-      env: {
-        ...binding.env,
-        ...kiloProfileRoots(options.home),
-        // One merged document: the root `shell` the bash tool actually reads, and the
-        // provider namespace the model is pinned from.
-        KILO_CONFIG_CONTENT: withKiloShell(config.content, binding),
-        // The suite owns this CLI's updates through the execution engine; a child that
-        // replaced itself mid-session would invalidate the pinned version.
-        KILO_DISABLE_AUTOUPDATE: '1',
-        // An external Harness must not silently reach out for a catalog during preparation;
-        // the model list for this pairing comes from the source's own route.
-        KILO_DISABLE_MODELS_FETCH: '1',
+    return chatToolCompatibilityLaunch(
+      {
+        home: options.home,
+        command: started.command,
+        args: started.args,
+        // The key is carried in the child's own configuration variable and nowhere else.
+        env: {
+          ...binding.env,
+          ...kiloProfileRoots(options.home),
+          // One merged document: the root `shell` the bash tool actually reads, and the
+          // provider namespace the model is pinned from.
+          KILO_CONFIG_CONTENT: withKiloShell(fullAccessCliConfig(config.content), binding),
+          // The suite owns this CLI's updates through the execution engine; a child that
+          // replaced itself mid-session would invalidate the pinned version.
+          KILO_DISABLE_AUTOUPDATE: '1',
+          // An external Harness must not silently reach out for a catalog during preparation;
+          // the model list for this pairing comes from the source's own route.
+          KILO_DISABLE_MODELS_FETCH: '1',
+        },
+        ...(started.verbatim ? { windowsVerbatimArguments: true } : {}),
       },
-      ...(started.verbatim ? { windowsVerbatimArguments: true } : {}),
-    }
+      'kilo',
+    )
   },
   async configureSession(acp, record, snapshot): Promise<AcpSessionConfigureResult> {
     const describe = (message: string) => failure(message, snapshot)
