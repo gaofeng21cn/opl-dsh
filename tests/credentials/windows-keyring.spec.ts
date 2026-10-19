@@ -96,7 +96,13 @@ describe('keyring target scope', () => {
   })
 
   it('exposes no operation that enumerates the credential store', () => {
-    expect(Object.keys(huaweiMaaSKeyring).sort()).toEqual(['describe', 'read', 'remove', 'set'])
+    expect(Object.keys(huaweiMaaSKeyring).sort()).toEqual([
+      'describe',
+      'read',
+      'remove',
+      'set',
+      'target',
+    ])
     for (const name of ['list', 'enumerate', 'entries', 'targets']) {
       expect(name in huaweiMaaSKeyring).toBe(false)
     }

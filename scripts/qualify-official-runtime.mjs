@@ -112,10 +112,14 @@ const environment = {
   OPL_CODEX_HOME: join(root, 'codex'),
   OPL_APPLICATIONS_DIR: join(root, 'applications'),
   OPL_INSTALL_NO_LAUNCH: '1',
+  OPL_QUALIFICATION_SKIP_PROVIDER_SECRET_WRITE: '1',
+  OPL_QUALIFICATION_SKIP_PROVIDER_KEYRING: '1',
   OPL_LEGACY_HOME: join(root, 'empty-legacy'),
   OPL_DESKTOP_LAUNCHER: join(root, 'qualification-launcher'),
   NODE_USE_SYSTEM_CA: '1',
 }
+process.env.OPL_QUALIFICATION_SKIP_PROVIDER_SECRET_WRITE = '1'
+process.env.OPL_QUALIFICATION_SKIP_PROVIDER_KEYRING = '1'
 delete environment.OPL_OFFICIAL_ARCHIVE
 // The hosted Windows runner enters this script from PowerShell 7. Its PSModulePath
 // points at Core-only modules, and an inherited value makes the Windows PowerShell
