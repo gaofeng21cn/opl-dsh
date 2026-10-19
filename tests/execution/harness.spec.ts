@@ -464,6 +464,9 @@ describe('native conversation combinations', () => {
     expect(prompt).toContain('不要重新执行历史任务或工具调用')
     expect(prompt).toContain('当前用户请求：\nuser: continue-here')
     expect(prompt).not.toContain('private-reasoning')
+    expect((await service.list()).sessions.find((item) => item.origin.kind === 'dsh')?.title).toBe(
+      'continue-here',
+    )
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
     const followup = createUserMessage({
       source: { kind: 'user' },

@@ -34,6 +34,10 @@
 
 OPL Gateway 的 Gemini 模型列表使用 `Gemini 4 Argon`、`Gemini 3.8 Flash` 和 `Gemini 3.1 Pro`，执行组合统一附加 `OpenCode`；请求仍保留原始模型 ID。
 
+MiniMax M3.1 Flash Free 使用正式 ID `minimax-m3.1-flash-free` 与 OpenCode 官方免费通道；Kilo 的 `minimax/minimax-m3.1-flash:free` 是独立的 OFM 转发车道，也使用 OpenCode，不与前者互换。旧 Space Bunny 会话保留原模型身份，不自动替换历史路由。
+
+手动会话的初始标题取真实用户输入，不取交给外部 Harness 的历史上下文说明；CLI 原样回传内部历史说明时不覆盖标题。后续正常标题更新保持生效。
+
 OpenCode 与 Kilo 的显式完全访问会话通过官方 `permission: "allow"` 配置执行工具，该配置只传给本次 CLI 进程；不会改写用户的配置文件。原生 DSH 组合同样支持显式完全访问，并使用官方持久化权限预设。受限权限与已有会话的权限不会因此升级。
 
 经 OFM 本地端点转发给 OpenCode/Kilo 的 Chat 流会合并先到的工具编号与后续函数分片，以兼容官方 CLI 的响应校验；不生成函数名、参数或完成标记。分片冲突或截断仍失败，HTTP 错误原样传递，不自动重试。兼容进程使用临时回环端口与独立密钥，随 CLI 关闭；直接连接 OpenCode 免费通道和 OPL Gemini 的请求不经过此处理。
@@ -58,3 +62,5 @@ OpenCode/Kilo 的结构化错误类型可区分模型接口请求失败、上下
 
 接入具体来源时依次验证：来源与协议负例、真实登录或 Key、真实模型工具调用、新建与恢复、取消、权限与人工审批、Auto Review、失败与卸载。不同 Harness 的协议适配仍需实现，通用注册和验收步骤不能代替这些证据。
 Kimi Code 的 OFM 组合通过官方 `KIMI_LOOP_MAX_ATTEMPTS_PER_STEP=1` 限制每步仅发起一次请求，避免将来源层恢复叠加为 CLI 默认的十次尝试。请求失败后由用户决定是否重发；该设置不改变权限或模型。
+
+Pi 在 Windows 通过官方 `--append-system-prompt` 明示真实 Git Bash 语法与路径形式；该说明进入官方 CLI 的系统请求，不切换 Shell、不转换模型命令，也不承诺模型不会写错命令。

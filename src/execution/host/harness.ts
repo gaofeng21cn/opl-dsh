@@ -136,6 +136,7 @@ export { GROK_COMBINATION, DSH_COMBINATION } from '../contracts/sessions.ts'
 export const HARNESS_NAMESPACE = 'harness'
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const now = () => new Date().toISOString()
+const HISTORY_NOTICE = '以下是先前会话记录，仅用于理解上下文，不要重新执行历史任务或工具调用。'
 const conversationPrompt = (
   messages: GenerateOptions['messages'],
   user: GenerateOptions['messages'][number],
@@ -175,7 +176,7 @@ const conversationPrompt = (
   const context = history.filter((item) => item.message !== user).map((item) => item.text)
   // Historical tool calls are context, never instructions to execute them again.
   return context.length
-    ? `以下是先前会话记录，仅用于理解上下文，不要重新执行历史任务或工具调用。\n\n${context.join('\n\n')}\n\n当前用户请求：\n${current}`
+    ? `${HISTORY_NOTICE}\n\n${context.join('\n\n')}\n\n当前用户请求：\n${current}`
     : current
 }
 const required = (value: unknown, label: string): string => {
@@ -1256,6 +1257,11 @@ export class HarnessService {
       u.title.trim()
     ) {
       const title = u.title.trim().slice(0, 400)
+      if (
+        title.startsWith(HISTORY_NOTICE) &&
+        record.turns.some((turn) => turn.prompt.startsWith(HISTORY_NOTICE))
+      )
+        return
       record.title = title
       record.titleFromHarness = true
       this.changed(record)
@@ -1477,6 +1483,7 @@ export class HarnessService {
   private async promptAdmitted(
     input: HarnessPromptRequest,
     reasoningEffort?: string,
+    displayPrompt?: string,
   ): Promise<HarnessSnapshot> {
     await this.ready
     if (this.disposed) throw Error('组合服务已关闭')
@@ -1551,7 +1558,7 @@ export class HarnessService {
       ...(writeScope ? { writeScope } : {}),
     }
     if (!record.turns.length && !record.titleFromHarness) {
-      record.title = text.slice(0, 80)
+      record.title = (displayPrompt ?? text).trim().slice(0, 80)
       if (record.nativeSessionId)
         await this.native('rename', { sessionId: record.nativeSessionId, title: record.title })
     }
@@ -3671,7 +3678,16 @@ export class HarnessService {
       if (admitted && this.active.get(record.id)?.turn === admitted) {
         void this.run(record, this.active.get(record.id)!, admitted)
       } else {
-        await this.prompt({ sessionId: record.id, text, operationId }, requestEffort)
+        await this.runtimeMaintenance.admit(() =>
+          this.promptAdmitted(
+            { sessionId: record.id, text, operationId },
+            requestEffort,
+            user.content
+              .filter((part) => part.type === 'text')
+              .map((part) => part.text)
+              .join('\n'),
+          ),
+        )
       }
       const conversationTurn = record.turns.find((item) => item.operationId === operationId)!
       const rpcId =

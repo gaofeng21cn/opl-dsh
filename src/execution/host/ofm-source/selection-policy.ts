@@ -48,6 +48,7 @@ export const OFM_OPENCODE_OFFICIAL_FREE_MODELS: readonly string[] = [
   'longcat-2.5-preview-free',
   'deepseek-v4.1-flash-free',
   'space-bunny-free',
+  'minimax-m3.1-flash-free',
   'beam-free',
   'nemotron-3.5-super-vl-free',
   'glm-5.3-flash-free',

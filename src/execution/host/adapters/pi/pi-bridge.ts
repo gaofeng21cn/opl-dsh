@@ -268,7 +268,16 @@ function openAgent(): void {
     TMP: process.env.TMP ?? '',
     [PI_CREDENTIAL_ENV]: credential,
   }
-  const launch = commandLaunch(command, [...prefix, '--mode', 'rpc', '--session-dir', sessionDir])
+  const shellInstructions =
+    process.platform === 'win32' ? ['--append-system-prompt', join(agentDir, 'opl-shell.md')] : []
+  const launch = commandLaunch(command, [
+    ...prefix,
+    '--mode',
+    'rpc',
+    '--session-dir',
+    sessionDir,
+    ...shellInstructions,
+  ])
   const launched = spawn(launch.command, launch.args, {
     cwd: process.cwd(),
     env,
@@ -554,6 +563,12 @@ function rememberSessionFile(file: string): void {
 function writeProviderConfig(): void {
   mkdirSync(agentDir, { recursive: true })
   mkdirSync(sessionDir, { recursive: true })
+  if (process.platform === 'win32')
+    writeFileSync(
+      join(agentDir, 'opl-shell.md'),
+      'The bash tool runs Git for Windows Bash, not cmd.exe or PowerShell. Use POSIX shell syntax: ls instead of dir /b, /dev/null instead of nul, and quoted forward-slash paths such as "C:/Users/name" or /c/Users/name. A Windows host does not imply CMD syntax.\n',
+      { mode: 0o600 },
+    )
   writeFileSync(
     join(agentDir, 'models.json'),
     JSON.stringify(buildPiModelsConfig({ provider, model, baseURL, api, reasoning }), null, 2),

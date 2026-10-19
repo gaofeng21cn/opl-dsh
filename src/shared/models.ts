@@ -36,6 +36,10 @@ export function isRetiredModel(ref: ModelRef): boolean {
 /** Stable product names for IDs whose upstream display text changed. */
 export function displayModelName(ref: ModelRef, name?: string): string {
   const id = ref.model.includes('::') ? ref.model.slice(ref.model.lastIndexOf('::') + 2) : ref.model
+  if (ref.provider === 'our-free-model') {
+    if (id === 'minimax-m3.1-flash-free') return 'MiniMax M3.1 Flash Free'
+    if (id === 'minimax/minimax-m3.1-flash:free') return 'Kilo MiniMax M3.1 Flash'
+  }
   if (id === 'deepseek-v4.1-flash') return 'DeepSeek-V4.1-Flash（固定版本）'
   if (id === 'deepseek-flash')
     return ref.model.startsWith('codex::')
