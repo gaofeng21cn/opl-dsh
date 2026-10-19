@@ -8,11 +8,11 @@ OPL 安装器通过官方插件管理器接入原版 [Our Free Model](https://gi
 
 OPL 从官方 LLM 注册表读取所有插件公开的 Provider 和模型，以原始 `provider` 与 `model` 保存组合引用。模型目录不复制到 OPL 配置，密钥也不导入 OPL Gateway。
 
-每个可用模型自动生成「模型 · DSH」组合；已有自定义默认组合优先。账号渠道尚未登录、上游不提供或被插件关闭的模型，以插件实际公开的目录为准。
+已适配的模型按精确 Provider、模型 ID 与适配器选择默认 Harness；没有外部配对的模型使用 DSH，已有自定义默认组合优先。OFM 首选配对集中列在[外部 Harness 适配](harness-adaptation.md#our-free-model-组合)，不会因为模型同名就替换渠道。账号渠道尚未登录、上游不提供或被插件关闭的模型，以插件实际公开的目录为准。
 
 插件的 `combo:` 降级与轮换链作为虚拟模型参与同一组合逻辑。具体候选模型、轮换和恢复由插件处理；OPL 只引用这条逻辑路由并绑定 Harness 与权限，不拆解或替换其规则。
 
-DSH 执行官方 Agent 循环和工具。外部 Codex、Claude、Grok、MiniMax 等 Harness 仍需已有适配器支持精确模型来源；原样接入模型插件不代表任意模型可在任意 Harness 上执行。
+DSH 组合执行官方 DSH Agent 循环和工具；外部组合执行所选 Harness 的循环和工具。外部 Harness 必须有适配器支持精确模型来源；原样接入模型插件不代表任意模型可在任意 Harness 上执行。
 
 ## 管理入口
 
@@ -20,4 +20,4 @@ DSH 执行官方 Agent 循环和工具。外部 Codex、Claude、Grok、MiniMax 
 
 第三方模型插件沿用这一条官方注册表接入路径；OPL 不另建每个供应商的模型列表、账号池或请求适配器。
 
-来源插件可以通过 Host 的显式路由注册接口适配已支持自定义端点的官方 Harness，详见[外部 Harness 适配准备](harness-adaptation.md)。该接口不会自动把 Our Free Model 绑定到外部 Harness。
+来源插件可以通过 Host 的显式路由注册接口适配已支持自定义端点的官方 Harness，详见[外部 Harness 适配准备](harness-adaptation.md)。OPL 已通过该接口注册 OFM 的精确配对；新增未适配模型不会仅凭名称自动获得外部 Harness 支持。
