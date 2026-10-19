@@ -29,6 +29,8 @@ export interface ControlledProvider {
   baseURL: string
   /** Every request path the CLI actually called. */
   readonly requests: string[]
+  /** System messages actually received by the controlled provider. */
+  readonly systemMessages: string[]
   /** Authorization header values seen, so a test can assert the key was forwarded. */
   readonly authorizations: string[]
   /**
@@ -61,6 +63,7 @@ export async function startControlledProvider(
   script: ProviderScript = 'tool-then-answer',
 ): Promise<ControlledProvider> {
   const requests: string[] = []
+  const systemMessages: string[] = []
   const authorizations: string[] = []
   const arrivalWaiters: { count: number; resolve: () => void }[] = []
   let served = 0
@@ -94,6 +97,9 @@ export async function startControlledProvider(
       } catch {
         parsed = {}
       }
+      for (const message of parsed.messages ?? [])
+        if (message.role === 'system' || message.role === 'developer')
+          systemMessages.push(JSON.stringify(message.content))
       const turn = served++
       const model = String(parsed.model ?? 'controlled')
       const alreadyRanTool = (parsed.messages ?? []).some((m: any) => m.role === 'tool')
@@ -169,6 +175,7 @@ export async function startControlledProvider(
   return {
     baseURL: `http://127.0.0.1:${address.port}/v1`,
     requests,
+    systemMessages,
     authorizations,
     waitForRequest(count = 1) {
       if (requests.length >= count) return Promise.resolve()

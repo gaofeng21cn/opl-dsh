@@ -36,11 +36,20 @@ export function isRetiredModel(ref: ModelRef): boolean {
 /** Stable product names for IDs whose upstream display text changed. */
 export function displayModelName(ref: ModelRef, name?: string): string {
   const id = ref.model.includes('::') ? ref.model.slice(ref.model.lastIndexOf('::') + 2) : ref.model
+  if (ref.provider === 'our-free-model') {
+    if (id === 'minimax-m3.1-flash-free') return 'MiniMax M3.1 Flash Free'
+    if (id === 'minimax/minimax-m3.1-flash:free') return 'Kilo MiniMax M3.1 Flash'
+  }
   if (id === 'deepseek-v4.1-flash') return 'DeepSeek-V4.1-Flash（固定版本）'
   if (id === 'deepseek-flash')
     return ref.model.startsWith('codex::')
       ? 'DeepSeek-V4.1-Flash · OpenAI 协议'
       : 'DeepSeek-V4.1-Flash'
+  if (ref.provider === 'opl-gateway' && ref.model.startsWith('gemini::')) {
+    if (id === 'gemini-4-argon') return 'Gemini 4 Argon'
+    if (id === 'gemini-3.8-flash') return 'Gemini 3.8 Flash'
+    if (id === 'gemini-3.1-pro') return 'Gemini 3.1 Pro'
+  }
   // MiniMax models belong to the official CLI account, not to a Gateway channel.
   // The name stays a bare model name: the Harness is appended once by the model
   // menu, and the thinking setting lives in the reasoning menu, so neither may be

@@ -530,13 +530,12 @@ describe('MiniMax Code execution catalog wiring', () => {
       expect(persisted.combinations.find((item) => item.id === id)?.permissionPolicy, id).toBe(
         'full-access',
       )
-    // ...and it stays exclusive to the mcode harness: the same policy attached to
-    // any other harness is a catalog the product must refuse, not silently accept.
+    // An unverified Harness cannot inherit this permission through a catalog edit.
     expect(() =>
       normalizeCatalog({
         ...catalog,
         combinations: catalog.combinations.map((item) =>
-          item.id === FLASH_COMBINATION ? { ...item, harnessRef: 'dsh' } : item,
+          item.id === FLASH_COMBINATION ? { ...item, harnessRef: 'antigravity' } : item,
         ),
       }),
     ).toThrow(/full-access/)

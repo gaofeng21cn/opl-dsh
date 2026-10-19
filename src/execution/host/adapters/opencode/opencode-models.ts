@@ -84,6 +84,8 @@ export const OPENCODE_OFM_MODELS: readonly string[] = [
   'nvidia/nemotron-3.5-super-vl:free',
   'deepseek-v4.1-flash-free',
   'space-bunny-free',
+  'minimax-m3.1-flash-free',
+  'minimax/minimax-m3.1-flash:free',
   'openrouter/free',
   // Bare OpenCode free-directory lanes this round could actually pair: both are published
   // by the owning OFM plugin's live free lane *and* present in the official OpenCode

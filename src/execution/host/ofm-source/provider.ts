@@ -99,6 +99,8 @@ export const OFM_PINNED_HARNESS_MODELS: Readonly<Record<string, readonly string[
     'opencode/deepseek-v4.1-flash-free',
     'deepseek-v4.1-flash-free',
     'space-bunny-free',
+    'minimax-m3.1-flash-free',
+    'minimax/minimax-m3.1-flash:free',
     'openrouter/free',
     'big-pickle',
   ],

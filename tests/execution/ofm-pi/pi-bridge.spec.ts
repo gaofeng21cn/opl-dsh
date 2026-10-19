@@ -237,6 +237,12 @@ describe('Pi bridge: initialization and pinning over the official CLI', () => {
           .map((u) => JSON.stringify(u))
           .find((json) => json.includes('call_1') && json.includes('git version'))
         expect(tool).toBeTruthy()
+        if (process.platform === 'win32') {
+          expect(run.provider.systemMessages.join(' ')).toContain(
+            'The bash tool runs Git for Windows Bash',
+          )
+          expect(run.provider.systemMessages.join(' ')).toContain('/dev/null instead of nul')
+        }
         // The credential reached the official CLI and was used against the endpoint.
         expect(run.provider.authorizations.join(' ')).toContain(PI_TEST_KEY)
       } finally {

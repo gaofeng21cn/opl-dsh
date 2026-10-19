@@ -52,6 +52,11 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     running = m.id
     await appendFile(join(process.cwd(), 'calls.txt'), m.params.prompt[0].text + '\n')
     const text = m.params.prompt[0].text
+    if (text.startsWith('以下是先前会话记录'))
+      update({
+        sessionUpdate: 'session_info_update',
+        title: text.replace(/s+/g, ' ').slice(0, 200),
+      })
     if (text === 'wait') return
     // A turn the agent reports as failed: the executor records `failed`, so a
     // notification about a failure can be observed without a real CLI failure.

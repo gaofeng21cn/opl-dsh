@@ -464,6 +464,9 @@ describe('native conversation combinations', () => {
     expect(prompt).toContain('不要重新执行历史任务或工具调用')
     expect(prompt).toContain('当前用户请求：\nuser: continue-here')
     expect(prompt).not.toContain('private-reasoning')
+    expect((await service.list()).sessions.find((item) => item.origin.kind === 'dsh')?.title).toBe(
+      'continue-here',
+    )
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
     const followup = createUserMessage({
       source: { kind: 'user' },
@@ -1361,7 +1364,7 @@ describe('generated combination permission policy', () => {
     expect(session.sandbox).toBe('read-only')
   })
 
-  it('refuses a full-access request for a harness without a verified official path', async () => {
+  it('admits explicitly authorized native DSH full access without downgrading the request', async () => {
     const { service, root } = await nativeSetup(CODEX_MODELS),
       catalog = await service.executionCatalog()
     await service.saveExecutionCatalog({
@@ -1379,19 +1382,18 @@ describe('generated combination permission policy', () => {
         },
       ],
     })
-    // Refused, not downgraded to the workspace boundary the combination declares.
     await expect(
       service.start(
         {
           combination: 'dsh-workspace',
           cwd: root,
-          taskId: 'unsupported',
+          taskId: 'native-full-access',
           origin: codexOrigin,
           sandbox: 'full-access',
         },
         true,
       ),
-    ).rejects.toThrow('没有经过验证的官方 full-access 路径')
+    ).resolves.toMatchObject({ sandbox: 'full-access', harnessRef: 'dsh' })
   })
 
   it('does not upgrade a stored restricted session when it is continued', async () => {

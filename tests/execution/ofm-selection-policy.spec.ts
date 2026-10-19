@@ -37,6 +37,19 @@ const NEW_OPENCODE_FREE_LANES = ['beam-free', 'nemotron-3.5-super-vl-free', 'glm
 
 const BIG_PICKLE = { provider: 'our-free-model', model: 'big-pickle' } as const
 const BIG_PICKLE_AUTO = 'auto:["our-free-model","big-pickle"]'
+
+it('pins MiniMax Flash free to OpenCode without folding its Kilo lane into the direct route', () => {
+  const direct = 'minimax-m3.1-flash-free'
+  const kilo = 'minimax/minimax-m3.1-flash:free'
+  expect(officialOpenCodeModel({ provider: 'our-free-model', model: direct })).toBe(
+    'opencode/' + direct,
+  )
+  expect(officialOpenCodeModel({ provider: 'our-free-model', model: kilo })).toBeUndefined()
+  for (const model of [direct, kilo]) {
+    expect(OPENCODE_OFM_MODELS).toContain(model)
+    expect(OFM_PINNED_HARNESS_MODELS.opencode).toContain(model)
+  }
+})
 const QUALIFICATION_AUTO = 'auto:["our-free-model","opl-qualification-free"]'
 
 it('hides rejected OFM lanes and saved combinations after legacy cleanup, without hiding other sources', async () => {

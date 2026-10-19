@@ -288,11 +288,9 @@ describe('official harness shell variables', () => {
 describe('full-access authorization', () => {
   it('covers only the harnesses with a verified official full-access path', async () => {
     const { harnessAllowsFullAccess } = await import('../../src/execution/host/permissions.ts')
-    for (const harness of ['codex', 'claude', 'minimax-code', 'grok-build'])
+    for (const harness of ['dsh', 'codex', 'claude', 'minimax-code', 'grok-build'])
       expect(harnessAllowsFullAccess(harness)).toBe(true)
-    // Every other harness keeps the previous behaviour: a requested full-access task is
-    // reported as unsupported rather than silently widened.
-    for (const harness of ['dsh', 'minimax', 'anything-else'])
+    for (const harness of ['antigravity', 'minimax', 'anything-else'])
       expect(harnessAllowsFullAccess(harness)).toBe(false)
   })
 })
