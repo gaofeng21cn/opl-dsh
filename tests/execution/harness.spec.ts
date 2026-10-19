@@ -23,6 +23,7 @@ import { commandLaunch } from '../../src/execution/host/harness-registry.ts'
 import { systemEnvironment } from '../../src/execution/host/adapters/environment.ts'
 import { resolveGatewayExecution } from '../../src/gateway/host/execution-access.ts'
 import { GROK_API_KEY_REF } from '../../src/gateway/host/config.ts'
+import { testPeerConnection } from '../test-peer.ts'
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
   vi.unstubAllEnvs()
@@ -112,6 +113,7 @@ async function setup() {
     resolveKey: async () => 'test-grok-key',
   }
   const ctx = {
+    connection: testPeerConnection,
     get: () => undefined,
     agents: { get: () => undefined, list: () => [] },
     sessions: { list: () => [] },
@@ -244,6 +246,7 @@ async function nativeSetup(
     snapshotEvents: () => [],
   }
   const ctx = {
+    connection: testPeerConnection,
     get: () => undefined,
     agents: { get: () => undefined, list: () => [] },
     waterfall: async (_event, _request, next) => next(),

@@ -140,7 +140,7 @@ node scripts/mcode-candidate/lifecycle.mjs official --active-tasks <N>
 1. 用官方安装器安装 `mcode` 并完成官方登录（`mcode login` 或 `mcode login --region global`）。
 2. **导入候选**（可校验、可 dry-run）：`lifecycle.mjs import` 会先只读校验版本、逐文件摘要、能力标记与许可，全部通过才把候选复制进**版本目录** `%APPDATA%/OPL DSH Suite/harnesses/MiniMax Code/<candidateVersion>/`；同一位置的旧候选目录从不删除。可与 `--select` 组合，一次完成导入 + 记录选择。
 3. **记录显式选择**：`lifecycle.mjs select --version <candidateVersion> --active-tasks <调用方注入的活动数>` 写入选择回执 `selection.json`（套件自有位置），并在输出里给出要填进“可执行文件路径”的绝对路径。这一步只写回执。
-4. **让选择真正生效**：人工在设置 → 执行引擎 卡片里展开 MiniMax Code 的“可执行文件路径”，填入该绝对路径（该输入框接受绝对路径或 PATH 中的命令，失焦即保存；绝对路径按“来自执行组合”识别，含空格可用）。也可使用下面的 Host 选择命令，导入校验和执行组合发布在同一维护操作中完成。
+4. **让选择真正生效**：人工在设置 → 执行与组合 → 执行引擎与网络代理 的 MiniMax Code 卡片里展开“可执行文件路径”，填入该绝对路径（该输入框接受绝对路径或 PATH 中的命令，失焦即保存；绝对路径按“来自执行组合”识别，含空格可用）。也可使用下面的 Host 选择命令，导入校验和执行组合发布在同一维护操作中完成。
 5. 候选与官方共用官方登录状态：不要设置 `MINIMAX_DATA_DIR`/`MAVIS_DATA_DIR` 指向副本，也不要复制 `~/.minimax`。
 
 ### 由 DSH Host 导入并选择

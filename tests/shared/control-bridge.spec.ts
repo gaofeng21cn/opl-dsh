@@ -3,7 +3,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
+import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import { startControlBridge } from '../../src/shared/host/control-bridge.ts'
+
+/** The bridge forwards this explicit owner identity on every Remote request. */
+const peer = { id: 'owner-test' } as PeerScope
+const startBridge = (
+  gateway: Pick<TypertGateway, 'invoke' | 'stream'>,
+  file: string,
+): ReturnType<typeof startControlBridge> => startControlBridge(gateway, peer, file)
 
 /** The control binding a running bridge publishes. */
 interface ControlBinding {
@@ -33,7 +41,7 @@ it('authenticates localhost control, rejects browser origins and unlisted APIs, 
   const dir = mkdtempSync(join(tmpdir(), 'opl-control-'))
   const file = join(dir, 'control.json')
   const invoke = vi.fn(async () => ({ items: [] }))
-  const stop = await startControlBridge({ invoke } as unknown as TypertGateway, file)
+  const stop = await startBridge({ invoke } as unknown as TypertGateway, file)
   const binding = readBinding(file)
   try {
     const body = JSON.stringify({ namespace: 'session', method: 'list', args: { _request: {} } })
@@ -71,10 +79,7 @@ it('authenticates localhost control, rejects browser origins and unlisted APIs, 
 it('routes candidate selection to the execution owner without granting arbitrary methods', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'opl-candidate-control-'))
   const invoke = vi.fn(async () => ({ command: 'verified-candidate' }))
-  const stop = await startControlBridge(
-    { invoke } as unknown as TypertGateway,
-    join(dir, 'control.json'),
-  )
+  const stop = await startBridge({ invoke } as unknown as TypertGateway, join(dir, 'control.json'))
   try {
     const binding = readBinding(join(dir, 'control.json'))
     const args = { version: '0.6.3-opl-bash.20261010.2' }
@@ -102,10 +107,7 @@ it('routes candidate selection to the execution owner without granting arbitrary
 it('routes Codex selection and rollback through the authenticated execution owner', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'opl-codex-control-'))
   const invoke = vi.fn(async () => ({ mode: 'git-bash', command: 'verified-codex' }))
-  const stop = await startControlBridge(
-    { invoke } as unknown as TypertGateway,
-    join(dir, 'control.json'),
-  )
+  const stop = await startBridge({ invoke } as unknown as TypertGateway, join(dir, 'control.json'))
   try {
     const binding = readBinding(join(dir, 'control.json'))
     for (const args of [
@@ -138,7 +140,7 @@ it('allows the event-driven session wait through the method allowlist', async ()
   const dir = mkdtempSync(join(tmpdir(), 'opl-control-wait-'))
   const file = join(dir, 'control.json')
   const invoke = vi.fn(async () => ({ turn: 2, outcome: { kind: 'completed' } }))
-  const stop = await startControlBridge({ invoke } as unknown as TypertGateway, file)
+  const stop = await startBridge({ invoke } as unknown as TypertGateway, file)
   const binding = readBinding(file)
   try {
     const result = await rpc(binding, {
@@ -187,7 +189,7 @@ it('allows the permission read and switch and carries a refusal code back to the
       approval: 'ask',
     }
   })
-  const stop = await startControlBridge({ invoke } as unknown as TypertGateway, file)
+  const stop = await startBridge({ invoke } as unknown as TypertGateway, file)
   const binding = readBinding(file)
   try {
     const read = await rpc(binding, {
@@ -235,7 +237,7 @@ it('allows only the project list and rejects unsupported moves', async () => {
     })(),
   )
   const invoke = vi.fn(async () => ({ moved: true }))
-  const stop = await startControlBridge({ invoke, stream } as unknown as TypertGateway, file)
+  const stop = await startBridge({ invoke, stream } as unknown as TypertGateway, file)
   const binding = readBinding(file)
   try {
     const listed = await rpc(binding, { namespace: 'workspace', method: 'follow', args: {} })
@@ -284,7 +286,7 @@ it('reports a caller deadline as a timeout rather than as the cancelled call', a
         )
       }),
   )
-  const stop = await startControlBridge({ invoke } as unknown as TypertGateway, file)
+  const stop = await startBridge({ invoke } as unknown as TypertGateway, file)
   const binding = readBinding(file)
   try {
     const result = await rpc(binding, {
@@ -305,7 +307,7 @@ it('rejects an unusable deadline instead of silently substituting its own', asyn
   const dir = mkdtempSync(join(tmpdir(), 'opl-control-badtimeout-'))
   const file = join(dir, 'control.json')
   const invoke = vi.fn(async () => ({}))
-  const stop = await startControlBridge({ invoke } as unknown as TypertGateway, file)
+  const stop = await startBridge({ invoke } as unknown as TypertGateway, file)
   const binding = readBinding(file)
   try {
     for (const timeoutMs of [0, -1, 1.5, 24 * 60 * 60 * 1000 + 1, 'soon']) {
@@ -335,7 +337,7 @@ it('allows the queue steer mutation through the allowlist and carries its refusa
       details: { itemId: 'q-42' },
     })
   })
-  const stop = await startControlBridge({ invoke } as unknown as TypertGateway, file)
+  const stop = await startBridge({ invoke } as unknown as TypertGateway, file)
   const binding = readBinding(file)
   try {
     const refused = await rpc(binding, {
@@ -366,7 +368,7 @@ it('admits setup status and completion only through authenticated local control'
   const dir = mkdtempSync(join(tmpdir(), 'opl-control-setup-'))
   const file = join(dir, 'control.json')
   const invoke = vi.fn(async () => ({ choice: 'gateway' }))
-  const stop = await startControlBridge({ invoke } as unknown as TypertGateway, file)
+  const stop = await startBridge({ invoke } as unknown as TypertGateway, file)
   try {
     const binding = readBinding(file)
     for (const method of ['setupStatus', 'finishSetup']) {

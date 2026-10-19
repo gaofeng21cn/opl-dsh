@@ -4,6 +4,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
+import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 
 const allowed: Readonly<Record<string, readonly string[]>> = {
   session: [
@@ -139,6 +140,7 @@ function remoteFailure(error: unknown): { code: string; details: unknown } | und
 /** Start a local-only authenticated bridge; all commands use the same GUI services. */
 export async function startControlBridge(
   gateway: Pick<TypertGateway, 'invoke' | 'stream'>,
+  peer: PeerScope,
   filename: string,
 ): Promise<() => Promise<void>> {
   const token = randomBytes(32).toString('hex')
@@ -215,7 +217,7 @@ export async function startControlBridge(
       let value: unknown
       const streamed = streamedMethod(data.namespace, data.method)
       if (streamed !== undefined) {
-        const stream = await gateway.stream({ ...invocation, method: streamed })
+        const stream = await gateway.stream({ ...invocation, method: streamed, peer })
         const iterator = stream[Symbol.asyncIterator]()
         try {
           value = (await iterator.next()).value
@@ -223,7 +225,7 @@ export async function startControlBridge(
           controller.abort()
           await iterator.return?.()
         }
-      } else value = await gateway.invoke(invocation)
+      } else value = await gateway.invoke({ ...invocation, peer })
       reply(res, 200, { ok: true, value })
     } catch (error) {
       // A deadline the bridge itself imposed is reported as a timeout, not as

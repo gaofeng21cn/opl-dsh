@@ -989,19 +989,10 @@ describe('AutoReviewSection', () => {
 })
 
 describe('auto-review plugin wiring contract', () => {
-  it('injects only slots and locale, and registers the official settings section', () => {
-    expect(inject).toEqual(['slots', 'locale'])
+  it('owns copy only; the execution page owns its single visible entry', () => {
+    expect(inject).toEqual(['locale'])
     expect(inject).not.toContain('sessions')
     expect(inject).not.toContain('sessionPermissions')
-    const registrations: {
-      name: string
-      id?: string
-      order?: number
-      locale?: string
-      label?: () => string
-      inject?: () => object
-    }[] = []
-    const registered: unknown[] = []
     const dictionaries: unknown[] = []
     const ctx = {
       effect: (fn: () => unknown) => {
@@ -1015,30 +1006,9 @@ describe('auto-review plugin wiring contract', () => {
         },
         bind: () => (key: string) => dictionary[key] ?? key,
       },
-      slots: {
-        inject: (_name: string, factory: () => unknown) => factory(),
-        register: (options: (typeof registrations)[number], component: unknown) => {
-          registrations.push(options)
-          registered.push(component)
-          return () => {}
-        },
-      },
     }
-    const api: AutoReviewClientApi = {
-      read: async () => status(),
-      save: async () => ({ ok: true, status: status() }),
-    }
-    apply(ctx as never, { api })
+    apply(ctx as never)
     expect(dictionaries).toEqual([{ ns: AUTO_REVIEW_NAMESPACE, dicts: { zh, en } }])
-    expect(registrations).toHaveLength(1)
-    const entry = registrations[0]!
-    expect(entry.name).toBe('settings.section')
-    expect(entry.id).toBe('opl-auto-review')
-    expect(entry.order).toBe(80)
-    expect(entry.locale).toBe(AUTO_REVIEW_NAMESPACE)
-    expect(entry.label?.()).toBe(zh.sectionLabel)
-    expect(entry.inject?.()).toEqual({ api })
-    expect(registered[0]).toBe(AutoReviewSection)
   })
 })
 
@@ -1355,38 +1325,5 @@ describe('auto-review component generation negatives', () => {
     ).toBe('false')
     expect(maybe(container, 'data-opl-auto-review-draft-pending')).toBeDefined()
     expect(textOf(container)).toContain(zh.effectiveOff)
-  })
-})
-
-describe('auto-review plugin connection wiring contract', () => {
-  it('forwards a wired connection source into the section face', () => {
-    const registrations: { inject?: () => object }[] = []
-    const ctx = {
-      effect: (fn: () => unknown) => {
-        fn()
-        return () => {}
-      },
-      locale: {
-        register: () => () => {},
-        bind: () => (key: string) => dictionary[key] ?? key,
-      },
-      slots: {
-        inject: (_name: string, factory: () => unknown) => factory(),
-        register: (options: { inject?: () => object }) => {
-          registrations.push(options)
-          return () => {}
-        },
-      },
-    }
-    const source: AutoReviewConnectionSource = {
-      getSnapshot: () => 1,
-      subscribe: () => () => {},
-    }
-    const api: AutoReviewClientApi = {
-      read: async () => status(),
-      save: async () => ({ ok: true, status: status() }),
-    }
-    apply(ctx as never, { api, connection: source })
-    expect(registrations[0]!.inject?.()).toEqual({ api, connection: source })
   })
 })

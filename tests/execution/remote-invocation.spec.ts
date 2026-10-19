@@ -30,9 +30,9 @@ describe('official in-process Remote Peer', () => {
     expect(createPeer).not.toHaveBeenCalled()
     expect(invoke).toHaveBeenCalledWith({ ...request, peer })
   })
-  it('keeps the legacy implicit operator call on older Desktop', async () => {
+  it('fails closed when no official Peer is available', async () => {
     const { ctx, invoke } = fixture({})
-    await invokeHostRemote(ctx, request)
-    expect(invoke).toHaveBeenCalledWith(request)
+    await expect(invokeHostRemote(ctx, request)).rejects.toThrow('Peer')
+    expect(invoke).not.toHaveBeenCalled()
   })
 })

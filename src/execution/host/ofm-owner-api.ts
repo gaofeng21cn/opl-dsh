@@ -40,12 +40,13 @@ export function createOfmOwnerApiReader(ctx: Context, timeoutMs: number): OfmOwn
       const host = server.host
       if (host !== '::1' && !/^127\.\d+\.\d+\.\d+$/.test(host))
         throw Error('OFM 连接读取仅支持本机监听地址')
-      if (!Number.isInteger(server.port) || server.port < 1 || server.port > 65535)
+      const port = server.port
+      if (port === undefined || !Number.isInteger(port) || port < 1 || port > 65535)
         throw Error('OFM 连接读取监听尚未就绪')
       // rc.2 exposes host/port and only serves HTTP; newer listeners advertise TLS explicitly.
       const protocol = server.protocol === undefined ? 'http:' : server.protocol
       if (protocol !== 'http:' && protocol !== 'https:') throw Error('OFM 监听协议不受支持')
-      const origin = new URL(`${protocol}//${host === '::1' ? '[::1]' : host}:${server.port}`)
+      const origin = new URL(`${protocol}//${host === '::1' ? '[::1]' : host}:${port}`)
       const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(timeoutMs)])
       // Cordis wraps each service read in a fresh caller-context proxy.
       const identity = (service: object | undefined) =>

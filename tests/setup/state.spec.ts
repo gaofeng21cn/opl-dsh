@@ -1,13 +1,18 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { finishSetup, setupStatus } from '../../src/setup/host/state.ts'
+import { testPeerConnection } from '../test-peer.ts'
 function fixture({ ready = false, official = false, failSelection = false } = {}) {
   let saved = { loginChoice: 'undecided', setupCompleted: false }
   const select = failSelection
     ? vi.fn().mockRejectedValue(Error('failed'))
     : vi.fn().mockResolvedValue(undefined)
   const ctx = {
-    get: () => ({ status: async () => ({ keyReady: ready, codexKeyReady: false }) }),
+    connection: testPeerConnection,
+    get: (name: string) =>
+      name === 'connection'
+        ? testPeerConnection
+        : { status: async () => ({ keyReady: ready, codexKeyReady: false }) },
     typertGateway: {
       invoke: async () => ({ status: official ? 'credential-stored' : 'signed-out' }),
     },

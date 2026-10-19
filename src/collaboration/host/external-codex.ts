@@ -1,5 +1,9 @@
 import { sessionPermissions } from '../../compat/host/session-permissions.ts'
-import { invokeHostRemote, streamHostRemote } from '../../compat/host/remote-invocation.ts'
+import {
+  hostPeer,
+  invokeHostRemote,
+  streamHostRemote,
+} from '../../compat/host/remote-invocation.ts'
 /** Optional external Codex transport; shares the internal collaboration owner. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
@@ -96,6 +100,10 @@ export function installExternalCodex(ctx: Context, harness: HarnessService) {
     },
   }
   ctx.effect(async () =>
-    startControlBridge(bridge, join(dshHomePath(), 'profiles', 'desktop', 'control.json')),
+    startControlBridge(
+      bridge,
+      hostPeer(ctx),
+      join(dshHomePath(), 'profiles', 'desktop', 'control.json'),
+    ),
   )
 }

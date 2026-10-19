@@ -59,6 +59,17 @@ for (const [directory, name] of [
 }
 for (const name of ['muse-bridge.mjs', 'muse-bash-mcp.mjs', 'muse-endpoint.mjs'])
   await cp(join(root, 'src/execution/host/adapters/muse', name), join(output, 'package/lib', name))
+/** The official client loader materializes the protocol root, not its pure remote-info leaf. */
+const officialClientRuntime = {
+  name: 'official-client-runtime',
+  setup(builder) {
+    builder.onResolve({ filter: /^@deepseek-ai\// }, (args) =>
+      args.path === '@deepseek-ai/dsh-typert-protocol/remote-info'
+        ? undefined
+        : { path: args.path, external: true },
+    )
+  },
+}
 const clientBuild = await bundle({
   metafile: true,
   entryPoints: [join(root, 'src/suite/client.tsx')],
@@ -66,7 +77,8 @@ const clientBuild = await bundle({
   platform: 'browser',
   format: 'cjs',
   outfile: join(output, 'client.cjs'),
-  external: ['react', 'react/*', '@deepseek-ai/*'],
+  external: ['react', 'react/*'],
+  plugins: [officialClientRuntime],
   loader: { '.css': 'local-css' },
   tsconfigRaw: { compilerOptions: { jsx: 'react-jsx' } },
 })

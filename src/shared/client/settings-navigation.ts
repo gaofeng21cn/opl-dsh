@@ -4,12 +4,10 @@ export const SETTINGS_ORDER = {
   'opl-gateway': 10,
   models: 20,
   'our-free-model': 30,
-  'opl-harness-settings': 40,
-  'opl-execution': 50,
-  'agent-presets': 60,
-  'opl-codex': 70,
-  'opl-auto-review': 80,
-  plugins: 90,
+  'opl-execution': 40,
+  'agent-presets': 50,
+  'opl-codex': 60,
+  plugins: 70,
 } as const
 
 export const SETTINGS_NAVIGATION_NS = 'settings.oplNavigation'
@@ -18,11 +16,9 @@ export const settingsNavigationZh = {
   'opl-gateway': '网关账户',
   models: '模型供应商',
   'our-free-model': 'OFM 模型服务',
-  'opl-harness-settings': '执行引擎',
-  'opl-execution': '执行组合',
+  'opl-execution': '执行与组合',
   'agent-presets': 'Agent 预设',
   'opl-codex': '协作与自动化',
-  'opl-auto-review': '工具审批',
   plugins: '插件管理',
 } satisfies Record<keyof typeof SETTINGS_ORDER, string>
 export const settingsNavigationEn: Record<keyof typeof SETTINGS_ORDER, string> = {
@@ -30,11 +26,9 @@ export const settingsNavigationEn: Record<keyof typeof SETTINGS_ORDER, string> =
   'opl-gateway': 'Gateway',
   models: 'Model providers',
   'our-free-model': 'OFM services',
-  'opl-harness-settings': 'Harnesses',
-  'opl-execution': 'Combinations',
+  'opl-execution': 'Execution',
   'agent-presets': 'Agent presets',
   'opl-codex': 'Collaboration',
-  'opl-auto-review': 'Tool approval',
   plugins: 'Plugins',
 }
 

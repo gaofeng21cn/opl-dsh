@@ -33,6 +33,7 @@ import { adapterFor } from '../../../src/execution/host/adapters/index.ts'
 import { systemEnvironment } from '../../../src/execution/host/adapters/environment.ts'
 import { grokConfiguration } from '../../../src/execution/host/adapters/grok.ts'
 import { GROK_API_KEY_REF } from '../../../src/gateway/host/config.ts'
+import { testPeerConnection } from '../../test-peer.ts'
 import { resolveGatewayExecution } from '../../../src/gateway/host/execution-access.ts'
 import type { HarnessTurn } from '../../../src/execution/contracts/sessions.ts'
 import {
@@ -89,6 +90,7 @@ afterEach(async () => {
 
 const harnessContext = () =>
   ({
+    connection: testPeerConnection,
     get: () => undefined,
     agents: { get: () => undefined, list: () => [] },
     sessions: { list: () => [] },

@@ -1,4 +1,4 @@
-import { invokeHostRemote } from '../../compat/host/remote-invocation.ts'
+import { hostPeer, invokeHostRemote } from '../../compat/host/remote-invocation.ts'
 import { gatewayGroupEnabled } from '../../gateway/host/group-settings.ts'
 import { inspectHarness } from './harness-registry.ts'
 import { maintainHarness } from './harness-maintenance.ts'
@@ -1141,6 +1141,7 @@ export class HarnessService {
           throw Error('Stream not supported')
         },
       },
+      hostPeer(this.ctx),
       bindingPath,
     )
     let stopped = false

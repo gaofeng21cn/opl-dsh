@@ -19,6 +19,7 @@ import { resolveGatewayExecution } from '../../src/gateway/host/execution-access
 import { GROK_API_KEY_REF } from '../../src/gateway/host/config.ts'
 import type { HarnessProxy } from '../../src/execution/contracts/catalog.ts'
 import type { HarnessSnapshot, HarnessTurn } from '../../src/execution/contracts/sessions.ts'
+import { testPeerConnection } from '../test-peer.ts'
 
 const FIXTURE = resolve('tests/fixtures/proxy-acp-agent.mjs')
 const GROK_REF = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
@@ -153,7 +154,11 @@ async function setup() {
     prefix: [FIXTURE],
     resolveKey: async () => 'test-grok-key',
   }
-  const ctx = { get: () => undefined, agents: { get: () => undefined } } as unknown as Context
+  const ctx = {
+    connection: testPeerConnection,
+    get: () => undefined,
+    agents: { get: () => undefined },
+  } as unknown as Context
   const service = new HarnessService(ctx, options)
   cleanups.push(() => service.dispose())
   // One working directory per Harness, so each child's own record is unambiguous.

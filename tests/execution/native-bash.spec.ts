@@ -12,6 +12,7 @@ import { HarnessService } from '../../src/execution/host/harness.ts'
 import { harnessAdapters } from '../../src/execution/host/adapters/index.ts'
 import { commandLaunch } from '../../src/execution/host/harness-registry.ts'
 import type { HarnessAdapter } from '../../src/execution/host/adapters/types.ts'
+import { testPeerConnection } from '../test-peer.ts'
 import {
   claudeGitBashProblem,
   codexAllowsGitBash,
@@ -512,6 +513,7 @@ describe('ordinary conversation full-access binding', () => {
       snapshotEvents: () => [],
     }
     const ctx = {
+      connection: testPeerConnection,
       waterfall: async (_name: unknown, _request: unknown, next: () => Promise<unknown[]>) =>
         next(),
       get: () => undefined,
@@ -682,6 +684,7 @@ describe('explicit full-access requests', () => {
     const root = (await mkdtemp(join(tmpdir(), 'opl-fullaccess-'))).replace(/\\/g, '/')
     cleanups.push(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
     const ctx = {
+      connection: testPeerConnection,
       waterfall: async (_name: unknown, _request: unknown, next: () => Promise<unknown[]>) =>
         next(),
       get: () => undefined,
