@@ -238,7 +238,7 @@ export async function verifyDesktopClient(
   await openSettings()
   const panels = [
     { label: ['通用设置', 'General'], marker: 'notifications' },
-    { label: ['执行与组合', 'Execution & combinations'], marker: 'catalog' },
+    { label: ['执行与组合', 'Execution'], marker: 'catalog' },
     { label: ['协作与自动化', 'Collaboration'], marker: 'collaboration' },
     { label: ['模型供应商', 'Model providers'], marker: 'gateway-models' },
   ]
@@ -259,7 +259,7 @@ export async function verifyDesktopClient(
       'Gateway',
       'Model providers',
       'OFM services',
-      'Execution & combinations',
+      'Execution',
       'Agent presets',
       'Collaboration',
       'Plugins',

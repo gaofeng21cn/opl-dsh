@@ -26,7 +26,7 @@ export const settingsNavigationEn: Record<keyof typeof SETTINGS_ORDER, string> =
   'opl-gateway': 'Gateway',
   models: 'Model providers',
   'our-free-model': 'OFM services',
-  'opl-execution': 'Execution & combinations',
+  'opl-execution': 'Execution',
   'agent-presets': 'Agent presets',
   'opl-codex': 'Collaboration',
   plugins: 'Plugins',
