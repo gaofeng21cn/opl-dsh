@@ -58,6 +58,7 @@ Windows · x64，在 PowerShell 中运行：
 - **编辑消息**：原生 DSH 对话选择消息后，在正常输入框修改并发送，直接替换原对话中的该消息及后续回复；首条消息也保留同一对话。取消保留历史，磁盘文件不回退。外部 Harness 隐藏入口，分叉沿用官方菜单。详见[编辑消息](docs/stop-edit.md)。
 - **对话空白区域**：隐藏对话两侧的隐形宽度拖动区，空白处不显示横向缩放光标；侧栏与面板分隔条仍可拖动。
 - **Auto Review 工具审批**：默认关闭；DSH 与 ZCode 默认使用专用 codex-auto-review，也可显式选择独立审查模型。会话选择 Auto 后送审，失败不执行工具，保存审核输入与结果。Codex、Claude 使用官方审核接口。入口位于“执行与组合”页，详见[Auto Review 工具审批](docs/auto-review.md)。
+- **BambooNode StartLux Auto Review**：可在模型供应商中配置 Bamboo API Key，作为可选的无工具 Auto Review 路线。Key 仅保存到 Windows Credential Manager；低风险允许、高风险拒绝和不完整结果均按固定安全策略处理。详见[BambooNode StartLux Auto Review](docs/bamboo-startlux-auto-review.md)。
 - **Todo 状态展示**：会话停止后，未完成的记录项静态显示，不自动标记完成；父会话与子会话活动分别显示，未知状态明确保留。详见[Todo 状态展示](docs/todo-status.md)。
 - **模型 + Harness 组合**：DSH 原生会话继续使用官方会话列表、消息流和输入框；所有已就绪的模型 + Harness 组合都在同一个模型选择器中显示。选择 Codex CLI、Claude Code 或 Grok Build 后，当前官方会话仍使用同一输入框和消息流，后台将本轮请求转发给绑定的官方 Harness 并把结果回写；组合、权限和恢复记录由后台维护。支持的组合沿用该菜单的推理强度选择，已提供的档位统一显示为低、中、高、极高、最大、超高，实际可选档位仍由模型决定；切换时显示目标组合与等待状态，首次发送时启动对应 Harness。自动生成的外部组合按当前 DSH 权限核对目标 Harness 的能力；不支持只读或工作区隔离的 Harness 会拒绝启动，不会自动提升为完全权限。Claude Code 的受限任务依赖官方 sandbox 后端；显式完整访问使用官方 bypassPermissions，允许工作目录外访问。外部任务可按每轮 `writeScope` 的精确文件或目录范围并行；重叠写入、未声明范围的项目写入、构建和安装保持串行。该声明用于调度，不改变工具权限。从 Codex 或对话内协作工具 `delegate` 派出的外部任务绑定一个真实的官方 DSH 会话：它出现在对应项目的官方会话列表侧栏，按普通会话查看、续作和人工审批；设置中不再有独立的“外部任务”页面。
 - **MiniMax 官方账号组合**：接入官方 MiniMax CLI `mcode` 的 ACP 模式并使用官方账号登录；只提供两个模型组合（M3.1-Flash-Preview 默认 `max`、M3 默认开启思考），推理设置按官方能力可选，不需要 MiniMax Code 图形界面自动化，也不使用 OPL Gateway 的 MiniMax 密钥。Windows Git Bash 固定后端需支持 Shell 回读的 mcode 候选版；官方 0.6.3 默认 PowerShell，不能仅靠 SHELL 环境变量切换。详见[官方 MiniMax 账号与 mcode](docs/minimax-code.md)。
@@ -68,7 +69,7 @@ Windows · x64，在 PowerShell 中运行：
 
 推理菜单按模型声明和官方 CLI 实际能力提供，不为没有推理档位接口的组合添加档位。OPL Gateway 的 `deepseek-flash` 默认使用 `high`，GPT 默认 `medium`；其他来源沿用各自声明的默认值，已明确选择的档位和会话记忆优先。CLI 管理的档位通过临时 ACP 会话读取，读取失败或没有可调档位时隐藏设置；读取不发送模型提示词。
 
-设置按账户与模型来源、执行与组合、协作与行为、插件管理排列。**网关账户** 管理 OPL Gateway 凭据和权限；**模型供应商** 复用 DSH 原生设置，OPL Gateway 按分组展开，华为云 MaaS 的 GLM-5.2 与 API Key 在此配置，macOS 与 Windows 统一使用官方凭据服务，旧 Windows Key 首次升级自动迁移。**OFM 模型服务** 保留原版 Our Free Model 的全部设置与更新功能。**执行与组合** 是执行设置的唯一入口：常用区管理模型、Harness 与权限绑定；同一页的折叠区管理执行程序、版本、路径、独立网络代理和工具审批。组合只引用模型、Harness 和权限，不再重复保存连接和协议；协作与自动化管理任务验收、外部接入和 Skill。外部任务不单列设置页，按官方会话在对应项目侧栏查看和处理。
+设置按账户与模型来源、执行与组合、协作与行为、插件管理排列。**网关账户** 管理 OPL Gateway 凭据和权限；**模型供应商** 复用 DSH 原生设置，OPL Gateway 按分组展开，华为云 MaaS 的 GLM-5.2 与 BambooNode StartLux API Key 在此配置，Windows 上的这两个供应商 Key 只保存到 Windows Credential Manager，旧华为云明文记录首次升级后会在读回成功时删除。**OFM 模型服务** 保留原版 Our Free Model 的全部设置与更新功能。**执行与组合** 是执行设置的唯一入口：常用区管理模型、Harness 与权限绑定；同一页的折叠区管理执行程序、版本、路径、独立网络代理和工具审批。组合只引用模型、Harness 和权限，不再重复保存连接和协议；协作与自动化管理任务验收、外部接入和 Skill。外部任务不单列设置页，按官方会话在对应项目侧栏查看和处理。
 
 对话输入栏直接使用官方 DSH 的会话 UI，并在模型选择器中显示“模型 · Harness”。所有已就绪组合都可在当前会话选择；官方 DSH 组合直接切换模型，外部 Harness 组合由 Host 在同一官方会话的模型请求阶段转发。切换到外部 Harness 时，已有会话的文本、工具调用和结果会作为上下文交接；历史推理内容不会交接，直接附件暂不支持。未配置官方凭据的 DeepSeek 模型不会作为可用选项；未登录 DeepSeek 官方账号时不请求远端模型目录，已保存的组合仍显示为不可用。默认 DeepSeek Flash 只走 DeepSeek 分组，不要求 OpenAI 协议权限；用户在模型页显式启用后，才会加入 OpenAI 协议渠道。同名模型的渠道分别保留；Claude Opus 5.5 可选 AWS/Kiro。账号页展示上游返回的分组倍率，组合始终绑定所选渠道。GPT 使用 OpenAI 协议分组。
 
@@ -78,16 +79,17 @@ Codex 协作保留 DSH 的权限与问题确认。后台主动唤醒 Codex 需�
 
 主要执行组合：
 
-| 模型来源与系列 | Harness | 使用前提 |
-| --- | --- | --- |
-| OPL DeepSeek V4.1 Flash | 官方 DSH | 对应 Gateway 分组可用 |
-| OPL GPT | Codex CLI | 对应分组与 CLI 已就绪 |
-| OPL Claude Opus 5.5 | Claude Code | AWS、Kiro 渠道独立选择 |
-| OPL Grok 4.7 | Grok Build | 对应分组与 CLI 已就绪 |
-| OPL Gemini 4 Argon、3.8 Flash、3.1 Pro | OpenCode | 使用 OPL Gateway Gemini 渠道，不要求 Google 账号登录 |
-| 华为云 MaaS GLM-5.2 | ZCode | 在模型供应商中配置 MaaS Key |
-| MiniMax M3.1-Flash-Preview、M3 | 官方 mcode | 官方 MiniMax 账号；M3.1 默认 max，M3 默认开启思考；仅支持明确授权的完全访问 |
-| OFM 免费模型与虚拟路由 | 按模型选择 DSH、OpenCode、Kimi Code、Poolside、ZCode、Codex CLI、StepCode、Pi 或 Kilo | 来源目录、CLI、权限与渠道均须就绪；配对表见[外部 Harness 适配](docs/harness-adaptation.md#our-free-model-组合) |
+| 模型来源与系列                         | Harness                                                                               | 使用前提                                                                                                       |
+| -------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| OPL DeepSeek V4.1 Flash                | 官方 DSH                                                                              | 对应 Gateway 分组可用                                                                                          |
+| OPL GPT                                | Codex CLI                                                                             | 对应分组与 CLI 已就绪                                                                                          |
+| OPL Claude Opus 5.5                    | Claude Code                                                                           | AWS、Kiro 渠道独立选择                                                                                         |
+| OPL Grok 4.7                           | Grok Build                                                                            | 对应分组与 CLI 已就绪                                                                                          |
+| OPL Gemini 4 Argon、3.8 Flash、3.1 Pro | OpenCode                                                                              | 使用 OPL Gateway Gemini 渠道，不要求 Google 账号登录                                                           |
+| 华为云 MaaS GLM-5.2                    | ZCode                                                                                 | 在模型供应商中配置 MaaS Key                                                                                    |
+| BambooNode StartLux                    | Auto Review                                                                           | 在模型供应商中配置 Bamboo API Key；仅用于无工具审查                                                            |
+| MiniMax M3.1-Flash-Preview、M3         | 官方 mcode                                                                            | 官方 MiniMax 账号；M3.1 默认 max，M3 默认开启思考；仅支持明确授权的完全访问                                    |
+| OFM 免费模型与虚拟路由                 | 按模型选择 DSH、OpenCode、Kimi Code、Poolside、ZCode、Codex CLI、StepCode、Pi 或 Kilo | 来源目录、CLI、权限与渠道均须就绪；配对表见[外部 Harness 适配](docs/harness-adaptation.md#our-free-model-组合) |
 
 “已适配”表示套件实现了模型与 Harness 的接入，不保证免费渠道随时可用或任意任务都能完成。相同显示名的不同渠道保留独立身份，不因失败自动换源。MiniMax 官方账号凭据由 mcode 管理，不使用 OPL Gateway 密钥；安装、权限与委派方式见[官方 MiniMax 账号与 mcode](docs/minimax-code.md)。
 
