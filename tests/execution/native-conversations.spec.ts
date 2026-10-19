@@ -13,6 +13,7 @@ import {
   NativeHarnessConversations,
   harnessRequestId,
 } from '../../src/execution/host/native-conversations.ts'
+import { testPeerConnection } from '../test-peer.ts'
 
 function setup() {
   const sessions = new Map<string, Session>()
@@ -38,6 +39,7 @@ function setup() {
     setApprovalPolicy(session, preset === 'danger-full-access' ? 'never' : 'ask')
   })
   const ctx = {
+    connection: testPeerConnection,
     get: (name: string) => (name === 'permissionPresets' ? { set: permissionSet } : undefined),
     effect: vi.fn(),
     sessions: { get: (id: string) => sessions.get(id), flush: vi.fn(async () => {}) },

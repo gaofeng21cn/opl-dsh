@@ -90,9 +90,14 @@ export async function verifyDesktopClient(
   }
   progress(result)
   await Promise.all(
-    ['execution-settings', 'catalog', 'collaboration', 'gateway-models', 'failure'].map((name) =>
-      rm(screenshotPrefix + '-' + name + '.png', { force: true }),
-    ),
+    [
+      'execution-settings',
+      'catalog',
+      'collaboration',
+      'gateway-models',
+      'auto-review',
+      'failure',
+    ].map((name) => rm(screenshotPrefix + '-' + name + '.png', { force: true })),
   )
   let session
   // The actual desktop content is a WebContentsView, separate from the native shell.
@@ -233,8 +238,7 @@ export async function verifyDesktopClient(
   await openSettings()
   const panels = [
     { label: ['通用设置', 'General'], marker: 'notifications' },
-    { label: ['执行引擎', 'Harnesses'], marker: 'execution-settings' },
-    { label: ['执行组合', 'Combinations'], marker: 'catalog' },
+    { label: ['执行与组合', 'Execution & combinations'], marker: 'catalog' },
     { label: ['协作与自动化', 'Collaboration'], marker: 'collaboration' },
     { label: ['模型供应商', 'Model providers'], marker: 'gateway-models' },
   ]
@@ -245,11 +249,9 @@ export async function verifyDesktopClient(
       '网关账户',
       '模型供应商',
       'OFM 模型服务',
-      '执行引擎',
-      '执行组合',
+      '执行与组合',
       'Agent 预设',
       '协作与自动化',
-      '工具审批',
       '插件管理',
     ],
     [
@@ -257,11 +259,9 @@ export async function verifyDesktopClient(
       'Gateway',
       'Model providers',
       'OFM services',
-      'Harnesses',
-      'Combinations',
+      'Execution & combinations',
       'Agent presets',
       'Collaboration',
-      'Tool approval',
       'Plugins',
     ],
   ]
@@ -341,11 +341,18 @@ export async function verifyDesktopClient(
       }
     }
     if (panel.marker === 'catalog') {
-      if (await pipe.evaluate(session, `Boolean(document.querySelector('[data-opl-proxy-row]'))`))
+      if (
+        await pipe.evaluate(
+          session,
+          `Boolean(document.querySelector('[data-opl-panel="catalog"] [data-opl-proxy-row]'))`,
+        )
+      )
         throw new Error('执行组合仍重复提供 Harness 代理配置')
       result.combinationsOnly = true
-    }
-    if (panel.marker === 'execution-settings') {
+      await pipe.evaluate(
+        session,
+        `document.querySelector('[data-opl-panel="execution-settings"]').open=true`,
+      )
       await waitFor(
         `(() => {const row=document.querySelector('[data-opl-proxy-row="minimax-code"]'); const builtin=document.querySelector('[data-opl-proxy-row="dsh"]'); return Boolean(row && row.querySelectorAll('input[type=radio]').length===3 && builtin && Array.from(builtin.querySelectorAll('input[type=radio]')).every(x=>x.disabled))})()`,
         'Harness 独立代理设置未注册',
@@ -367,6 +374,36 @@ export async function verifyDesktopClient(
         '真实代理保存未成功',
       )
       result.harnessProxySaved = true
+      result.settingsSlots.push('execution-settings')
+      await pipe.evaluate(
+        session,
+        `document.querySelector('[data-opl-panel="execution-settings"]').scrollIntoView({block:'start'})`,
+      )
+      const executionScreenshot = await captureScreenshot('execution-settings')
+      if (executionScreenshot) screenshots.push(executionScreenshot)
+      else result.screenshotFailures.push('execution-settings')
+      await pipe.evaluate(
+        session,
+        `document.querySelector('[data-opl-panel="execution-settings"]').open=false; document.querySelector('[data-opl-panel="auto-review"]').open=true`,
+      )
+      await waitFor(
+        `(() => {const panel=document.querySelector('[data-opl-panel="auto-review"]'); return Boolean(panel && panel.getClientRects().length && panel.querySelector('[data-opl-auto-review-state]') && panel.getAttribute('aria-busy') !== 'true')})()`,
+        '工具审批未挂载到执行页面',
+        undefined,
+        process.platform === 'win32' ? 280 : 80,
+      )
+      result.settingsSlots.push('auto-review')
+      await pipe.evaluate(
+        session,
+        `document.querySelector('[data-opl-panel="auto-review"]').scrollIntoView({block:'start'})`,
+      )
+      const autoReviewScreenshot = await captureScreenshot('auto-review')
+      if (autoReviewScreenshot) screenshots.push(autoReviewScreenshot)
+      else result.screenshotFailures.push('auto-review')
+      await pipe.evaluate(
+        session,
+        `document.querySelector('[data-opl-panel="auto-review"]').open=false`,
+      )
     }
     if (panel.marker === 'gateway-models') {
       const dialog = "document.querySelector('[role=dialog]')"

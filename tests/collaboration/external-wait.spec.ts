@@ -9,10 +9,15 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../src/shared/host/control-bridge.ts', () => ({ startControlBridge: mocks.start }))
 vi.mock('../../src/execution/host/session-wait.ts', () => ({ waitForSession: mocks.wait }))
 import { installExternalCodex } from '../../src/collaboration/host/external-codex.ts'
+import { testPeerConnection } from '../test-peer.ts'
 
 it('accepts both official helper and legacy control CLI wait arguments without forwarding to a missing Remote', async () => {
   const gateway = { invoke: vi.fn(), stream: vi.fn() }
-  const ctx = { typertGateway: gateway, effect: (action: () => unknown) => action() }
+  const ctx = {
+    connection: testPeerConnection,
+    typertGateway: gateway,
+    effect: (action: () => unknown) => action(),
+  }
   const harness = { cooperationSettings: () => ({ externalCodex: true }) }
   installExternalCodex(ctx as unknown as Context, harness as unknown as HarnessService)
   const bridge = mocks.start.mock.calls.at(-1)![0] as Pick<TypertGateway, 'invoke'>

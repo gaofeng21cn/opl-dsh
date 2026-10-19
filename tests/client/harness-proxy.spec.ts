@@ -1,5 +1,5 @@
 /**
- * Per-Harness network proxy in 设置 → 执行引擎.
+ * Per-Harness network proxy in 设置 → 执行与组合 → 执行引擎与网络代理.
  *
  * These tests drive the real `HarnessSettings` — the settings surface the user
  * actually opens — through the same minimal DOM as the sibling client specs, and only
@@ -40,6 +40,7 @@ const { HarnessSettings } = await import('../../src/execution/client/HarnessSett
 const { ExecutionCatalogSection } = await import(
   '../../src/execution/client/ExecutionCatalogSection.tsx'
 )
+const { ExecutionSettings } = await import('../../src/execution/client/ExecutionSettings.tsx')
 const { createRoot } = await import('react-dom/client')
 
 type Node = {
@@ -269,7 +270,7 @@ const mounted: Array<() => Promise<void>> = []
 afterEach(async () => {
   while (mounted.length) await mounted.pop()!()
 })
-/** Open 设置 → 执行引擎 the way the desktop does and let the catalog load. */
+/** Open the execution settings surface and let the catalog load. */
 async function open(call: ExecutionCall, component = HarnessSettings) {
   const container = dom.container()
   const root = createRoot(container as unknown as Element)
@@ -285,6 +286,18 @@ async function open(call: ExecutionCall, component = HarnessSettings) {
 }
 
 describe('每个外部 Harness 独立的代理设置', () => {
+  it('把组合、执行程序、代理和工具审批收拢在一个设置入口内', async () => {
+    const { call } = fixture(catalog())
+    const view = await open(call, ExecutionSettings)
+    const panels = walk(view)
+      .map((node) => node.getAttribute?.('data-opl-panel'))
+      .filter(Boolean)
+    expect(panels).toContain('execution')
+    expect(panels).toContain('catalog')
+    expect(panels).toContain('execution-settings')
+    expect(panels).toContain('auto-review')
+  })
+
   it('代理配置归执行引擎，组合页面不再重复提供且检测不读取模型目录', async () => {
     const { call, calls } = fixture(catalog())
     const view = await open(call)

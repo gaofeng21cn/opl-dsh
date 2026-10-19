@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 
 type Request = Parameters<Context['typertGateway']['invoke']>[0]
+type RequestWithoutPeer = Omit<Request, 'peer'>
 type PeerConnection = {
   createPeer?: (options: { principal: { kind: 'owner' } }) => PeerScope
 }
@@ -10,12 +11,14 @@ const localPeers = new WeakMap<Context, PeerScope>()
 
 /**
  * Preserve a forwarded caller or acquire a Context-owned official local Peer.
- * Older Desktop releases retain their implicit in-process operator identity.
  * @param ctx - Context owning the invocation and local Peer lifetime.
  * @param request - Exact Remote method and arguments.
  * @returns the official Gateway result.
  */
-export function invokeHostRemote(ctx: Context, request: Request): Promise<unknown> {
+export async function invokeHostRemote(
+  ctx: Context,
+  request: RequestWithoutPeer,
+): Promise<unknown> {
   return ctx.typertGateway.invoke(withHostPeer(ctx, request))
 }
 
@@ -24,21 +27,37 @@ export function invokeHostRemote(ctx: Context, request: Request): Promise<unknow
  * @param request - Exact streaming Remote method and arguments.
  * @returns the official Gateway stream.
  */
-export function streamHostRemote(ctx: Context, request: Request): Promise<AsyncIterable<unknown>> {
+export async function streamHostRemote(
+  ctx: Context,
+  request: RequestWithoutPeer,
+): Promise<AsyncIterable<unknown>> {
   return ctx.typertGateway.stream(withHostPeer(ctx, request))
 }
 
-function withHostPeer(ctx: Context, request: Request): Request {
-  let peer = request.peer ?? ctx.get('invocation')?.peer
+/**
+ * Return the Peer this Host Context may speak as for an in-process Remote call.
+ * @param ctx - Context owning the invocation and local Peer lifetime.
+ * @returns a forwarded caller Peer, or the Context-owned owner Peer.
+ */
+export function hostPeer(ctx: Context): PeerScope {
+  const read = (name: string): unknown =>
+    typeof ctx.get === 'function' ? ctx.get(name) : undefined
+  let peer = (read('invocation') as { peer?: PeerScope } | undefined)?.peer
   if (!peer) {
     peer = localPeers.get(ctx)
     if (!peer) {
-      const connection = ctx.get('connection') as PeerConnection | undefined
+      const connection = (read('connection') ??
+        (ctx as Context & { connection?: PeerConnection }).connection) as PeerConnection | undefined
       if (connection?.createPeer) {
         peer = connection.createPeer({ principal: { kind: 'owner' } })
         localPeers.set(ctx, peer)
       }
     }
   }
-  return { ...request, ...(peer ? { peer } : {}) }
+  if (!peer) throw Error('官方 Remote Peer 尚未就绪')
+  return peer
+}
+
+function withHostPeer(ctx: Context, request: RequestWithoutPeer): Request {
+  return { ...request, peer: hostPeer(ctx) }
 }

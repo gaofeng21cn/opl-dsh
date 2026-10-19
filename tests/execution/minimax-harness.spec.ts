@@ -30,6 +30,7 @@ import { commandLaunch } from '../../src/execution/host/harness-registry.ts'
 import { AcpProcess } from '../../src/execution/host/acp.ts'
 import type { AdapterLaunch } from '../../src/execution/host/adapters/types.ts'
 import type { HarnessSession } from '../../src/execution/contracts/sessions.ts'
+import { testPeerConnection } from '../test-peer.ts'
 
 const fixture = resolve('tests/fixtures/minimax-acp-agent.mjs')
 const M3_FLASH_COMBINATION = 'minimax-code/MiniMax-M3.1-Flash-Preview'
@@ -78,6 +79,7 @@ async function setup(
 
   const current = { provider: MINIMAX_CODE_PROVIDER, model: options.nativeModel ?? 'MiniMax-M3' }
   const ctx = {
+    connection: testPeerConnection,
     permissionPresets: { current: () => options.nativeMode ?? 'danger-full-access' },
     sessions: { list: () => [] },
     waterfall: async (_name: unknown, _request: unknown, next: () => Promise<unknown[]>) => next(),

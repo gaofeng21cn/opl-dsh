@@ -76,16 +76,21 @@ describe('official Huawei credential owner', () => {
     })
   })
 
-  it('keeps launch-environment credentials read-only and ahead of legacy storage', async () => {
+  it('keeps launch-environment credentials ahead of legacy storage and lets the official store shadow them', async () => {
     vi.stubEnv('HUAWEI_MAAS_API_KEY', 'synthetic-environment-key')
     await withStore(async (ctx) => {
       expect(await migrateHuaweiCredential(ctx, true)).toBe(false)
       expect(await ctx.credentials.describe(huawei)).toEqual({
         configured: true,
         source: 'env',
-        writable: false,
+        writable: true,
       })
-      await expect(ctx.credentials.set(huawei, 'another-key')).rejects.toThrow('read-only')
+      await ctx.credentials.set(huawei, 'another-key')
+      expect(await ctx.credentials.describe(huawei)).toEqual({
+        configured: true,
+        source: 'file',
+        writable: true,
+      })
       expect(keyring.read).not.toHaveBeenCalled()
     })
   })

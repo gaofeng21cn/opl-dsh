@@ -33,6 +33,7 @@ import {
 import { adapterFor } from '../../src/execution/host/adapters/index.ts'
 import { commandLaunch } from '../../src/execution/host/harness-registry.ts'
 import { systemEnvironment } from '../../src/execution/host/adapters/environment.ts'
+import { testPeerConnection } from '../test-peer.ts'
 import { resolveGatewayExecution } from '../../src/gateway/host/execution-access.ts'
 import { GROK_API_KEY_REF } from '../../src/gateway/host/config.ts'
 import type { HarnessSession } from '../../src/execution/contracts/sessions.ts'
@@ -219,6 +220,7 @@ function deployment(root: string, initial: DeploymentOptions = {}) {
     // The execution service reaches the outbox through the Host service registry,
     // exactly as it does in the running suite.
     const host = {
+      connection: testPeerConnection,
       get: (key: string) => (key === 'taskFeedback' ? state.taskFeedback : undefined),
       agents: { get: () => undefined },
     } as unknown as Context

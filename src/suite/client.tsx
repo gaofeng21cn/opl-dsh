@@ -12,9 +12,11 @@ import * as collaboration from '../collaboration/client/index.tsx'
 import * as setup from '../setup/client/index.tsx'
 import * as notifications from '../notifications/client/index.tsx'
 import * as autoReview from '../auto-review/client/index.tsx'
+import { AUTO_REVIEW_NAMESPACE } from '../auto-review/client/locales.ts'
+import type { AutoReviewSaveRequest } from '../auto-review/contracts/settings.ts'
 import * as todoStatus from '../todo-status/client/index.tsx'
 import * as settingsNavigation from '../compat/client/settings-navigation.ts'
-import { remoteCall } from '../shared/client/remote-call.ts'
+import { optionalRemote, remoteCall } from '../shared/client/remote-call.ts'
 export const inject = ['remote', 'slots', 'locale']
 export async function apply(ctx: Context): Promise<void> {
   const dispose = await ctx.remote.$mount(remote)
@@ -22,29 +24,32 @@ export async function apply(ctx: Context): Promise<void> {
   ctx.plugin(settingsNavigation)
   let openModels: (() => void) | undefined
   ctx.plugin(gateway, { openModels: () => openModels?.() })
-  ctx.plugin(execution)
+  const autoReviewRemote = optionalRemote(ctx, 'oplAutoReview')
+  let autoReviewSeat
+  if (autoReviewRemote) {
+    ctx.plugin(autoReview)
+    const call = remoteCall(autoReviewRemote)
+    const connection = ctx.get('connection') as ConnectionHandle | undefined
+    autoReviewSeat = {
+      api: {
+        read: () => call('read'),
+        save: (request: AutoReviewSaveRequest) => call('save', request),
+      },
+      ...(connection
+        ? {
+            connection: {
+              getSnapshot: () => connection.generation.getSnapshot()?.id,
+              subscribe: (listener: () => void) => connection.generation.subscribe(listener),
+            },
+          }
+        : {}),
+      t: ctx.locale.bind(AUTO_REVIEW_NAMESPACE),
+    }
+  }
+  ctx.plugin(execution, { ...(autoReviewSeat ? { autoReview: autoReviewSeat } : {}) })
   ctx.plugin(collaboration)
   ctx.plugin(notifications)
   ctx.plugin(todoStatus)
-  ctx.plugin({
-    name: 'opl-auto-review-client',
-    inject: ['remote.oplAutoReview', 'connection'],
-    apply(scope: Context) {
-      const call = remoteCall(scope.remote.oplAutoReview)
-      // rc.2 exports this handle without a Cordis Context augmentation.
-      const connection = (scope as Context & { connection: ConnectionHandle }).connection
-      scope.plugin(autoReview, {
-        connection: {
-          getSnapshot: () => connection.generation.getSnapshot()?.id,
-          subscribe: (listener) => connection.generation.subscribe(listener),
-        },
-        api: {
-          read: () => call('read'),
-          save: (request) => call('save', request),
-        },
-      })
-    },
-  })
   ctx.plugin(setup, {
     bindModelNavigation: (navigate: (() => void) | undefined) => {
       openModels = navigate

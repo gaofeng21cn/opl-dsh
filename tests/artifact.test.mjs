@@ -39,4 +39,10 @@ test('tarball checksum and contents bind the installer to an external plugin', a
     code,
     /class LlmRuntime|class AgentLoop|resolveProfiles|credentialStoreFrom|authContextFrom/,
   )
+  const client = await readFile(new URL('package/lib/client.js', output), 'utf8')
+  assert.doesNotMatch(
+    client,
+    /require\("@deepseek-ai\/dsh-typert-protocol\/remote-info"\)/,
+    'the official Client loader does not materialize the protocol remote-info leaf',
+  )
 })

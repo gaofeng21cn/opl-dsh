@@ -11,6 +11,7 @@ import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-ses
 import type { ModelCatalog, ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
 import { HarnessService } from '../../src/execution/host/harness.ts'
 import { adapterFor } from '../../src/execution/host/adapters/index.ts'
+import { testPeerConnection } from '../test-peer.ts'
 
 const provider = 'minimax-official'
 const flash = 'MiniMax-M3.1-Flash-Preview'
@@ -85,6 +86,7 @@ async function setup() {
     return { selected }
   })
   const ctx = {
+    connection: testPeerConnection,
     get: () => undefined,
     agents: { get: () => undefined },
     sessions: { get: () => session },

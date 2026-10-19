@@ -22,6 +22,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { testPeerConnection } from '../test-peer.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import PermissionPresetService, { AUTO_PRESET } from '@deepseek-ai/dsh-permission-presets'
@@ -194,6 +195,7 @@ async function mount(options: { enabled?: boolean } = {}): Promise<Mounted> {
   cleanups.push(() => rm(root, { recursive: true, force: true }))
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
+  ctx.provide('connection', testPeerConnection)
   const session = createOwnerSession('session-owner', root)
   const owner = { session, status: 'idle' } as unknown as Agent
   ctx.provide('sessions', {

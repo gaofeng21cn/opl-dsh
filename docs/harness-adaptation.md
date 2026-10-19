@@ -1,6 +1,6 @@
 # 外部 Harness 适配准备
 
-模型来源、执行引擎和组合分别由现有模型供应商、Harness、执行组合入口管理。增加来源不需要增加设置页，也不自动改变现有模型的默认 Harness。
+模型来源由现有模型供应商入口管理；执行程序、组合绑定、网络代理和工具审批统一位于“执行与组合”页。增加来源不需要增加设置页，也不自动改变现有模型的默认 Harness。
 
 ## 显式来源注册
 
@@ -48,7 +48,7 @@ OpenCode 与 Kilo 的显式完全访问会话通过官方 `permission: "allow"` 
 
 Kilo Beam 的工具后续请求要求 `reasoning_content` 字段，即使本次思考为空。该组合使用官方 `interleaved` 配置回传已保存的思考，不补写思考正文或改变推理档位。
 
-这些组合保留 OFM 的原始模型 ID，只有当前目录仍提供的模型才可启动。Free/Auto 虚拟路由保留其虚拟身份，不声称已固定到某个底层模型。程序仍在「执行引擎」选择安装路径，凭据仍由 OFM 管理。MiMo Code 没有推理档位接口，模型菜单不显示其 provider 的原生档位；托管任务保留提交时的设置，不继承原生请求自动填入的档位。Big Pickle 使用 `our-free-model` 的精确 `big-pickle` 车道和官方 OpenCode 的 `opencode/big-pickle` wire 值；官方 OpenCode 适配器不广告推理档位，组合不显示推理强度，OFM 目录的 light/balanced/deep token budget 不会被映射成 `high`/`max`，显式档位会被拒绝。CLI 内部带 provider 前缀的模型 ID 由适配器显式映射，仍与回读值严格比对。新适配器支持明确选择的完全访问，缺少 Git Bash 时拒绝启动；不自动改变会话权限。Kimi 另可映射官方 Plan 模式，实测 Bash 写入被工具层拒绝，这不代表操作系统隔离。其余新适配器拒绝只读和工作区权限。它们不提供 DSH Auto Review。
+这些组合保留 OFM 的原始模型 ID，只有当前目录仍提供的模型才可启动。Free/Auto 虚拟路由保留其虚拟身份，不声称已固定到某个底层模型。程序仍在「执行与组合 → 执行引擎与网络代理」选择安装路径，凭据仍由 OFM 管理。MiMo Code 没有推理档位接口，模型菜单不显示其 provider 的原生档位；托管任务保留提交时的设置，不继承原生请求自动填入的档位。Big Pickle 使用 `our-free-model` 的精确 `big-pickle` 车道和官方 OpenCode 的 `opencode/big-pickle` wire 值；官方 OpenCode 适配器不广告推理档位，组合不显示推理强度，OFM 目录的 light/balanced/deep token budget 不会被映射成 `high`/`max`，显式档位会被拒绝。CLI 内部带 provider 前缀的模型 ID 由适配器显式映射，仍与回读值严格比对。新适配器支持明确选择的完全访问，缺少 Git Bash 时拒绝启动；不自动改变会话权限。Kimi 另可映射官方 Plan 模式，实测 Bash 写入被工具层拒绝，这不代表操作系统隔离。其余新适配器拒绝只读和工作区权限。它们不提供 DSH Auto Review。
 
 Muse Code 1.4.7-R6101.1 使用独占设置中的 `endpoint_transport` 接入模型供应商的 Responses 端点。MSP 桥接负责会话、模型和思考档位回读，Git Bash 通过官方 MCP 工具接口执行；本机认证转发器转换工具命名与流事件，不替换官方执行循环。来源未提供端点或凭据、模型已移除或协议不匹配时拒绝启动。MiMo Code、Pi 和 StepCode 返回空正文且没有成功工具结果时，任务标为失败；官方未回报的上游错误不推测为某个 HTTP 状态。
 

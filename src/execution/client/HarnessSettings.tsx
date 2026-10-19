@@ -3,7 +3,7 @@ import { HarnessProxySection } from './HarnessProxySection.tsx'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from '../../shared/client/SettingsSection.module.css'
 import type { ExecutionCall as Call } from '../../shared/client/remote-call.ts'
-export function HarnessSettings({ call }: { call: Call }) {
+export function HarnessSettings({ call, embedded = false }: { call: Call; embedded?: boolean }) {
   const {
     draft,
     setDraft,
@@ -24,14 +24,13 @@ export function HarnessSettings({ call }: { call: Call }) {
   return (
     <div className={css.section} data-opl-panel="execution-settings" aria-busy={busy}>
       <div className={css.header}>
-        <h2 className={css.title}>执行引擎</h2>
+        {embedded ? null : <h2 className={css.title}>执行引擎</h2>}
         <Button variant="outline" disabled={busy} onClick={() => void load()}>
           {busy ? '检测中…' : '重新检测'}
         </Button>
       </div>
       <p className={css.intro}>
-        查看本机已安装的执行程序、版本和官方更新入口。可用的模型 + Harness
-        组合在“执行组合”页中管理。
+        查看本机已安装的执行程序、版本、官方更新入口和独立网络代理。组合仍在同一页面维护。
       </p>
       {error && <p role="alert">{error}</p>}
       {busy && !items.length && (

@@ -8,8 +8,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { CombinationSelect } from './CombinationSelect.tsx'
-import { HarnessSettings } from './HarnessSettings.tsx'
-import { ExecutionCatalogSection } from './ExecutionCatalogSection.tsx'
+import { ExecutionSettings } from './ExecutionSettings.tsx'
 import { HarnessToolRow } from './HarnessToolRow.tsx'
 import { LiveTranscriptRow } from './LiveTranscriptRow.tsx'
 import { liveTranscriptDefinition, LIVE_TRANSCRIPT_KIND } from './live-transcript.ts'
@@ -31,6 +30,20 @@ import {
 } from './ProjectlessOfficialComposer.tsx'
 import { HARNESS_TRANSCRIPT_TOOL } from '../contracts/tool-display.ts'
 import { remoteCall } from '../../shared/client/remote-call.ts'
+import type {
+  AutoReviewClientApi,
+  AutoReviewConnectionSource,
+} from '../../auto-review/contracts/settings.ts'
+import type { AutoReviewSectionProps } from '../../auto-review/client/AutoReviewSection.tsx'
+
+export interface ClientConfig {
+  autoReview?: {
+    api: AutoReviewClientApi
+    connection?: AutoReviewConnectionSource
+    t: AutoReviewSectionProps['t']
+  }
+}
+
 export const inject = [
   'slots',
   'locale',
@@ -75,7 +88,7 @@ function sessionChanges(ctx: Context, sessionId: string, listener: () => void): 
   }
 }
 
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: ClientConfig = {}): void {
   ctx.effect(() =>
     ctx.locale.register(PROJECTLESS_COMPOSER_NAMESPACE, {
       zh: projectlessComposerZh,
@@ -211,24 +224,15 @@ export function apply(ctx: Context): void {
     ctx.slots.register(
       {
         name: 'settings.section',
-        id: 'opl-harness-settings',
-        order: SETTINGS_ORDER['opl-harness-settings'],
-        label: () => '执行引擎',
-        inject: () => ({ call }),
-      },
-      HarnessSettings,
-    ),
-  )
-  ctx.slots.inject('settings.section', () =>
-    ctx.slots.register(
-      {
-        name: 'settings.section',
         id: 'opl-execution',
         order: SETTINGS_ORDER['opl-execution'],
-        label: () => '执行组合',
-        inject: () => ({ call }),
+        label: () => '执行与组合',
+        inject: () => ({
+          call,
+          ...(config.autoReview ? { autoReview: config.autoReview } : {}),
+        }),
       },
-      ExecutionCatalogSection,
+      ExecutionSettings,
     ),
   )
   const slots = ctx.slots

@@ -3,12 +3,14 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { HarnessSession } from '../../src/execution/contracts/sessions.ts'
 import { connectDsh } from '../../src/execution/host/adapters/dsh.ts'
+import { testPeerConnection } from '../test-peer.ts'
 
 function setup(sandbox: HarnessSession['sandbox']) {
   const session = Session.create(SessionId('session-harness-permission'))
   const set = vi.fn()
   const attachSession = vi.fn(async () => {})
   const ctx = {
+    connection: testPeerConnection,
     get: (name: string) => (name === 'permissionPresets' ? { set } : undefined),
     sessions: { get: () => session },
     workspaceRegistry: { create: async () => ({ id: 'project', attachSession }) },

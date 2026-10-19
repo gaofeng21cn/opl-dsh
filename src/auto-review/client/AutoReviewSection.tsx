@@ -47,6 +47,8 @@ export interface AutoReviewSectionProps extends PropsLocale<'settings.oplAutoRev
    * single, always-current generation (the original standalone contract).
    */
   connection?: AutoReviewConnectionSource
+  /** Render beneath the execution page's section heading instead of owning a page. */
+  embedded?: boolean
 }
 
 /** One dictionary key per Host state. */
@@ -139,7 +141,12 @@ function providersOf(routes: readonly AutoReviewRouteOption[]): AutoReviewRouteO
  * @param props - injected service seams and locale seat.
  * @returns the settings section body.
  */
-export function AutoReviewSection({ api, connection, t }: AutoReviewSectionProps) {
+export function AutoReviewSection({
+  api,
+  connection,
+  embedded = false,
+  t,
+}: AutoReviewSectionProps) {
   // The store outlives api and connection swaps; `mount` rebinds both below, so
   // a replaced seam invalidates in-flight work instead of merely being read later.
   const store = useMemo(() => new AutoReviewSettingsStore({ api }), [])
@@ -199,7 +206,7 @@ export function AutoReviewSection({ api, connection, t }: AutoReviewSectionProps
       data-opl-panel="auto-review"
       aria-busy={view.reading || view.saving}
     >
-      <h2 className={css.title}>{t('title')}</h2>
+      {embedded ? null : <h2 className={css.title}>{t('title')}</h2>}
       <p className={css.intro}>{t('intro')}</p>
       <p className={css.muted}>{t('distinction')}</p>
 
