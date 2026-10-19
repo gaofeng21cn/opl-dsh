@@ -32,6 +32,7 @@ const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
 afterEach(() => {
   Object.defineProperty(process, 'platform', platform)
   vi.clearAllMocks()
+  vi.unstubAllEnvs()
 })
 
 describe('provider keyring overlay', () => {
@@ -112,4 +113,42 @@ describe('provider keyring overlay', () => {
       }
     },
   )
+
+  it('keeps the official environment fallback below a saved Windows key', async () => {
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' })
+    vi.stubEnv('HUAWEI_MAAS_API_KEY', 'synthetic-environment-key')
+    keyring.huawei.read.mockReset().mockResolvedValue(undefined)
+    keyring.huawei.describe.mockResolvedValue({
+      configured: false,
+      supported: true,
+      available: true,
+      source: 'windows-credential-manager',
+    })
+    keyring.huawei.set.mockImplementation(async (value) => {
+      keyring.huawei.read.mockResolvedValue(value)
+    })
+    keyring.huawei.remove.mockImplementation(async () => {
+      keyring.huawei.read.mockResolvedValue(undefined)
+      return true
+    })
+    const home = await mkdtemp(join(tmpdir(), 'opl-keyring-environment-'))
+    const path = join(home, '.credentials.yaml')
+    const ctx = new Context()
+    try {
+      await ctx.plugin(LocalCredentialProvider, { path, watch: false })
+      const ref = credentialRef('HUAWEI_MAAS_API_KEY')
+      const overlay = installProviderKeyringOverlay(ctx)
+      expect((await ctx.credentials.resolve(ref))?.value).toBe('synthetic-environment-key')
+      expect((await ctx.credentials.describe(ref)).source).toBe('env')
+      await ctx.credentials.set(ref, 'synthetic-saved-key')
+      expect((await ctx.credentials.resolve(ref))?.value).toBe('synthetic-saved-key')
+      await ctx.credentials.unset(ref)
+      expect((await ctx.credentials.resolve(ref))?.value).toBe('synthetic-environment-key')
+      expect(await readFile(path, 'utf8').catch(() => '')).not.toContain('synthetic-saved-key')
+      overlay.dispose()
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(home, { recursive: true, force: true })
+    }
+  })
 })

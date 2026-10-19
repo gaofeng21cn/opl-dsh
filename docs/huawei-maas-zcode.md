@@ -12,6 +12,8 @@ GLM-5.2 与自动 ZCode 组合跟随原生提供商配置；删除提供商后�
 
 Windows 使用固定目标 `OPLDSH:HuaweiMaaS:ApiKey`。Keyring 不可用时保存直接失败，不回退到明文文件。macOS 保留官方凭据服务的存储、来源优先级与更新事件，Windows Keyring 代理不会接管它。
 
+Windows 已保存的 Key 优先；没有保存值时继续使用官方服务的启动环境回退。保存和删除只操作系统 Keyring，不把 Key 写回明文文件；删除已保存值后，原有环境来源可以重新生效。
+
 保存 Key 不会测试模型、启动任务或自动重发失败请求。保存成功只说明官方凭据已写入，不代表 ZCode 与 Huawei 模型连接已通过验收。
 
 模型菜单显示已启用的 `GLM-5.2 · ZCode`；Key 或官方运行时未就绪时置灰并显示原因。安装 ZCode 运行时与保存 Key 是两个独立步骤，重复保存 Key 不会安装 CLI。官方 Windows 桌面包包含 `resources/glm/zcode.cjs`，可使用该未修改的官方包中的 `ZCode.exe` 以 Node 模式运行此入口。Harness 配置的 `command` 保存可执行文件绝对路径，`prefix` 保存 bundle 的绝对路径；不能只写未安装到 PATH 的 `zcode`。

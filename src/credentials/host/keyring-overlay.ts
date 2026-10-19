@@ -59,13 +59,20 @@ export function installProviderKeyringOverlay(ctx: Context): {
     const keyring = target(ref)
     if (!keyring) return original.resolve(ref)
     const value = await keyring.read()
-    return value === undefined ? undefined : { value, source: 'windows-keyring' }
+    if (value !== undefined) return { value, source: 'windows-keyring' }
+    const inherited = await original.resolve(ref)
+    return inherited?.source === 'file' ? undefined : inherited
   }
   const describe = async (ref: CredentialRef) => {
     if (process.env.OPL_QUALIFICATION_SKIP_PROVIDER_KEYRING === '1') return original.describe(ref)
     const keyring = target(ref)
     if (!keyring) return original.describe(ref)
     const info = await keyring.describe()
+    if (!info.configured) {
+      const inherited = await original.describe(ref)
+      if (inherited.configured && inherited.source !== 'file')
+        return { ...inherited, writable: info.supported && info.available }
+    }
     return {
       configured: info.configured,
       source: info.source,
