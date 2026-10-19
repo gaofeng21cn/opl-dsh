@@ -17,7 +17,8 @@ const TARGETS = new Map<string, SuiteKeyringCredential>([
 /**
  * Install a narrow credential seam for the two provider keys owned by this
  * suite. The official local provider remains the owner for every other key;
- * these two references never fall back to its YAML document.
+ * on Windows these two references never fall back to its YAML document.
+ * Huawei keeps the official provider on other platforms.
  *
  * @param ctx - Host context containing the official credential service.
  * @returns a disposer and the unwrapped methods used for one-time migration.
@@ -41,7 +42,10 @@ export function installProviderKeyringOverlay(ctx: Context): {
     set: descriptorOf('set'),
     unset: descriptorOf('unset'),
   }
-  const target = (ref: CredentialRef) => TARGETS.get(String(ref))
+  const target = (ref: CredentialRef) => {
+    if (String(ref) === HUAWEI_MAAS_CREDENTIAL_REF && process.platform !== 'win32') return undefined
+    return TARGETS.get(String(ref))
+  }
   const emit = (ref: CredentialRef): void => {
     try {
       ctx.emit('credentials/reference-updated', ref)
@@ -117,7 +121,13 @@ export function installProviderKeyringOverlay(ctx: Context): {
         const description = await original.describe(ref)
         if (description.source !== 'file') continue
         const plaintext = await original.resolve(ref)
-        if (stored === undefined && plaintext?.value) await keyring.set(plaintext.value)
+        if (stored === undefined && plaintext?.value) {
+          await keyring.set(plaintext.value)
+          if ((await keyring.read()) !== plaintext.value)
+            throw new Error(
+              'Provider keyring migration readback failed; original credential retained',
+            )
+        }
         if (plaintext?.value) await original.unset(ref)
       }
     },
