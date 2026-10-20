@@ -25,10 +25,10 @@ jobs:
       tag: ${{ steps.candidate.outputs.tag }}
       source_commit: ${{ steps.candidate.outputs.source_commit }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - name: Load shared release-note writer policy
@@ -50,11 +50,11 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.source_commit }}
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -105,7 +105,7 @@ jobs:
       - run: npm test
       - name: Pair both live official feeds with the built candidate
         run: npm run release:manifest
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-candidate
           path: |
@@ -124,10 +124,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.source_commit }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -139,7 +139,7 @@ jobs:
           npm run build:bridge
           node node_modules/vitest/vitest.mjs run tests/execution/harness-registry.spec.ts -t "probes a cmd shim"
           node --test tests/native-bridge.test.mjs tests/windows-acl.test.mjs
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-candidate
           path: dist
@@ -164,13 +164,13 @@ jobs:
           if (status) throw Error('Qualification source is dirty: ' + status)
           NODE
       - name: Check out the qualification runner from this workflow revision
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           path: dist/qualification-runner
       - name: Qualify unmodified official Desktop against the shipped bytes
         run: node dist/qualification-runner/scripts/qualify-official-runtime.mjs --download --payload "dist/OPL DSH 一键安装" --evidence dist/official-qualification.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: release-qualification-${{ matrix.os }}
@@ -186,22 +186,22 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.source_commit }}
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-candidate
           path: dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-qualification-macos-15
           path: dist/evidence/macos-15
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-qualification-windows-latest
           path: dist/evidence/windows-latest
@@ -212,7 +212,7 @@ jobs:
         run: node scripts/publish-stable-release.mjs
       - name: Retain publication and previous-release audit records
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-audit
           path: dist/release-audit/

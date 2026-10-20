@@ -39,8 +39,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -55,7 +55,7 @@ jobs:
           node --test tests/native-bridge.test.mjs tests/windows-acl.test.mjs
       - name: Download verified official desktop and run isolated qualification
         run: node scripts/qualify-official-runtime.mjs --download --evidence dist/official-qualification.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: official-qualification-${{ matrix.os }}
