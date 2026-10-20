@@ -45,13 +45,15 @@ export const MAX_MAX_OUTPUT_TOKENS = AUTO_REVIEW_BUDGET_RANGE.maxOutputTokens.ma
 
 /**
  * The flat service configuration. An empty `reviewerProvider` selects the
- * dedicated Codex reviewer; an explicit provider selects a fixed reviewer.
+ * dedicated Codex reviewer; an explicit provider selects a fixed reviewer or
+ * decision model according to `reviewerKind`.
  */
 export interface Config {
   enabled: boolean
   reviewerProvider: string
   reviewerModel: string
   reviewerEffort: string
+  reviewerKind: 'reviewer' | 'decision'
   timeoutMs: number
   maxOutputTokens: number
 }
@@ -62,6 +64,7 @@ export const Config = z.object({
   reviewerProvider: z.string().default(''),
   reviewerModel: z.string().default(''),
   reviewerEffort: z.string().default(''),
+  reviewerKind: z.union([z.const('reviewer'), z.const('decision')]).default('reviewer'),
   timeoutMs: z.number().step(1).min(MIN_TIMEOUT_MS).max(MAX_TIMEOUT_MS).default(DEFAULT_TIMEOUT_MS),
   maxOutputTokens: z
     .number()
@@ -106,11 +109,19 @@ function readText(value: unknown): string | undefined {
  */
 export function coerceServiceConfig(value: unknown): Config {
   const record = isRecord(value) ? value : {}
+  const reviewerProvider = readText(record['reviewerProvider']) ?? ''
+  const reviewerModel = readText(record['reviewerModel']) ?? ''
   return {
     enabled: typeof record['enabled'] === 'boolean' ? record['enabled'] : DEFAULT_ENABLED,
-    reviewerProvider: readText(record['reviewerProvider']) ?? '',
-    reviewerModel: readText(record['reviewerModel']) ?? '',
+    reviewerProvider,
+    reviewerModel,
     reviewerEffort: readText(record['reviewerEffort']) ?? '',
+    reviewerKind:
+      record['reviewerKind'] === 'decision' ||
+      (reviewerProvider === 'bamboo-startlux' &&
+        reviewerModel === 'startlux-decision-27b-autothink')
+        ? 'decision'
+        : 'reviewer',
     timeoutMs:
       readBoundedInteger(record['timeoutMs'], MIN_TIMEOUT_MS, MAX_TIMEOUT_MS) ?? DEFAULT_TIMEOUT_MS,
     maxOutputTokens:
@@ -135,7 +146,7 @@ export function preferencesFromConfig(config: Config): AutoReviewPreferences {
     throw new Error('auto-review: the fixed reviewer needs both a provider and a model')
   const reviewer: AutoReviewPreferences['reviewer'] = named
     ? {
-        mode: 'fixed',
+        mode: config.reviewerKind === 'decision' ? 'decision' : 'fixed',
         route: {
           provider: config.reviewerProvider,
           model: config.reviewerModel,
@@ -157,12 +168,13 @@ export function preferencesFromConfig(config: Config): AutoReviewPreferences {
  * @returns the equivalent flat section.
  */
 export function configFromPreferences(preferences: AutoReviewPreferences): Config {
-  const route = preferences.reviewer.mode === 'fixed' ? preferences.reviewer.route : undefined
+  const route = preferences.reviewer.mode === 'current' ? undefined : preferences.reviewer.route
   return {
     enabled: preferences.enabled,
     reviewerProvider: route?.provider ?? '',
     reviewerModel: route?.model ?? '',
     reviewerEffort: route?.reasoningEffort ?? '',
+    reviewerKind: preferences.reviewer.mode === 'decision' ? 'decision' : 'reviewer',
     timeoutMs: preferences.timeoutMs,
     maxOutputTokens: preferences.maxOutputTokens,
   }
@@ -210,11 +222,12 @@ function normalizeReviewer(value: unknown): AutoReviewPreferences['reviewer'] {
       throw new Error('auto-review: a current reviewer carries no route')
     return Object.freeze({ mode: 'current' as const })
   }
-  if (mode !== 'fixed') throw new Error('auto-review: reviewer mode must be current or fixed')
+  if (mode !== 'fixed' && mode !== 'decision')
+    throw new Error('auto-review: reviewer mode must be current, fixed, or decision')
   if (Object.keys(value).some((key) => key !== 'mode' && key !== 'route'))
     throw new Error('auto-review: a fixed reviewer carries an unknown member')
   const route = normalizeRoute(value['route'])
-  return Object.freeze({ mode: 'fixed' as const, route })
+  return Object.freeze({ mode, route })
 }
 
 /** Validate one fixed reviewer route. */
@@ -242,9 +255,9 @@ function normalizeRoute(value: unknown): AutoReviewRoute {
 /** The canonical comparison form of one preferences value. */
 function canonicalPreferences(preferences: AutoReviewPreferences): string {
   const reviewer =
-    preferences.reviewer.mode === 'fixed'
+    preferences.reviewer.mode === 'fixed' || preferences.reviewer.mode === 'decision'
       ? {
-          mode: 'fixed',
+          mode: preferences.reviewer.mode,
           route: {
             provider: preferences.reviewer.route.provider,
             model: preferences.reviewer.route.model,

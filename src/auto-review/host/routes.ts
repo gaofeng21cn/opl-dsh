@@ -8,6 +8,18 @@ import type { AutoReviewRouteOption } from '../contracts/settings.ts'
  */
 export const EXCLUDED_REVIEW_PROVIDERS: readonly string[] = ['minimax-official', 'huawei-maas']
 
+/** Exact routes whose adapter returns the closed decision protocol directly. */
+export const DECISION_REVIEW_ROUTES: readonly { provider: string; model: string }[] = [
+  { provider: 'bamboo-startlux', model: 'startlux-decision-27b-autothink' },
+]
+
+/** Whether a route is supplied as a decision model rather than a free-form reviewer. */
+export function isDecisionReviewRoute(provider: string, model: string): boolean {
+  return DECISION_REVIEW_ROUTES.some(
+    (route) => route.provider === provider && route.model === model,
+  )
+}
+
 /** Whether one provider route is excluded from reviewer selection. */
 export function isExcludedReviewProvider(provider: string): boolean {
   return EXCLUDED_REVIEW_PROVIDERS.includes(provider)
@@ -79,6 +91,7 @@ export async function listAdvertisedRoutes(ctx: Context): Promise<AutoReviewRout
         providerName: provider.name,
         model: model.id,
         modelName: model.name,
+        kind: isDecisionReviewRoute(provider.id, model.id) ? 'decision' : 'reviewer',
         efforts:
           reasoning === undefined ? [] : reasoning.efforts.map((effort) => String(effort.id)),
         defaultEffort:
@@ -155,7 +168,7 @@ export function reviewerRouteAvailability(
 }
 
 /** Which rule of the route policy produced a resolved route. */
-export type ReviewerRouteSource = 'fixed' | 'native-auto-review' | 'session'
+export type ReviewerRouteSource = 'fixed' | 'decision-model' | 'native-auto-review' | 'session'
 
 /** The Session's own persisted request-header route, the review's context. */
 export interface SessionReviewerRoute {
@@ -166,7 +179,7 @@ export interface SessionReviewerRoute {
 
 /** The reviewer selection as the settings surface stores it. */
 export interface ReviewerRouteSelection {
-  readonly mode: 'fixed' | 'current'
+  readonly mode: 'fixed' | 'decision' | 'current'
   readonly route?: { provider: string; model: string; reasoningEffort?: string }
 }
 
@@ -217,7 +230,7 @@ export function resolveReviewerRoute(input: {
   readonly routes: readonly AutoReviewRouteOption[]
 }): ResolvedReviewerRoute {
   const { selection, sessionRoute, routes } = input
-  if (selection.mode === 'fixed') {
+  if (selection.mode === 'fixed' || selection.mode === 'decision') {
     const fixed = selection.route
     if (fixed === undefined || fixed.provider.length === 0 || fixed.model.length === 0)
       throw new ReviewerRouteError(
@@ -227,9 +240,10 @@ export function resolveReviewerRoute(input: {
     return admitRoute(
       { provider: fixed.provider, model: fixed.model },
       fixed.reasoningEffort ?? null,
-      'fixed',
+      selection.mode === 'decision' ? 'decision-model' : 'fixed',
       routes,
       'route-unavailable',
+      selection.mode === 'decision' ? 'decision' : 'reviewer',
     )
   }
   if (sessionRoute.provider.length === 0 || sessionRoute.model.length === 0)
@@ -263,7 +277,10 @@ export function resolveExternalReviewerRoute(input: {
   readonly selection: ReviewerRouteSelection
   readonly routes: readonly AutoReviewRouteOption[]
 }): ResolvedReviewerRoute {
-  const fixed = input.selection.mode === 'fixed' ? input.selection.route : undefined
+  const fixed =
+    input.selection.mode === 'fixed' || input.selection.mode === 'decision'
+      ? input.selection.route
+      : undefined
   if (fixed !== undefined) {
     if (fixed.provider.length === 0 || fixed.model.length === 0)
       throw new ReviewerRouteError(
@@ -273,9 +290,10 @@ export function resolveExternalReviewerRoute(input: {
     return admitRoute(
       { provider: fixed.provider, model: fixed.model },
       fixed.reasoningEffort ?? null,
-      'fixed',
+      input.selection.mode === 'decision' ? 'decision-model' : 'fixed',
       input.routes,
       'route-unavailable',
+      input.selection.mode === 'decision' ? 'decision' : 'reviewer',
     )
   }
   return admitRoute(
@@ -310,6 +328,7 @@ function admitRoute(
     ReviewerRouteDiagnostic,
     'route-unavailable' | 'preferred-route-unavailable'
   >,
+  requiredKind?: 'reviewer' | 'decision',
 ): ResolvedReviewerRoute {
   if (isExcludedReviewProvider(candidate.provider))
     throw new ReviewerRouteError(
@@ -329,9 +348,18 @@ function admitRoute(
     candidate.provider,
     candidate.model,
   ) as AutoReviewRouteOption
+  if (
+    requiredKind !== undefined &&
+    (requiredKind === 'decision' ? advertised.kind !== 'decision' : advertised.kind === 'decision')
+  )
+    throw new ReviewerRouteError(unavailable, 'auto-review: the reviewer route kind is unavailable')
   const confirmed = effortConfirmed(advertised, effort)
   if (effort !== null && !confirmed) {
-    if (source === 'fixed' || (source === 'session' && advertised.efforts.length > 0))
+    if (
+      source === 'fixed' ||
+      source === 'decision-model' ||
+      (source === 'session' && advertised.efforts.length > 0)
+    )
       throw new ReviewerRouteError(
         'effort-unadvertised',
         'auto-review: the reviewer effort is not advertised',

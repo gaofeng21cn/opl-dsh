@@ -14,7 +14,10 @@ export interface AutoReviewRoute {
 /** Auto Review is off until explicitly enabled; enabling does not select a permission preset. */
 export interface AutoReviewPreferences {
   enabled: boolean
-  reviewer: { mode: 'current' } | { mode: 'fixed'; route: AutoReviewRoute }
+  reviewer:
+    | { mode: 'current' }
+    | { mode: 'fixed'; route: AutoReviewRoute }
+    | { mode: 'decision'; route: AutoReviewRoute }
   timeoutMs: number
   maxOutputTokens: number
 }
@@ -25,6 +28,8 @@ export interface AutoReviewRouteOption {
   providerName: string
   model: string
   modelName: string
+  /** Decision routes return the closed allow/deny protocol directly. */
+  kind?: 'reviewer' | 'decision'
   efforts: string[]
   defaultEffort: string | null
 }

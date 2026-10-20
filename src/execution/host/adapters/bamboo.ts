@@ -73,7 +73,6 @@ export class BambooStartLuxAdapter extends LlmAdapter {
       id: model,
       name: 'StartLux Decision 27B AutoThink',
       context: { contextWindow: 262144 },
-      reasoning: { efforts: [] },
     }
   }
   override async prepareCall(provider: string, model: string, signal?: AbortSignal) {

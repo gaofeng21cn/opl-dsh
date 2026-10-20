@@ -213,6 +213,7 @@ const DEFAULT_FLAT: FlatConfig = {
   reviewerProvider: '',
   reviewerModel: '',
   reviewerEffort: '',
+  reviewerKind: 'reviewer',
   timeoutMs: 5000,
   maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
 }
@@ -581,6 +582,26 @@ async function enableFixed(
     : { ok: false, failure: result.failure, status: result.status }
 }
 
+/** Enable the explicit decision-model route through the real save path. */
+async function enableDecision(service: OplAutoReviewService) {
+  const current = await service.read()
+  return await service.save({
+    expectedRevision: current.revision,
+    preferences: {
+      enabled: true,
+      reviewer: {
+        mode: 'decision',
+        route: {
+          provider: 'bamboo-startlux',
+          model: 'startlux-decision-27b-autothink',
+        },
+      },
+      timeoutMs: DEFAULT_TIMEOUT_MS,
+      maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
+    },
+  })
+}
+
 /** Yield until one condition holds, so a review that has not started yet is awaited. */
 async function until(predicate: () => boolean, attempts = 500): Promise<void> {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -735,6 +756,35 @@ describe('auto review settings and routes', () => {
     const badEffort = await enableFixed(service, 'deepseek', 'deepseek-flash', 'ultra')
     expect(badEffort.ok).toBe(false)
     expect(badEffort.failure).toBe('invalid-settings')
+  })
+
+  it('accepts an advertised decision model but refuses to use a normal reviewer as one', async () => {
+    const { service } = await mount({
+      routes: [
+        ...DEFAULT_ROUTES,
+        {
+          provider: 'bamboo-startlux',
+          name: 'BambooNode · StartLux',
+          models: [
+            { id: 'startlux-decision-27b-autothink', name: 'StartLux Decision 27B AutoThink' },
+          ],
+        },
+      ],
+    })
+    const accepted = await enableDecision(service)
+    expect(accepted.ok).toBe(true)
+    expect(accepted.status?.preferences.reviewer.mode).toBe('decision')
+
+    const current = await service.read()
+    const rejected = await service.save({
+      expectedRevision: current.revision,
+      preferences: {
+        ...current.preferences,
+        reviewer: { mode: 'decision', route: { provider: 'deepseek', model: 'deepseek-flash' } },
+      },
+    })
+    expect(rejected.ok).toBe(false)
+    if (!rejected.ok) expect(rejected.failure).toBe('invalid-settings')
   })
 
   it('rejects malformed preferences, a stale revision and an out-of-range bound', async () => {

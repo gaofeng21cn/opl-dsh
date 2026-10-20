@@ -886,6 +886,41 @@ describe('AutoReviewSection', () => {
     expect(textOf(container)).toContain('DeepSeek V4')
   })
 
+  it('shows decision models in their own single selector and keeps them out of reviewer choices', async () => {
+    const decision = routeOption({
+      provider: 'bamboo-startlux',
+      providerName: 'BambooNode · StartLux',
+      model: 'startlux-decision-27b-autothink',
+      modelName: 'StartLux Decision 27B AutoThink',
+      efforts: [],
+      defaultEffort: null,
+      kind: 'decision',
+    })
+    const preferences: AutoReviewPreferences = {
+      ...BASE,
+      reviewer: { mode: 'decision', route: { provider: decision.provider, model: decision.model } },
+    }
+    const { api } = fakeApi(async () => status({ routes: [routeOption(), decision], preferences }))
+    const container = await render(api)
+    const selector = one(container, 'data-opl-auto-review-select', 'decision-model')
+    expect(optionValues(selector)).toEqual([`${decision.provider}\u0000${decision.model}`])
+    expect(selectedValue(selector)).toBe(`${decision.provider}\u0000${decision.model}`)
+    expect(
+      byAttr(container, 'data-opl-auto-review-select').some(
+        (node) =>
+          node.getAttribute?.('data-opl-auto-review-select') === 'provider' ||
+          node.getAttribute?.('data-opl-auto-review-select') === 'model',
+      ),
+    ).toBe(false)
+    expect(radios(container).find((radio) => radio.value === 'fixed')?.checked).toBe(false)
+    expect(radios(container).find((radio) => radio.value === 'decision')?.checked).toBe(true)
+    const decisionOnly = await render(
+      fakeApi(async () => status({ routes: [decision], preferences })).api,
+    )
+    expect(isDisabled(radios(decisionOnly).find((radio) => radio.value === 'fixed'))).toBe(true)
+    expect(isDisabled(radios(decisionOnly).find((radio) => radio.value === 'decision'))).toBe(false)
+  })
+
   it('submits the exact advertised effort the user chooses', async () => {
     const routes = [routeOption()]
     const fixed: AutoReviewPreferences = {
@@ -931,6 +966,8 @@ describe('AutoReviewSection', () => {
     expect(textOf(container)).toContain(zh.routesEmpty)
     const fixedRadio = radios(container).find((node) => node.value === 'fixed')
     expect(isDisabled(fixedRadio)).toBe(true)
+    const decisionRadio = radios(container).find((node) => node.value === 'decision')
+    expect(isDisabled(decisionRadio)).toBe(true)
   })
 
   it('lets a successfully read but unavailable reviewer be repaired or disabled', async () => {

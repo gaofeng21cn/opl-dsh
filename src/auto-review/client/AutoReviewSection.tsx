@@ -31,6 +31,7 @@ import type { AutoReviewLocaleKey } from './locales.ts'
 import {
   budgetIsSubmittable,
   findRoute,
+  routeKey,
   withBudget,
   withCurrentRoute,
   withFixedEffort,
@@ -178,26 +179,37 @@ export function AutoReviewSection({
   const submittable = preferences !== undefined && budgetIsSubmittable(preferences)
   const saveDisabled = !editable || view.stale || !view.dirty || !submittable
   const saveTitleKey = saveBlockedReasonKey(view)
-  const fixed = preferences?.reviewer.mode === 'fixed'
-  const provider =
-    fixed && preferences.reviewer.mode === 'fixed' ? preferences.reviewer.route.provider : ''
-  const model =
-    fixed && preferences.reviewer.mode === 'fixed' ? preferences.reviewer.route.model : ''
-  const models = routes.filter((route) => route.provider === provider)
-  const fixedOption =
-    fixed && preferences.reviewer.mode === 'fixed' ? findRoute(routes, provider, model) : undefined
+  const routeMode = preferences?.reviewer.mode === 'decision' ? 'decision' : 'fixed'
+  const fixed = preferences?.reviewer.mode === 'fixed' || preferences?.reviewer.mode === 'decision'
+  const selectedRoute =
+    fixed && (preferences.reviewer.mode === 'fixed' || preferences.reviewer.mode === 'decision')
+      ? preferences.reviewer.route
+      : undefined
+  const provider = selectedRoute?.provider ?? ''
+  const model = selectedRoute?.model ?? ''
+  const reviewerRoutes = routes.filter((route) => route.kind !== 'decision')
+  const decisionRoutes = routes.filter((route) => route.kind === 'decision')
+  const selectableRoutes = routeMode === 'decision' ? decisionRoutes : reviewerRoutes
+  const models = selectableRoutes.filter((route) => route.provider === provider)
+  const fixedOption = fixed ? findRoute(selectableRoutes, provider, model) : undefined
   const routeMissing = fixed && fixedOption === undefined
+  const decisionRouteValue = selectedRoute === undefined ? '' : routeKey(provider, model)
 
   const edit = (next: AutoReviewPreferences): void => store.edit(next)
   const changeProvider = (next: string): void => {
     if (!preferences) return
-    const option = routes.find((route) => route.provider === next)
-    if (option) edit(withFixedRoute(preferences, option))
+    const option = selectableRoutes.find((route) => route.provider === next)
+    if (option) edit(withFixedRoute(preferences, option, routeMode))
   }
   const changeModel = (next: string): void => {
     if (!preferences) return
-    const option = findRoute(routes, provider, next)
-    if (option) edit(withFixedRoute(preferences, option))
+    const option = findRoute(selectableRoutes, provider, next)
+    if (option) edit(withFixedRoute(preferences, option, routeMode))
+  }
+  const changeDecisionModel = (next: string): void => {
+    if (!preferences) return
+    const option = decisionRoutes.find((route) => routeKey(route.provider, route.model) === next)
+    if (option) edit(withFixedRoute(preferences, option, 'decision'))
   }
 
   return (
@@ -362,11 +374,25 @@ export function AutoReviewSection({
                     type="radio"
                     name="opl-auto-review-route"
                     value="fixed"
-                    checked={fixed}
-                    disabled={!editable || routes.length === 0}
+                    checked={preferences.reviewer.mode === 'fixed'}
+                    disabled={!editable || reviewerRoutes.length === 0}
                     onChange={() => {
-                      const first = routes[0]
-                      if (first) edit(withFixedRoute(preferences, first))
+                      const first = reviewerRoutes[0]
+                      if (first) edit(withFixedRoute(preferences, first, 'fixed'))
+                    }}
+                  />
+                </label>
+                <label className={css.row}>
+                  <span>{t('routeDecision')}</span>
+                  <input
+                    type="radio"
+                    name="opl-auto-review-route"
+                    value="decision"
+                    checked={preferences.reviewer.mode === 'decision'}
+                    disabled={!editable || decisionRoutes.length === 0}
+                    onChange={() => {
+                      const first = decisionRoutes[0]
+                      if (first) edit(withFixedRoute(preferences, first, 'decision'))
                     }}
                   />
                 </label>
@@ -381,67 +407,89 @@ export function AutoReviewSection({
                   </p>
                 ) : null}
                 {fixed ? (
-                  <div className={css.form}>
+                  preferences.reviewer.mode === 'decision' ? (
                     <label className={css.field}>
-                      <span>{t('provider')}</span>
+                      <span>{t('decisionModel')}</span>
                       <select
                         className={css.input}
-                        data-opl-auto-review-select="provider"
-                        disabled={!editable || routes.length === 0}
-                        value={provider}
-                        onChange={(event) => changeProvider(event.target.value)}
+                        data-opl-auto-review-select="decision-model"
+                        disabled={!editable || decisionRoutes.length === 0}
+                        value={decisionRouteValue}
+                        onChange={(event) => changeDecisionModel(event.target.value)}
                       >
-                        {providersOf(routes).map((route) => (
-                          <option key={route.provider} value={route.provider}>
-                            {route.providerName}
+                        {decisionRoutes.map((route) => (
+                          <option
+                            key={routeKey(route.provider, route.model)}
+                            value={routeKey(route.provider, route.model)}
+                          >
+                            {route.providerName} · {route.modelName}
                           </option>
                         ))}
                       </select>
                     </label>
-                    <label className={css.field}>
-                      <span>{t('model')}</span>
-                      <select
-                        className={css.input}
-                        data-opl-auto-review-select="model"
-                        disabled={!editable || models.length === 0}
-                        value={model}
-                        onChange={(event) => changeModel(event.target.value)}
-                      >
-                        {models.map((route) => (
-                          <option key={route.model} value={route.model}>
-                            {route.modelName}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className={css.field}>
-                      <span>{t('effort')}</span>
-                      {fixedOption === undefined || fixedOption.efforts.length === 0 ? (
-                        <span className={css.muted}>{t('effortNone')}</span>
-                      ) : (
+                  ) : (
+                    <div className={css.form}>
+                      <label className={css.field}>
+                        <span>{t('provider')}</span>
                         <select
                           className={css.input}
-                          data-opl-auto-review-select="effort"
-                          disabled={!editable}
-                          value={
-                            preferences.reviewer.mode === 'fixed' &&
-                            preferences.reviewer.route.reasoningEffort !== undefined
-                              ? preferences.reviewer.route.reasoningEffort
-                              : ''
-                          }
-                          onChange={(event) =>
-                            edit(withFixedEffort(preferences, routes, event.target.value))
-                          }
+                          data-opl-auto-review-select="provider"
+                          disabled={!editable || selectableRoutes.length === 0}
+                          value={provider}
+                          onChange={(event) => changeProvider(event.target.value)}
                         >
-                          {fixedOption.efforts.map((effort) => (
-                            <option key={effort} value={effort}>
-                              {effort}
+                          {providersOf(selectableRoutes).map((route) => (
+                            <option key={route.provider} value={route.provider}>
+                              {route.providerName}
                             </option>
                           ))}
                         </select>
-                      )}
-                    </label>
-                  </div>
+                      </label>
+                      <label className={css.field}>
+                        <span>{t('model')}</span>
+                        <select
+                          className={css.input}
+                          data-opl-auto-review-select="model"
+                          disabled={!editable || models.length === 0}
+                          value={model}
+                          onChange={(event) => changeModel(event.target.value)}
+                        >
+                          {models.map((route) => (
+                            <option key={route.model} value={route.model}>
+                              {route.modelName}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className={css.field}>
+                        <span>{t('effort')}</span>
+                        {fixedOption === undefined || fixedOption.efforts.length === 0 ? (
+                          <span className={css.muted}>{t('effortNone')}</span>
+                        ) : (
+                          <select
+                            className={css.input}
+                            data-opl-auto-review-select="effort"
+                            disabled={!editable}
+                            value={
+                              preferences.reviewer.mode === 'fixed' &&
+                              preferences.reviewer.route.reasoningEffort !== undefined
+                                ? preferences.reviewer.route.reasoningEffort
+                                : ''
+                            }
+                            onChange={(event) =>
+                              edit(withFixedEffort(preferences, routes, event.target.value))
+                            }
+                          >
+                            {fixedOption.efforts.map((effort) => (
+                              <option key={effort} value={effort}>
+                                {effort}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </label>
+                    </div>
+                  )
                 ) : null}
                 <p className={css.muted}>{t('noRanking')}</p>
               </div>

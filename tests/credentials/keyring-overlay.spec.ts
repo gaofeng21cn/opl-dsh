@@ -64,31 +64,35 @@ describe('provider keyring overlay', () => {
     }
   })
 
-  it('preserves the official Huawei credential service on macOS', async () => {
-    Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' })
-    const home = await mkdtemp(join(tmpdir(), 'opl-keyring-macos-'))
-    const path = join(home, '.credentials.yaml')
-    const ctx = new Context()
-    try {
-      await ctx.plugin(LocalCredentialProvider, { path, watch: false })
-      const ref = credentialRef('HUAWEI_MAAS_API_KEY')
-      await ctx.credentials.set(ref, 'synthetic-existing-key')
-      const overlay = installProviderKeyringOverlay(ctx)
-      await overlay.migratePlaintext()
-      expect((await ctx.credentials.resolve(ref))?.value).toBe('synthetic-existing-key')
-      await ctx.credentials.set(ref, 'synthetic-updated-key')
-      expect((await ctx.credentials.resolve(ref))?.value).toBe('synthetic-updated-key')
-      expect((await ctx.credentials.describe(ref)).writable).toBe(true)
-      expect(keyring.huawei.read).not.toHaveBeenCalled()
-      expect(keyring.huawei.set).not.toHaveBeenCalled()
-      await ctx.credentials.unset(ref)
-      expect(await readFile(path, 'utf8')).not.toContain('synthetic-updated-key')
-      overlay.dispose()
-    } finally {
-      await ctx.fiber.dispose()
-      await rm(home, { recursive: true, force: true })
-    }
-  })
+  // NTFS cannot supply the POSIX owner modes required by the macOS credential provider.
+  it.skipIf(process.platform === 'win32')(
+    'preserves the official Huawei credential service on macOS',
+    async () => {
+      Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' })
+      const home = await mkdtemp(join(tmpdir(), 'opl-keyring-macos-'))
+      const path = join(home, '.credentials.yaml')
+      const ctx = new Context()
+      try {
+        await ctx.plugin(LocalCredentialProvider, { path, watch: false })
+        const ref = credentialRef('HUAWEI_MAAS_API_KEY')
+        await ctx.credentials.set(ref, 'synthetic-existing-key')
+        const overlay = installProviderKeyringOverlay(ctx)
+        await overlay.migratePlaintext()
+        expect((await ctx.credentials.resolve(ref))?.value).toBe('synthetic-existing-key')
+        await ctx.credentials.set(ref, 'synthetic-updated-key')
+        expect((await ctx.credentials.resolve(ref))?.value).toBe('synthetic-updated-key')
+        expect((await ctx.credentials.describe(ref)).writable).toBe(true)
+        expect(keyring.huawei.read).not.toHaveBeenCalled()
+        expect(keyring.huawei.set).not.toHaveBeenCalled()
+        await ctx.credentials.unset(ref)
+        expect(await readFile(path, 'utf8')).not.toContain('synthetic-updated-key')
+        overlay.dispose()
+      } finally {
+        await ctx.fiber.dispose()
+        await rm(home, { recursive: true, force: true })
+      }
+    },
+  )
 
   it.each([undefined, 'synthetic-wrong-key'])(
     'retains the original plaintext when keyring readback is %s',

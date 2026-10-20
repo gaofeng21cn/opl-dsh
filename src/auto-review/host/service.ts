@@ -535,13 +535,17 @@ export class OplAutoReviewService extends TypertRemoteService {
             if (this.lease.conservative && !this.narrowAllAuto())
               return { failure: 'sessions-active' as const }
             const routes = await listAdvertisedRoutes(this.ctx)
-            if (next.reviewer.mode === 'fixed') {
+            if (next.reviewer.mode === 'fixed' || next.reviewer.mode === 'decision') {
               const route = matchingRoute(
                 routes,
                 next.reviewer.route.provider,
                 next.reviewer.route.model,
               )
               if (route === undefined) return { failure: 'invalid-settings' as const }
+              if (next.reviewer.mode === 'decision' && route.kind !== 'decision')
+                return { failure: 'invalid-settings' as const }
+              if (next.reviewer.mode === 'fixed' && route.kind === 'decision')
+                return { failure: 'invalid-settings' as const }
               if (!effortConfirmed(route, next.reviewer.route.reasoningEffort ?? null))
                 return { failure: 'invalid-settings' as const }
             } else if (
@@ -1156,9 +1160,9 @@ export class OplAutoReviewService extends TypertRemoteService {
     const preferences = this.current
     return resolveReviewerRoute({
       selection:
-        preferences.reviewer.mode === 'fixed'
+        preferences.reviewer.mode === 'fixed' || preferences.reviewer.mode === 'decision'
           ? {
-              mode: 'fixed',
+              mode: preferences.reviewer.mode,
               route: {
                 provider: preferences.reviewer.route.provider,
                 model: preferences.reviewer.route.model,
@@ -1300,9 +1304,9 @@ export class OplAutoReviewService extends TypertRemoteService {
       throw new Error('auto-review: the external permission ask belongs to another Session')
     const route = await resolveExternalReviewerRoute({
       selection:
-        this.current.reviewer.mode === 'fixed'
+        this.current.reviewer.mode === 'fixed' || this.current.reviewer.mode === 'decision'
           ? {
-              mode: 'fixed',
+              mode: this.current.reviewer.mode,
               route: {
                 provider: this.current.reviewer.route.provider,
                 model: this.current.reviewer.route.model,
@@ -1604,12 +1608,15 @@ export class OplAutoReviewService extends TypertRemoteService {
         matchingRoute(routes, OPENAI_AUTO_REVIEW_ROUTE.provider, OPENAI_AUTO_REVIEW_ROUTE.model) !==
         undefined
       )
+    const route = matchingRoute(
+      routes,
+      preferences.reviewer.route.provider,
+      preferences.reviewer.route.model,
+    )
     return (
-      matchingRoute(
-        routes,
-        preferences.reviewer.route.provider,
-        preferences.reviewer.route.model,
-      ) !== undefined
+      route !== undefined &&
+      (preferences.reviewer.mode !== 'decision' || route.kind === 'decision') &&
+      (preferences.reviewer.mode !== 'fixed' || route.kind !== 'decision')
     )
   }
 
