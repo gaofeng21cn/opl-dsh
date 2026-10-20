@@ -1672,6 +1672,10 @@ export class HarnessService {
       }
       if (record.harnessRef !== 'dsh') {
         await this.pinSession(record, active, turn.reasoningEffort)
+        if (active.cancelled) {
+          turn.state = 'cancelled'
+          return
+        }
         const result = object(
           await active.acp!.request(
             'session/prompt',
@@ -1691,8 +1695,9 @@ export class HarnessService {
           ),
         )
         turn.stopReason = String(result.stopReason ?? 'unknown')
-        turn.state =
-          turn.stopReason === 'end_turn'
+        turn.state = active.cancelled
+          ? 'cancelled'
+          : turn.stopReason === 'end_turn'
             ? 'completed'
             : turn.stopReason === 'cancelled'
               ? 'cancelled'
@@ -1803,6 +1808,7 @@ export class HarnessService {
           : '执行未完成，请检查 Harness 安装、所选渠道和模型。原任务未自动重发。'
     } finally {
       await this.titleUpdates.get(record.id)
+      if (active.cancelled) turn.state = 'cancelled'
       for (const p of active.approvals.values()) active.acp?.answer(p.rpcId)
       active.approvals.clear()
       active.turn = undefined
@@ -2386,6 +2392,9 @@ export class HarnessService {
     const record = this.records.get(required(input.sessionId, 'sessionId')),
       active = this.active.get(input.sessionId)
     if (!record) throw Error('组合会话不存在')
+    const turn = active?.turn
+    // The stop belongs to this turn even if persistence or child cancellation yields.
+    if (turn) active!.cancelled = true
     if (pauseWake) {
       record.autoWakePaused = true
       await this.save(record)
@@ -2398,8 +2407,7 @@ export class HarnessService {
         )
         .map((child) => this.cancel({ sessionId: child.id }, pauseWake)),
     )
-    if (active?.turn) {
-      active.cancelled = true
+    if (turn && active?.turn === turn) {
       if (active.turn.state === 'queued') {
         const launch = this.pendingRuns.get(record.id)
         this.pendingRuns.delete(record.id)

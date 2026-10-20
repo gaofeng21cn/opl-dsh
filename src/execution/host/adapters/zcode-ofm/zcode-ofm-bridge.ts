@@ -30,6 +30,7 @@ import { homedir } from 'node:os'
 import { dirname, resolve as resolvePath } from 'node:path'
 import { commandLaunch } from '../../harness-registry.ts'
 import { EXTERNAL_TOOL_NAME_META } from '../../external-binding.ts'
+import { bridgeFailure, HarnessReportedError } from '../failure-diagnostics.ts'
 import {
   ZCODE_CLIENT_REQUESTS,
   ZCODE_EVENT_NOTIFICATION,
@@ -288,7 +289,7 @@ async function openAgent() {
         const entry = pending.get(m.id)
         if (!entry) return
         pending.delete(m.id)
-        if (m.error) entry.reject(Error(`ZCode 请求失败（${m.error.code ?? 'unknown'}）`))
+        if (m.error) entry.reject(new HarnessReportedError('zcode', m.error))
         else entry.resolve(m.result)
         return
       }
@@ -370,7 +371,7 @@ function handleEvent(event: ZcodeEvent) {
   if (event.type === 'turn.completed') {
     const resultType = event.payload?.resultType
     if (typeof resultType === 'string' && resultType.startsWith('error_')) {
-      rejectTurn?.(Error('HARNESS_EXECUTION'))
+      rejectTurn?.(new HarnessReportedError('zcode', {}, 'failed'))
       resolveTurn = undefined
       rejectTurn = undefined
       return
@@ -385,8 +386,7 @@ function handleEvent(event: ZcodeEvent) {
     return
   }
   if (event.type === 'turn.failed') {
-    const detail = (event.payload?.error ?? {}) as { type?: string; message?: string }
-    rejectTurn?.(Error(redactSecret(detail.message ?? detail.type ?? '未知错误', apiKey)))
+    rejectTurn?.(new HarnessReportedError('zcode', event.payload?.error, 'failed'))
     resolveTurn = undefined
     rejectTurn = undefined
     return
@@ -592,14 +592,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       if (m.id !== undefined)
         send({
           id: m.id,
-          error: {
-            code:
-              error instanceof Error &&
-              /^HARNESS_(AUTH|RATE_LIMIT|MODEL|EXECUTION|TIMEOUT|NETWORK)$/.test(error.message)
-                ? error.message
-                : 'HARNESS_UNKNOWN',
-            message: '官方 Harness 调用未完成',
-          },
+          error: bridgeFailure(error),
         })
     }
   })()

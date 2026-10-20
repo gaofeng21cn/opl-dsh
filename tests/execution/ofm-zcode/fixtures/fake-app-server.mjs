@@ -273,7 +273,11 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     })
     if (process.env.TURN_FAIL)
       return event(sessionId, 'turn.failed', {
-        error: { type: 'provider_error', message: 'model rejected the request' },
+        error: {
+          type: 'provider_error',
+          message: 'model rejected the request',
+          ...(process.env.FAIL_STATUS ? { statusCode: Number(process.env.FAIL_STATUS) } : {}),
+        },
         turnPhase: 'generate',
       })
     if (!process.env.HANG)

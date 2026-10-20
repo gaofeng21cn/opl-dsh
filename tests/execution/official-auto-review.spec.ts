@@ -91,10 +91,21 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   if (m.method === 'turn/start') {
     const id = 'fixture-turn'
     answer({ turn: { id } })
-    setTimeout(() => process.stdout.write(JSON.stringify({
+    const scenario = process.env.OPL_FIXTURE_TURN_RESULT
+    const item = { id: 'answer', type: 'agentMessage', text: 'final answer' }
+    const notify = (method, params) => process.stdout.write(JSON.stringify({method, params}) + '\\n')
+    if (scenario === 'streamed') notify('item/agentMessage/delta', {threadId:m.params.threadId,itemId:item.id,delta:'final '})
+    if (scenario === 'final-only' || scenario === 'streamed')
+      notify('item/completed', {threadId:m.params.threadId,item})
+    process.stdout.write(JSON.stringify({
       method: 'turn/completed',
-      params: { threadId: m.params.threadId, turn: { id, status: 'completed' } },
-    }) + '\\n'), 5)
+      params: { threadId: m.params.threadId, turn: { id,
+        status: scenario === 'failed' ? 'failed' : 'completed',
+        ...(scenario === 'failed' ? {error:{message:'synthetic-private-key',
+          codexErrorInfo:{httpConnectionFailed:{httpStatusCode:503,body:'synthetic-private-key'}}}} : {}),
+        items: scenario && scenario !== 'failed' ? [item] : [],
+      } },
+    }) + '\\n')
     return
   }
   answer({})
@@ -237,7 +248,9 @@ async function openBridge(env: NodeJS.ProcessEnv, cwd: string): Promise<BridgeCo
     const p = pending.get(m.id)
     if (!p) return
     pending.delete(m.id)
-    m.error ? p.reject(Error(m.error.code + ': ' + m.error.message)) : p.resolve(m.result)
+    m.error
+      ? p.reject(Error(m.error.code + ': ' + m.error.message + JSON.stringify(m.error.data ?? {})))
+      : p.resolve(m.result)
   })
   return {
     call: (method, params = {}) =>
@@ -279,6 +292,65 @@ async function requests(log: string): Promise<{ method: string; params: any }[]>
     return []
   }
 }
+
+describe('Codex terminal response projection', () => {
+  async function resultBridge(scenario: string) {
+    const root = await scratch()
+    await writeFile(join(root, 'app-server'), CODEX_FIXTURE)
+    const bridge = await openBridge(
+      {
+        PATH: process.env.PATH ?? '',
+        SystemRoot: process.env.SystemRoot ?? '',
+        TEMP: root,
+        TMP: root,
+        OPL_NATIVE_HARNESS: 'codex',
+        OPL_NATIVE_COMMAND: process.execPath,
+        OPL_NATIVE_MODEL: 'gpt-current',
+        OPL_NATIVE_PERMISSION: 'workspace',
+        OPL_NATIVE_BASE_URL: 'http://127.0.0.1:1/v1',
+        OPL_NATIVE_API_KEY: 'synthetic-private-key',
+        OPL_FIXTURE_TURN_RESULT: scenario,
+      },
+      root,
+    )
+    await bridge.call('initialize')
+    const session = await bridge.call('session/new', { cwd: root, mcpServers: [] })
+    return { bridge, session }
+  }
+
+  it.each(['final-only', 'streamed', 'terminal-only'])(
+    'delivers %s text exactly once',
+    async (scenario) => {
+      const { bridge, session } = await resultBridge(scenario)
+      expect(
+        await bridge.call('session/prompt', {
+          sessionId: session.sessionId,
+          prompt: [{ type: 'text', text: 'answer' }],
+        }),
+      ).toMatchObject({ stopReason: 'end_turn' })
+      expect(bridge.updates.join('')).toBe('final answer')
+      await bridge.close()
+    },
+  )
+
+  it('returns structured terminal failure facts without the provider body', async () => {
+    const { bridge, session } = await resultBridge('failed')
+    const failure = String(
+      await bridge
+        .call('session/prompt', {
+          sessionId: session.sessionId,
+          prompt: [{ type: 'text', text: 'answer' }],
+        })
+        .catch((error) => error),
+    )
+    expect(failure).toContain('HARNESS_EXECUTION')
+    expect(failure).toContain('httpConnectionFailed')
+    expect(failure).toContain('503')
+    expect(failure).toContain('failed')
+    expect(failure).not.toContain('synthetic-private-key')
+    await bridge.close()
+  })
+})
 
 describe('official Auto Review opt-in on the native adapter', () => {
   const base = {

@@ -20,6 +20,7 @@ import {
   type NativePermission,
 } from './native-bash.ts'
 import { acpUpdatesForClaudeEvent } from './claude-transcript.ts'
+import { bridgeFailure, HarnessReportedError } from './failure-diagnostics.ts'
 const kind = process.env.OPL_NATIVE_HARNESS!,
   command = process.env.OPL_NATIVE_COMMAND!
 // The permission profile is a three-way authorization, not a boolean. Treating anything that
@@ -99,6 +100,19 @@ let shellProbe: { output: string; done?: () => void } | null = null
 const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>()
 let resolveTurn: ((value: unknown) => void) | undefined,
   rejectTurn: ((e: Error) => void) | undefined
+const codexMessageText = new Map<string, string>()
+/** Completed items also carry text when the CLI does not send message deltas. */
+function completedCodexMessage(item: any) {
+  if (item?.type !== 'agentMessage' || typeof item.id !== 'string' || typeof item.text !== 'string')
+    return
+  const streamed = codexMessageText.get(item.id) ?? ''
+  if (item.text.startsWith(streamed)) {
+    const suffix = item.text.slice(streamed.length)
+    if (suffix)
+      emit({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: suffix } })
+    codexMessageText.set(item.id, item.text)
+  }
+}
 function codexRequest(method: string, params: object): Promise<any> {
   const id = ++seq
   return new Promise((resolve, reject) => {
@@ -127,9 +141,10 @@ async function openCodex() {
   )
   child.stderr!.resume()
   const fail = () => {
-    for (const p of pending.values()) p.reject(Error('Codex 进程退出'))
+    const error = new HarnessReportedError('codex', { type: 'processExited' })
+    for (const p of pending.values()) p.reject(error)
     pending.clear()
-    rejectTurn?.(Error('Codex 进程退出'))
+    rejectTurn?.(error)
   }
   child.on('error', fail)
   child.on('exit', fail)
@@ -145,7 +160,7 @@ async function openCodex() {
         const p = pending.get(m.id)
         if (p) {
           pending.delete(m.id)
-          m.error ? p.reject(Error('Codex 请求失败（' + m.error.code + '）')) : p.resolve(m.result)
+          m.error ? p.reject(new HarnessReportedError('codex', m.error)) : p.resolve(m.result)
         }
         return
       }
@@ -182,10 +197,14 @@ async function openCodex() {
         // The probe is internal bookkeeping and is never surfaced as task activity.
         if (m.method === 'item/started' || m.method === 'item/completed') return
       }
-      if (m.method === 'item/agentMessage/delta')
+      if (m.method === 'item/agentMessage/delta') {
         emit({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: p.delta } })
+        if (typeof p.itemId === 'string' && typeof p.delta === 'string')
+          codexMessageText.set(p.itemId, (codexMessageText.get(p.itemId) ?? '') + p.delta)
+      }
       if (m.method === 'item/started' || m.method === 'item/completed') {
         const item = p.item ?? {}
+        if (m.method === 'item/completed') completedCodexMessage(item)
         if (!['agentMessage', 'userMessage', 'reasoning'].includes(item.type))
           emit({
             sessionUpdate: m.method === 'item/started' ? 'tool_call' : 'tool_call_update',
@@ -202,9 +221,12 @@ async function openCodex() {
       }
       if (m.method === 'turn/completed') {
         turnId = ''
-        if (p.turn.status === 'failed') rejectTurn?.(Error('Codex 执行失败'))
-        else
+        for (const item of p.turn.items ?? []) completedCodexMessage(item)
+        if (p.turn.status === 'failed')
+          rejectTurn?.(new HarnessReportedError('codex', p.turn.error, 'failed'))
+        else if (p.turn.status === 'completed' || p.turn.status === 'interrupted')
           resolveTurn?.({ stopReason: p.turn.status === 'interrupted' ? 'cancelled' : 'end_turn' })
+        else rejectTurn?.(new HarnessReportedError('codex', { type: 'protocolError' }))
         resolveTurn = undefined
         rejectTurn = undefined
       }
@@ -567,6 +589,7 @@ async function invoke(method: string, p: any) {
       .join('\n')
     const effort = p._meta?.reasoningEffort ?? undefined
     if (kind === 'claude') return claudePrompt(text, effort)
+    codexMessageText.clear()
     const done = new Promise((resolve, reject) => {
       resolveTurn = resolve
       rejectTurn = reject
@@ -623,14 +646,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       if (m.id !== undefined)
         send({
           id: m.id,
-          error: {
-            code:
-              error instanceof Error &&
-              /^HARNESS_(AUTH|RATE_LIMIT|MODEL|EXECUTION|TIMEOUT|NETWORK)$/.test(error.message)
-                ? error.message
-                : 'HARNESS_UNKNOWN',
-            message: '官方 Harness 调用未完成',
-          },
+          error: bridgeFailure(error),
         })
     }
   })()

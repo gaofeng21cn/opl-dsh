@@ -24,6 +24,7 @@ import { systemEnvironment } from '../../src/execution/host/adapters/environment
 import { resolveGatewayExecution } from '../../src/gateway/host/execution-access.ts'
 import { GROK_API_KEY_REF } from '../../src/gateway/host/config.ts'
 import { testPeerConnection } from '../test-peer.ts'
+import { AcpProcess } from '../../src/execution/host/acp.ts'
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
   vi.unstubAllEnvs()
@@ -148,6 +149,63 @@ it('shares concurrent execution catalog reads', async () => {
 })
 
 describe('external completion observations', () => {
+  it('preserves cancellation when the CLI answers end_turn after a stop', async () => {
+    const { service, root, options } = await setup()
+    const session = await start(service, root)
+    await service.prompt({
+      sessionId: session.id,
+      text: 'wait-end-on-cancel',
+      operationId: 'cancel-race',
+    })
+    await vi.waitFor(
+      async () => {
+        expect((await service.snapshot({ sessionId: session.id })).turns[0]?.text).toBe(
+          'partial answer',
+        )
+      },
+      { timeout: 5000 },
+    )
+    const snapshot = await service.cancel({ sessionId: session.id })
+    expect(snapshot.state).toBe('cancelled')
+    expect(snapshot.turns[0]).toMatchObject({ state: 'cancelled', stopReason: 'end_turn' })
+    await service.dispose()
+    const stored = await new HarnessSessionStore(options.home).load()
+    expect(stored.find((record) => record.id === session.id)?.turns[0]?.state).toBe('cancelled')
+  })
+
+  it('records a stop before waiting for settings persistence', async () => {
+    const { service, root } = await setup()
+    const session = await start(service, root)
+    const response = Promise.withResolvers<unknown>()
+    const prompted = Promise.withResolvers<void>()
+    const request = AcpProcess.prototype.request
+    vi.spyOn(AcpProcess.prototype, 'request').mockImplementation(function (method, ...args) {
+      if (method !== 'session/prompt') return request.call(this, method, ...args)
+      prompted.resolve()
+      return response.promise
+    })
+    await service.prompt({ sessionId: session.id, text: 'race', operationId: 'persist-race' })
+    await prompted.promise
+    const storage = service as unknown as { save: (record: unknown) => Promise<void> }
+    const save = storage.save.bind(service)
+    const saving = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    vi.spyOn(storage, 'save').mockImplementationOnce(async (record) => {
+      saving.resolve()
+      await release.promise
+      await save(record)
+    })
+    const cancelled = service.cancel({ sessionId: session.id })
+    await saving.promise
+    try {
+      response.resolve({ stopReason: 'end_turn' })
+      expect((await wait(service, session.id)).state).toBe('cancelled')
+    } finally {
+      release.resolve()
+      await cancelled
+    }
+  })
+
   it.each(['empty-turn', 'thought-only', 'blank-answer', 'tool-only-failed', 'tool-only-pending'])(
     'refuses %s before persisting completion',
     async (prompt) => {

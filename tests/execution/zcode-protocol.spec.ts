@@ -220,7 +220,9 @@ class Bridge {
         if (!p) return
         this.pending.delete(m.id)
         m.error
-          ? p.reject(Object.assign(new Error(m.error.message), { code: m.error.code }))
+          ? p.reject(
+              Object.assign(new Error(m.error.message), { code: m.error.code, data: m.error.data }),
+            )
           : p.resolve(m.result)
         return
       }
@@ -1019,22 +1021,29 @@ describe('bridge against a fake official app-server', () => {
     )
   })
 
-  test('turn.failed fails the turn and redacts the credential in diagnostics only', async () => {
+  test('turn.failed preserves its category without reflecting the provider message', async () => {
     await withHarness(
       async (bridge) => {
         await bridge.request('initialize', {})
         const created = await bridge.request('session/new', { cwd: WORKSPACE })
-        // The host is told only that the call failed; the upstream reason is not
-        // forwarded, so it cannot leak into a session record or a UI transcript.
-        await expect(
-          bridge.request('session/prompt', {
+        const failure = await bridge
+          .request('session/prompt', {
             sessionId: created.sessionId,
             prompt: [{ type: 'text', text: 'x' }],
-          }),
-        ).rejects.toThrow('官方 Harness 调用未完成')
-        await bridge.untilDiagnostic('model rejected the request')
+          })
+          .catch((error) => error)
+        expect(failure).toMatchObject({
+          code: 'HARNESS_EXECUTION',
+          data: {
+            service: 'zcode',
+            errorName: 'provider_error',
+            terminalState: 'failed',
+          },
+        })
+        expect(JSON.stringify(failure)).not.toMatch(/model rejected|test-huawei-secret/)
+        await bridge.untilDiagnostic('HARNESS_EXECUTION')
         const diagnostics = bridge.diagnostics.join('\n')
-        expect(diagnostics).toContain('model rejected the request')
+        expect(diagnostics).not.toContain('model rejected the request')
         expect(diagnostics).not.toContain(API_KEY)
         expect(JSON.stringify(bridge.updates)).not.toContain(API_KEY)
       },
