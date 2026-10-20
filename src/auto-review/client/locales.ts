@@ -47,15 +47,17 @@ export const zh = {
   revision: 'revision',
   routeTitle: '审查模型路线',
   routeSourceNote:
-    '可选路线来自 Host 注册的原生 LLM 路由。这里不从外部 Harness 的执行组合菜单拼装路线。',
+    '普通 reviewer 与决策模型分开列出；只有 Host 已注册并确认可用的路线才会出现在对应选项中。这里不从外部 Harness 的执行组合菜单拼装路线。',
   routeCurrent: 'Codex Auto Review（默认）',
   routeFixed: '使用独立 reviewer 路线',
+  routeDecision: '使用决策模型',
   routesEmpty: '没有可用的审查路线，请检查账号与模型配置。',
   routeUnavailable:
     'Host 报告审查服务当前不可用。你仍可更换已广告的路线或请求关闭；Host 会再次校验，并可能拒绝不安全或仍有活跃会话的停用。',
   routeMissing: '当前记录的独立路线不在 Host 返回的列表中，无法在此编辑；请先重新读取。',
   provider: '提供方',
   model: '模型',
+  decisionModel: '决策模型',
   effort: '推理强度',
   effortNone: '该路线未提供可选推理强度',
   noRanking: '不推荐未经评测的模型排名；这里只呈现 Host 已注册并可用的路线。',
@@ -139,9 +141,10 @@ export const en: Record<AutoReviewLocaleKey, string> = {
   revision: 'revision',
   routeTitle: 'Reviewer route',
   routeSourceNote:
-    'Selectable routes come from the native LLM routes the Host has registered. A route is never assembled from the external Harness execution combination menu.',
+    'Reviewer and decision-model routes are listed separately; only routes registered and confirmed available by the Host appear in the matching option. Routes are never assembled from the external Harness execution combination menu.',
   routeCurrent: 'Codex Auto Review (default)',
   routeFixed: 'Use an independent reviewer route',
+  routeDecision: 'Use a decision model',
   routesEmpty: 'No reviewer route is available. Check the account and model configuration.',
   routeUnavailable:
     'The Host reports the review service unavailable. You may still switch to an advertised route or request disabling; the Host revalidates and may refuse a disable that is unsafe or still has active Sessions.',
@@ -149,6 +152,7 @@ export const en: Record<AutoReviewLocaleKey, string> = {
     'The recorded independent route is not in the Host’s list and cannot be edited here; re-read first.',
   provider: 'Provider',
   model: 'Model',
+  decisionModel: 'Decision model',
   effort: 'Reasoning effort',
   effortNone: 'This route offers no selectable reasoning effort',
   noRanking:

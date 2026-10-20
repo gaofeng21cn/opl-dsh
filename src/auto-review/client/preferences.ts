@@ -78,8 +78,12 @@ export function routeFromOption(option: AutoReviewRouteOption): AutoReviewRoute 
 export function withFixedRoute(
   preferences: AutoReviewPreferences,
   option: AutoReviewRouteOption,
+  mode: 'fixed' | 'decision' = 'fixed',
 ): AutoReviewPreferences {
-  const current = preferences.reviewer.mode === 'fixed' ? preferences.reviewer.route : undefined
+  const current =
+    preferences.reviewer.mode === 'fixed' || preferences.reviewer.mode === 'decision'
+      ? preferences.reviewer.route
+      : undefined
   const effort =
     current !== undefined &&
     current.provider === option.provider &&
@@ -91,7 +95,7 @@ export function withFixedRoute(
   return {
     ...preferences,
     reviewer: {
-      mode: 'fixed',
+      mode,
       route: {
         provider: option.provider,
         model: option.model,
@@ -117,14 +121,15 @@ export function withFixedEffort(
   routes: readonly AutoReviewRouteOption[],
   effort: string,
 ): AutoReviewPreferences {
-  if (preferences.reviewer.mode !== 'fixed') return preferences
+  if (preferences.reviewer.mode !== 'fixed' && preferences.reviewer.mode !== 'decision')
+    return preferences
   const route = preferences.reviewer.route
   const option = findRoute(routes, route.provider, route.model)
   if (!option || !option.efforts.includes(effort)) return preferences
   return {
     ...preferences,
     reviewer: {
-      mode: 'fixed',
+      mode: preferences.reviewer.mode,
       route: { provider: route.provider, model: route.model, reasoningEffort: effort },
     },
   }

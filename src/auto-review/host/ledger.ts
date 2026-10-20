@@ -68,14 +68,14 @@ const beginRecordSchema = z.strictObject({
   sessionId: z.string(),
   selectionRevision: z.string(),
   reviewer: z.strictObject({
-    mode: z.enum(['current', 'fixed']),
+    mode: z.enum(['current', 'fixed', 'decision']),
     /**
      * Which rule of the route policy chose this route: the user's own fixed
      * selection, the dedicated OpenAI reviewer the policy prefers for a native
      * OpenAI/Codex route, or the Session's own route. Written by these builds
      * only, so stored records from before the policy validate without it.
      */
-    source: z.enum(['fixed', 'native-auto-review', 'session']).optional(),
+    source: z.enum(['fixed', 'decision-model', 'native-auto-review', 'session']).optional(),
     provider: z.string(),
     model: z.string(),
     reasoningEffort: z.string().nullable(),

@@ -2,7 +2,8 @@ import { createInterface } from 'node:readline'
 import { writeFile, readFile, appendFile } from 'node:fs/promises'
 import { join } from 'node:path'
 let sessionId = 'test-native',
-  running
+  running,
+  completeOnCancel = false
 let effort = 'high'
 const configOptions = () => [
   {
@@ -57,7 +58,11 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         sessionUpdate: 'session_info_update',
         title: text.replace(/s+/g, ' ').slice(0, 200),
       })
-    if (text === 'wait') return
+    if (text === 'wait' || text === 'wait-end-on-cancel') {
+      completeOnCancel = text === 'wait-end-on-cancel'
+      if (completeOnCancel) chunk('partial answer')
+      return
+    }
     // A turn the agent reports as failed: the executor records `failed`, so a
     // notification about a failure can be observed without a real CLI failure.
     if (text === 'fail-turn') {
@@ -135,7 +140,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       running = undefined
     }
   } else if (m.method === 'session/cancel') {
-    if (running) answer(running, { stopReason: 'cancelled' })
+    if (running) answer(running, { stopReason: completeOnCancel ? 'end_turn' : 'cancelled' })
     running = undefined
   } else if (m.id === 'permission-string') {
     const id = approvals.get(m.id)

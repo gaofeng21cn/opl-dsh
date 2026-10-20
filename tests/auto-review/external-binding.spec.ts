@@ -122,6 +122,7 @@ function createSettings(enabled: boolean): {
     reviewerProvider: '',
     reviewerModel: '',
     reviewerEffort: '',
+    reviewerKind: 'reviewer',
     timeoutMs: 5000,
     maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
   }
@@ -242,6 +243,7 @@ async function mount(options: { enabled?: boolean } = {}): Promise<Mounted> {
     reviewerProvider: '',
     reviewerModel: '',
     reviewerEffort: '',
+    reviewerKind: 'reviewer',
     timeoutMs: 5000,
     maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
   })

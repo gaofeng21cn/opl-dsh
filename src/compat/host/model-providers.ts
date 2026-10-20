@@ -192,20 +192,43 @@ export async function apply(ctx: Context): Promise<void> {
   )
   let huaweiRegistration: ReturnType<typeof ctx.llm.registerAdapter> | undefined
   let bambooRegistration: ReturnType<typeof ctx.llm.registerAdapter> | undefined
-  const refresh = () => {
+  let disposed = false
+  let refreshEpoch = 0
+  ctx.effect(() => () => {
+    disposed = true
+    refreshEpoch++
+  })
+  const refresh = async (): Promise<void> => {
+    if (disposed) return
+    const epoch = ++refreshEpoch
     const huaweiRoutes = configuration().huaweiProviders.get()[HUAWEI_ZCODE_MODEL.provider]
       ? [HUAWEI_ZCODE_MODEL.provider]
       : []
     if (huaweiRegistration) huaweiRegistration.replace(huaweiRoutes)
     else if (huaweiRoutes.length)
       huaweiRegistration = ctx.llm.registerAdapter(huaweiRoutes, huaweiAdapter)
-    const bambooRoutes = configuration().bambooProviders.get()[BAMBOO_STARTLUX_MODEL.provider]
-      ? [BAMBOO_STARTLUX_MODEL.provider]
-      : []
+    let bambooConfigured = false
+    try {
+      bambooConfigured = (
+        await ctx.credentials.describe(credentialRef(BAMBOO_STARTLUX_CREDENTIAL_REF))
+      ).configured
+    } catch (error) {
+      // An unavailable credential store cannot advertise a usable route.
+      bambooConfigured = false
+    }
+    if (disposed || epoch !== refreshEpoch) return
+    const bambooRoutes = bambooConfigured ? [BAMBOO_STARTLUX_MODEL.provider] : []
     if (bambooRegistration) bambooRegistration.replace(bambooRoutes)
     else if (bambooRoutes.length)
       bambooRegistration = ctx.llm.registerAdapter(bambooRoutes, bambooAdapter)
   }
-  refresh()
-  ctx.on('loader/volatile-update', refresh, { global: true })
+  ctx.on('loader/volatile-update', () => void refresh(), { global: true })
+  ctx.on(
+    'credentials/reference-updated',
+    (ref) => {
+      if (String(ref) === BAMBOO_STARTLUX_CREDENTIAL_REF) void refresh()
+    },
+    { global: true },
+  )
+  await refresh()
 }

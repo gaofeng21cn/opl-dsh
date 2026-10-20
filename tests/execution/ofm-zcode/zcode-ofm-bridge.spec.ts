@@ -146,7 +146,9 @@ class Bridge {
         if (!p) return
         this.pending.delete(m.id)
         m.error
-          ? p.reject(Object.assign(Error(m.error.message), { code: m.error.code }))
+          ? p.reject(
+              Object.assign(Error(m.error.message), { code: m.error.code, data: m.error.data }),
+            )
           : p.resolve(m.result)
         return
       }
@@ -457,22 +459,36 @@ describe('ZCode · Our Free Model cancellation, permission and cleanup', () => {
     await bridge.close()
   })
 
-  test('a failing turn surfaces as an error and leaks no credential', async () => {
-    const lane = await startOwnerLane()
-    cleanups.push(lane.close)
-    const home = await makeHome()
-    const bridge = new Bridge(
-      { OPL_ZCODE_OFM_UPSTREAM: lane.baseURL, TURN_FAIL: '1' },
-      process.cwd(),
-      home,
-    )
-    await bridge.request('initialize', {})
-    await bridge.request('session/new', { cwd: process.cwd() })
-    await expect(bridge.prompt('fail', process.cwd())).rejects.toThrow(/官方 Harness 调用未完成/)
-    expect(JSON.stringify(bridge.updates)).not.toContain(OFM_KEY)
-    await diagnosticsContain(bridge, /model rejected the request/)
-    await bridge.close()
-  })
+  test.each([undefined, '503'])(
+    'a failing turn preserves safe facts with status %s',
+    async (status) => {
+      const lane = await startOwnerLane()
+      cleanups.push(lane.close)
+      const home = await makeHome()
+      const bridge = new Bridge(
+        { OPL_ZCODE_OFM_UPSTREAM: lane.baseURL, TURN_FAIL: '1', FAIL_STATUS: status },
+        process.cwd(),
+        home,
+      )
+      await bridge.request('initialize', {})
+      await bridge.request('session/new', { cwd: process.cwd() })
+      const failure = await bridge.prompt('fail', process.cwd()).catch((error) => error)
+      expect(failure).toMatchObject({
+        code: 'HARNESS_EXECUTION',
+        data: {
+          service: 'zcode',
+          errorName: 'provider_error',
+          terminalState: 'failed',
+          ...(status ? { httpStatus: Number(status) } : {}),
+        },
+      })
+      if (!status) expect(failure.data).not.toHaveProperty('httpStatus')
+      expect(JSON.stringify(failure)).not.toMatch(/model rejected|ofm-forward-key/)
+      expect(JSON.stringify(bridge.updates)).not.toContain(OFM_KEY)
+      await diagnosticsContain(bridge, /HARNESS_EXECUTION/)
+      await bridge.close()
+    },
+  )
 
   test('closing the bridge releases the relay socket and the CLI child', async () => {
     const lane = await startOwnerLane()

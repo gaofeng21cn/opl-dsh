@@ -2,6 +2,7 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { join } from 'node:path'
+import { failureDiagnosticSuffix, safeFailureDetails } from './adapters/failure-diagnostics.ts'
 export const object = (value: unknown): Record<string, any> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, any>)
@@ -9,14 +10,14 @@ export const object = (value: unknown): Record<string, any> =>
 /**
  * Map a JSON-RPC error to a controlled, actionable message.
  *
- * Only the error code and recognized structured error names are interpreted. The agent's own `message` and `data.details`
- * are never reflected: an arbitrary provider string could carry credentials or account
- * identifiers, and a length- or pattern-based scrub cannot prove otherwise. The codes
- * below are the only provider-controlled input that reaches the user, and the
+ * Only finite error labels and validated protocol numbers are interpreted. The agent's
+ * message and response text are never reflected: an arbitrary provider string could
+ * carry credentials or account identifiers. Structured details contribute only the
+ * explicitly recognized fields in failure-diagnostics. The
  * `HARNESS_*` families belong to this suite's own native bridge rather than to an
  * official CLI account, so a MiniMax login problem can never surface Gateway advice.
  */
-const harnessFailure = (code: unknown, data?: unknown) => {
+const failureMessage = (code: unknown, data?: unknown) => {
   switch (code) {
     case 'HARNESS_AUTH':
       return '所选渠道认证失败，请在 OPL Gateway 刷新账号后重试。原任务未自动重发。'
@@ -60,7 +61,9 @@ const harnessFailure = (code: unknown, data?: unknown) => {
       if (object(data).service === 'session') {
         switch (object(data).errorName) {
           case 'APIError':
-            return '官方 Harness 报告模型接口请求失败，尚未提供可确认的 HTTP 状态。原任务未自动重发。'
+            return safeFailureDetails(data).httpStatus !== undefined
+              ? '官方 Harness 报告模型接口请求失败。原任务未自动重发。'
+              : '官方 Harness 报告模型接口请求失败，尚未提供可确认的 HTTP 状态。原任务未自动重发。'
           case 'ContextOverflowError':
             return '官方 Harness 报告本轮请求超出模型上下文容量。原任务未自动重发。'
           case 'StructuredOutputError':
@@ -69,9 +72,15 @@ const harnessFailure = (code: unknown, data?: unknown) => {
       }
       return '官方 Harness 返回内部错误，尚不能确定是渠道还是请求处理问题。原任务未自动重发。'
     default:
-      return 'Harness 执行未完成，请检查官方 CLI 的安装、登录与模型配置。原任务未自动重发。'
+      return '官方 Harness 未提供可确认的失败原因。原任务未自动重发。'
   }
 }
+const harnessFailure = (code: unknown, data?: unknown) =>
+  failureMessage(code, data) +
+  failureDiagnosticSuffix({
+    ...object(data),
+    ...(typeof code === 'number' ? { rpcCode: code } : {}),
+  })
 /** Fixed request stages; unknown extension names never enter diagnostics. */
 function requestStage(method: string): string {
   switch (method) {

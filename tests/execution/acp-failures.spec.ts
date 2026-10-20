@@ -33,6 +33,41 @@ it('keeps internal failures inconclusive and does not reflect provider diagnosti
   expect(String(failure)).not.toMatch(/synthetic-private-key|登录/)
 })
 
+it.each([429, 503])(
+  'preserves structured HTTP %s without reflecting the response',
+  async (status) => {
+    const instance = connect(`
+    require('node:readline').createInterface({input:process.stdin}).on('line', line => {
+      const request=JSON.parse(line)
+      process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:request.id,error:{code:-32603,
+        message:'synthetic-private-key',data:{service:'session',errorName:'APIError',
+        details:{statusCode:${status},responseBody:'synthetic-private-key'}}}})+'\\n')
+    })
+  `)
+    const failure = String(await instance.request('session/prompt', {}).catch((error) => error))
+    expect(failure).toContain(`HTTP ${status}`)
+    expect(failure).toContain('APIError')
+    expect(failure).toContain('RPC -32603')
+    expect(failure).not.toMatch(/synthetic-private-key|尚未提供可确认的 HTTP/)
+  },
+)
+
+it('preserves the native bridge RPC diagnostic beneath its fixed ACP error code', async () => {
+  const instance = connect(`
+    require('node:readline').createInterface({input:process.stdin}).on('line', line => {
+      const request=JSON.parse(line)
+      process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:request.id,error:{code:'HARNESS_EXECUTION',
+        data:{service:'codex',rpcCode:-32000,httpStatus:503,terminalState:'failed'},
+        message:'synthetic-private-key'}})+'\\n')
+    })
+  `)
+  const failure = String(await instance.request('session/prompt', {}).catch((error) => error))
+  expect(failure).toContain('Codex')
+  expect(failure).toContain('HTTP 503')
+  expect(failure).toContain('RPC -32000')
+  expect(failure).not.toMatch(/synthetic-private-key|认证/)
+})
+
 it.each([
   ['APIError', '模型接口请求失败'],
   ['ContextOverflowError', '上下文容量'],

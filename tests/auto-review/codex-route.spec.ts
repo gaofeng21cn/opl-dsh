@@ -17,6 +17,7 @@ import {
   listAdvertisedRoutes,
   resolveExternalReviewerRoute,
   resolveReviewerRoute,
+  isDecisionReviewRoute,
   reviewerRouteAvailability,
 } from '../../src/auto-review/host/routes.ts'
 import {
@@ -55,6 +56,8 @@ const ADVERTISED: AutoReviewRouteOption[] = [
   option(GATEWAY, AUTO_REVIEW, ['medium']),
   option('deepseek', 'deepseek-flash', ['high']),
 ]
+const DECISION = option('bamboo-startlux', 'startlux-decision-27b-autothink')
+DECISION.kind = 'decision'
 
 /** The exact diagnostic one refused resolution carries, or a failure. */
 function diagnosticOf(work: () => unknown): string {
@@ -68,6 +71,24 @@ function diagnosticOf(work: () => unknown): string {
 }
 
 describe('reviewer route policy', () => {
+  it('marks StartLux as a decision route and keeps it separate from ordinary reviewers', () => {
+    expect(isDecisionReviewRoute('bamboo-startlux', 'startlux-decision-27b-autothink')).toBe(true)
+    expect(isDecisionReviewRoute('bamboo-startlux', 'other-model')).toBe(false)
+    expect(
+      resolveReviewerRoute({
+        selection: {
+          mode: 'decision',
+          route: { provider: DECISION.provider, model: DECISION.model },
+        },
+        sessionRoute: { provider: GATEWAY, model: CHAT, reasoningEffort: null },
+        routes: [...ADVERTISED, DECISION],
+      }),
+    ).toMatchObject({
+      provider: DECISION.provider,
+      model: DECISION.model,
+      source: 'decision-model',
+    })
+  })
   it('names the verified OpenAI reviewer route and recognises the Codex family', () => {
     expect(OPENAI_AUTO_REVIEW_ROUTE).toEqual({ provider: GATEWAY, model: AUTO_REVIEW })
     expect(isOpenAiCodexRoute({ provider: GATEWAY, model: CHAT })).toBe(true)
@@ -236,6 +257,7 @@ describe('reviewer route policy', () => {
     ctx.provide('llm', {
       listProviders: () => [
         { id: GATEWAY, name: 'OPL Gateway' },
+        { id: 'bamboo-startlux', name: 'BambooNode · StartLux' },
         { id: 'minimax-official', name: 'MiniMax Code' },
         { id: 'huawei-maas', name: '华为云 MaaS' },
       ],
@@ -245,8 +267,11 @@ describe('reviewer route policy', () => {
               { id: CHAT, name: 'GPT-6 Sol' },
               { id: AUTO_REVIEW, name: 'Codex Auto Review' },
             ]
-          : [{ id: 'MiniMax-M3', name: 'M3' }],
+          : provider === 'bamboo-startlux'
+            ? [{ id: DECISION.model, name: 'StartLux Decision 27B AutoThink' }]
+            : [{ id: 'MiniMax-M3', name: 'M3' }],
       resolveModelInfo: async (provider: string, model: string) => {
+        if (provider === 'bamboo-startlux') return {}
         if (provider !== GATEWAY) throw new Error('synthetic: no metadata')
         return model === AUTO_REVIEW ? {} : { reasoning: { efforts: [{ id: 'high' }] } }
       },
@@ -257,7 +282,9 @@ describe('reviewer route policy', () => {
     expect(routes.map((route) => `${route.provider}/${route.model}`)).toEqual([
       `${GATEWAY}/${CHAT}`,
       `${GATEWAY}/${AUTO_REVIEW}`,
+      `bamboo-startlux/${DECISION.model}`,
     ])
+    expect(routes.find((route) => route.provider === 'bamboo-startlux')?.kind).toBe('decision')
   })
 })
 
