@@ -3,7 +3,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import * as official from '@deepseek-ai/dsh-llm-pi-ai'
-import { BAMBOO_STARTLUX_CREDENTIAL_REF } from '../../credentials/contracts/windows-keyring.ts'
+import {
+  BAMBOO_STARTLUX_CREDENTIAL_REF,
+  JEV_TYPESAFE_CREDENTIAL_REF,
+} from '../../credentials/contracts/windows-keyring.ts'
 import {
   HUAWEI_MAAS_CREDENTIAL_REF,
   HUAWEI_MAAS_ENDPOINT,
@@ -20,6 +23,12 @@ import {
   BAMBOO_STARTLUX_MODEL,
 } from '../../execution/host/adapters/bamboo.ts'
 import type { Volatile } from '@deepseek-ai/cordis'
+import {
+  JevDecisionAdapter,
+  JEV_DECISION_MODEL,
+  JEV_TYPESAFE_MODEL,
+  JEV_TYPESAFE_ENDPOINT,
+} from '../../execution/host/adapters/jev.ts'
 import type {} from '@deepseek-ai/dsh-settings'
 
 export const inject = ['loader', 'llm', 'settings', 'credentials']
@@ -50,7 +59,20 @@ const bambooProfile = z.object({
     .max(1)
     .default([{ id: 'startlux-decision-27b-autothink', name: 'StartLux Decision 27B AutoThink' }]),
 })
+const jevProfile = z.object({
+  apiKeyEnv: z.const(JEV_TYPESAFE_CREDENTIAL_REF).default(JEV_TYPESAFE_CREDENTIAL_REF),
+  baseURL: z.const(JEV_TYPESAFE_ENDPOINT).default(JEV_TYPESAFE_ENDPOINT),
+  api: z.const('typesafe-systemone').default('typesafe-systemone'),
+  models: z
+    .array(
+      z.object({ id: z.const(JEV_TYPESAFE_MODEL.model), name: z.string().default('Jev 1.13') }),
+    )
+    .min(1)
+    .max(1)
+    .default([{ id: JEV_TYPESAFE_MODEL.model, name: 'Jev 1.13' }]),
+})
 const extraFields = {
+  jevProviders: z.dict(jevProfile, z.const(JEV_TYPESAFE_MODEL.provider)).default({}).volatile(),
   huaweiProviders: z
     .dict(huaweiProfile, z.const(HUAWEI_ZCODE_MODEL.provider))
     .default({})
@@ -74,6 +96,7 @@ type ExtraConfig = {
  * existing public Schema and fiber; never duplicate/replace its loader entry.
  * Keep this compatibility seam removable when native providers support arbitrary families. */
 export async function apply(ctx: Context): Promise<void> {
+  ctx.llm.registerAdapter([JEV_DECISION_MODEL.provider], new JevDecisionAdapter())
   const keyringOverlay = installProviderKeyringOverlay(ctx)
   ctx.effect(() => keyringOverlay.dispose)
   const ns = 'llm-pi-ai'
@@ -110,6 +133,10 @@ export async function apply(ctx: Context): Promise<void> {
       request,
       signal,
     ) {
+      if (settingsNs === ns && request.provider === JEV_TYPESAFE_MODEL.provider) {
+        signal?.throwIfAborted()
+        return [{ id: JEV_TYPESAFE_MODEL.model, name: 'Jev 1.13' }]
+      }
       if (settingsNs !== ns || request.provider !== HUAWEI_ZCODE_MODEL.provider)
         return discover.call(this, settingsNs, request, signal)
       signal?.throwIfAborted()
@@ -171,6 +198,12 @@ export async function apply(ctx: Context): Promise<void> {
   }
   ctx.llm.registerConfigurableProviders([
     {
+      provider: JEV_TYPESAFE_MODEL.provider,
+      displayName: 'TypeSafe · Jev',
+      settingsNs: ns,
+      settingsPath: ['jevProviders', JEV_TYPESAFE_MODEL.provider],
+    },
+    {
       provider: HUAWEI_ZCODE_MODEL.provider,
       displayName: '华为云 MaaS',
       settingsNs: ns,
@@ -190,6 +223,11 @@ export async function apply(ctx: Context): Promise<void> {
     async () =>
       (await ctx.credentials.resolve(credentialRef(BAMBOO_STARTLUX_CREDENTIAL_REF)))?.value,
   )
+  const jevAdapter = new JevDecisionAdapter(
+    JEV_TYPESAFE_ENDPOINT,
+    async () => (await ctx.credentials.resolve(credentialRef(JEV_TYPESAFE_CREDENTIAL_REF)))?.value,
+  )
+  let jevRegistration: ReturnType<typeof ctx.llm.registerAdapter> | undefined
   let huaweiRegistration: ReturnType<typeof ctx.llm.registerAdapter> | undefined
   let bambooRegistration: ReturnType<typeof ctx.llm.registerAdapter> | undefined
   let disposed = false
@@ -216,7 +254,18 @@ export async function apply(ctx: Context): Promise<void> {
       // An unavailable credential store cannot advertise a usable route.
       bambooConfigured = false
     }
+    let jevConfigured = false
+    try {
+      jevConfigured = (await ctx.credentials.describe(credentialRef(JEV_TYPESAFE_CREDENTIAL_REF)))
+        .configured
+    } catch (error) {
+      // Credential-store failure must not advertise the personal route.
+      jevConfigured = false
+    }
     if (disposed || epoch !== refreshEpoch) return
+    const jevRoutes = jevConfigured ? [JEV_TYPESAFE_MODEL.provider] : []
+    if (jevRegistration) jevRegistration.replace(jevRoutes)
+    else if (jevRoutes.length) jevRegistration = ctx.llm.registerAdapter(jevRoutes, jevAdapter)
     const bambooRoutes = bambooConfigured ? [BAMBOO_STARTLUX_MODEL.provider] : []
     if (bambooRegistration) bambooRegistration.replace(bambooRoutes)
     else if (bambooRoutes.length)
@@ -226,7 +275,8 @@ export async function apply(ctx: Context): Promise<void> {
   ctx.on(
     'credentials/reference-updated',
     (ref) => {
-      if (String(ref) === BAMBOO_STARTLUX_CREDENTIAL_REF) void refresh()
+      if ([BAMBOO_STARTLUX_CREDENTIAL_REF, JEV_TYPESAFE_CREDENTIAL_REF].includes(String(ref)))
+        void refresh()
     },
     { global: true },
   )

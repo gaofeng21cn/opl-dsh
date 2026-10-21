@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { jevTypeSafeKeyring } from '../../src/credentials/host/windows-keyring.ts'
 import { installProviderKeyringOverlay } from '../../src/credentials/host/keyring-overlay.ts'
 
 const keyring = vi.hoisted(() => ({
@@ -24,6 +25,17 @@ const keyring = vi.hoisted(() => ({
   },
 }))
 vi.mock('../../src/credentials/host/windows-keyring.ts', () => ({
+  jevTypeSafeKeyring: {
+    read: vi.fn().mockResolvedValue(undefined),
+    set: vi.fn(),
+    remove: vi.fn(),
+    describe: vi.fn().mockResolvedValue({
+      configured: false,
+      supported: true,
+      available: true,
+      source: 'windows-credential-manager',
+    }),
+  },
   huaweiMaaSKeyring: keyring.huawei,
   bambooStartLuxKeyring: keyring.bamboo,
 }))
@@ -155,4 +167,34 @@ describe('provider keyring overlay', () => {
       await rm(home, { recursive: true, force: true })
     }
   })
+})
+
+it('stores personal Jev keys only in WinCred and does not fall back to plaintext or environment', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'opl-jev-keyring-'))
+  const path = join(home, '.credentials.yaml')
+  const ctx = new Context()
+  const ref = credentialRef('TYPESAFE_JEV_API_KEY')
+  try {
+    await ctx.plugin(LocalCredentialProvider, { path, watch: false })
+    await ctx.credentials.set(ref, 'synthetic-old-plaintext')
+    vi.stubEnv('TYPESAFE_JEV_API_KEY', 'synthetic-env')
+    const overlay = installProviderKeyringOverlay(ctx)
+    expect(await ctx.credentials.resolve(ref)).toBeUndefined()
+    expect((await ctx.credentials.describe(ref)).configured).toBe(false)
+    await ctx.credentials.set(ref, 'synthetic-personal-key')
+    expect(jevTypeSafeKeyring.set).toHaveBeenCalledWith('synthetic-personal-key')
+    expect(await readFile(path, 'utf8')).not.toContain('synthetic-personal-key')
+    vi.mocked(jevTypeSafeKeyring.read).mockResolvedValueOnce('synthetic-personal-key')
+    expect(await ctx.credentials.resolve(ref)).toEqual({
+      value: 'synthetic-personal-key',
+      source: 'windows-keyring',
+    })
+    await ctx.credentials.unset(ref)
+    expect(jevTypeSafeKeyring.remove).toHaveBeenCalled()
+    expect(await ctx.credentials.resolve(ref)).toBeUndefined()
+    overlay.dispose()
+  } finally {
+    await ctx.fiber.dispose()
+    await rm(home, { recursive: true, force: true })
+  }
 })

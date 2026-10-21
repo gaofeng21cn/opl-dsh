@@ -1,23 +1,28 @@
 /** Route selected provider API keys to the OS keyring instead of the file store. */
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialRef } from '@deepseek-ai/dsh-credentials'
-import { BAMBOO_STARTLUX_CREDENTIAL_REF } from '../contracts/windows-keyring.ts'
+import {
+  BAMBOO_STARTLUX_CREDENTIAL_REF,
+  JEV_TYPESAFE_CREDENTIAL_REF,
+} from '../contracts/windows-keyring.ts'
 import { HUAWEI_MAAS_CREDENTIAL_REF } from '../contracts/huawei-maas.ts'
 import {
   bambooStartLuxKeyring,
+  jevTypeSafeKeyring,
   huaweiMaaSKeyring,
   type SuiteKeyringCredential,
 } from './windows-keyring.ts'
 
 const TARGETS = new Map<string, SuiteKeyringCredential>([
+  [JEV_TYPESAFE_CREDENTIAL_REF, jevTypeSafeKeyring],
   [HUAWEI_MAAS_CREDENTIAL_REF, huaweiMaaSKeyring],
   [BAMBOO_STARTLUX_CREDENTIAL_REF, bambooStartLuxKeyring],
 ])
 
 /**
- * Install a narrow credential seam for the two provider keys owned by this
+ * Install a narrow credential seam for the provider keys owned by this
  * suite. The official local provider remains the owner for every other key;
- * on Windows these two references never fall back to its YAML document.
+ * on Windows these references never fall back to its YAML document.
  * Huawei keeps the official provider on other platforms.
  *
  * @param ctx - Host context containing the official credential service.
@@ -60,6 +65,7 @@ export function installProviderKeyringOverlay(ctx: Context): {
     if (!keyring) return original.resolve(ref)
     const value = await keyring.read()
     if (value !== undefined) return { value, source: 'windows-keyring' }
+    if (String(ref) === JEV_TYPESAFE_CREDENTIAL_REF) return undefined
     const inherited = await original.resolve(ref)
     return inherited?.source === 'file' ? undefined : inherited
   }
@@ -68,7 +74,7 @@ export function installProviderKeyringOverlay(ctx: Context): {
     const keyring = target(ref)
     if (!keyring) return original.describe(ref)
     const info = await keyring.describe()
-    if (!info.configured) {
+    if (!info.configured && String(ref) !== JEV_TYPESAFE_CREDENTIAL_REF) {
       const inherited = await original.describe(ref)
       if (inherited.configured && inherited.source !== 'file')
         return { ...inherited, writable: info.supported && info.available }

@@ -21,6 +21,7 @@
 
 import {
   BAMBOO_STARTLUX_KEYRING_TARGET,
+  JEV_TYPESAFE_KEYRING_TARGET,
   HUAWEI_MAAS_KEYRING_TARGET,
   WINDOWS_KEYRING_SOURCE,
   type KeyringCredentialInfo,
@@ -204,3 +205,6 @@ export const huaweiMaaSKeyring = {
   remove: deleteHuaweiMaaSApiKey,
   describe: describeHuaweiMaaSApiKey,
 } as const
+
+/** Personal Jev API key backed only by Windows Credential Manager. */
+export const jevTypeSafeKeyring = fixedKeyring(JEV_TYPESAFE_KEYRING_TARGET)

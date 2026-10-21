@@ -393,6 +393,43 @@ export async function verifyDesktopClient(
         process.platform === 'win32' ? 280 : 80,
       )
       result.settingsSlots.push('auto-review')
+      await waitFor(
+        `(() => { const radio=document.querySelector('input[name="opl-auto-review-route"][value="decision"]'); if (!radio || radio.disabled) return false; radio.click(); return true })()`,
+        '决策模型选项未就绪',
+      )
+      await waitFor(
+        `(() => { const select=document.querySelector('[data-opl-auto-review-select="decision-model"]'); const option=Array.from(select?.options??[]).find(item=>item.value.includes('opencode-jev')&&item.value.includes('jev-1.13-free')); if (!select || !option) return false; select.value=option.value; select.dispatchEvent(new Event('change',{bubbles:true})); return true })()`,
+        'Jev 未进入决策模型下拉列表',
+      )
+      await waitFor(
+        `(() => { const save=document.querySelector('[data-opl-auto-review-save]'); if (!save || save.disabled) return false; save.click(); return true })()`,
+        'Jev 审查路线无法保存',
+      )
+      await waitFor(
+        `Boolean(document.querySelector('[data-opl-auto-review-saved]'))`,
+        'Jev 审查路线未保存',
+      )
+      await pipe.evaluate(
+        session,
+        `document.querySelector('[data-opl-auto-review-refresh]').click()`,
+      )
+      await waitFor(
+        `Boolean(document.querySelector('[data-opl-auto-review-select="decision-model"]')?.value.includes('opencode-jev')) && document.querySelector('[data-opl-auto-review-dirty]')?.dataset.oplAutoReviewDirty==='false' && !document.querySelector('[data-opl-auto-review-refresh]')?.disabled`,
+        'Jev 审查路线回读不一致',
+      )
+      result.jevDecisionRoute = 'native-ui-save-and-readback'
+      await pipe.evaluate(
+        session,
+        `document.querySelector('input[name="opl-auto-review-route"][value="current"]').click()`,
+      )
+      await waitFor(
+        `(() => { const save=document.querySelector('[data-opl-auto-review-save]'); if (!save || save.disabled) return false; save.click(); return true })()`,
+        '默认审查路线无法恢复',
+      )
+      await waitFor(
+        `Boolean(document.querySelector('[data-opl-auto-review-saved]'))`,
+        '默认审查路线未恢复',
+      )
       await pipe.evaluate(
         session,
         `document.querySelector('[data-opl-panel="auto-review"]').scrollIntoView({block:'start'})`,
@@ -576,6 +613,36 @@ export async function verifyDesktopClient(
         `(() => {const input=${dialog}.querySelector('input[type=password]');return {nativeAdd:true,keyInputEmpty:input.value==='',keyInputDisabled:input.disabled}})()`,
       )
       await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
+      await waitFor(
+        clickLabel(['添加模型提供商', 'Add model provider'], dialog),
+        'Jev 添加入口未就绪',
+      )
+      await waitFor(
+        `(() => {const select=Array.from(${dialog}.querySelectorAll('select')).find(node=>Array.from(node.options).some(option=>option.value==='typesafe-jev'));if(!select)return false;select.value='typesafe-jev';select.dispatchEvent(new Event('change',{bubbles:true}));return true})()`,
+        'TypeSafe Jev 未进入提供商目录',
+      )
+      await enterNativeCredential('synthetic-jev-qualification')
+      if (process.env.OPL_QUALIFICATION_SKIP_PROVIDER_KEYRING !== '1') {
+        await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
+        result.jevPersonalProvider = 'native-form-only'
+      } else {
+        await waitFor(clickLabel(['保存', 'Apply'], dialog), 'Jev 保存按钮未就绪')
+        await waitFor(`!${dialog}.querySelector('input[type=password]')`, 'Jev 保存未完成')
+        await credentialReadback('synthetic-jev-qualification', 'TYPESAFE_JEV_API_KEY')
+        await waitFor(
+          clickLabel(
+            ['编辑 TypeSafe · Jev (typesafe-jev)', 'Edit TypeSafe · Jev (typesafe-jev)'],
+            dialog,
+          ),
+          'Jev 编辑入口未显示',
+        )
+        await waitFor(
+          `${dialog}.querySelector('input[type=password]')?.value === ''`,
+          'Jev 密钥不应回显',
+        )
+        await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
+        result.jevPersonalProvider = 'native-form-save-and-masked-readback'
+      }
     }
     const file = await captureScreenshot(panel.marker)
     if (file) screenshots.push(file)
