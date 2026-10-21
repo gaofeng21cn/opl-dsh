@@ -552,10 +552,9 @@ try {
     (progress) => {
       evidence.checks.client = progress
     },
-    async (expected) => {
+    async (expected, ref = 'HUAWEI_MAAS_API_KEY') => {
       const stored = parseYaml(await readFile(join(root, '.credentials.yaml'), 'utf8'))
-      if (stored.refs?.HUAWEI_MAAS_API_KEY !== expected)
-        throw new Error('华为云原生表单与官方统一凭据存储回读不一致')
+      if (stored.refs?.[ref] !== expected) throw new Error('原生表单与隔离测试凭据存储回读不一致')
     },
   )
   evidence.checks.runtime = JSON.parse(

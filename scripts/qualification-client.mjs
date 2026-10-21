@@ -613,6 +613,36 @@ export async function verifyDesktopClient(
         `(() => {const input=${dialog}.querySelector('input[type=password]');return {nativeAdd:true,keyInputEmpty:input.value==='',keyInputDisabled:input.disabled}})()`,
       )
       await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
+      await waitFor(
+        clickLabel(['添加模型提供商', 'Add model provider'], dialog),
+        'Jev 添加入口未就绪',
+      )
+      await waitFor(
+        `(() => {const select=Array.from(${dialog}.querySelectorAll('select')).find(node=>Array.from(node.options).some(option=>option.value==='typesafe-jev'));if(!select)return false;select.value='typesafe-jev';select.dispatchEvent(new Event('change',{bubbles:true}));return true})()`,
+        'TypeSafe Jev 未进入提供商目录',
+      )
+      await enterNativeCredential('synthetic-jev-qualification')
+      if (process.env.OPL_QUALIFICATION_SKIP_PROVIDER_KEYRING !== '1') {
+        await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
+        result.jevPersonalProvider = 'native-form-only'
+      } else {
+        await waitFor(clickLabel(['保存', 'Apply'], dialog), 'Jev 保存按钮未就绪')
+        await waitFor(`!${dialog}.querySelector('input[type=password]')`, 'Jev 保存未完成')
+        await credentialReadback('synthetic-jev-qualification', 'TYPESAFE_JEV_API_KEY')
+        await waitFor(
+          clickLabel(
+            ['编辑 TypeSafe · Jev (typesafe-jev)', 'Edit TypeSafe · Jev (typesafe-jev)'],
+            dialog,
+          ),
+          'Jev 编辑入口未显示',
+        )
+        await waitFor(
+          `${dialog}.querySelector('input[type=password]')?.value === ''`,
+          'Jev 密钥不应回显',
+        )
+        await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
+        result.jevPersonalProvider = 'native-form-save-and-masked-readback'
+      }
     }
     const file = await captureScreenshot(panel.marker)
     if (file) screenshots.push(file)

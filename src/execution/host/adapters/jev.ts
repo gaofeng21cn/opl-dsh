@@ -8,6 +8,9 @@ export const JEV_DECISION_MODEL = {
 } as const
 export const JEV_DECISION_ENDPOINT = 'https://opencode.ai/inference/systemone/v1/systemone'
 
+export const JEV_TYPESAFE_MODEL = { provider: 'typesafe-jev', model: 'jev-1.13.0' } as const
+export const JEV_TYPESAFE_ENDPOINT = 'https://api.typesafe.ai/v1/systemone'
+
 /** An approval requires both the selected probability and confidence to meet this floor. */
 export const JEV_APPROVAL_CONFIDENCE = 0.9
 const QUESTION = 'review-decision'
@@ -36,9 +39,8 @@ function invalid(): never {
   throw new LlmError('Jev 审查返回了不完整或不一致的决策', 'INVALID_PROVIDER_RESPONSE')
 }
 
-function decisionText(value: unknown): string {
-  if (!record(value) || value.model !== JEV_DECISION_MODEL.model || !record(value.answers))
-    return invalid()
+function decisionText(value: unknown, model: string): string {
+  if (!record(value) || value.model !== model || !record(value.answers)) return invalid()
   const answer = value.answers[QUESTION]
   if (
     !record(answer) ||
@@ -83,22 +85,32 @@ function decisionText(value: unknown): string {
 
 /** Registered only as a decision route; free access needs no operator API key. */
 export class JevDecisionAdapter extends LlmAdapter {
-  constructor(private readonly endpoint: string = JEV_DECISION_ENDPOINT) {
+  constructor(
+    private readonly endpoint: string = JEV_DECISION_ENDPOINT,
+    private readonly personalKey?: () => Promise<string | undefined>,
+  ) {
     super()
   }
 
+  private get route() {
+    return this.personalKey ? JEV_TYPESAFE_MODEL : JEV_DECISION_MODEL
+  }
+  private get modelName() {
+    return this.personalKey ? 'Jev 1.13 · 个人 API' : 'Jev 1.13 Free'
+  }
+
   override providerInfo(provider: string) {
-    return { id: provider, name: 'OpenCode · Jev' }
+    return { id: provider, name: this.personalKey ? 'TypeSafe · Jev' : 'OpenCode · Jev' }
   }
 
   override async listModels(provider: string) {
-    return [{ provider, id: JEV_DECISION_MODEL.model, name: 'Jev 1.13 Free' }]
+    return [{ provider, id: this.route.model, name: this.modelName }]
   }
 
   override async resolveModel(provider: string, model: string) {
-    if (provider !== JEV_DECISION_MODEL.provider || model !== JEV_DECISION_MODEL.model)
+    if (provider !== this.route.provider || model !== this.route.model)
       throw new LlmError('Jev 决策路线不支持该模型', 'UNKNOWN_MODEL')
-    return { provider, id: model, name: 'Jev 1.13 Free' }
+    return { provider, id: model, name: this.modelName }
   }
 
   override async prepareCall(provider: string, model: string, signal?: AbortSignal) {
@@ -139,16 +151,20 @@ export class JevDecisionAdapter extends LlmAdapter {
     }
     if (!state.length) throw new LlmError('Jev 审查事实为空', 'UNSUPPORTED_REQUEST')
     signal?.throwIfAborted()
+    const key = this.personalKey ? await this.personalKey() : 'public'
+    if (!key)
+      throw new LlmError('请先在模型供应商中保存 TypeSafe Jev API Key', 'CREDENTIAL_MISSING')
+    signal?.throwIfAborted()
     const response = await fetch(this.endpoint, {
       method: 'POST',
       redirect: 'error',
       headers: {
         ...attributionHeaders(),
-        authorization: 'Bearer public',
+        authorization: `Bearer ${key}`,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: JEV_DECISION_MODEL.model,
+        model: this.route.model,
         state: state.join('\n\n'),
         questions: {
           [QUESTION]: {
@@ -172,7 +188,7 @@ export class JevDecisionAdapter extends LlmAdapter {
       throw new LlmError('Jev 审查返回了无效 JSON', 'INVALID_PROVIDER_RESPONSE')
     }
     signal?.throwIfAborted()
-    const text = decisionText(body)
+    const text = decisionText(body, this.route.model)
     yield { type: 'block-start', index: 0, blockType: 'text' }
     yield { type: 'text-delta', index: 0, text }
     yield { type: 'block-end', index: 0, block: { type: 'text', text } }

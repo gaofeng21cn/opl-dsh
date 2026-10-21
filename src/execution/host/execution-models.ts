@@ -27,7 +27,7 @@ import {
 import { isHiddenOfmSelection, officialOpenCodeModel } from './ofm-source/selection-policy.ts'
 import { OFM_PROVIDERS } from './ofm-source/provider.ts'
 import { BAMBOO_STARTLUX_MODEL } from './adapters/bamboo.ts'
-import { JEV_DECISION_MODEL } from './adapters/jev.ts'
+import { JEV_DECISION_MODEL, JEV_TYPESAFE_MODEL } from './adapters/jev.ts'
 export class ExecutionModelResolver {
   constructor(
     private readonly ctx: Context,
@@ -133,7 +133,8 @@ export class ExecutionModelResolver {
                 return []
               if (
                 provider.id === BAMBOO_STARTLUX_MODEL.provider ||
-                provider.id === JEV_DECISION_MODEL.provider
+                provider.id === JEV_DECISION_MODEL.provider ||
+                provider.id === JEV_TYPESAFE_MODEL.provider
               )
                 return []
               if (isHiddenOfmSelection({ provider: provider.id, model: model.id })) return []

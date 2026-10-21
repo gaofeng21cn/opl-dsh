@@ -7,6 +7,7 @@ import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import * as providers from '../../src/compat/host/model-providers.ts'
 import { BAMBOO_STARTLUX_CREDENTIAL_REF } from '../../src/credentials/contracts/windows-keyring.ts'
+import { jevTypeSafeKeyring } from '../../src/credentials/host/windows-keyring.ts'
 import { listAdvertisedRoutes } from '../../src/auto-review/host/routes.ts'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -27,6 +28,17 @@ const bambooKeyring = vi.hoisted(() => ({
   }),
 }))
 vi.mock('../../src/credentials/host/windows-keyring.ts', () => ({
+  jevTypeSafeKeyring: {
+    read: vi.fn().mockResolvedValue(undefined),
+    set: vi.fn(),
+    remove: vi.fn(),
+    describe: vi.fn().mockResolvedValue({
+      configured: false,
+      supported: true,
+      available: true,
+      source: 'windows-credential-manager',
+    }),
+  },
   huaweiMaaSKeyring: { ...keyring, target: 'OPLDSH:HuaweiMaaS:ApiKey' },
   bambooStartLuxKeyring: {
     target: 'OPLDSH:BambooStartLux:ApiKey',
@@ -50,7 +62,7 @@ beforeEach(() => {
 
 describe('native Huawei provider profile', () => {
   it('registers StartLux when its keyring is configured even without a profile draft', async () => {
-    bambooKeyring.describe.mockResolvedValueOnce({
+    bambooKeyring.describe.mockResolvedValue({
       configured: true,
       source: 'windows-credential-manager',
       supported: true,
@@ -81,6 +93,41 @@ describe('native Huawei provider profile', () => {
       })
       await ctx.plugin(providers)
       expect(ctx.llm.listProviders().some((item) => item.id === 'opencode-jev')).toBe(true)
+      expect(ctx.llm.listProviders().some((item) => item.id === 'typesafe-jev')).toBe(false)
+      expect(
+        ctx.llm.listConfigurableProviders().some((item) => item.provider === 'typesafe-jev'),
+      ).toBe(true)
+      expect(await ctx.llm.discoverModels('llm-pi-ai', { provider: 'typesafe-jev' })).toEqual([
+        { id: 'jev-1.13.0', name: 'Jev 1.13' },
+      ])
+      vi.mocked(jevTypeSafeKeyring.describe).mockResolvedValue({
+        configured: true,
+        supported: true,
+        available: true,
+        source: 'windows-credential-manager',
+      })
+      await ctx.credentials.set(credentialRef('TYPESAFE_JEV_API_KEY'), 'synthetic-jev-key')
+      await vi.waitFor(() =>
+        expect(ctx.llm.listProviders().some((item) => item.id === 'typesafe-jev')).toBe(true),
+      )
+      expect(await listAdvertisedRoutes(ctx)).toContainEqual(
+        expect.objectContaining({
+          provider: 'typesafe-jev',
+          model: 'jev-1.13.0',
+          kind: 'decision',
+        }),
+      )
+      vi.mocked(jevTypeSafeKeyring.describe).mockResolvedValue({
+        configured: false,
+        supported: true,
+        available: true,
+        source: 'windows-credential-manager',
+      })
+      await ctx.credentials.unset(credentialRef('TYPESAFE_JEV_API_KEY'))
+      await vi.waitFor(() =>
+        expect(ctx.llm.listProviders().some((item) => item.id === 'typesafe-jev')).toBe(false),
+      )
+
       expect(await listAdvertisedRoutes(ctx)).toContainEqual({
         provider: 'opencode-jev',
         providerName: 'OpenCode · Jev',

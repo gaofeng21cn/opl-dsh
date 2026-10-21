@@ -103,3 +103,7 @@ export interface KeyringCredentialInfo {
   /** Why it could not be reached, when it could not. */
   readonly failure?: KeyringFailureCode
 }
+
+/** Personal TypeSafe Jev credential; persisted only in Windows Credential Manager. */
+export const JEV_TYPESAFE_CREDENTIAL_REF = 'TYPESAFE_JEV_API_KEY'
+export const JEV_TYPESAFE_KEYRING_TARGET = 'OPLDSH:TypeSafeJev:ApiKey'

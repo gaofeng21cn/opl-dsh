@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
-import { JevDecisionAdapter, JEV_DECISION_MODEL } from '../../src/execution/host/adapters/jev.ts'
+import {
+  JevDecisionAdapter,
+  JEV_DECISION_MODEL,
+  JEV_TYPESAFE_MODEL,
+  JEV_TYPESAFE_ENDPOINT,
+} from '../../src/execution/host/adapters/jev.ts'
 import { readDecision } from '../../src/auto-review/host/policy.ts'
 import {
   listAdvertisedRoutes,
@@ -195,5 +200,56 @@ describe('Jev decision adapter', () => {
     expect(
       catalog.combinations.some((item) => item.modelRef.model === JEV_DECISION_MODEL.model),
     ).toBe(false)
+  })
+})
+
+describe('personal TypeSafe Jev route', () => {
+  it('sends the personal key only to TypeSafe and validates its pinned response model', async () => {
+    const body = { ...answer(), model: JEV_TYPESAFE_MODEL.model }
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json(body))
+    const adapter = new JevDecisionAdapter(
+      JEV_TYPESAFE_ENDPOINT,
+      async () => 'synthetic-personal-key',
+    )
+    expect(await run(adapter, { ...options, ...JEV_TYPESAFE_MODEL })).toEqual({
+      risk: 'low',
+      decision: 'allow',
+    })
+    expect(fetch.mock.calls[0]?.[0]).toBe(JEV_TYPESAFE_ENDPOINT)
+    expect(fetch.mock.calls[0]?.[1]?.headers).toMatchObject({
+      authorization: 'Bearer synthetic-personal-key',
+    })
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).model).toBe('jev-1.13.0')
+    expect(String(fetch.mock.calls[0]?.[1]?.body)).not.toContain('synthetic-personal-key')
+    fetch.mockResolvedValue(Response.json(answer()))
+    await expect(run(adapter, { ...options, ...JEV_TYPESAFE_MODEL })).rejects.toMatchObject({
+      code: 'INVALID_PROVIDER_RESPONSE',
+    })
+  })
+
+  it('does not fall back to the public route after key removal', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch')
+    const adapter = new JevDecisionAdapter(JEV_TYPESAFE_ENDPOINT, async () => undefined)
+    const prepared = await adapter.prepareCall(
+      JEV_TYPESAFE_MODEL.provider,
+      JEV_TYPESAFE_MODEL.model,
+    )
+    await expect(
+      readDecision(prepared.stream({ ...options, ...JEV_TYPESAFE_MODEL })[Symbol.asyncIterator]()),
+    ).rejects.toMatchObject({ code: 'CREDENTIAL_MISSING' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('does not send after cancellation while reading the key', async () => {
+    const controller = new AbortController()
+    const fetch = vi.spyOn(globalThis, 'fetch')
+    const adapter = new JevDecisionAdapter(JEV_TYPESAFE_ENDPOINT, async () => {
+      controller.abort()
+      return 'synthetic-key'
+    })
+    await expect(
+      run(adapter, { ...options, ...JEV_TYPESAFE_MODEL, signal: controller.signal }),
+    ).rejects.toThrow()
+    expect(fetch).not.toHaveBeenCalled()
   })
 })

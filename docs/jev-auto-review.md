@@ -11,3 +11,11 @@
 默认测试使用本地固定响应验证解析与失败路径。设置 `OPL_JEV_LIVE=1` 后可单独运行 `tests/auto-review/jev-live.spec.ts`，用合成的本地读取、精确授权删除、未授权删除、敏感外传及不可信授权内容验证真实接口；只向模型描述动作，不执行这些动作。少量合成案例是接入验证，不是完整的安全效果评测。
 
 接口依据：[OpenCode Jev 文档](https://opencode.ai/v2/docs/console/models/#jev)、[TypeSafe Choice 响应](https://docs.typesafe.ai/primitives/choice)。
+
+## 个人 TypeSafe API
+
+在“设置 → 模型供应商”添加 **TypeSafe · Jev** 并保存自己的 API Key，然后在工具审批的“决策模型”下拉列表选择 **TypeSafe · Jev / Jev 1.13 · 个人 API**。密钥仅保存在 Windows Credential Manager 的 `OPLDSH:TypeSafeJev:ApiKey`，不保存到配置文件；未配置或无法读取密钥时不展示此路线。不支持 Windows Keyring 的平台不提供个人密钥存储。
+
+个人路线固定调用 `https://api.typesafe.ai/v1/systemone` 和稳定版本 `jev-1.13.0`，按个人 TypeSafe 账户额度使用，与无需个人 Key 的 OpenCode 免费路线分开。删除密钥后路线撤下，在途请求发送前仍重新读取密钥；不会自动切换免费接口、环境变量或明文凭据。已发出的请求不能通过删除本地密钥撤回。
+
+接口与版本依据：[TypeSafe System One](https://docs.typesafe.ai/api/system-one)、[官方模型列表](https://docs.typesafe.ai/models)。个人账户真实调用需要先在设置中保存有效 Key；本地固定响应测试不代表账户额度与实际连通性已验证。
