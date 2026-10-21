@@ -80,6 +80,16 @@ describe('native Huawei provider profile', () => {
         ],
       })
       await ctx.plugin(providers)
+      expect(ctx.llm.listProviders().some((item) => item.id === 'opencode-jev')).toBe(true)
+      expect(await listAdvertisedRoutes(ctx)).toContainEqual({
+        provider: 'opencode-jev',
+        providerName: 'OpenCode · Jev',
+        model: 'jev-1.13-free',
+        modelName: 'Jev 1.13 Free',
+        kind: 'decision',
+        efforts: [],
+        defaultEffort: null,
+      })
       expect(ctx.llm.listProviders().some((item) => item.id === 'bamboo-startlux')).toBe(true)
       expect(await ctx.llm.listModels('bamboo-startlux')).toEqual([
         {
@@ -146,6 +156,7 @@ describe('native Huawei provider profile', () => {
       pendingRead.resolve(info)
       await new Promise<void>((resolve) => setImmediate(resolve))
       expect(llm.listProviders().some((item) => item.id === 'bamboo-startlux')).toBe(false)
+      expect(llm.listProviders().some((item) => item.id === 'opencode-jev')).toBe(false)
     } finally {
       await ctx.fiber.dispose()
       await rm(home, { recursive: true, force: true })

@@ -8,6 +8,8 @@ DSH 原生会话和 ZCode 默认使用 OPL Gateway 的专用模型 `codex-auto-r
 
 BambooNode StartLux 在 Auto Review 中作为独立的“决策模型”路线选择，不与普通 reviewer 混列。它使用 Bamboo 的同步 decisions API，将审查策略和冻结事实转换成一个联合选择题；路线不提供工具、不绑定执行会话，也不会出现在普通聊天模型列表。Windows API Key 只保存在 Credential Manager。缺少 Key、请求失败、结果缺失、未知选择或不确定结果均拒绝放行。
 
+同一下拉列表也提供 **OpenCode · Jev / Jev 1.13 Free**，无需配置个人 API Key。它调用 OpenCode 发布的 System One 决策接口，不经过 OFM 的聊天转发，也不进入普通聊天列表。选择概率及置信度都达到 0.9、结果字段完整且一致时才接受允许结论；其余结果拒绝放行。免费通道的限额或不可用状态会使本次审核失败，不自动换路线。详见 [Jev 决策模型](jev-auto-review.md)。
+
 升级已有 profile 时，套件通过官方设置接口补入缺失的隐藏审查 provider，保留已有聊天 provider 和模型列表。已有审查 provider 不覆盖；配置冲突时保留原配置，审查路线不可用就拒绝送审。
 
 审查请求不提供工具、不绑定执行会话。路线缺失、请求失败、超时、结果不完整或不能保存时不放行；不会临时换成聊天模型。原有执行检查仍生效。

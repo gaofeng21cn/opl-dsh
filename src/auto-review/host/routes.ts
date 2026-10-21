@@ -1,6 +1,8 @@
 /** Registered tool-free reviewer routes; default native and ZCode reviews use the dedicated Codex model. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { AutoReviewRouteOption } from '../contracts/settings.ts'
+import { JEV_DECISION_MODEL } from '../../execution/host/adapters/jev.ts'
+import { OFM_PROVIDERS } from '../../execution/host/ofm-source/provider.ts'
 
 /**
  * Adapter routes that exist to expose an external Harness or combination and
@@ -11,6 +13,7 @@ export const EXCLUDED_REVIEW_PROVIDERS: readonly string[] = ['minimax-official',
 /** Exact routes whose adapter returns the closed decision protocol directly. */
 export const DECISION_REVIEW_ROUTES: readonly { provider: string; model: string }[] = [
   { provider: 'bamboo-startlux', model: 'startlux-decision-27b-autothink' },
+  JEV_DECISION_MODEL,
 ]
 
 /** Whether a route is supplied as a decision model rather than a free-form reviewer. */
@@ -76,6 +79,8 @@ export async function listAdvertisedRoutes(ctx: Context): Promise<AutoReviewRout
       continue
     }
     for (const model of models) {
+      // OFM's chat adapter does not implement System One; only the dedicated adapter may review with Jev.
+      if (OFM_PROVIDERS.includes(provider.id) && model.id === JEV_DECISION_MODEL.model) continue
       const key = `${provider.id}\u0000${model.id}`
       if (seen.has(key) || provider.id.length === 0 || model.id.length === 0) continue
       let info: { reasoning?: { efforts: readonly { id: string }[]; defaultEffort?: string } }

@@ -27,6 +27,7 @@ import {
 import { isHiddenOfmSelection, officialOpenCodeModel } from './ofm-source/selection-policy.ts'
 import { OFM_PROVIDERS } from './ofm-source/provider.ts'
 import { BAMBOO_STARTLUX_MODEL } from './adapters/bamboo.ts'
+import { JEV_DECISION_MODEL } from './adapters/jev.ts'
 export class ExecutionModelResolver {
   constructor(
     private readonly ctx: Context,
@@ -130,7 +131,11 @@ export class ExecutionModelResolver {
             models.flatMap((model) => {
               if (provider.id === 'opl-gateway' && model.id === 'codex::codex-auto-review')
                 return []
-              if (provider.id === BAMBOO_STARTLUX_MODEL.provider) return []
+              if (
+                provider.id === BAMBOO_STARTLUX_MODEL.provider ||
+                provider.id === JEV_DECISION_MODEL.provider
+              )
+                return []
               if (isHiddenOfmSelection({ provider: provider.id, model: model.id })) return []
               const ref = { provider: provider.id, model: model.id }
               if (isRetiredModel(ref)) return []

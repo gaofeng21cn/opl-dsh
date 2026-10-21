@@ -20,6 +20,7 @@ import {
   BAMBOO_STARTLUX_MODEL,
 } from '../../execution/host/adapters/bamboo.ts'
 import type { Volatile } from '@deepseek-ai/cordis'
+import { JevDecisionAdapter, JEV_DECISION_MODEL } from '../../execution/host/adapters/jev.ts'
 import type {} from '@deepseek-ai/dsh-settings'
 
 export const inject = ['loader', 'llm', 'settings', 'credentials']
@@ -74,6 +75,7 @@ type ExtraConfig = {
  * existing public Schema and fiber; never duplicate/replace its loader entry.
  * Keep this compatibility seam removable when native providers support arbitrary families. */
 export async function apply(ctx: Context): Promise<void> {
+  ctx.llm.registerAdapter([JEV_DECISION_MODEL.provider], new JevDecisionAdapter())
   const keyringOverlay = installProviderKeyringOverlay(ctx)
   ctx.effect(() => keyringOverlay.dispose)
   const ns = 'llm-pi-ai'
