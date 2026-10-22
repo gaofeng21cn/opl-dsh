@@ -143,7 +143,7 @@ Homebrew 用户可用 `brew upgrade --cask gaofeng21cn/opl-dsh/opl-dsh` 更新�
 
 ## 开发维护
 
-套件采用一个仓库、一个增强包，内部按 Gateway、执行、协作、首启和兼容层划分 Host、Client 与契约。前后端 RPC 由官方 Typert 从服务源码生成，构建验证接口漂移、依赖边界和官方桌面兼容性。代码职责、运行数据和恢复路径见[开发与验证](docs/development.md)，平台资格入口见[兼容验证](docs/compatibility.md)。
+套件采用一个仓库、一个增强包，内部按 Gateway、执行、协作、首启和兼容层划分 Host、Client 与契约。新增能力按[功能接入与 UI 成本判断](docs/development.md#功能接入与-ui-成本判断)决定合理复用、能力 owner 和 UI 位置；Issue 与 PR 记录判断依据，不为追求零增量而阻断必要功能。前后端 RPC 由官方 Typert 从服务源码生成，构建验证接口漂移、依赖边界和官方桌面兼容性。代码职责、运行数据和恢复路径见[开发与验证](docs/development.md)，平台资格入口见[兼容验证](docs/compatibility.md)。
 
 Codex 的 Windows Git Bash 自建运行时见[交付与回切](docs/codex-gitbash-candidate.md)；新模型来源的外部 Harness 接入见[适配准备](docs/harness-adaptation.md)。
 

@@ -1,0 +1,87 @@
+name: 能力接入提案
+description: 说明用户价值、合理复用、能力 owner、UI 位置和验收边界。
+title: "[能力] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先按[功能接入与 UI 成本判断](https://github.com/gaofeng21cn/opl-dsh/blob/main/docs/development.md#功能接入与-ui-成本判断)梳理方案。必要的新功能可以新增插件、页面或交互；这里要避免的是照单全收和重复入口，而不是阻断有价值的用户能力。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 用户问题与完成标准
+      description: 说明谁在什么场景下遇到什么问题，以及什么可观察结果才算解决。
+      placeholder: 当前用户无法……；完成后应能……；验收时需要……
+    validations:
+      required: true
+
+  - type: textarea
+    id: reuse_candidates
+    attributes:
+      label: 复用候选与排查结果
+      description: 列出检查过的官方 DSH 插件或扩展点、已安装第三方插件、现有 OPL 模块和 UI 入口；说明可直接复用、需要适配或更适合新增的原因。
+      placeholder: |
+        官方 DSH：
+        第三方插件：
+        现有 OPL 模块：
+        现有页面、导航或 Slot：
+        需要新增或扩展的能力：
+    validations:
+      required: true
+
+  - type: dropdown
+    id: integration_layer
+    attributes:
+      label: 能力实现位置
+      description: 选择状态 owner 和维护边界最合理的方案。优先复用有价值，但必要的新模块同样可以建立。
+      options:
+        - 原样复用官方或第三方插件
+        - 通过官方扩展点适配现有插件
+        - 扩展现有 OPL 功能模块
+        - 新建 OPL 内部功能插件
+    validations:
+      required: true
+
+  - type: textarea
+    id: ownership
+    attributes:
+      label: 状态与能力负责人
+      description: 分别写明状态由谁持有、Host 服务或官方接口、Client 仅如何投影，以及凭据、模型、Harness、会话或权限是否已经被其他 owner 管理。
+      placeholder: |
+        状态 owner：
+        官方接口或 Host Remote：
+        Client 投影：
+        避免复制或分叉的现有状态：
+    validations:
+      required: true
+
+  - type: textarea
+    id: ui_cost
+    attributes:
+      label: UI 放置与复杂度判断
+      description: 必要的新 UI 可以增加。统计页面、导航、弹窗、卡片和操作流程的净变化，并说明沿用、扩展现有入口或新增入口为何最适合这项用户任务。
+      placeholder: |
+        新增或调整的页面 / 导航 / 弹窗 / 卡片：
+        复用或扩展的现有入口：
+        UI 放置理由与用户任务：
+        避免重复状态、配置和操作的方式：
+        合并、调整或撤销的旧入口：
+    validations:
+      required: true
+
+  - type: textarea
+    id: maintenance
+    attributes:
+      label: 维护与回滚
+      description: 说明第三方来源与更新责任、依赖和兼容边界、禁用或卸载后的清理方式，以及失败时如何恢复。
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收证据
+      description: 区分源码、Host/Client、未修改官方桌面的隔离运行和真实外部服务；只列与本次能力直接相关的最低充分验证。
+    validations:
+      required: true
