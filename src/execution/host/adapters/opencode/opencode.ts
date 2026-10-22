@@ -196,6 +196,12 @@ export const openCodeAdapter: HarnessAdapter = {
   acpModelId: (ref) => openCodeModelValue(openCodeWireModel(ref) ?? ref.model),
   id: OPENCODE_HARNESS,
   transport: 'acp',
+  // OpenCode can leave `session/prompt` pending after a provider returns a failed
+  // non-stream response. A prompt that has produced no ACP update for ninety seconds is
+  // no longer a useful live request; the shared transport closes it with a fixed error.
+  // Once text, thought, tool, or permission progress arrives, the guard is removed and
+  // the CLI may finish a legitimately slow request without an arbitrary total deadline.
+  promptProgressTimeoutMs: 90 * 1000,
   capabilities: {
     transport: 'acp',
     authentication: 'api-source',

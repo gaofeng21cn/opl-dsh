@@ -321,6 +321,11 @@ describe('OpenCode 声明面', () => {
     // Big Pickle is now an exact OFM `our-free-model` lane and is served by the official
     // OpenCode directory; it keeps its real id and binds the OpenCode Harness.
     expect(OPENCODE_OFM_MODELS).toContain('big-pickle')
+    expect(OPENCODE_OFM_MODELS).toContain('flint-40b-free')
+    const flintRef = { provider: OPENCODE_OFM_PROVIDER, model: 'flint-40b-free' }
+    expect(isOpenCodeModel(flintRef)).toBe(true)
+    expect(openCodeAdapter.matches(flintRef)).toBe(true)
+    expect(openCodeWireModel(flintRef)).toBe('flint-40b-free')
     const bigPickle = { provider: OPENCODE_OFM_PROVIDER, model: 'big-pickle' }
     expect(isOpenCodeModel(bigPickle)).toBe(true)
     expect(openCodeAdapter.matches(bigPickle)).toBe(true)

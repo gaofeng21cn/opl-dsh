@@ -101,6 +101,15 @@ function requestStage(method: string): string {
   }
 }
 export class HarnessTransportError extends Error {}
+/** Options for refusing an ACP prompt that never reports visible progress. */
+export interface AcpRequestOptions {
+  /** Maximum time to wait for the first useful update; disabled when omitted. */
+  readonly firstProgressTimeoutMs?: number
+  /** Fixed, credential-free diagnostic used when the first update never arrives. */
+  readonly firstProgressTimeoutMessage?: string
+  /** Return true only for notifications that demonstrate progress in this request. */
+  readonly isProgress?: (method: string, params: unknown) => boolean
+}
 /**
  * The agent accepted the ACP session but refused to honor the combination's pinned
  * model or reasoning parameters. Carried separately so the precise reason survives
@@ -115,7 +124,11 @@ export class AcpProcess {
       resolve: (v: unknown) => void
       reject: (e: Error) => void
       timer: ReturnType<typeof setTimeout>
+      firstProgressTimer?: ReturnType<typeof setTimeout> | undefined
+      sessionId?: string
       method: string
+      firstProgressTimeoutMessage?: string
+      isProgress?: (method: string, params: unknown) => boolean
     }
   >()
   private sequence = 0
@@ -159,6 +172,7 @@ export class AcpProcess {
         const p = this.pending.get(m.id)
         if (!p) return
         clearTimeout(p.timer)
+        if (p.firstProgressTimer) clearTimeout(p.firstProgressTimer)
         this.pending.delete(m.id)
         if (m.error) {
           p.reject(
@@ -167,11 +181,18 @@ export class AcpProcess {
             ),
           )
         } else p.resolve(m.result)
-      } else if (m.method === 'session/update') this.update(m.params)
-      else if (typeof m.id === 'string' || typeof m.id === 'number') {
+      } else if (m.method === 'session/update') {
+        this.observePromptProgress(m.method, m.params)
+        this.update(m.params)
+      } else if (typeof m.id === 'string' || typeof m.id === 'number') {
         // 带 id 的是发往本方的请求，必须照常回应；扩展通知永远不会走到这里。
-        if (m.method === 'session/request_permission') this.permission(m.id, m.params)
-        else if (this.clientRequests?.has(m.method)) {
+        if (m.method === 'session/request_permission') {
+          const sessionId = object(m.params).sessionId
+          for (const p of this.pending.values())
+            if (p.method === 'session/prompt' && p.sessionId === sessionId)
+              this.clearFirstProgressTimer(p)
+          this.permission(m.id, m.params)
+        } else if (this.clientRequests?.has(m.method)) {
           void this.handleClientRequest(m.id, this.clientRequests.get(m.method)!)
         } else
           this.send({
@@ -181,11 +202,31 @@ export class AcpProcess {
       } else if (this.notification !== undefined) this.notification(m.method, m.params)
     })
   }
+  private clearFirstProgressTimer(p: {
+    firstProgressTimer?: ReturnType<typeof setTimeout> | undefined
+  }): void {
+    if (!p.firstProgressTimer) return
+    clearTimeout(p.firstProgressTimer)
+    p.firstProgressTimer = undefined
+  }
+  private observePromptProgress(method: string, params: unknown): void {
+    for (const p of this.pending.values()) {
+      if (p.method !== 'session/prompt') continue
+      let progress = false
+      try {
+        progress = p.isProgress?.(method, params) === true
+      } catch {
+        progress = false
+      }
+      if (progress) this.clearFirstProgressTimer(p)
+    }
+  }
   private fail(message: string) {
     if (this.closed) return
     this.closed = true
     for (const p of this.pending.values()) {
       clearTimeout(p.timer)
+      this.clearFirstProgressTimer(p)
       p.reject(new HarnessTransportError(`${message}（${requestStage(p.method)}）`))
     }
     this.pending.clear()
@@ -204,19 +245,60 @@ export class AcpProcess {
     if (this.closed) throw new Error('Harness ACP 通道已关闭')
     this.child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...value }) + '\n')
   }
-  request(method: string, params: object, timeoutMs = 30000): Promise<unknown> {
+  request(
+    method: string,
+    params: object,
+    timeoutMs = 30000,
+    options: AcpRequestOptions = {},
+  ): Promise<unknown> {
     const id = ++this.sequence
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
+        // The request's overall deadline also owns the first-progress timer.
+        // Clear it before disposing so a late callback cannot report a second failure.
+        clearTimeout(pending.firstProgressTimer)
         reject(new HarnessTransportError(`Harness ACP 请求超时（${requestStage(method)}）`))
-        void this.dispose()
+        void this.dispose().catch(() => {})
       }, timeoutMs)
-      this.pending.set(id, { resolve, reject, timer, method })
+      const pending: {
+        resolve: (v: unknown) => void
+        reject: (e: Error) => void
+        timer: ReturnType<typeof setTimeout>
+        firstProgressTimer?: ReturnType<typeof setTimeout> | undefined
+        sessionId?: string
+        method: string
+        firstProgressTimeoutMessage?: string
+        firstProgressTimeoutMs?: number
+        isProgress?: (method: string, params: unknown) => boolean
+      } = {
+        resolve,
+        reject,
+        timer,
+        method,
+        ...(typeof object(params).sessionId === 'string'
+          ? { sessionId: object(params).sessionId }
+          : {}),
+        ...(options.isProgress ? { isProgress: options.isProgress } : {}),
+        ...(options.firstProgressTimeoutMessage
+          ? { firstProgressTimeoutMessage: options.firstProgressTimeoutMessage }
+          : {}),
+        ...(options.firstProgressTimeoutMs && options.firstProgressTimeoutMs > 0
+          ? { firstProgressTimeoutMs: options.firstProgressTimeoutMs }
+          : {}),
+      }
+      if (options.firstProgressTimeoutMs && options.firstProgressTimeoutMs > 0) {
+        pending.firstProgressTimer = setTimeout(() => {
+          this.fail(options.firstProgressTimeoutMessage ?? 'Harness 未报告本轮进展')
+          void this.dispose().catch(() => {})
+        }, options.firstProgressTimeoutMs)
+      }
+      this.pending.set(id, pending)
       try {
         this.send({ id, method, params })
       } catch (e) {
         clearTimeout(timer)
+        this.clearFirstProgressTimer(pending)
         this.pending.delete(id)
         reject(e)
       }

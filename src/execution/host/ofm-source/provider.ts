@@ -103,6 +103,7 @@ export const OFM_PINNED_HARNESS_MODELS: Readonly<Record<string, readonly string[
     'minimax/minimax-m3.1-flash:free',
     'openrouter/free',
     'big-pickle',
+    'flint-40b-free',
   ],
   pi: [
     'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
@@ -116,6 +117,7 @@ export const OFM_PINNED_HARNESS_MODELS: Readonly<Record<string, readonly string[
     'nvidia/nemotron-3.5-super-vl:free',
     'reflection/beam-free',
     'xingchen-agi/xing4.0-29b-a4b:free',
+    'recursive/flint-v1.0:free',
   ],
 }
 
