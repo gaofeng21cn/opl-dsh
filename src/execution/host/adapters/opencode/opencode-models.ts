@@ -101,6 +101,8 @@ export const OPENCODE_OFM_MODELS: readonly string[] = [
   // exact id here; the harness pins the directory's own `opencode/big-pickle` value and
   // never maps it to a self-built endpoint or another model.
   'big-pickle',
+  // This id goes through the OFM route, distinct from OpenCode's own free endpoint.
+  'flint-40b-free',
   // EAC publishes this qualified id; it uses OFM forwarding, not the bare free lane.
   'opencode/glm-5.3-flash-free',
   'opencode/deepseek-v4.1-flash-free',

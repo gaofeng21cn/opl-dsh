@@ -199,6 +199,15 @@ it('maps Big Pickle to the official OpenCode lane, pinning table and default Har
   ).toBeUndefined()
 })
 
+it('uses OpenCode for Flint through the registered OFM route', () => {
+  const ref = { provider: 'our-free-model', model: 'flint-40b-free' }
+  expect(officialOpenCodeModel(ref)).toBeUndefined()
+  expect(OPENCODE_OFM_MODELS).toContain(ref.model)
+  expect(OFM_PINNED_HARNESS_MODELS.opencode).toContain(ref.model)
+  expect(isHiddenOfmSelection(ref)).toBe(false)
+  expect(defaultHarness(ref)).toBe('opencode')
+})
+
 it('binds Big Pickle to OpenCode while keeping the OFM source and its real id', async () => {
   const catalog = defaultExecutionCatalog()
   const ctx = {

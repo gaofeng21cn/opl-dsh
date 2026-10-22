@@ -25,14 +25,16 @@
 | EAC GLM 5.3 Flash Free（opencode/glm-5.3-flash-free）                      | OpenCode，经 OFM 转发  | Chat      |
 | EAC DeepSeek V4.1 Flash Free（opencode/deepseek-v4.1-flash-free）          | OpenCode，经 OFM 转发  | Chat      |
 | Big Pickle（big-pickle）                                                   | OpenCode，官方免费通道 | Chat      |
+| Flint v1.0 Free（recursive/flint-v1.0:free）                               | Kilo Code，经 OFM 转发 | Chat      |
+| Flint 40B Free（flint-40b-free）                                           | OpenCode，经 OFM 转发  | Chat      |
 | GPT-OSS 20B                                                                | Codex CLI              | Responses |
-| Kilo Step 5 Preview（stepfun/step-5-preview-free）                        | StepCode               | Chat      |
+| Kilo Step 5 Preview（stepfun/step-5-preview-free）                         | StepCode               | Chat      |
 | Ling、LongCat、North Mini Code、Nemotron 3.5、Space Bunny、OpenRouter Free | OpenCode               | Chat      |
 | OPL Gateway Gemini 4 Argon、Gemini 3.8 Flash、Gemini 3.1 Pro               | OpenCode               | Chat      |
 | Nemotron Nano Omni、LFM、Inkling Small                                     | Pi Coding Agent        | Chat      |
 | Dots、Glyph、Kilo Auto Free、Kilo Beam、Xing 4.0                           | Kilo Code              | Chat      |
 
-表格描述适配器配对，不是当前在线可用性承诺；模型必须仍在来源目录中且通过启动前检查。Cat Jam、MiMo v2.6 Flash、Muse Spark 1.3、Longcat 2.5、OpenCode 的 DeepSeek/GLM/Beam/Nemotron 免费条目、Space Bunny 和 Big Pickle 的精确裸 ID 使用 OpenCode 官方免费通道。带 EAC/Kilo 前缀的同名模型仍是独立 OFM 转发车道，不互相替换。
+表格描述适配器配对，不是当前在线可用性承诺；模型必须仍在来源目录中且通过启动前检查。Cat Jam、MiMo v2.6 Flash、Muse Spark 1.3、Longcat 2.5、OpenCode 的 DeepSeek/GLM/Beam/Nemotron 免费条目、Space Bunny 和 Big Pickle 的精确裸 ID 使用 OpenCode 官方免费通道。Flint 的 `flint-40b-free` 使用 OpenCode 执行器并经 OFM Chat 转发；它与 OpenCode 自己的 `opencode/flint-40b-free` 服务是不同线路。`recursive/flint-v1.0:free` 由 Kilo 执行并经 OFM 转发。带 EAC/Kilo 前缀的同名模型仍是独立 OFM 转发车道，不互相替换。
 
 `step-5-preview-free` 与 `muse-spark-1.2-contributor-free` 当前从 OPL 选择器隐藏；Jev 与 Content Safety 不作为编码组合提供。MiMo Code、Muse Code 没有可用默认组合，不默认登记或提示安装，已有程序与显式配置保留。
 
@@ -44,7 +46,7 @@ MiniMax M3.1 Flash Free 使用正式 ID `minimax-m3.1-flash-free` 与 OpenCode �
 
 OpenCode 与 Kilo 的显式完全访问会话通过官方 `permission: "allow"` 配置执行工具，该配置只传给本次 CLI 进程；不会改写用户的配置文件。原生 DSH 组合同样支持显式完全访问，并使用官方持久化权限预设。受限权限与已有会话的权限不会因此升级。
 
-经 OFM 本地端点转发给 OpenCode/Kilo 的 Chat 流会合并先到的工具编号与后续函数分片，以兼容官方 CLI 的响应校验；不生成函数名、参数或完成标记。分片冲突或截断仍失败，HTTP 错误原样传递，不自动重试。兼容进程使用临时回环端口与独立密钥，随 CLI 关闭；直接连接 OpenCode 免费通道和 OPL Gemini 的请求不经过此处理。
+经 OFM 本地端点转发给 OpenCode/Kilo 的 Chat 流会合并先到的工具编号与后续函数分片，以兼容官方 CLI 的响应校验；不生成函数名、参数或完成标记。上游返回非 2xx 响应头时，转发器立即把受控的认证、模型、限流、超时或接口失败及 HTTP 状态回传给 DSH，关闭本轮自有连接与 CLI，不等待响应体结束或 CLI 重试。连接中断、流截断或工具分片冲突也结束本轮，但不冒充收到上游 HTTP 状态。原始响应体不写入诊断，晚到的 CLI 输出不能覆盖失败结果。若没有任何可识别的上游错误，OpenCode 在九十秒内没有正文、思考、工具或授权进展时由 OPL 结束本轮；收到首个有效进展后不再使用这个保护时限。兼容进程使用临时回环端口与独立密钥，随 CLI 关闭；直接连接 OpenCode 免费通道和 OPL Gemini 的请求不经过此处理。
 
 Kilo Beam 的工具后续请求要求 `reasoning_content` 字段，即使本次思考为空。该组合使用官方 `interleaved` 配置回传已保存的思考，不补写思考正文或改变推理档位。
 

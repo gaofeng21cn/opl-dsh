@@ -128,6 +128,8 @@ export async function startChatToolRelay(target: {
   baseURL: string
   apiKey: string
   model: string
+  /** Report a provider response that the ACP bridge can map to a terminal error. */
+  onUpstreamFailure?: (status?: number) => void
 }) {
   const upstream = new URL(target.baseURL)
   if (
@@ -144,6 +146,12 @@ export async function startChatToolRelay(target: {
   const key = randomBytes(32).toString('hex')
   const inflight = new Set<ClientRequest>()
   let closed = false
+  let failureReported = false
+  const reportFailure = (status?: number) => {
+    if (closed || failureReported) return
+    failureReported = true
+    target.onUpstreamFailure?.(status)
+  }
   const server = createServer((req, res) => {
     if (
       closed ||
@@ -195,6 +203,8 @@ export async function startChatToolRelay(target: {
           },
         },
         (response) => {
+          const status = response.statusCode ?? 502
+          if (status < 200 || status >= 300) reportFailure(status)
           res.writeHead(response.statusCode ?? 502, {
             'content-type': response.headers['content-type'] ?? 'application/json',
             ...(response.headers['retry-after']
@@ -205,7 +215,10 @@ export async function startChatToolRelay(target: {
               : {}),
           })
           const failed = (error: NodeJS.ErrnoException | null) => {
-            if (error) res.destroy()
+            if (error) {
+              reportFailure()
+              res.destroy()
+            }
           }
           if (String(response.headers['content-type']).includes('text/event-stream'))
             pipeline(response, toolDeltaStream(), res, failed)
@@ -215,8 +228,10 @@ export async function startChatToolRelay(target: {
       inflight.add(forward)
       forward.once('close', () => inflight.delete(forward))
       forward.once('error', () => {
-        if (!res.headersSent) res.writeHead(502).end()
-        else res.destroy()
+        reportFailure()
+        if (!res.headersSent) {
+          res.writeHead(502).end()
+        } else res.destroy()
       })
       res.once('close', () => forward.destroy())
       forward.end(body)

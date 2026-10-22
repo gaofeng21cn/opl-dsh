@@ -82,6 +82,7 @@ export const KILO_OFM_MODELS: readonly string[] = [
   'nvidia/nemotron-3.5-super-vl:free',
   'reflection/beam-free',
   'xingchen-agi/xing4.0-29b-a4b:free',
+  'recursive/flint-v1.0:free',
 ]
 
 /** The declared models, as catalog entries an execution combination can bind. */

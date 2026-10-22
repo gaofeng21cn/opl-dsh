@@ -78,6 +78,8 @@ export interface HarnessAdapter {
   id: string
   capabilities: HarnessCapabilities
   transport: 'dsh' | 'acp'
+  /** Refuse a prompt that produces no ACP progress within this interval. */
+  promptProgressTimeoutMs?: number
   matches(ref: ModelRef): boolean
   /** CLI-local model identity for ACP readback; defaults to the provider's wire model ID. */
   acpModelId?(ref: ModelRef): string

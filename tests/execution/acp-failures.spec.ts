@@ -106,6 +106,38 @@ it('keeps a request timeout actionable without reporting an extension name', asy
   expect(String(failure)).not.toContain('synthetic-private-method')
 })
 
+it('closes a prompt that never reports progress with a fixed diagnostic', async () => {
+  const instance = connect(`process.stdin.resume()`)
+  const failure = await instance
+    .request('session/prompt', { sessionId: 'session-1' }, 10_000, {
+      firstProgressTimeoutMs: 30,
+      firstProgressTimeoutMessage: 'OpenCode 未报告本轮进展',
+      isProgress: (method, params) =>
+        method === 'session/update' && (params as { sessionId?: string }).sessionId === 'session-1',
+    })
+    .catch((error: unknown) => error)
+  expect(failure).toBeInstanceOf(HarnessTransportError)
+  expect(String(failure)).toContain('OpenCode 未报告本轮进展（执行本轮请求）')
+})
+
+it('removes the first-progress guard after an ACP update', async () => {
+  const instance = connect(`
+    const rl=require('node:readline').createInterface({input:process.stdin})
+    rl.on('line', line => {
+      const request=JSON.parse(line)
+      if (request.method !== 'session/prompt') return
+      process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{sessionId:'session-1',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'ok'}}}})+'\\n')
+      setTimeout(() => process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:request.id,result:{stopReason:'end_turn'}})+'\\n'), 60)
+    })
+  `)
+  const result = await instance.request('session/prompt', { sessionId: 'session-1' }, 500, {
+    firstProgressTimeoutMs: 200,
+    isProgress: (method, params) =>
+      method === 'session/update' && (params as { sessionId?: string }).sessionId === 'session-1',
+  })
+  expect(result).toEqual({ stopReason: 'end_turn' })
+})
+
 it('reports a client-only free channel without suggesting a CLI login problem', async () => {
   const instance =
     connect(`require('node:readline').createInterface({input:process.stdin}).on('line', line => {

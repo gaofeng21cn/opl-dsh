@@ -197,6 +197,7 @@ describe('Kilo 声明面', () => {
       'nvidia/nemotron-3.5-super-vl:free',
       'reflection/beam-free',
       'xingchen-agi/xing4.0-29b-a4b:free',
+      'recursive/flint-v1.0:free',
     ])
     for (const entry of kiloModels()) expect(kiloAdapter.matches(entry)).toBe(true)
     // 每个 id 保持原样，不合并、不折叠、不拆分斜杠或冒号。
@@ -207,6 +208,7 @@ describe('Kilo 声明面', () => {
     expect(KILO_OFM_MODELS).toContain('nvidia/nemotron-3.5-super-vl:free')
     expect(KILO_OFM_MODELS).toContain('reflection/beam-free')
     expect(KILO_OFM_MODELS).toContain('xingchen-agi/xing4.0-29b-a4b:free')
+    expect(KILO_OFM_MODELS).toContain('recursive/flint-v1.0:free')
     expect(kiloModelValue('kilo-auto/free')).toBe('oplkilo/kilo-auto/free')
   })
 

@@ -97,10 +97,14 @@ describe('OFM tool delta compatibility', () => {
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const address = server.address()
     if (!address || typeof address === 'string') throw Error('Missing fixture address')
+    let upstreamStatus: number | undefined
     const relay = await startChatToolRelay({
       baseURL: `http://127.0.0.1:${address.port}/v1`,
       apiKey: 'owned-key',
       model: 'owned-model',
+      onUpstreamFailure: (status) => {
+        upstreamStatus = status
+      },
     })
     const send = (body: string, key = relay.key) =>
       fetch(relay.baseURL + '/chat/completions', {
@@ -114,6 +118,7 @@ describe('OFM tool delta compatibility', () => {
       const body = '{ "model": "owned-model", "messages": [] }'
       const result = await send(body)
       expect(result.status).toBe(429)
+      expect(upstreamStatus).toBe(429)
       expect(result.headers.get('retry-after')).toBe('7')
       expect(await result.text()).toBe('{"error":"quota"}')
       expect(received).toEqual([body])

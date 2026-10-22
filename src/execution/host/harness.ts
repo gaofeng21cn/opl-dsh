@@ -1676,6 +1676,8 @@ export class HarnessService {
           turn.state = 'cancelled'
           return
         }
+        const adapter = adapterFor(record.harnessRef, record.modelRef, this.modelSources)
+        const firstProgressTimeoutMs = adapter?.promptProgressTimeoutMs
         const result = object(
           await active.acp!.request(
             'session/prompt',
@@ -1692,6 +1694,25 @@ export class HarnessService {
               },
             },
             24 * 60 * 60 * 1000,
+            firstProgressTimeoutMs
+              ? {
+                  firstProgressTimeoutMs,
+                  firstProgressTimeoutMessage:
+                    'OpenCode 在超时前没有报告正文、思考、工具或授权进展，已停止本轮请求；请检查上游模型或 OpenCode CLI。原任务未自动重发。',
+                  isProgress: (method, params) => {
+                    if (method !== 'session/update') return false
+                    const envelope = object(params)
+                    if (envelope.sessionId !== record.acpSessionId) return false
+                    const update = object(envelope.update)
+                    return [
+                      'agent_message_chunk',
+                      'agent_thought_chunk',
+                      'tool_call',
+                      'tool_call_update',
+                    ].includes(String(update.sessionUpdate))
+                  },
+                }
+              : undefined,
           ),
         )
         turn.stopReason = String(result.stopReason ?? 'unknown')
@@ -1704,7 +1725,6 @@ export class HarnessService {
               : 'failed'
         // A CLI's end_turn alone does not establish a delivered answer or tool result.
         if (turn.state === 'completed') {
-          const adapter = adapterFor(record.harnessRef, record.modelRef, this.modelSources)
           const outcome = {
             stopReason: turn.stopReason,
             text: turn.text,
