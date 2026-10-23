@@ -17,6 +17,7 @@ import {
   officialOpenCodeModel,
 } from '../../src/execution/host/ofm-source/selection-policy.ts'
 import { OFM_PINNED_HARNESS_MODELS } from '../../src/execution/host/ofm-source/provider.ts'
+import { ofmModelReadiness } from '../../src/execution/host/ofm-source/readiness.ts'
 import { OPENCODE_OFM_MODELS } from '../../src/execution/host/adapters/opencode/opencode-models.ts'
 
 const roots: string[] = []
@@ -37,6 +38,137 @@ const NEW_OPENCODE_FREE_LANES = ['beam-free', 'nemotron-3.5-super-vl-free', 'glm
 
 const BIG_PICKLE = { provider: 'our-free-model', model: 'big-pickle' } as const
 const BIG_PICKLE_AUTO = 'auto:["our-free-model","big-pickle"]'
+
+it('requires the OFM lane to be enabled before its listed model can enable a combination', () => {
+  const ref = { provider: 'our-free-model', model: 'big-pickle' }
+  const summary = (forward: object, route: string | null = 'our-free-model') => ({
+    catalog: [{ id: ref.model, route }],
+    settings: { enabled: true, forward },
+  })
+  expect(ofmModelReadiness(summary({ enabled: false, running: false }), ref, true)).toMatchObject({
+    available: false,
+  })
+  expect(ofmModelReadiness(summary({ enabled: true, running: false }), ref, true)).toMatchObject({
+    available: false,
+  })
+  expect(
+    ofmModelReadiness(summary({ enabled: true, running: true }, null), ref, true),
+  ).toMatchObject({ available: false })
+  expect(ofmModelReadiness(summary({ enabled: true, running: true }), ref, true)).toEqual({
+    available: true,
+  })
+  // A model carried by DSH itself does not require the external-forward listener.
+  expect(ofmModelReadiness(summary({ enabled: false, running: false }), ref, false)).toEqual({
+    available: true,
+  })
+})
+
+it('disables persisted automatic combinations whose OFM model is no longer ready', async () => {
+  const ready = { provider: 'our-free-model', model: 'ready-free' }
+  const stopped = { provider: 'our-free-model', model: 'stopped-free' }
+  const catalog = defaultExecutionCatalog()
+  catalog.combinations.push(
+    {
+      id: 'auto:' + JSON.stringify(['our-free-model', 'ready-free']),
+      name: 'Ready + DSH',
+      modelRef: ready,
+      harnessRef: 'dsh',
+      permissionPolicy: 'read-only',
+      isDefault: true,
+      enabled: true,
+      generated: true,
+    },
+    {
+      id: 'auto:' + JSON.stringify(['our-free-model', 'stopped-free']),
+      name: 'Stopped + DSH',
+      modelRef: stopped,
+      harnessRef: 'dsh',
+      permissionPolicy: 'read-only',
+      isDefault: true,
+      enabled: true,
+      generated: true,
+    },
+  )
+  const ctx = {
+    get: () => undefined,
+    llm: {
+      listProviders: () => [{ id: 'our-free-model', name: 'Our Free Model' }],
+      listConfigurableProviders: () => [],
+      listModels: async () => [{ id: ready.model }, { id: stopped.model }],
+    },
+  }
+  const store = {
+    get: async () => catalog,
+    cleanLegacyCombinations: async () => catalog,
+  }
+  const resolved = await new ExecutionModelResolver(
+    ctx as never,
+    store as never,
+    undefined,
+    async () => ({
+      catalog: [
+        { id: ready.model, route: 'our-free-model' },
+        { id: stopped.model, route: null },
+      ],
+      settings: { enabled: true, forward: { enabled: true, running: true } },
+    }),
+  ).resolve()
+  expect(resolved.combinations.find((item) => item.modelRef.model === ready.model)).toMatchObject({
+    enabled: true,
+  })
+  expect(resolved.combinations.find((item) => item.modelRef.model === stopped.model)).toMatchObject(
+    {
+      enabled: false,
+    },
+  )
+})
+
+it('does not reopen an automatic combination after the user disables it', async () => {
+  const ref = { provider: 'our-free-model', model: 'ready-free' }
+  const catalog = defaultExecutionCatalog()
+  catalog.combinations.push({
+    id: 'auto:' + JSON.stringify(['our-free-model', 'ready-free']),
+    name: 'Ready + DSH',
+    modelRef: ref,
+    harnessRef: 'dsh',
+    permissionPolicy: 'read-only',
+    isDefault: true,
+    enabled: false,
+    generated: false,
+    autoEnabled: false,
+    autoEnabledDisabled: true,
+  })
+  const ctx = {
+    get: () => undefined,
+    llm: {
+      listProviders: () => [{ id: 'our-free-model', name: 'Our Free Model' }],
+      listConfigurableProviders: () => [],
+      listModels: async () => [{ id: ref.model }],
+    },
+  }
+  const store = {
+    get: async () => catalog,
+    cleanLegacyCombinations: async () => catalog,
+  }
+  const resolved = await new ExecutionModelResolver(
+    ctx as never,
+    store as never,
+    undefined,
+    async () => ({
+      catalog: [{ id: ref.model, route: 'our-free-model' }],
+      settings: { enabled: true, forward: { enabled: true, running: true } },
+    }),
+  ).resolve()
+  expect(resolved.combinations.find((item) => item.modelRef.model === ref.model)).toMatchObject({
+    enabled: false,
+    autoEnabledDisabled: true,
+  })
+  expect(
+    resolved.combinations.filter(
+      (item) => item.modelRef.model === ref.model && item.id.startsWith('auto:'),
+    ),
+  ).toHaveLength(1)
+})
 
 it('pins MiniMax Flash free to OpenCode without folding its Kilo lane into the direct route', () => {
   const direct = 'minimax-m3.1-flash-free'

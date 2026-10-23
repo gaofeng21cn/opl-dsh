@@ -156,7 +156,7 @@ export function CombinationSelect({
       const current = () => id === addressed.current && read === reads.current
       setLoadingCatalog(true)
       setLoadingSelection(true)
-      void Promise.all([call('catalog'), call('combinations')])
+      void Promise.all([call('catalog'), call('combinations', {})])
         .then(([nextCatalog, nextAvailability]) => {
           if (!current()) return
           setCatalog(nextCatalog)

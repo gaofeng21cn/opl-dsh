@@ -172,6 +172,7 @@ for (const file of [
   'install.mjs',
   'profile.cjs',
   'model-plugins.cjs',
+  'kimi-cu.mjs',
   'official-pnpm.cjs',
   'migrate.cjs',
   'setup.mjs',

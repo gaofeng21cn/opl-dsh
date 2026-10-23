@@ -89,8 +89,8 @@ export class ExecutionService extends TypertRemoteService {
     return this.execution.list()
   }
   @Remote('combinations')
-  combinations(): Promise<HarnessCatalog['combinations']> {
-    return this.execution.combinations()
+  combinations(request: { includeDisabled?: boolean }): Promise<HarnessCatalog['combinations']> {
+    return this.execution.combinations(request)
   }
   @Remote('sessions')
   sessions(request: HarnessSessionsRequest): Promise<HarnessSessionsPage> {

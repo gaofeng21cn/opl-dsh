@@ -67,6 +67,19 @@ describe('combination authority', () => {
     catalog.combinations.push({ ...catalog.combinations[0]!, id: 'duplicate' })
     expect(() => normalizeCatalog(catalog)).toThrow('默认组合')
   })
+  it('preserves the user stop marker across catalog saves', () => {
+    const catalog = defaultExecutionCatalog()
+    catalog.combinations[0] = {
+      ...catalog.combinations[0]!,
+      generated: false,
+      autoEnabled: false,
+      autoEnabledDisabled: true,
+    }
+    expect(normalizeCatalog(catalog).combinations[0]).toMatchObject({
+      autoEnabled: false,
+      autoEnabledDisabled: true,
+    })
+  })
   it('refuses removal of the native Harness', () => {
     const catalog = defaultExecutionCatalog()
     catalog.harnesses = []
