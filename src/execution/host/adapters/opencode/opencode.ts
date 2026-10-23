@@ -184,7 +184,7 @@ export function openCodeProfileRoots(home: string): Record<string, string> {
  * Launch the official CLI in its ACP mode over stdio, pinned to the session's directory.
  */
 function launch(path: string, cwd: string, prefix: readonly string[] = []) {
-  const resolved = commandLaunch(path, [...prefix, 'acp', '--cwd', cwd])
+  const resolved = commandLaunch(path, [...prefix, 'acp', '--print-logs', '--cwd', cwd])
   return {
     command: resolved.command,
     args: resolved.args,

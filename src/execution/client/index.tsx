@@ -1,3 +1,4 @@
+import { QueueStatus } from './QueueStatus.tsx'
 import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import { watchStopEditSession } from './stop-edit-session-watch.ts'
@@ -222,6 +223,16 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
         }),
       },
       CombinationSelect,
+    ),
+  )
+  ctx.slots.inject('conversation.input.right', () =>
+    ctx.slots.register(
+      {
+        name: 'conversation.input.right',
+        id: 'opl-queue-status',
+        inject: (sessionId) => ({ sessionId, call }),
+      },
+      QueueStatus,
     ),
   )
   // 官方 activity 插槽在编辑时让出工具栏宽度，收起附件、权限和模型等普通控件。

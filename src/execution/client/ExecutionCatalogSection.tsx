@@ -49,7 +49,7 @@ export function ExecutionCatalogSection({
       )}
       {!catalog && notice && <Button onClick={retry}>重试</Button>}
       {catalog && (
-        <details className={css.details}>
+        <details className={css.details} data-opl-panel="custom-combinations">
           <summary>添加执行组合</summary>
           <div className={css.detailsBody}>
             <label className={css.field}>
@@ -113,21 +113,37 @@ export function ExecutionCatalogSection({
                     (model) => modelRefKey(model.ref) === modelRefKey(item.modelRef),
                   )?.available === true)),
           )
-          const rows = catalog.combinations.filter((item) => !inactive.includes(item))
+          const combinations = catalog.combinations
+          const official = combinations.filter((item) => item.generated)
+          const custom = combinations.filter((item) => !item.generated)
+          const rows = combinations.filter((item) => !inactive.includes(item))
+          const renderRow = (item: CombinationDefinition) => (
+            <CombinationRow
+              key={item.id}
+              item={item}
+              catalog={catalog}
+              availability={availability}
+              busy={busy}
+              editing={editing}
+              setEditing={setEditing}
+              update={update}
+            />
+          )
           return (
             <>
-              {rows.map((item) => (
-                <CombinationRow
-                  key={item.id}
-                  item={item}
-                  catalog={catalog}
-                  availability={availability}
-                  busy={busy}
-                  editing={editing}
-                  setEditing={setEditing}
-                  update={update}
-                />
-              ))}
+              <details className={css.details} data-opl-panel="combination-list" open>
+                <summary>执行组合列表</summary>
+                <div className={css.detailsBody}>
+                  <section data-opl-panel="official-combinations">
+                    <h3>官方组合</h3>
+                    {official.filter((item) => !inactive.includes(item)).map(renderRow)}
+                  </section>
+                  <section data-opl-panel="custom-combination-list">
+                    <h3>自定义组合</h3>
+                    {custom.filter((item) => !inactive.includes(item)).map(renderRow)}
+                  </section>
+                </div>
+              </details>
               {inactive.length > 0 && (
                 <details className={css.details} data-opl-inactive-combinations>
                   <summary>可启用但未启用的组合（{inactive.length}）</summary>
@@ -135,18 +151,7 @@ export function ExecutionCatalogSection({
                     <p className={css.muted}>
                       模型与执行引擎已就绪，但组合当前停用。展开后可单独启用。
                     </p>
-                    {inactive.map((item) => (
-                      <CombinationRow
-                        key={item.id}
-                        item={item}
-                        catalog={catalog}
-                        availability={availability}
-                        busy={busy}
-                        editing={editing}
-                        setEditing={setEditing}
-                        update={update}
-                      />
-                    ))}
+                    {inactive.map(renderRow)}
                   </div>
                 </details>
               )}

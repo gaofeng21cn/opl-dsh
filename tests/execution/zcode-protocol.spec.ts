@@ -161,7 +161,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     event(sessionId, 'part.delta', { messageId: 'm1', partId: 'p3', field: 'output', delta: 'tool-io-only' })
     if (process.env.TURN_FAIL)
       return event(sessionId, 'turn.failed', {
-        error: { type: 'provider_error', message: 'model rejected the request' }, turnPhase: 'generate' })
+        error: process.env.NO_PROGRESS ? {type:'unknown_error',message:'private',attribution:{providerErrorCode:'NO_PROGRESS',statusCode:200}} : { type: 'provider_error', message: 'model rejected the request' }, turnPhase: 'generate' })
     if (!process.env.HANG)
       event(sessionId, 'turn.completed', { response: 'done', tokenCount: 1, toolCallCount: 0, duration: 1 })
     return
@@ -1048,6 +1048,36 @@ describe('bridge against a fake official app-server', () => {
         expect(JSON.stringify(bridge.updates)).not.toContain(API_KEY)
       },
       { TURN_FAIL: '1' },
+    )
+  })
+
+  test('turn.failed preserves the official ZCode attribution code', async () => {
+    await withHarness(
+      async (bridge) => {
+        await bridge.request('initialize', {})
+        const created = await bridge.request('session/new', { cwd: WORKSPACE })
+        const failure = await bridge
+          .request('session/prompt', {
+            sessionId: created.sessionId,
+            prompt: [{ type: 'text', text: 'x' }],
+          })
+          .catch((error) => error)
+        expect(failure).toMatchObject({
+          code: 'HARNESS_EXECUTION',
+          data: {
+            service: 'zcode',
+            errorName: 'NO_PROGRESS',
+            terminalState: 'failed',
+          },
+        })
+        expect(JSON.stringify(failure)).not.toMatch(/model rejected|test-huawei-secret/)
+        await bridge.untilDiagnostic('HARNESS_EXECUTION')
+        const diagnostics = bridge.diagnostics.join('\n')
+        expect(diagnostics).not.toContain('model rejected the request')
+        expect(diagnostics).not.toContain(API_KEY)
+        expect(JSON.stringify(bridge.updates)).not.toContain(API_KEY)
+      },
+      { TURN_FAIL: '1', NO_PROGRESS: '1' },
     )
   })
 

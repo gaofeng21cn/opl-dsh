@@ -4,7 +4,7 @@ import type {
   TypertRemoteInfo,
   TypertRemoteMethod,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, CodexRuntimeRequest, CodexRuntimeResult, ContextBudgetRequest, ContextBudgetSnapshot, CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessReasoningPreflight, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, MessageEditSend, MessageEditState, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
+import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, CodexRuntimeRequest, CodexRuntimeResult, ContextBudgetRequest, ContextBudgetSnapshot, CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, ExecutionLimits, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessReasoningPreflight, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, MessageEditSend, MessageEditState, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$6f706c4175746f526576696577 {
@@ -29,6 +29,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'cooperation-settings': () => Promise<RemoteResult<CooperationSettings>>
     delegate: (request: DelegateRequest, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
     detail: (request: HarnessDetailRequest) => Promise<RemoteResult<HarnessDetailPage>>
+    'execution-limits': () => Promise<RemoteResult<ExecutionLimits>>
     'harness-installations': () => Promise<RemoteResult<HarnessInstallation[]>>
     'harness-update': (request: { id: string; }) => Promise<RemoteResult<null>>
     list: () => Promise<RemoteResult<HarnessCatalog>>
@@ -37,6 +38,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'model-selection': (request: SessionRequest) => Promise<RemoteResult<HarnessSelection>>
     'projectless-session': () => Promise<RemoteResult<{ sessionId: string; cwd: string; }>>
     prompt: (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
+    'queue-status': (request: { sessionId: string; }) => Promise<RemoteResult<{ queued: boolean; }>>
     'reasoning-preflight': (request: { sessionId: string; combination: string; }) => Promise<RemoteResult<HarnessReasoningPreflight>>
     report: (request: ReportRequest) => Promise<RemoteResult<{ saved: boolean; operationId: string; }>>
     result: (request: { origin: HarnessOrigin; sessionId: string; operationId?: string; wait?: boolean; }, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
@@ -44,6 +46,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     review: (request: ReviewRequest) => Promise<RemoteResult<HarnessSnapshot>>
     'save-catalog': (request: { catalog: ExecutionCatalog; }) => Promise<RemoteResult<ExecutionCatalog>>
     'save-cooperation-settings': (request: CooperationSettings) => Promise<RemoteResult<CooperationSettings>>
+    'save-execution-limits': (request: ExecutionLimits) => Promise<RemoteResult<ExecutionLimits>>
     'save-harness-proxy': (request: { harnessId: string; proxy: HarnessProxy; }) => Promise<RemoteResult<ExecutionCatalog>>
     'select-codex-runtime': (request: CodexRuntimeRequest) => Promise<RemoteResult<CodexRuntimeResult>>
     'select-combination': (request: { sessionId: string; combination: string; }) => Promise<RemoteResult<{ kind: string; sessionId: string; }>>
@@ -107,6 +110,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/cooperation-settings': () => Promise<RemoteResult<CooperationSettings>>
     'oplExecution/delegate': (request: DelegateRequest, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
     'oplExecution/detail': (request: HarnessDetailRequest) => Promise<RemoteResult<HarnessDetailPage>>
+    'oplExecution/execution-limits': () => Promise<RemoteResult<ExecutionLimits>>
     'oplExecution/harness-installations': () => Promise<RemoteResult<HarnessInstallation[]>>
     'oplExecution/harness-update': (request: { id: string; }) => Promise<RemoteResult<null>>
     'oplExecution/list': () => Promise<RemoteResult<HarnessCatalog>>
@@ -115,6 +119,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/model-selection': (request: SessionRequest) => Promise<RemoteResult<HarnessSelection>>
     'oplExecution/projectless-session': () => Promise<RemoteResult<{ sessionId: string; cwd: string; }>>
     'oplExecution/prompt': (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
+    'oplExecution/queue-status': (request: { sessionId: string; }) => Promise<RemoteResult<{ queued: boolean; }>>
     'oplExecution/reasoning-preflight': (request: { sessionId: string; combination: string; }) => Promise<RemoteResult<HarnessReasoningPreflight>>
     'oplExecution/report': (request: ReportRequest) => Promise<RemoteResult<{ saved: boolean; operationId: string; }>>
     'oplExecution/result': (request: { origin: HarnessOrigin; sessionId: string; operationId?: string; wait?: boolean; }, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
@@ -122,6 +127,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/review': (request: ReviewRequest) => Promise<RemoteResult<HarnessSnapshot>>
     'oplExecution/save-catalog': (request: { catalog: ExecutionCatalog; }) => Promise<RemoteResult<ExecutionCatalog>>
     'oplExecution/save-cooperation-settings': (request: CooperationSettings) => Promise<RemoteResult<CooperationSettings>>
+    'oplExecution/save-execution-limits': (request: ExecutionLimits) => Promise<RemoteResult<ExecutionLimits>>
     'oplExecution/save-harness-proxy': (request: { harnessId: string; proxy: HarnessProxy; }) => Promise<RemoteResult<ExecutionCatalog>>
     'oplExecution/select-codex-runtime': (request: CodexRuntimeRequest) => Promise<RemoteResult<CodexRuntimeResult>>
     'oplExecution/select-combination': (request: { sessionId: string; combination: string; }) => Promise<RemoteResult<{ kind: string; sessionId: string; }>>
@@ -189,6 +195,7 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'oplExecution/cooperation-settings': TypertRemoteMethod<{  }, CooperationSettings>
   readonly 'oplExecution/delegate': TypertRemoteMethod<{ readonly 'request': DelegateRequest }, HarnessSnapshot>
   readonly 'oplExecution/detail': TypertRemoteMethod<{ readonly 'request': HarnessDetailRequest }, HarnessDetailPage>
+  readonly 'oplExecution/execution-limits': TypertRemoteMethod<{  }, ExecutionLimits>
   readonly 'oplExecution/harness-installations': TypertRemoteMethod<{  }, HarnessInstallation[]>
   readonly 'oplExecution/harness-update': TypertRemoteMethod<{ readonly 'request': { id: string; } }, null>
   readonly 'oplExecution/list': TypertRemoteMethod<{  }, HarnessCatalog>
@@ -197,6 +204,7 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'oplExecution/model-selection': TypertRemoteMethod<{ readonly 'request': SessionRequest }, HarnessSelection>
   readonly 'oplExecution/projectless-session': TypertRemoteMethod<{  }, { sessionId: string; cwd: string; }>
   readonly 'oplExecution/prompt': TypertRemoteMethod<{ readonly 'request': HarnessPromptRequest }, HarnessSnapshot>
+  readonly 'oplExecution/queue-status': TypertRemoteMethod<{ readonly 'request': { sessionId: string; } }, { queued: boolean; }>
   readonly 'oplExecution/reasoning-preflight': TypertRemoteMethod<{ readonly 'request': { sessionId: string; combination: string; } }, HarnessReasoningPreflight>
   readonly 'oplExecution/report': TypertRemoteMethod<{ readonly 'request': ReportRequest }, { saved: boolean; operationId: string; }>
   readonly 'oplExecution/result': TypertRemoteMethod<{ readonly 'request': { origin: HarnessOrigin; sessionId: string; operationId?: string; wait?: boolean; } }, HarnessSnapshot>
@@ -204,6 +212,7 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'oplExecution/review': TypertRemoteMethod<{ readonly 'request': ReviewRequest }, HarnessSnapshot>
   readonly 'oplExecution/save-catalog': TypertRemoteMethod<{ readonly 'request': { catalog: ExecutionCatalog; } }, ExecutionCatalog>
   readonly 'oplExecution/save-cooperation-settings': TypertRemoteMethod<{ readonly 'request': CooperationSettings }, CooperationSettings>
+  readonly 'oplExecution/save-execution-limits': TypertRemoteMethod<{ readonly 'request': ExecutionLimits }, ExecutionLimits>
   readonly 'oplExecution/save-harness-proxy': TypertRemoteMethod<{ readonly 'request': { harnessId: string; proxy: HarnessProxy; } }, ExecutionCatalog>
   readonly 'oplExecution/select-codex-runtime': TypertRemoteMethod<{ readonly 'request': CodexRuntimeRequest }, CodexRuntimeResult>
   readonly 'oplExecution/select-combination': TypertRemoteMethod<{ readonly 'request': { sessionId: string; combination: string; } }, { kind: string; sessionId: string; }>

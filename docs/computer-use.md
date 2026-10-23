@@ -47,3 +47,11 @@ macOS 安装器从 KimiCU 官方 `https://cdn.kimi.com/kimi-computer-use/latest/
 ## 当前验证
 
 本机 KimiCU 0.6.6 的签名、Bundle ID、Team ID、辅助功能、屏幕录制、SkyLight 和后台输入检查通过；MCP `initialize` 与 `tools/list` 可用。验收时 XPC `permissionStatus` 服务返回失败，因此实际 `list_apps` 不能视为通过。DSH 侧的协议、取消、结果映射和权限门禁由自动测试覆盖；完整的桌面操作仍需在 KimiCU 服务恢复后执行。
+
+# KimiCU WinCU
+
+DSH checks Windows x64 hosts for Windows 10 build 18362 (1903) or newer and exposes the official Kimi Code plugin install entry:
+
+`/plugins install https://cdn.kimi.com/kimi-computer-use-windows/latest/kimi-cu-win-plugin.zip`
+
+The public materials do not provide a verifiable plugin installation path or a stable DSH-callable stdio/MCP command, JSON-RPC protocol, or tool list. DSH therefore reports the unavailable state explicitly and only shows the official install guidance; it does not claim the tools are callable, download or execute unknown programs, or read credentials. Computer-use calls still require the explicit permission gate.

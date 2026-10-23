@@ -200,7 +200,7 @@ describe.skipIf(!BIN)('pool launch vector with the official binary', () => {
   it('starts the ACP server with the settings file that carries the pin', async () => {
     const { home, result } = await launch()
     const settings = join(home, 'harnesses', 'pool', 'session-1', POOL_SETTINGS_FILE)
-    expect(result.args).toEqual(['acp', '--sandbox', 'disabled', '--settings', settings])
+    expect(result.args).toEqual(['acp', '--sandbox', 'disabled', '--settings=' + settings])
     expect(result.command).toBe(BIN)
     expect(existsSync(settings)).toBe(true)
     const text = await readFile(settings, 'utf8')
@@ -250,7 +250,7 @@ describe.skipIf(!BIN)('pool launch vector with the official binary', () => {
     const first = await launch({ id: 'session-a' })
     const second = await launch({ id: 'session-b' })
     expect(first.result.args.at(-1)).not.toBe(second.result.args.at(-1))
-    expect(existsSync(first.result.args.at(-1)!)).toBe(true)
-    expect(existsSync(second.result.args.at(-1)!)).toBe(true)
+    expect(existsSync(first.result.args.at(-1)!.slice('--settings='.length))).toBe(true)
+    expect(existsSync(second.result.args.at(-1)!.slice('--settings='.length))).toBe(true)
   })
 })

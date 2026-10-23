@@ -341,8 +341,7 @@ export const poolAdapter: HarnessAdapter = {
       'acp',
       '--sandbox',
       permissions.sandbox,
-      '--settings',
-      poolSettingsPath(home),
+      '--settings=' + poolSettingsPath(home),
     ])
     assertSourceCurrent()
     return {
@@ -437,4 +436,4 @@ export const poolAdapter: HarnessAdapter = {
 
 /** Export the launcher so tests can assert the real argument vector. */
 export const poolAcpLaunch = (path: string, settings: string, prefix: readonly string[] = []) =>
-  commandLaunch(path, [...prefix, 'acp', '--sandbox', 'disabled', '--settings', settings])
+  commandLaunch(path, [...prefix, 'acp', '--sandbox', 'disabled', '--settings=' + settings])

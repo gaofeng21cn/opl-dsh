@@ -148,3 +148,49 @@ it('reports a client-only free channel without suggesting a CLI login problem', 
   expect(String(failure)).toContain('指定的官方客户端')
   expect(String(failure)).not.toMatch(/synthetic-private-key|登录/)
 })
+
+it('ends an owned prompt on its fixed stderr diagnostic without waiting for timeout', async () => {
+  const instance = connect(
+    `require('node:readline').createInterface({input:process.stdin}).on('line', () => process.stderr.write('owned-failure'+String.fromCharCode(10)))`,
+  )
+  const failure = await instance
+    .request('session/prompt', { sessionId: 'owned' }, 10000, {
+      stderrFailure: (line) => (line === 'owned-failure' ? '固定失败' : undefined),
+    })
+    .catch((error: unknown) => error)
+  expect(String(failure)).toContain('固定失败')
+  expect(String(failure)).not.toContain('超时')
+})
+
+it('rejects a pending request immediately, ignores late notifications, and ends its child', async () => {
+  const updates: unknown[] = []
+  transport = new AcpProcess(
+    process.execPath,
+    [
+      '-e',
+      `require('node:readline').createInterface({input:process.stdin}).on('line', line => {
+        const request=JSON.parse(line)
+        if (request.method === 'session/prompt') setTimeout(() => {
+          process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{late:true}})+String.fromCharCode(10))
+        }, 40)
+      })`,
+    ],
+    process.cwd(),
+    process.env,
+    (value) => updates.push(value),
+    () => {},
+    () => {},
+  )
+  const child = transport
+  const pending = child.request('session/prompt', {}, 10_000).catch((error: unknown) => error)
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const termination = child.terminate('固定截止诊断')
+  const failure = await pending
+  expect(failure).toBeInstanceOf(HarnessTransportError)
+  expect(String(failure)).toContain('固定截止诊断（执行本轮请求）')
+  await termination
+  await new Promise((resolve) => setTimeout(resolve, 60))
+  expect(updates).toEqual([])
+  expect(child.closed).toBe(true)
+  expect(child['child'].exitCode !== null || child['child'].signalCode !== null).toBe(true)
+})

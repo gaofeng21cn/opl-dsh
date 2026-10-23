@@ -6,6 +6,7 @@ const record = (value: unknown): Record<string, unknown> =>
 
 const services = ['codex', 'zcode', 'session'] as const
 const errorNames = [
+  'NO_PROGRESS',
   'APIError',
   'ContextOverflowError',
   'StructuredOutputError',
@@ -50,14 +51,35 @@ export function safeFailureDetails(input: unknown): HarnessFailureDetails {
   const value = record(input)
   const data = record(value.data)
   const details = record(data.details)
-  const candidates = [value, data, record(value.details), details]
+  const candidates = [
+    value,
+    data,
+    record(value.details),
+    details,
+    record(value.attribution),
+    record(data.attribution),
+  ]
+  // ZCode wraps provider failures in a cause chain with structured context.
+  let cause = value
+  for (let depth = 0; depth < 5; depth++) {
+    candidates.push(record(cause.context))
+    cause = record(cause.cause)
+    if (!Object.keys(cause).length) break
+    candidates.push(cause)
+  }
   const result: HarnessFailureDetails = {}
   for (const candidate of candidates) {
     const service = services.find((value) => value === candidate.service)
     if (service) result.service = service
     const terminalState = terminalStates.find((value) => value === candidate.terminalState)
     if (terminalState) result.terminalState = terminalState
-    for (const name of [candidate.errorName, candidate.type, candidate.codexErrorInfo]) {
+    for (const name of [
+      candidate.errorName,
+      candidate.type,
+      candidate.codexErrorInfo,
+      candidate.providerCode,
+      candidate.providerErrorCode,
+    ]) {
       const recognized = errorNames.find((value) => value === name)
       if (recognized) result.errorName = recognized
     }
