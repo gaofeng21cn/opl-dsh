@@ -88,7 +88,7 @@ describe('combination authority', () => {
 })
 
 describe('user model choices', () => {
-  it('projects all third-party routes and virtual models while preserving custom defaults', async () => {
+  it('projects third-party models without inventing pairings and preserves custom defaults', async () => {
     const { ExecutionModelResolver } = await import('../../src/execution/host/execution-models.ts')
     const providers = [
       { id: 'our-free-model', name: 'Our Free Model' },
@@ -130,8 +130,9 @@ describe('user model choices', () => {
         const combinations = projected.combinations.filter(
           (item) => JSON.stringify(item.modelRef) === JSON.stringify(ref),
         )
-        expect(combinations).toHaveLength(1)
-        expect(combinations[0]?.harnessRef).toBe('dsh')
+        if (provider.id === 'our-free-model' && model === 'combo:my-route')
+          expect(combinations).toHaveLength(1)
+        else expect(combinations).toEqual([])
       }
     expect(
       projected.combinations.find((item) => item.id === 'user-default')?.permissionPolicy,

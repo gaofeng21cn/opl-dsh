@@ -42,6 +42,51 @@ export interface MaintenancePlan {
   command: string
   args: string[]
 }
+
+function shell(command: string, extra: string[] = []): MaintenancePlan {
+  return {
+    command: process.env.SHELL?.startsWith('/') ? process.env.SHELL : '/bin/sh',
+    args: ['-lc', ['exec', command, ...extra].join(' ')],
+  }
+}
+
+function downloadAndRun(url: string, scriptArgs: string[] = []): MaintenancePlan {
+  if (process.platform === 'win32')
+    return {
+      command: 'powershell.exe',
+      args: [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        `& ([scriptblock]::Create((Invoke-RestMethod -Uri '${url}')))`,
+      ],
+    }
+  const suffix = scriptArgs.length > 0 ? ' ' + scriptArgs.join(' ') : ''
+  return {
+    command: '/bin/sh',
+    args: [
+      '-c',
+      `set -eu; tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT; curl --fail --silent --show-error --location '${url}' -o "$tmp"; sh "$tmp"${suffix}`,
+    ],
+  }
+}
+
+function npmGlobalInstall(packageName: string, extra: string[] = []): MaintenancePlan {
+  if (process.platform === 'win32')
+    return {
+      command: 'powershell.exe',
+      args: [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `& npm.cmd install --global ${packageName}${extra.length > 0 ? ' ' + extra.join(' ') : ''}; exit $LASTEXITCODE`,
+      ],
+    }
+  return shell('npm', ['install', '--global', packageName, ...extra])
+}
+
 export function maintenancePlan(item: HarnessInstallation): MaintenancePlan {
   if (!item.maintenanceAction) throw Error('请使用此 Harness 的官方安装与更新入口')
   if (
@@ -62,11 +107,7 @@ export function maintenancePlan(item: HarnessInstallation): MaintenancePlan {
           ],
         }
       : {
-          // Finder-launched desktop processes often miss nvm/volta/mise PATH entries.
-          // A fixed login-shell command lets the user's official Node installation
-          // resolve npm without accepting any shell text from the user.
-          command: process.env.SHELL?.startsWith('/') ? process.env.SHELL : '/bin/sh',
-          args: ['-lc', 'exec npm install --global @openai/codex@latest'],
+          ...npmGlobalInstall('@openai/codex@latest'),
         }
   if (item.maintenanceAction === 'install' && item.id === 'claude')
     return process.platform === 'win32'
@@ -82,12 +123,35 @@ export function maintenancePlan(item: HarnessInstallation): MaintenancePlan {
           ],
         }
       : {
-          command: '/bin/sh',
-          args: [
-            '-c',
-            'set -eu; tmp="$(mktemp)"; trap \'rm -f "$tmp"\' EXIT; curl --fail --silent --show-error --location https://claude.ai/install.sh -o "$tmp"; sh "$tmp"',
-          ],
+          ...downloadAndRun('https://claude.ai/install.sh'),
         }
+  if (['install', 'update'].includes(item.maintenanceAction) && item.id === 'minimax-code')
+    return downloadAndRun(
+      process.platform === 'win32'
+        ? 'https://filecdn.minimax.chat/public/install.ps1'
+        : 'https://filecdn.minimax.chat/public/install.sh',
+    )
+  if (['install', 'update'].includes(item.maintenanceAction) && item.id === 'mimo-code')
+    return downloadAndRun(
+      process.platform === 'win32'
+        ? 'https://mimo.xiaomi.com/install.ps1'
+        : 'https://mimo.xiaomi.com/install',
+      process.platform === 'win32' ? [] : ['--no-modify-path'],
+    )
+  if (['install', 'update'].includes(item.maintenanceAction) && item.id === 'step-code')
+    return downloadAndRun(
+      process.platform === 'win32'
+        ? 'https://static-openapi.stepfun.com/stepcode/install.ps1'
+        : 'https://static-openapi.stepfun.com/stepcode/install.sh',
+    )
+  if (['install', 'update'].includes(item.maintenanceAction) && item.id === 'opencode')
+    return npmGlobalInstall('opencode-ai')
+  if (['install', 'update'].includes(item.maintenanceAction) && item.id === 'kilo')
+    return npmGlobalInstall('@kilocode/cli')
+  if (['install', 'update'].includes(item.maintenanceAction) && item.id === 'kimi-code')
+    return npmGlobalInstall('@moonshot-ai/kimi-code')
+  if (['install', 'update'].includes(item.maintenanceAction) && item.id === 'pi')
+    return npmGlobalInstall('@earendil-works/pi-coding-agent', ['--ignore-scripts'])
   throw Error('此 Harness 没有自动更新入口')
 }
 function safeOutput(value: string): string {

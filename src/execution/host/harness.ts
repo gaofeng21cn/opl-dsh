@@ -565,7 +565,7 @@ export class HarnessService {
           throw Error(
             `已下载 ${result.expectedVersion}，但当前启动入口仍运行 ${fresh.version}；请修复原安装器的启动入口后重试`,
           )
-        if (!item.installed && fresh.path && ['codex', 'claude'].includes(id)) {
+        if (!item.installed && fresh.path) {
           const latest = await this.catalogStore.get()
           latest.harnesses = latest.harnesses.map((h) =>
             h.id === id && fresh.path ? { ...h, command: fresh.path } : h,

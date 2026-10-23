@@ -1,6 +1,7 @@
 import { useExecutionCatalog } from './use-execution-catalog.ts'
 import { Button, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { displayModelSource, selectableModels, modelRefKey } from '../contracts/catalog.ts'
+import { isOfficialPairing } from '../contracts/official-harnesses.ts'
 import type { CombinationDefinition, ExecutionCatalog } from '../contracts/catalog.ts'
 import type { HarnessCatalog } from '../../contracts/types.ts'
 import type { RemoteCallInput } from '../../shared/client/remote-call.ts'
@@ -89,6 +90,9 @@ export function ExecutionCatalogSection({
                 ))}
               </select>
             </label>
+            <p className={css.muted}>
+              手动组合可自由选择任意已就绪模型和执行引擎；它不是厂商官配，只有当前配置的默认项会自动生成。
+            </p>
             <Button
               disabled={busy || !draft.name.trim() || !draft.model}
               onClick={() => void add()}
@@ -196,6 +200,11 @@ function CombinationRow({
       <summary className={css.header}>
         <span className={css.identity}>
           <strong>{item.name}</strong>
+          {!item.generated && !isOfficialPairing(item.harnessRef, item.modelRef) && (
+            <span className={css.muted} data-opl-custom-combination>
+              自定义
+            </span>
+          )}
           {item.isDefault && item.enabled && (
             <span className={css.muted}>此模型的默认执行组合</span>
           )}
@@ -251,7 +260,7 @@ function CombinationRow({
           >
             <option value="read-only">只读</option>
             <option value="workspace">工作区内修改（仍需 Harness 授权）</option>
-            {item.permissionPolicy === 'full-access' && item.harnessRef !== 'dsh' && (
+            {item.harnessRef !== 'antigravity' && (
               <option value="full-access">完整访问（使用该执行引擎的官方授权）</option>
             )}
           </select>

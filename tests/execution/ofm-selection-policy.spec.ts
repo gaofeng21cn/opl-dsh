@@ -63,26 +63,26 @@ it('requires the OFM lane to be enabled before its listed model can enable a com
   })
 })
 
-it('disables persisted automatic combinations whose OFM model is no longer ready', async () => {
-  const ready = { provider: 'our-free-model', model: 'ready-free' }
-  const stopped = { provider: 'our-free-model', model: 'stopped-free' }
+it('disables persisted automatic combinations whose vendor model is no longer ready', async () => {
+  const ready = { provider: 'our-free-model', model: 'moonshotai/kimi-k3' }
+  const stopped = { provider: 'our-free-model', model: 'moonshotai/kimi-k2.6' }
   const catalog = defaultExecutionCatalog()
   catalog.combinations.push(
     {
-      id: 'auto:' + JSON.stringify(['our-free-model', 'ready-free']),
-      name: 'Ready + DSH',
+      id: 'auto:' + JSON.stringify(['our-free-model', ready.model]),
+      name: 'Ready + Kimi Code',
       modelRef: ready,
-      harnessRef: 'dsh',
+      harnessRef: 'kimi-code',
       permissionPolicy: 'read-only',
       isDefault: true,
       enabled: true,
       generated: true,
     },
     {
-      id: 'auto:' + JSON.stringify(['our-free-model', 'stopped-free']),
-      name: 'Stopped + DSH',
+      id: 'auto:' + JSON.stringify(['our-free-model', stopped.model]),
+      name: 'Stopped + Kimi Code',
       modelRef: stopped,
-      harnessRef: 'dsh',
+      harnessRef: 'kimi-code',
       permissionPolicy: 'read-only',
       isDefault: true,
       enabled: true,
@@ -124,13 +124,13 @@ it('disables persisted automatic combinations whose OFM model is no longer ready
 })
 
 it('does not reopen an automatic combination after the user disables it', async () => {
-  const ref = { provider: 'our-free-model', model: 'ready-free' }
+  const ref = { provider: 'our-free-model', model: 'moonshotai/kimi-k3' }
   const catalog = defaultExecutionCatalog()
   catalog.combinations.push({
-    id: 'auto:' + JSON.stringify(['our-free-model', 'ready-free']),
-    name: 'Ready + DSH',
+    id: 'auto:' + JSON.stringify(['our-free-model', ref.model]),
+    name: 'Ready + Kimi Code',
     modelRef: ref,
-    harnessRef: 'dsh',
+    harnessRef: 'kimi-code',
     permissionPolicy: 'read-only',
     isDefault: true,
     enabled: false,
@@ -238,7 +238,7 @@ it('hides rejected OFM lanes and saved combinations after legacy cleanup, withou
   expect(stored.combinations).toHaveLength(6)
 })
 
-it('assigns the new Nemotron Super VL lane to OpenCode instead of native DSH', async () => {
+it('keeps a generic-runner lane manual-only until the user creates a pairing', async () => {
   const catalog = defaultExecutionCatalog()
   const ctx = {
     get: () => undefined,
@@ -253,16 +253,16 @@ it('assigns the new Nemotron Super VL lane to OpenCode instead of native DSH', a
     cleanLegacyCombinations: async () => catalog,
   }
   const resolved = await new ExecutionModelResolver(ctx as never, store as never).resolve()
-  expect(resolved.combinations).toContainEqual(
-    expect.objectContaining({
-      modelRef: { provider: 'our-free-model', model: 'nvidia/nemotron-3.5-super-vl:free' },
-      harnessRef: 'opencode',
-    }),
-  )
+  expect(
+    resolved.combinations.filter(
+      (item) => item.modelRef.model === 'nvidia/nemotron-3.5-super-vl:free',
+    ),
+  ).toEqual([])
   expect(
     resolved.combinations.some(
       (item) =>
-        item.modelRef.model === 'nvidia/nemotron-3.5-super-vl:free' && item.harnessRef === 'dsh',
+        item.modelRef.model === 'nvidia/nemotron-3.5-super-vl:free' &&
+        item.harnessRef === 'opencode',
     ),
   ).toBe(false)
   expect(
@@ -314,7 +314,7 @@ it('never routes or re-admits an excluded lane through the free-provider mapping
   expect(OPENCODE_OFM_MODELS).not.toContain('openai/gpt-oss-20b')
 })
 
-it('maps Big Pickle to the official OpenCode lane, pinning table and default Harness', () => {
+it('keeps Big Pickle manually pairable with OpenCode without treating it as a vendor default', () => {
   // The owning plugin publishes the exact `our-free-model` lane; the official directory
   // serves it as `opencode/big-pickle` on Chat Completions. Nothing is aliased.
   expect(officialOpenCodeModel(BIG_PICKLE)).toBe('opencode/big-pickle')
@@ -322,25 +322,24 @@ it('maps Big Pickle to the official OpenCode lane, pinning table and default Har
   expect(OFM_OPENCODE_OFFICIAL_FREE_MODELS).toContain('big-pickle')
   expect(OFM_PINNED_HARNESS_MODELS.opencode).toContain('big-pickle')
   expect(isHiddenOfmSelection(BIG_PICKLE)).toBe(false)
-  // The OpenCode adapter declares it, the automatic Harness resolves to OpenCode, and the
-  // account-channel route still has no claim on it.
+  // The OpenCode adapter can run it when the user explicitly chooses that pairing.
   expect(adapterFor('opencode', BIG_PICKLE)?.id).toBe('opencode')
-  expect(defaultHarness(BIG_PICKLE)).toBe('opencode')
+  expect(defaultHarness(BIG_PICKLE)).toBe('dsh')
   expect(
     officialOpenCodeModel({ provider: 'our-free-model-region', model: 'big-pickle' }),
   ).toBeUndefined()
 })
 
-it('uses OpenCode for Flint through the registered OFM route', () => {
+it('keeps Flint available as an explicit OpenCode pairing', () => {
   const ref = { provider: 'our-free-model', model: 'flint-40b-free' }
   expect(officialOpenCodeModel(ref)).toBeUndefined()
   expect(OPENCODE_OFM_MODELS).toContain(ref.model)
   expect(OFM_PINNED_HARNESS_MODELS.opencode).toContain(ref.model)
   expect(isHiddenOfmSelection(ref)).toBe(false)
-  expect(defaultHarness(ref)).toBe('opencode')
+  expect(defaultHarness(ref)).toBe('dsh')
 })
 
-it('binds Big Pickle to OpenCode while keeping the OFM source and its real id', async () => {
+it('does not generate a Big Pickle pairing merely because OpenCode can execute it', async () => {
   const catalog = defaultExecutionCatalog()
   const ctx = {
     get: () => undefined,
@@ -361,13 +360,8 @@ it('binds Big Pickle to OpenCode while keeping the OFM source and its real id', 
     available: true,
   })
   const combinations = resolved.combinations.filter((item) => item.modelRef.model === 'big-pickle')
-  expect(combinations).not.toHaveLength(0)
-  expect(combinations.every((item) => item.harnessRef === 'opencode')).toBe(true)
-  // The default combination is generated for OpenCode; no Big Pickle + DSH default exists.
-  expect(
-    combinations.some((item) => item.generated && item.isDefault && item.harnessRef === 'opencode'),
-  ).toBe(true)
-  expect(combinations.some((item) => item.harnessRef === 'dsh')).toBe(false)
+  expect(combinations.filter((item) => item.harnessRef === 'opencode')).toHaveLength(0)
+  expect(combinations).toEqual([])
 })
 
 it('drops a generated Big Pickle DSH row before it can be persisted', () => {
@@ -389,7 +383,7 @@ it('drops a generated Big Pickle DSH row before it can be persisted', () => {
   )
 })
 
-it('migrates a persisted automatic Big Pickle DSH row to the OpenCode combination', async () => {
+it('removes stale generic automatic rows without removing user routes', async () => {
   const dir = await workspace()
   const store = new ExecutionCatalogStore(dir)
   try {
@@ -437,35 +431,21 @@ it('migrates a persisted automatic Big Pickle DSH row to the OpenCode combinatio
     }
     const resolved = await new ExecutionModelResolver(ctx as never, store).resolve()
     const bigPickle = resolved.combinations.filter((item) => item.modelRef.model === 'big-pickle')
-    expect(bigPickle.some((item) => item.id === BIG_PICKLE_AUTO && item.harnessRef === 'dsh')).toBe(
-      false,
-    )
-    expect(bigPickle.some((item) => item.harnessRef === 'dsh' && item.generated)).toBe(false)
-    expect(
-      bigPickle.some(
-        (item) =>
-          item.id === BIG_PICKLE_AUTO &&
-          item.harnessRef === 'opencode' &&
-          item.generated &&
-          item.isDefault,
-      ),
-    ).toBe(true)
+    expect(bigPickle.some((item) => item.id === BIG_PICKLE_AUTO)).toBe(false)
+    expect(bigPickle.filter((item) => item.harnessRef === 'opencode')).toHaveLength(0)
     // A user-created route and another OFM model's automatic row are untouched.
     expect(bigPickle.find((item) => item.id === 'user-big-pickle-dsh')).toMatchObject({
       name: 'My Big Pickle DSH route',
       harnessRef: 'dsh',
       permissionPolicy: 'workspace',
     })
-    expect(resolved.combinations.find((item) => item.id === QUALIFICATION_AUTO)).toMatchObject({
-      harnessRef: 'dsh',
-      isDefault: true,
-    })
+    expect(resolved.combinations.some((item) => item.id === QUALIFICATION_AUTO)).toBe(false)
 
     // The cleanup persisted the removal, so a restart cannot bring the stale row back.
     const saved = JSON.parse(await readFile(store.filename, 'utf8'))
     expect(saved.combinations.some((item: any) => item.id === BIG_PICKLE_AUTO)).toBe(false)
     expect(saved.combinations.some((item: any) => item.id === 'user-big-pickle-dsh')).toBe(true)
-    expect(saved.combinations.some((item: any) => item.id === QUALIFICATION_AUTO)).toBe(true)
+    expect(saved.combinations.some((item: any) => item.id === QUALIFICATION_AUTO)).toBe(false)
   } finally {
     await store.dispose()
   }
@@ -502,7 +482,7 @@ it('keeps unknown and unavailable ids out of the OpenCode mapping', () => {
   }
 })
 
-it('binds the new free-directory lanes to the OpenCode harness and keeps OFM attribution', async () => {
+it('keeps generic OpenCode lanes manual-only instead of generating built-in pairings', async () => {
   const catalog = defaultExecutionCatalog()
   const ctx = {
     get: () => undefined,
@@ -524,17 +504,12 @@ it('binds the new free-directory lanes to the OpenCode harness and keeps OFM att
     const bound = resolved.combinations.filter(
       (item) => item.modelRef.provider === 'our-free-model' && item.modelRef.model === model,
     )
-    expect(bound).not.toHaveLength(0)
-    for (const combination of bound) expect(combination.harnessRef).toBe('opencode')
-    expect(
-      resolved.combinations.some(
-        (item) => item.modelRef.model === model && item.harnessRef === 'dsh',
-      ),
-    ).toBe(false)
+    expect(bound.filter((item) => item.harnessRef === 'opencode')).toHaveLength(0)
+    expect(bound).toEqual([])
   }
 })
 
-it('keeps native DSH combinations for models supplied by the OFM plugin', async () => {
+it('does not treat every model supplied by the OFM plugin as a DSH official pairing', async () => {
   const ctx = {
     get: () => undefined,
     llm: {
@@ -549,16 +524,45 @@ it('keeps native DSH combinations for models supplied by the OFM plugin', async 
     cleanLegacyCombinations: async () => catalog,
   }
   const resolved = await new ExecutionModelResolver(ctx as never, store as never).resolve()
-  expect(resolved.combinations).toContainEqual(
-    expect.objectContaining({
-      modelRef: { provider: 'our-free-model', model: 'opl-qualification-free' },
-      harnessRef: 'dsh',
-    }),
-  )
+  expect(
+    resolved.combinations.filter((item) => item.modelRef.model === 'opl-qualification-free'),
+  ).toEqual([])
+})
+
+it('does not auto-generate generic OpenCode, Kilo, or Pi pairings', async () => {
+  const catalog = defaultExecutionCatalog()
+  const ctx = {
+    get: () => undefined,
+    llm: {
+      listProviders: () => [{ id: 'our-free-model', name: 'Our Free Model' }],
+      listConfigurableProviders: () => [],
+      listModels: async () => [
+        { id: 'big-pickle' },
+        { id: 'kilo-auto/free' },
+        { id: 'liquid/lfm-2.5-2.6b:free' },
+      ],
+    },
+  }
+  const store = {
+    get: async () => catalog,
+    cleanLegacyCombinations: async () => catalog,
+  }
+  const resolved = await new ExecutionModelResolver(ctx as never, store as never).resolve()
+  expect(
+    resolved.combinations.filter((item) => item.generated).map((item) => item.harnessRef),
+  ).not.toEqual(expect.arrayContaining(['opencode', 'kilo', 'pi']))
+  for (const [model, harnessRef] of [
+    ['big-pickle', 'opencode'],
+    ['kilo-auto/free', 'kilo'],
+    ['liquid/lfm-2.5-2.6b:free', 'pi'],
+  ] as const) {
+    const ref = { provider: 'our-free-model', model }
+    expect(adapterFor(harnessRef, ref)?.id).toBe(harnessRef)
+  }
 })
 
 it.each(['opencode/glm-5.3-flash-free', 'opencode/deepseek-v4.1-flash-free'])(
-  'binds EAC %s to OpenCode while preserving the OFM forwarding route',
+  'keeps EAC %s manual-only while retaining its OFM attribution',
   async (model) => {
     const catalog = defaultExecutionCatalog()
     const ctx = {
@@ -575,8 +579,8 @@ it.each(['opencode/glm-5.3-flash-free', 'opencode/deepseek-v4.1-flash-free'])(
       source: 'Our Free Model',
     })
     const combinations = resolved.combinations.filter((item) => item.modelRef.model === model)
-    expect(combinations).not.toHaveLength(0)
-    expect(combinations.every((item) => item.harnessRef === 'opencode')).toBe(true)
+    expect(combinations.filter((item) => item.harnessRef === 'opencode')).toHaveLength(0)
+    expect(combinations).toEqual([])
     expect(officialOpenCodeModel({ provider: 'our-free-model', model })).toBeUndefined()
     expect(OPENCODE_OFM_MODELS).toContain(model)
   },

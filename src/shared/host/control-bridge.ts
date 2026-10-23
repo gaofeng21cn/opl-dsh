@@ -60,7 +60,7 @@ const allowed: Readonly<Record<string, readonly string[]>> = {
     'select-minimax-candidate',
     'select-codex-runtime',
   ],
-  oplExecution: ['catalog', 'combinations', 'save-catalog'],
+  oplExecution: ['catalog', 'combinations', 'harness-installations', 'save-catalog'],
 }
 
 /**

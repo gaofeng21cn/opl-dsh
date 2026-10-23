@@ -1,10 +1,14 @@
 /** KimiCU stdio MCP bridge for native DSH Agent tools. */
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { createRequire } from 'node:module'
 
 /** Fixed executable and MCP arguments verified by the OPL Framework contract. */
 export const KIMI_CU_EXECUTABLE = '/Applications/KimiCU.app/Contents/MacOS/kimi-cu'
 export const KIMI_CU_MCP_ARGS = ['mcp', '-s', 'user'] as const
+const suiteVersion = (
+  createRequire(import.meta.url)('../../../package.json') as { version: string }
+).version
 /** Bound a stalled companion call so the Agent can report it instead of waiting indefinitely. */
 export const KIMI_CU_CALL_TIMEOUT_MS = 30_000
 
@@ -89,7 +93,7 @@ export class KimiCuClient {
       {
         protocolVersion: '2025-06-18',
         capabilities: {},
-        clientInfo: { name: 'opl-dsh', version: '0.2.40' },
+        clientInfo: { name: 'opl-dsh', version: suiteVersion },
       },
       10_000,
     )

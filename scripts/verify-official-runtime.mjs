@@ -317,24 +317,34 @@ try {
   for (const id of ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna'])
     assert.equal(models.find((m) => m.id === 'codex::' + id).reasoning.defaultEffort, 'medium')
   const catalog = await harness('catalog')
+  assert(
+    !catalog.combinations.some(
+      (item) =>
+        item.modelRef.provider === 'opl-gateway' && item.modelRef.model === 'codex::deepseek-flash',
+    ),
+    'DeepSeek through an OpenAI-protocol channel received an automatic pairing',
+  )
   const gpt = {
     id: 'accept-gpt-dsh',
     name: 'GPT protocol acceptance',
     modelRef: { provider: 'opl-gateway', model: 'codex::gpt-5.4' },
     harnessRef: 'dsh',
-    permissionPolicy: 'read-only',
+    permissionPolicy: 'workspace',
     isDefault: false,
     enabled: true,
   }
-  catalog.combinations.push(gpt)
+  catalog.combinations.push({
+    ...gpt,
+    autoEnabled: false,
+    autoEnabledDisabled: true,
+  })
   await harness('save-catalog', { catalog })
-  const generatedOpenAI = catalog.combinations.find(
-    (item) =>
-      item.generated &&
-      item.harnessRef === 'dsh' &&
-      item.modelRef.model === 'codex::deepseek-flash',
+  const savedCatalog = await harness('catalog')
+  const savedOpenAI = savedCatalog.combinations.find(
+    (item) => item.id === 'accept-gpt-dsh' && item.modelRef.model === 'codex::gpt-5.4',
   )
-  assert(generatedOpenAI, 'generated DeepSeek OpenAI combination is missing')
+  assert(savedOpenAI, 'saved custom GPT protocol combination is missing')
+  assert.equal(savedOpenAI.generated, undefined)
   const permissionSelections = []
   for (const [preset, approval] of [
     ['read-only', 'ask'],
@@ -346,7 +356,7 @@ try {
     })
     await harness('select-combination', {
       sessionId: created.sessionId,
-      combination: generatedOpenAI.id,
+      combination: savedOpenAI.id,
     })
     const actual = await rpc('session', 'permissions', {
       request: { sessionId: created.sessionId },
@@ -356,21 +366,6 @@ try {
     assert.equal(actual.approval, approval)
     permissionSelections.push({ sessionId: created.sessionId, preset, approval })
   }
-  const explicitReview = await rpc('session', 'create', {
-    request: { cwd: project, permissionPreset: 'danger-full-access' },
-  })
-  await harness('select-combination', { sessionId: explicitReview.sessionId, combination: gpt.id })
-  const narrowed = await rpc('session', 'permissions', {
-    request: { sessionId: explicitReview.sessionId },
-  })
-  assert.equal(narrowed.preset, 'read-only')
-  assert.equal(narrowed.sandbox, 'read-only')
-  assert.equal(narrowed.approval, 'ask')
-  permissionSelections.push({
-    sessionId: explicitReview.sessionId,
-    preset: 'read-only',
-    approval: 'ask',
-  })
   await writeFile(
     join(root, 'qualification-permission-selections.json'),
     JSON.stringify(permissionSelections) + '\n',

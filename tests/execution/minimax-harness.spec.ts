@@ -678,7 +678,7 @@ describe('MiniMax Code adapter registration', () => {
     expect(adapterFor(MINIMAX_CODE_HARNESS, gpt)).toBeUndefined()
     expect(defaultHarness(gpt)).toBe('codex')
     expect(defaultHarness(claude)).toBe('claude')
-    expect(defaultHarness(grok)).toBe('dsh')
+    expect(defaultHarness(grok)).toBe('grok-build')
     expect(defaultHarness({ provider: 'custom', model: 'gpt-current' })).toBe('dsh')
   })
 })

@@ -221,7 +221,7 @@ function catalog(proxies: Record<string, unknown> = {}) {
         id: 'inactive/one',
         name: '可启用但未启用',
         modelRef: { provider: 'minimax-official', model: 'MiniMax-M3.1-Flash-Preview' },
-        harnessRef: 'codex',
+        harnessRef: 'custom-cli',
         permissionPolicy: 'read-only',
         isDefault: false,
         enabled: false,
@@ -331,6 +331,22 @@ describe('每个外部 Harness 独立的代理设置', () => {
       .map((node) => node.getAttribute?.('data-opl-combination'))
       .filter((id): id is string => typeof id === 'string')
     expect(visibleRows).toContain('codex/one')
+  })
+
+  it('只把模型与执行器的官配标成内置，其他配对明确显示自定义', async () => {
+    const { call } = fixture(catalog())
+    const view = await open(call, ExecutionCatalogSection)
+    expect(
+      walk(view).some(
+        (node) =>
+          node.getAttribute?.('data-opl-combination') === 'codex/one' &&
+          walk(node).some((child) => child.textContent === '自定义'),
+      ),
+    ).toBe(true)
+    const custom = walk(view).find(
+      (node) => node.getAttribute?.('data-opl-combination') === 'inactive/one',
+    )!
+    expect(text(custom)).toContain('自定义')
   })
 
   it('为每个外部 Harness 提供三种方式，内置 DSH 不可设置并说明原因', async () => {

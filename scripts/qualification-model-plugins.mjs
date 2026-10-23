@@ -138,11 +138,34 @@ export async function verifyModelPlugins({ root, origin, cookie, wire, harness }
     !catalog.models.some((model) => model.ref.provider === 'huawei-maas'),
     'Deleted native Huawei provider returned in the execution catalog',
   )
+  for (const model of [MODEL_PLUGIN_FIXTURE, combo])
+    assert(
+      !catalog.combinations.some(
+        (item) => item.modelRef.provider === 'our-free-model' && item.modelRef.model === model,
+      ),
+      'A generic model was presented as an automatic official pairing: ' + model,
+    )
+  const manual = structuredClone(catalog)
+  for (const model of [MODEL_PLUGIN_FIXTURE, combo])
+    manual.combinations.push({
+      id: 'qualification-manual-' + model.replaceAll(/[^a-z0-9]+/gi, '-'),
+      name: 'Qualification manual · ' + model,
+      modelRef: { provider: 'our-free-model', model },
+      harnessRef: 'dsh',
+      permissionPolicy: 'workspace',
+      isDefault: true,
+      enabled: true,
+      autoEnabled: false,
+      autoEnabledDisabled: true,
+    })
+  await harness('save-catalog', { catalog: manual })
+  const reloaded = await harness('catalog')
   for (const model of [MODEL_PLUGIN_FIXTURE, combo]) {
-    const combination = catalog.combinations.find(
+    const combination = reloaded.combinations.find(
       (item) => item.modelRef.provider === 'our-free-model' && item.modelRef.model === model,
     )
-    assert(combination, 'Plugin model missing from OPL combinations: ' + model)
+    assert(combination, 'Manually created plugin combination missing: ' + model)
+    assert.equal(combination.generated, undefined, 'Manual combination kept generated identity')
     assert.equal(combination.harnessRef, 'dsh')
     const run = await harness('start', {
       combination: combination.id,
@@ -197,6 +220,7 @@ export async function verifyModelPlugins({ root, origin, cookie, wire, harness }
     accountChannelProviders: channelProviders,
     nativeModel: true,
     virtualModel: true,
+    manualPairings: true,
     officialToolFlow: true,
   }
 }

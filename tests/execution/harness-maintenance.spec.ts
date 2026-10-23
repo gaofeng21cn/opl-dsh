@@ -40,7 +40,18 @@ it('uses fixed official updater arguments and rejects custom Harness commands', 
   ).toThrow('官方安装')
 })
 it('provides fixed official install plans for missing Codex and Claude CLIs', () => {
-  const missing = (id: 'codex' | 'claude'): HarnessInstallation => ({
+  const missing = (
+    id:
+      | 'codex'
+      | 'claude'
+      | 'minimax-code'
+      | 'mimo-code'
+      | 'step-code'
+      | 'opencode'
+      | 'kilo'
+      | 'pi'
+      | 'kimi-code',
+  ): HarnessInstallation => ({
     id,
     name: id === 'codex' ? 'Codex CLI' : 'Claude Code',
     installed: false,
@@ -69,6 +80,19 @@ it('provides fixed official install plans for missing Codex and Claude CLIs', ()
   expect(claude.command).toBe(process.platform === 'win32' ? 'powershell.exe' : '/bin/sh')
   expect(claude.args.join(' ')).toContain('claude.ai/install.')
   expect(claude.args.join(' ')).not.toContain('item.path')
+  for (const [id, official] of [
+    ['minimax-code', 'filecdn.minimax.chat/public/install.'],
+    ['mimo-code', 'mimo.xiaomi.com/install'],
+    ['step-code', 'static-openapi.stepfun.com/stepcode/install.'],
+    ['opencode', 'opencode-ai'],
+    ['kilo', '@kilocode/cli'],
+    ['pi', '@earendil-works/pi-coding-agent'],
+    ['kimi-code', '@moonshot-ai/kimi-code'],
+  ] as const) {
+    const plan = maintenancePlan(missing(id))
+    expect(plan.command).toMatch(/powershell|sh$|npm$|SHELL|bin\/(?:zsh|bash)/)
+    expect(plan.args.join(' ')).toContain(official)
+  }
 })
 it('does not pass Gateway or model authentication into package updaters', () => {
   vi.stubEnv('OPL_GATEWAY_CODEX_API_KEY', 'test-sensitive')

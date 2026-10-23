@@ -16,29 +16,21 @@
 
 套件通过 OFM 的公开 `/clients` 接口读取免费车道的运行端点、Key 与模型目录，并在启动前再次核对官方 LLM 注册表。先在 OFM 的「本地转发」启用免费车道；未启用、模型撤销、来源卸载或准入失败时拒绝启动。账号车道 `our-free-model-region` 不借用免费车道的端点。
 
-| 模型                                                                       | 首选 Harness           | 协议      |
-| -------------------------------------------------------------------------- | ---------------------- | --------- |
-| Kimi K2.6、K3                                                              | Kimi Code              | Messages  |
-| MiMo v2.6 Flash（mimo-v2.6-flash-free）                                    | OpenCode，官方免费通道 | Chat      |
-| Laguna S、XS 2.1                                                           | Poolside               | Chat      |
-| GLM 5.3、5.3 Flash（z-ai 原始 ID）                                         | ZCode                  | Chat      |
-| EAC GLM 5.3 Flash Free（opencode/glm-5.3-flash-free）                      | OpenCode，经 OFM 转发  | Chat      |
-| EAC DeepSeek V4.1 Flash Free（opencode/deepseek-v4.1-flash-free）          | OpenCode，经 OFM 转发  | Chat      |
-| Big Pickle（big-pickle）                                                   | OpenCode，官方免费通道 | Chat      |
-| Flint v1.0 Free（recursive/flint-v1.0:free）                               | Kilo Code，经 OFM 转发 | Chat      |
-| Flint 40B Free（flint-40b-free）                                           | OpenCode，经 OFM 转发  | Chat      |
-| GPT-OSS 20B                                                                | Codex CLI              | Responses |
-| Kilo Step 5 Preview（stepfun/step-5-preview-free）                         | StepCode               | Chat      |
-| Ling、LongCat、North Mini Code、Nemotron 3.5、Space Bunny、OpenRouter Free | OpenCode               | Chat      |
-| OPL Gateway Gemini 4 Argon、Gemini 3.8 Flash、Gemini 3.1 Pro               | OpenCode               | Chat      |
-| Nemotron Nano Omni、LFM、Inkling Small                                     | Pi Coding Agent        | Chat      |
-| Dots、Glyph、Kilo Auto Free、Kilo Beam、Xing 4.0                           | Kilo Code              | Chat      |
+| 模型                                                               | 自动官配 Harness | 协议      |
+| ------------------------------------------------------------------ | ---------------- | --------- |
+| Kimi K2.6、K3                                                      | Kimi Code        | Messages  |
+| MiMo v2.6 Flash（mimo-v2.6-flash-free）                            | MiMo Code        | Chat      |
+| Laguna S、XS 2.1                                                   | Poolside         | Chat      |
+| GLM 5.3、5.3 Flash（z-ai 原始 ID）                                 | ZCode            | Chat      |
+| GPT-OSS 20B                                                        | Codex CLI        | Responses |
+| Kilo Step 5 Preview（stepfun/step-5-preview-free）                 | StepCode         | Chat      |
+| Nemotron Nano Omni、LFM、Inkling Small                             | Pi Coding Agent  | Chat      |
 
-表格描述适配器配对，不是当前在线可用性承诺；模型必须仍在来源目录中且通过启动前检查。Cat Jam、MiMo v2.6 Flash、Muse Spark 1.3、Longcat 2.5、OpenCode 的 DeepSeek/GLM/Beam/Nemotron 免费条目、Space Bunny 和 Big Pickle 的精确裸 ID 使用 OpenCode 官方免费通道。Flint 的 `flint-40b-free` 使用 OpenCode 执行器并经 OFM Chat 转发；它与 OpenCode 自己的 `opencode/flint-40b-free` 服务是不同线路。`recursive/flint-v1.0:free` 由 Kilo 执行并经 OFM 转发。带 EAC/Kilo 前缀的同名模型仍是独立 OFM 转发车道，不互相替换。
+上表只列出自动生成内置组合的厂商模型配对；模型必须仍在来源目录中且通过启动前检查。OpenCode、Kilo、Pi 等通用执行器没有自己的模型，不会自动生成任何组合；MiMo、OpenCode、Big Pickle、Flint、EAC GLM/DeepSeek、Gemini、Ling、LongCat、Space Bunny、OpenRouter Free、Dots、Glyph、Kilo Beam、Xing 等车道，以及所有其他跨厂商配对，都在“添加执行组合”中手动选择模型和执行器。手动组合会标记为“自定义”，不改变 OFM 的模型归属或凭据所有者。
 
 `step-5-preview-free` 与 `muse-spark-1.2-contributor-free` 当前从 OPL 选择器隐藏；Jev 与 Content Safety 不作为编码组合提供。MiMo Code、Muse Code 没有可用默认组合，不默认登记或提示安装，已有程序与显式配置保留。
 
-OPL Gateway 的 Gemini 模型列表使用 `Gemini 4 Argon`、`Gemini 3.8 Flash` 和 `Gemini 3.1 Pro`，执行组合统一附加 `OpenCode`；请求仍保留原始模型 ID。
+OPL Gateway 的 Gemini 模型列表使用 `Gemini 4 Argon`、`Gemini 3.8 Flash` 和 `Gemini 3.1 Pro`；用户可手动选择 OpenCode 执行，请求仍保留原始模型 ID。它们不是 OpenCode 的官配，因此不自动生成内置组合。
 
 MiniMax M3.1 Flash Free 使用正式 ID `minimax-m3.1-flash-free` 与 OpenCode 官方免费通道；Kilo 的 `minimax/minimax-m3.1-flash:free` 是独立的 OFM 转发车道，也使用 OpenCode，不与前者互换。旧 Space Bunny 会话保留原模型身份，不自动替换历史路由。
 

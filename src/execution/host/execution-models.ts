@@ -17,6 +17,7 @@ import {
 } from '../contracts/catalog.ts'
 import { ExecutionCatalogStore, type ExecutionCatalog } from './catalog.ts'
 import { defaultHarness } from './adapters/index.ts'
+import { isOfficialPairing, officialHarnessFor } from '../contracts/official-harnesses.ts'
 import { HUAWEI_ZCODE_MODEL, HUAWEI_ZCODE_COMBINATION } from './adapters/zcode-models.ts'
 import {
   minimaxCodeCombinations,
@@ -52,15 +53,12 @@ export class ExecutionModelResolver {
     const legacyDefault = catalog.combinations.find(
       (item) => item.id === DSH_COMBINATION && item.name === 'DeepSeek + DSH',
     )
-    // An automatic row is generated per model for the default Harness of that model.
-    // A persisted `auto:` row whose Harness no longer matches the current default is a
-    // stale copy (for example Big Pickle's old `auto:["our-free-model","big-pickle"]`
-    // DSH combination, generated when it was still treated as a DSH-only lane). Rows the
+    // An automatic row is generated only for a model/harness pair in the shared official
+    // pairing table. A persisted `auto:` row whose pair is no longer official is a stale
+    // copy (for example a generic OpenCode lane previously generated for DSH). Rows the
     // user created carry their own id, so they are never selected here.
     const staleAutomatic = (item: CombinationDefinition) =>
-      item.id.startsWith('auto:') &&
-      OFM_PROVIDERS.includes(item.modelRef.provider) &&
-      item.harnessRef !== defaultHarness(item.modelRef)
+      item.id.startsWith('auto:') && !isOfficialPairing(item.harnessRef, item.modelRef)
     if (
       retired.length ||
       legacyDefault ||
@@ -299,9 +297,9 @@ export class ExecutionModelResolver {
               item.isDefault &&
               modelRefKey(item.modelRef) === modelRefKey(model.ref))),
       )
-      if (!isRetiredModel(model.ref) && model.available && !hasDefault) {
-        const harnessRef = defaultHarness(model.ref),
-          harnessName = catalog.harnesses.find((h) => h.id === harnessRef)?.name ?? 'DSH'
+      const harnessRef = officialHarnessFor(model.ref)
+      if (!isRetiredModel(model.ref) && model.available && !hasDefault && harnessRef) {
+        const harnessName = catalog.harnesses.find((h) => h.id === harnessRef)?.name ?? 'DSH'
         catalog.combinations.push({
           id: 'auto:' + modelRefKey(model.ref),
           name:

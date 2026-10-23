@@ -46,7 +46,9 @@ function run(command, args, options = {}) {
       stdio: ['ignore', 'pipe', 'pipe'],
       ...options,
     })
+    let timedOut = false
     const timeout = setTimeout(() => {
+      timedOut = true
       try {
         process.kill(-child.pid, 'SIGTERM')
       } catch (error) {
@@ -64,7 +66,13 @@ function run(command, args, options = {}) {
         clearTimeout(timeout),
         code === 0
           ? resolveRun(stdout)
-          : reject(new Error(`command failed (${code}): ${stderr.slice(-4000)}`))
+          : reject(
+              new Error(
+                timedOut
+                  ? `command timed out after ${String(options.timeout ?? 120_000)}ms: ${stdout.slice(-2000)}${stderr.slice(-2000)}`
+                  : `command failed (${code}): ${stderr.slice(-4000)}`,
+              ),
+            )
       ),
     )
   })
@@ -140,6 +148,7 @@ try {
   )
   await run(executable, [join(payload, 'install.mjs'), app, suite, payload, '--no-launch'], {
     env: { ...environment, ELECTRON_RUN_AS_NODE: '1' },
+    timeout: 20 * 60_000,
   })
   await startDesktop()
   let summary
@@ -157,19 +166,51 @@ try {
   assert.equal(model.available, true, 'DSH-native OFM model must remain usable without forward')
   const visible = await rpc('oplExecution', 'combinations', { request: {} })
   assert(
-    visible.some((item) => item.modelId === MODEL_PLUGIN_FIXTURE),
-    'forward-off DSH combination should still be enabled',
+    !visible.some((item) => item.modelId === MODEL_PLUGIN_FIXTURE),
+    'generic model was automatically exposed as an official pairing',
   )
   const all = await rpc('oplExecution', 'combinations', {
     request: { includeDisabled: true },
   })
   assert(
-    all.some((item) => item.modelId === MODEL_PLUGIN_FIXTURE && item.available),
-    'forward-off DSH combination must remain available',
+    !all.some((item) => item.modelId === MODEL_PLUGIN_FIXTURE),
+    'generic model must not receive an automatic built-in combination',
+  )
+  const harnesses = await rpc('oplExecution', 'harness-installations', undefined)
+  for (const id of ['minimax-code', 'opencode', 'kilo', 'pi']) {
+    const item = harnesses.find((candidate) => candidate.id === id)
+    assert(item, 'missing installable Harness row: ' + id)
+    assert(
+      ['install', 'update'].includes(item.maintenanceAction),
+      'missing official install/update action: ' + id,
+    )
+  }
+  const beforeManual = await rpc('oplExecution', 'catalog')
+  const manual = structuredClone(beforeManual)
+  manual.combinations.push({
+    id: 'qualification-manual-dsh',
+    name: 'Qualification manual + DSH',
+    modelRef: { provider: 'our-free-model', model: MODEL_PLUGIN_FIXTURE },
+    harnessRef: 'dsh',
+    permissionPolicy: 'workspace',
+    isDefault: true,
+    enabled: true,
+    autoEnabled: false,
+    autoEnabledDisabled: true,
+  })
+  await rpc('oplExecution', 'save-catalog', { catalog: manual })
+  const savedManual = await rpc('oplExecution', 'catalog')
+  assert(
+    savedManual.combinations.some(
+      (item) =>
+        item.id === 'qualification-manual-dsh' &&
+        item.generated !== true &&
+        item.modelRef.model === MODEL_PLUGIN_FIXTURE,
+    ),
+    'manual generic pairing was not saved as a custom combination',
   )
   // Turn the external lane on in OFM's own public surface. The login exchange is
-  // the same one the Host uses for management; the DSH model above is already
-  // usable without this listener.
+  // the same one the Host uses for management.
   const web = await rpc('oplSuite', 'setupUrl')
   const origin = new URL(web).origin
   const auth = await fetch(web, { redirect: 'manual' })
@@ -201,18 +242,15 @@ try {
   }
   const ready = await rpc('oplExecution', 'combinations', { request: {} })
   const readyCombination = ready.find((item) => item.modelId === MODEL_PLUGIN_FIXTURE)
-  assert(readyCombination, 'forward-on combination was not enabled')
+  assert(readyCombination, 'forward-on manual combination was not enabled')
 
   // A user stop is durable: saving the enabled row off must not be undone by
   // the next catalog projection while the model remains available.
   const execution = await rpc('oplExecution', 'catalog')
-  const stored = execution.combinations.find((item) => item.modelRef.model === MODEL_PLUGIN_FIXTURE)
-  assert(stored, 'stored automatic combination missing')
+  const stored = execution.combinations.find((item) => item.id === 'qualification-manual-dsh')
+  assert(stored, 'stored manual combination missing')
   stored.enabled = false
-  stored.generated = false
-  stored.autoEnabled = false
-  stored.autoEnabledDisabled = true
-  await rpc('oplExecution', 'save-catalog', { request: { catalog: execution } })
+  await rpc('oplExecution', 'save-catalog', { catalog: execution })
   const afterUserStop = await rpc('oplExecution', 'catalog')
   const stopped = afterUserStop.combinations.find(
     (item) => item.modelRef.model === MODEL_PLUGIN_FIXTURE,
@@ -229,8 +267,10 @@ try {
       status: 'passed',
       isolatedProfile: root,
       fixtureModel: MODEL_PLUGIN_FIXTURE,
-      forwardOff: { modelAvailable: true, enabledCombination: true },
-      forwardOn: { modelAvailable: true, enabledCombination: true },
+      forwardOff: { modelAvailable: true, automaticCombination: false },
+      officialInstallers: ['minimax-code', 'opencode', 'kilo', 'pi'],
+      manualPairing: { saved: true, generated: false },
+      forwardOn: { modelAvailable: true, manualCombinationAvailable: true },
       userStop: { enabled: false, visible: false },
       setupCompleted: summary?.completed === true,
     }),
