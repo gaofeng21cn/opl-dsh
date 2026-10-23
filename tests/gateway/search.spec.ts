@@ -22,6 +22,7 @@ function options(
     apiKeyEnv: credentialRef('OPL_GATEWAY_CODEX_API_KEY'),
     baseURL: 'https://gateway.test/v1',
     model: 'gpt-6-luna',
+    fallbackModels: ['gpt-6.1-sol'],
     maxOutputTokens: 1024,
     timeoutMs: 30_000,
     ...overrides,
@@ -200,6 +201,63 @@ describe('OplGatewaySearchProvider', () => {
     expect(url).not.toContain('api.deepseek.com')
   })
 
+  it('falls back to another search model when the primary is busy', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        streamResponse([
+          frame({
+            type: 'response.failed',
+            response: { error: { message: 'The service is busy. Please retry later.' } },
+          }),
+        ]),
+      )
+      .mockResolvedValueOnce(streamResponse([citedFrames().join('')]))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await new OplGatewaySearchProvider(() => options()).search({ query: 'q' })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(
+      fetchMock.mock.calls.map(
+        ([, init]) => JSON.parse(String((init as RequestInit).body)).model as string,
+      ),
+    ).toEqual(['gpt-6-luna', 'gpt-6.1-sol'])
+    expect(result.sources.map((source) => source.url)).toEqual([
+      'https://a.test/harness',
+      'https://b.test/premier',
+    ])
+  })
+
+  it('names every search model and gateway error when all attempts fail', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        streamResponse([
+          frame({
+            type: 'response.failed',
+            response: { error: { message: 'The service is busy. Please retry later.' } },
+          }),
+        ]),
+      )
+      .mockResolvedValueOnce(
+        streamResponse([
+          frame({
+            type: 'response.failed',
+            response: { error: { message: 'Our servers are currently overloaded.' } },
+          }),
+        ]),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      new OplGatewaySearchProvider(() => options()).search({ query: 'q' }),
+    ).rejects.toThrow(
+      /gpt-6-luna: OPL Gateway search failed: The service is busy[\s\S]*gpt-6\.1-sol: OPL Gateway search failed: Our servers are currently overloaded[\s\S]*https:\/\/gateway\.test\/v1\/responses/,
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('resolves the key per operation and prefers a literal key', async () => {
     const fetchMock = vi.fn(async () => streamResponse([citedFrames().join('')]))
     vi.stubGlobal('fetch', fetchMock)
@@ -239,22 +297,63 @@ describe('OplGatewaySearchProvider', () => {
   })
 
   it('names the endpoint and the provider message on an HTTP failure', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({
-              error: { message: 'model not enabled', type: 'invalid_request_error' },
-            }),
-            { status: 400, headers: { 'content-type': 'application/json' } },
-          ),
-      ),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: { message: 'model not enabled', type: 'invalid_request_error' },
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        ),
     )
+    vi.stubGlobal('fetch', fetchMock)
     const provider = new OplGatewaySearchProvider(() => options())
     await expect(provider.search({ query: 'q' })).rejects.toThrow(
       /HTTP 400: model not enabled[\s\S]*https:\/\/gateway\.test\/v1\/responses/,
     )
+    // A rejected request will be rejected the same way by another model.
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it('falls back when the gateway rejects the primary model as unavailable', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'upstream unavailable' } }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(streamResponse([citedFrames().join('')]))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await new OplGatewaySearchProvider(() => options()).search({ query: 'q' })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(result.sources[0]?.url).toBe('https://a.test/harness')
+  })
+
+  it('falls back when the primary model does not trigger a search', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        streamResponse([
+          frame({ type: 'response.output_text.done', output_index: 1, text: 'No search needed.' }),
+          frame({ type: 'response.completed' }),
+        ]),
+      )
+      .mockResolvedValueOnce(streamResponse([citedFrames().join('')]))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await new OplGatewaySearchProvider(() => options()).search({ query: 'q' })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(
+      fetchMock.mock.calls.map(
+        ([, init]) => JSON.parse(String((init as RequestInit).body)).model as string,
+      ),
+    ).toEqual(['gpt-6-luna', 'gpt-6.1-sol'])
+    expect(result.sources[0]?.url).toBe('https://a.test/harness')
   })
 
   it('reports caller cancellation as WEB_ABORTED', async () => {

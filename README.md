@@ -64,7 +64,7 @@ Windows · x64，在 PowerShell 中运行：
 - **模型 + Harness 组合**：DSH 原生会话继续使用官方会话列表、消息流和输入框；所有已就绪的模型 + Harness 组合都在同一个模型选择器中显示。选择 Codex CLI、Claude Code 或 Grok Build 后，当前官方会话仍使用同一输入框和消息流，后台将本轮请求转发给绑定的官方 Harness 并把结果回写；组合、权限和恢复记录由后台维护。支持的组合沿用该菜单的推理强度选择，已提供的档位统一显示为低、中、高、极高、最大、超高，实际可选档位仍由模型决定；切换时显示目标组合与等待状态，首次发送时启动对应 Harness。自动生成的外部组合按当前 DSH 权限核对目标 Harness 的能力；不支持只读或工作区隔离的 Harness 会拒绝启动，不会自动提升为完全权限。Claude Code 的受限任务依赖官方 sandbox 后端；显式完整访问使用官方 bypassPermissions，允许工作目录外访问。外部任务可按每轮 `writeScope` 的精确文件或目录范围并行；重叠写入、未声明范围的项目写入、构建和安装保持串行。该声明用于调度，不改变工具权限。从 Codex 或对话内协作工具 `delegate` 派出的外部任务绑定一个真实的官方 DSH 会话：它出现在对应项目的官方会话列表侧栏，按普通会话查看、续作和人工审批；设置中不再有独立的“外部任务”页面。
 - **MiniMax 官方账号组合**：接入官方 MiniMax CLI `mcode` 的 ACP 模式并使用官方账号登录；只提供两个模型组合（M3.1-Flash-Preview 默认 `max`、M3 默认开启思考），推理设置按官方能力可选，不需要 MiniMax Code 图形界面自动化，也不使用 OPL Gateway 的 MiniMax 密钥。Windows Git Bash 固定后端需支持 Shell 回读的 mcode 候选版；官方 0.6.3 默认 PowerShell，不能仅靠 SHELL 环境变量切换。详见[官方 MiniMax 账号与 mcode](docs/minimax-code.md)。
 
-- **网页搜索**：登录 OPL Gateway 后，DSH 原生 `web_search` 使用 OPL 的搜索路由；`web_fetch` 继续使用官方公共 HTTP 提供方。搜索固定使用低成本的 `gpt-6-luna`，无需额外配置；不提供独立搜索设置页或本地统计。
+- **网页搜索**：登录 OPL Gateway 后，DSH 原生 `web_search` 使用 OPL 的搜索路由；`web_fetch` 继续使用官方公共 HTTP 提供方。搜索优先使用低成本的 `gpt-6-luna`，该模型忙碌、过载、限流、超时或未触发搜索时自动改用 `gpt-6.1-sol`；无需额外配置，也不提供独立搜索设置页或本地统计。
 - **简化首启**：统一账户选择，支持稍后登录；完成后不再重复提示，不导入其他 OPL 应用的登录状态。
 - **账户入口**：主界面左下角显示已登录的 OPL 邮箱，未登录显示“未登录”；长邮箱悬停可查看完整内容，点击仍可进入账户或设置。
 
