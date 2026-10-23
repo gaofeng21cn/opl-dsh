@@ -66,6 +66,7 @@ export function apply(ctx: Context, config: Config): void {
   const harness = createHarnessService(ctx, {
     readOfm: () => ofmOwner.read('/summary'),
   })
+  harness.configureProgressLimits(config.executionLimits)
   ctx.provide('oplExternalModelSources', harness.modelSources)
   applyOfmModelSource(ctx, {
     providers: [OFM_PROVIDER],
@@ -118,6 +119,11 @@ export function apply(ctx: Context, config: Config): void {
       : { ...request, reasoningEffort: ReasoningEffortId(effort) }
   })
   ctx.on('llm/stream', (options, next) => harness.conversationStream(options, next))
+  installNativeProgressGuard(
+    ctx,
+    () => harness.executionLimits(),
+    (options) => !options.purpose,
+  )
   installNativeProgressGuard(
     ctx,
     () => harness.executionLimits(),

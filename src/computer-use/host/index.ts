@@ -139,3 +139,5 @@ export function installComputerUse(ctx: Context): void {
     }
   }, 'computer-use: KimiCU sessions')
 }
+
+export * from './kimi-cu.js'

@@ -119,6 +119,12 @@ function command(command, args, options = {}) {
   }
 }
 
+function copyBundle(source, destination) {
+  return process.platform === 'darwin'
+    ? command('/usr/bin/ditto', [source, destination])
+    : command('/bin/cp', ['-R', source, destination])
+}
+
 /** Hash a private local archive so an explicit local candidate has one immutable input. */
 function localArchiveDigest(path) {
   if (!existsSync(path)) throw Error('本地 KimiCU 归档不存在')
@@ -350,18 +356,8 @@ export async function installKimiCu({
         const backup = `${appPath}.opl-backup-${String(process.pid)}`
         rmSync(replacement, { recursive: true, force: true })
         rmSync(backup, { recursive: true, force: true })
-        try {
-          renameSync(staged, replacement)
-        } catch {
-          try {
-            mkdirSync(replacement, { recursive: true })
-            cpSync(staged, replacement, { recursive: true, force: true })
-          } catch (copyError) {
-            throw Error(
-              `KimiCU 暂存复制失败：${copyError instanceof Error ? copyError.message : String(copyError)}`,
-            )
-          }
-        }
+        const copied = copyBundle(staged, replacement)
+        if (!copied.ok) throw Error(`KimiCU 暂存复制失败：${copied.stderr.trim()}`)
         try {
           if (existsSync(appPath)) renameSync(appPath, backup)
           renameSync(replacement, appPath)
@@ -445,7 +441,7 @@ export async function installKimiCu({
       const backup = `${appPath}.opl-backup-${String(process.pid)}`
       rmSync(replacement, { recursive: true, force: true })
       rmSync(backup, { recursive: true, force: true })
-      const copied = command('/usr/bin/ditto', [staged, replacement])
+      const copied = copyBundle(staged, replacement)
       if (!copied.ok) throw Error(`KimiCU 暂存复制失败：${copied.stderr.trim()}`)
       try {
         if (existsSync(appPath)) renameSync(appPath, backup)
@@ -487,4 +483,18 @@ export async function installKimiCu({
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+export const KIMI_CU_PLUGIN_URL =
+  'https://cdn.kimi.com/kimi-computer-use-windows/latest/kimi-cu-win-plugin.zip'
+export const KIMI_CU_INSTALL_COMMAND = `/plugins install ${KIMI_CU_PLUGIN_URL}`
+
+export function kimiCuInstallInfo() {
+  return {
+    platform: 'win32',
+    architecture: 'x64',
+    command: KIMI_CU_INSTALL_COMMAND,
+    verified: false,
+    note: '仅显示官方安装命令；不会下载、解压或执行插件。',
+  }
 }

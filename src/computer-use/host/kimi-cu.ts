@@ -1,6 +1,7 @@
 /** KimiCU stdio MCP bridge for native DSH Agent tools. */
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import os from 'node:os'
 
 /** Fixed executable and MCP arguments verified by the OPL Framework contract. */
 export const KIMI_CU_EXECUTABLE = '/Applications/KimiCU.app/Contents/MacOS/kimi-cu'
@@ -289,6 +290,8 @@ export const KIMI_CU_PLUGIN_URL =
   'https://cdn.kimi.com/kimi-computer-use-windows/latest/kimi-cu-win-plugin.zip'
 export const KIMI_CU_INSTALL_COMMAND = `/plugins install ${KIMI_CU_PLUGIN_URL}`
 
+export type KimiCuTool = never
+
 export interface KimiCuQualification {
   supportedPlatform: boolean
   supportedArchitecture: boolean
@@ -296,45 +299,50 @@ export interface KimiCuQualification {
   supportedWindowsVersion: boolean
   pluginInstalled: boolean
   callable: false
-  tools: readonly never[]
+  tools: readonly KimiCuTool[]
   status: 'unavailable' | 'eligible-but-no-protocol'
   reason: string
   installCommand: string
 }
 
-export function qualifyKimiCu(
-  options: {
-    platform?: NodeJS.Platform
-    arch?: string
-    windowsRelease?: string
-  } = {},
-): KimiCuQualification {
+export interface KimiCuProbeOptions {
+  platform?: NodeJS.Platform
+  arch?: string
+  windowsRelease?: string
+  env?: NodeJS.ProcessEnv
+}
+
+/** WinCU stays fail-closed until Kimi publishes a stable DSH-callable stdio/MCP contract. */
+export function qualifyKimiCu(options: KimiCuProbeOptions = {}): KimiCuQualification {
   const platform = options.platform ?? process.platform
   const arch = options.arch ?? process.arch
-  const release = options.windowsRelease ?? ''
-  const build = Number(release.split('.')[2])
-  const supportedPlatform = platform === 'win32'
-  const supportedArchitecture = arch === 'x64'
-  const windowsVersionKnown = supportedPlatform && Number.isInteger(build) && build > 0
+  const windowsRelease = options.windowsRelease ?? os.release()
+  const build = Number(windowsRelease.split('.')[2])
+  const windowsVersionKnown = platform === 'win32' && Number.isInteger(build) && build > 0
   const supportedWindowsVersion = windowsVersionKnown && build >= 18362
-  let reason = 'WinCU 的独立 MCP 启动协议未公开，DSH 不会猜测或自动调用。'
-  if (!supportedPlatform) reason = 'KimiCU WinCU 仅支持 Windows。'
-  else if (!supportedArchitecture) reason = 'KimiCU WinCU 仅支持 x64 Windows。'
+  const pluginInstalled = false
+  let reason = 'WinCU 没有公开可验证的 stdio/MCP 启动协议，DSH 不会调用它。'
+  if (platform !== 'win32') reason = 'KimiCU WinCU 仅支持 Windows。'
+  else if (arch !== 'x64') reason = 'KimiCU WinCU 仅支持 x64 Windows。'
   else if (!supportedWindowsVersion) reason = '需要 Windows 10 1903 或更新版本（含 Windows 11）。'
+  else if (!pluginInstalled) reason = '未检测到官方 Kimi Code WinCU 插件。'
   return {
-    supportedPlatform,
-    supportedArchitecture,
+    supportedPlatform: platform === 'win32',
+    supportedArchitecture: arch === 'x64',
     windowsVersionKnown,
     supportedWindowsVersion,
-    pluginInstalled: false,
+    pluginInstalled,
     callable: false,
     tools: [],
-    status: 'unavailable',
+    status:
+      platform === 'win32' && arch === 'x64' && pluginInstalled
+        ? 'eligible-but-no-protocol'
+        : 'unavailable',
     reason,
     installCommand: KIMI_CU_INSTALL_COMMAND,
   }
 }
 
 export function assertKimiCuPermission(allowed: boolean): void {
-  if (!allowed) throw new Error('KimiCU requires explicit computer-use permission.')
+  if (!allowed) throw new Error('KimiCU WinCU requires explicit computer-use permission.')
 }
