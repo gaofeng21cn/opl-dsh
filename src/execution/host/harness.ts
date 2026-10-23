@@ -1,3 +1,6 @@
+import { ProgressWatchdog, type ProgressWatchdogLimits } from './progress-watchdog.ts'
+import { executionLimitsSchema } from '../contracts/limits.ts'
+import { openCodeStreamFailure } from './adapters/opencode/stream-failure.ts'
 import { hostPeer, invokeHostRemote } from '../../compat/host/remote-invocation.ts'
 import { gatewayGroupEnabled } from '../../gateway/host/group-settings.ts'
 import { inspectHarness } from './harness-registry.ts'
@@ -191,6 +194,10 @@ export interface HarnessPromptRequest {
   writeScope?: string[]
 }
 interface Active {
+  watchdog?: ProgressWatchdog
+  deadlineError?: string
+  deadlineCleanup?: Promise<void>
+
   acp?: AcpProcess
   turn: HarnessTurn | undefined
   done: Promise<void> | undefined
@@ -223,6 +230,30 @@ interface Active {
 export { grokConfiguration } from './adapters/grok.ts'
 export { nativeHarnessMatches, defaultHarness } from './adapters/index.ts'
 export class HarnessService {
+  private progressLimits?: ProgressWatchdogLimits
+  configureProgressLimits(limits: ProgressWatchdogLimits): void {
+    this.progressLimits = { ...limits }
+  }
+  /** Return the limits used when the next turn starts. */
+  executionLimits(): ProgressWatchdogLimits {
+    return {
+      ...(this.progressLimits ?? (executionLimitsSchema({}) as ProgressWatchdogLimits)),
+    }
+  }
+  /** Persist validated limits and apply them to subsequent turns. */
+  async saveExecutionLimits(value: unknown): Promise<ProgressWatchdogLimits> {
+    const limits = executionLimitsSchema(value as never) as ProgressWatchdogLimits
+    const descriptor = this.ctx.settings.describe().find((item) => item.ns === 'opl-suite')
+    if (!descriptor) throw Error('执行设置不可用')
+    await this.ctx.settings.mutate(
+      'opl-suite',
+      [{ op: 'set', path: ['executionLimits'], value: limits }],
+      descriptor.revision,
+    )
+    this.configureProgressLimits(limits)
+    return this.executionLimits()
+  }
+
   private readonly runtimeMaintenance = new RuntimeMaintenance()
   private selections: Record<string, string> = {}
   private readonly externalEfforts: ExternalEffortStore
@@ -637,6 +668,15 @@ export class HarnessService {
       sessions: [...this.records.values()]
         .map((record) => this.view(record))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    }
+  }
+  /** Report local admission separately from upstream inference for the visible conversation. */
+  async queueStatus(sessionId: string): Promise<{ queued: boolean }> {
+    await this.ready
+    return {
+      queued: [...this.records.values()].some(
+        (record) => record.nativeSessionId === sessionId && record.turns.at(-1)?.state === 'queued',
+      ),
     }
   }
   async sessions(request: HarnessSessionsRequest = {}): Promise<HarnessSessionsPage> {
@@ -1280,8 +1320,17 @@ export class HarnessService {
       this.titleUpdates.set(record.id, pending)
       return
     }
-    if (!active.turn) return
+    if (!active.turn || active.deadlineError) return
     const turn = active.turn
+    if (
+      (['agent_message_chunk', 'agent_thought_chunk'].includes(u.sessionUpdate) &&
+        typeof u.content?.text === 'string' &&
+        u.content.text.trim()) ||
+      (['tool_call', 'tool_call_update'].includes(u.sessionUpdate) &&
+        typeof u.toolCallId === 'string' &&
+        (u.status || u.rawOutput || u.content))
+    )
+      active.watchdog?.progress()
     if (
       ['agent_message_chunk', 'agent_thought_chunk'].includes(u.sessionUpdate) &&
       object(u.content).type === 'text' &&
@@ -1312,6 +1361,9 @@ export class HarnessService {
         ['locations', 'locationsJson'],
       ] as const)
         if (u[wire] !== undefined) tool[field] = JSON.stringify(u[wire])
+      if (turn.tools.some((tool) => ['pending', 'in_progress', 'running'].includes(tool.status)))
+        active.watchdog?.pauseIdle()
+      else active.watchdog?.resumeIdle()
       const owner = this.conversationOwners.get(record.id)
       if (owner) this.conversations?.tool(owner.sessionId, record, turn, u)
     }
@@ -1319,7 +1371,12 @@ export class HarnessService {
   }
   private ask(record: HarnessSession, active: Active, rpcId: string | number, value: unknown) {
     const p = object(value)
-    if (p.sessionId !== record.acpSessionId || !active.turn || active.cancelled) {
+    if (
+      p.sessionId !== record.acpSessionId ||
+      !active.turn ||
+      active.cancelled ||
+      active.deadlineError
+    ) {
       active.acp?.answer(rpcId)
       return
     }
@@ -1355,6 +1412,7 @@ export class HarnessService {
       options,
       ...(external === undefined ? {} : { external }),
     })
+    active.watchdog?.pause()
     active.turn.state = 'waiting_approval'
     this.changed(record)
     void this.save(record).catch(() => this.cancel({ sessionId: record.id }))
@@ -1397,6 +1455,7 @@ export class HarnessService {
       throw Error('无效的授权选项')
     active.acp?.answer(ask.rpcId, input.optionId)
     active.approvals.delete(ask.id)
+    if (active.approvals.size === 0) active.watchdog?.resume()
     if (active.turn) active.turn.state = active.approvals.size ? 'waiting_approval' : 'running'
     this.changed(record)
     await this.save(record)
@@ -1666,6 +1725,22 @@ export class HarnessService {
   }
   private async run(record: HarnessSession, active: Active, turn: HarnessTurn) {
     try {
+      delete active.deadlineError
+      delete active.deadlineCleanup
+      if (record.harnessRef !== 'dsh' && this.progressLimits) {
+        active.watchdog = new ProgressWatchdog(this.progressLimits, (reason) => {
+          if (active.turn !== turn || active.cancelled) return
+          active.deadlineError =
+            reason === 'total'
+              ? '本轮执行已达到总时长上限，已停止；原任务未自动重发。'
+              : '本轮在等待期限内没有新的正文、思考或工具进展，已停止；具体上游原因未知，原任务未自动重发。'
+          if (active.acp)
+            active.deadlineCleanup = active.acp.terminate(active.deadlineError).catch(() => {
+              active.deadlineError += ' 自有 Harness 进程清理失败，请检查后再运行。'
+            })
+        })
+        active.watchdog.start()
+      }
       if (active.cancelled) {
         turn.state = 'cancelled'
         return
@@ -1677,7 +1752,9 @@ export class HarnessService {
           return
         }
         const adapter = adapterFor(record.harnessRef, record.modelRef, this.modelSources)
-        const firstProgressTimeoutMs = adapter?.promptProgressTimeoutMs
+        const firstProgressTimeoutMs = this.progressLimits
+          ? undefined
+          : adapter?.promptProgressTimeoutMs
         const result = object(
           await active.acp!.request(
             'session/prompt',
@@ -1694,9 +1771,13 @@ export class HarnessService {
               },
             },
             24 * 60 * 60 * 1000,
-            firstProgressTimeoutMs
+            firstProgressTimeoutMs || record.harnessRef === 'opencode'
               ? {
-                  firstProgressTimeoutMs,
+                  ...(firstProgressTimeoutMs === undefined ? {} : { firstProgressTimeoutMs }),
+                  stderrFailure:
+                    record.harnessRef === 'opencode'
+                      ? (line) => openCodeStreamFailure(line, record.acpSessionId ?? '')
+                      : undefined,
                   firstProgressTimeoutMessage:
                     'OpenCode 在超时前没有报告正文、思考、工具或授权进展，已停止本轮请求；请检查上游模型或 OpenCode CLI。原任务未自动重发。',
                   isProgress: (method, params) => {
@@ -1823,12 +1904,24 @@ export class HarnessService {
       // A refused fixed configuration carries an actionable, credential-free reason and
       // must not collapse into the generic transport text.
       turn.error =
-        error instanceof HarnessTransportError || error instanceof HarnessConfigurationError
+        active.deadlineError ??
+        (error instanceof HarnessTransportError || error instanceof HarnessConfigurationError
           ? error.message
-          : '执行未完成，请检查 Harness 安装、所选渠道和模型。原任务未自动重发。'
+          : '执行未完成，请检查 Harness 安装、所选渠道和模型。原任务未自动重发。')
     } finally {
+      active.watchdog?.dispose()
+      delete active.watchdog
+      await active.deadlineCleanup
+      delete active.deadlineCleanup
       await this.titleUpdates.get(record.id)
-      if (active.cancelled) turn.state = 'cancelled'
+      if (active.deadlineError) {
+        turn.state = 'failed'
+        turn.error = active.deadlineError
+      }
+      if (active.cancelled) {
+        turn.state = 'cancelled'
+        delete turn.error
+      }
       for (const p of active.approvals.values()) active.acp?.answer(p.rpcId)
       active.approvals.clear()
       active.turn = undefined
@@ -2414,7 +2507,10 @@ export class HarnessService {
     if (!record) throw Error('组合会话不存在')
     const turn = active?.turn
     // The stop belongs to this turn even if persistence or child cancellation yields.
-    if (turn) active!.cancelled = true
+    if (turn) {
+      active!.cancelled = true
+      active!.watchdog?.dispose()
+    }
     if (pauseWake) {
       record.autoWakePaused = true
       await this.save(record)

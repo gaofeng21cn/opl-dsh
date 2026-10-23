@@ -30,6 +30,8 @@ const failureMessage = (code: unknown, data?: unknown) => {
     case 'HARNESS_NETWORK':
       return '所选渠道连接中断，重试后仍未收到响应，已停止本轮请求。请检查网络或切换已配置的渠道；原任务未自动重发。'
     case 'HARNESS_EXECUTION':
+      if (safeFailureDetails(data).errorName === 'NO_PROGRESS')
+        return '上游在等待期限内没有返回正文、思考或工具进展，已停止本轮请求。'
       return '官方 Harness 报告本轮执行失败，原任务未自动重发。'
     case 'HARNESS_PROVIDER_CLIENT_REQUIRED':
       return '所选免费渠道要求通过其指定的官方客户端访问，当前转发请求被拒绝。原任务未自动重发。'
@@ -108,6 +110,7 @@ export interface AcpRequestOptions {
   /** Fixed, credential-free diagnostic used when the first update never arrives. */
   readonly firstProgressTimeoutMessage?: string
   /** Return true only for notifications that demonstrate progress in this request. */
+  readonly stderrFailure?: ((line: string) => string | undefined) | undefined
   readonly isProgress?: (method: string, params: unknown) => boolean
 }
 /**
@@ -131,6 +134,7 @@ export class AcpProcess {
       isProgress?: (method: string, params: unknown) => boolean
     }
   >()
+  private stderrObservers = new Map<number, (line: string) => string | undefined>()
   private sequence = 0
   closed = false
   private disposing?: Promise<void>
@@ -156,7 +160,28 @@ export class AcpProcess {
       ...(verbatimArguments ? { windowsVerbatimArguments: true } : {}),
     })
     // Always drain stderr; it may contain provider diagnostics and is never reflected into the UI.
-    this.child.stderr.resume()
+    let diagnostic = ''
+    this.child.stderr.on('data', (chunk: Buffer) => {
+      diagnostic += chunk.toString('utf8')
+      let end: number
+      while ((end = diagnostic.indexOf(String.fromCharCode(10))) >= 0) {
+        const line = diagnostic.slice(0, end)
+        diagnostic = diagnostic.slice(end + 1)
+        for (const [id, classify] of this.stderrObservers) {
+          if (!this.pending.has(id)) {
+            this.stderrObservers.delete(id)
+            continue
+          }
+          const message = classify(line)
+          if (message) {
+            this.fail(message)
+            void this.dispose().catch(() => {})
+            break
+          }
+        }
+      }
+      if (diagnostic.length > 65536) diagnostic = ''
+    })
     this.child.stdin.on('error', () => this.fail('Harness ACP 输入通道关闭'))
     this.child.on('error', () => this.fail('无法启动 Harness，请检查官方程序与执行路径'))
     this.child.on('exit', () => this.fail('Harness 进程已结束'))
@@ -168,12 +193,14 @@ export class AcpProcess {
         return
       }
       if (m.jsonrpc !== '2.0') return
+      if (this.closed) return
       if (typeof m.id === 'number' && m.method === undefined) {
         const p = this.pending.get(m.id)
         if (!p) return
         clearTimeout(p.timer)
         if (p.firstProgressTimer) clearTimeout(p.firstProgressTimer)
         this.pending.delete(m.id)
+        this.stderrObservers.delete(m.id)
         if (m.error) {
           p.reject(
             new HarnessTransportError(
@@ -230,6 +257,7 @@ export class AcpProcess {
       p.reject(new HarnessTransportError(`${message}（${requestStage(p.method)}）`))
     }
     this.pending.clear()
+    this.stderrObservers.clear()
     this.onExit()
   }
   private async handleClientRequest(id: string | number, handler: () => Promise<unknown>) {
@@ -255,6 +283,7 @@ export class AcpProcess {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
+        this.stderrObservers.delete(id)
         // The request's overall deadline also owns the first-progress timer.
         // Clear it before disposing so a late callback cannot report a second failure.
         clearTimeout(pending.firstProgressTimer)
@@ -294,18 +323,25 @@ export class AcpProcess {
         }, options.firstProgressTimeoutMs)
       }
       this.pending.set(id, pending)
+      if (options.stderrFailure) this.stderrObservers.set(id, options.stderrFailure)
       try {
         this.send({ id, method, params })
       } catch (e) {
         clearTimeout(timer)
         this.clearFirstProgressTimer(pending)
         this.pending.delete(id)
+        this.stderrObservers.delete(id)
         reject(e)
       }
     })
   }
   cancel(sessionId: string) {
     if (!this.closed) this.send({ method: 'session/cancel', params: { sessionId } })
+  }
+  /** Immediately rejects consumers, then finishes owned process cleanup. */
+  async terminate(message: string): Promise<void> {
+    this.fail(message)
+    await this.dispose()
   }
   answer(id: string | number, optionId?: string) {
     if (!this.closed)

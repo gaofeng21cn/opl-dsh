@@ -3,6 +3,7 @@ import { Button, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { displayModelSource, selectableModels, modelRefKey } from '../contracts/catalog.ts'
 import css from '../../shared/client/SettingsSection.module.css'
 import type { ExecutionCall as Call } from '../../shared/client/remote-call.ts'
+import type { CombinationDefinition } from '../../contracts/types.ts'
 export function ExecutionCatalogSection({
   call,
   embedded = false,
@@ -23,6 +24,92 @@ export function ExecutionCatalogSection({
     update,
     add,
   } = useExecutionCatalog(call)
+  const renderCombination = (item: CombinationDefinition) => {
+    if (!catalog) return null
+    const model = catalog.models.find((x) => modelRefKey(x.ref) === modelRefKey(item.modelRef))
+    const harness = catalog.harnesses.find((x) => x.id === item.harnessRef)
+    const status = availability.find((c) => c.id === item.id)
+    return (
+      <details
+        className={css.card}
+        key={item.id}
+        open={editing === item.id}
+        onToggle={(event) => {
+          const open = event.currentTarget.open
+          setEditing((current) => (open ? item.id : current === item.id ? undefined : current))
+        }}
+      >
+        <summary className={css.header}>
+          <span className={css.identity}>
+            <strong>{item.name}</strong>
+            {item.isDefault && item.enabled && (
+              <span className={css.muted}>此模型的默认执行组合</span>
+            )}
+            <span className={css.muted}>
+              {displayModelSource(item.modelRef, model?.source)} ·{' '}
+              {model?.name ?? item.modelRef.model} · {harness?.name ?? item.harnessRef}
+            </span>
+          </span>
+          <span className={css.row}>
+            <span className={css.muted}>
+              {!item.enabled
+                ? '已停用'
+                : status?.available
+                  ? '可执行'
+                  : (status?.reason ?? model?.reason ?? '尚未验证')}
+            </span>
+            <Switch
+              label={`启用 ${item.name}`}
+              disabled={busy}
+              checked={item.enabled}
+              onChange={(enabled) => update(item.id, { enabled })}
+            />
+          </span>
+        </summary>
+        <div className={css.detailsBody}>
+          <label className={css.field}>
+            配置名称
+            <input
+              className={css.input}
+              defaultValue={item.name}
+              disabled={busy}
+              onBlur={(e) => {
+                if (e.target.value !== item.name) update(item.id, { name: e.target.value })
+              }}
+            />
+          </label>
+          <div className={css.row}>
+            <Switch
+              label="作为此模型的默认执行组合"
+              disabled={busy || !item.enabled}
+              checked={item.isDefault}
+              onChange={(isDefault) => update(item.id, { isDefault })}
+            />
+            <span className={css.muted}>默认执行组合</span>
+          </div>
+          <label className={css.field}>
+            权限
+            <select
+              className={css.input}
+              value={item.permissionPolicy}
+              disabled={busy}
+              onChange={(e) =>
+                update(item.id, {
+                  permissionPolicy: e.target.value as 'workspace' | 'read-only' | 'full-access',
+                })
+              }
+            >
+              <option value="read-only">只读</option>
+              <option value="workspace">工作区内修改（仍需 Harness 授权）</option>
+              {item.harnessRef === 'minimax-code' && (
+                <option value="full-access">完整访问（使用 MiniMax 官方 CLI 授权）</option>
+              )}
+            </select>
+          </label>
+        </div>
+      </details>
+    )
+  }
   return (
     <div className={css.section} data-opl-panel="catalog" aria-busy={busy || (!catalog && !notice)}>
       {embedded ? null : <h2 className={css.title}>执行组合</h2>}
@@ -44,8 +131,8 @@ export function ExecutionCatalogSection({
       )}
       {!catalog && notice && <Button onClick={retry}>重试</Button>}
       {catalog && (
-        <details className={css.details}>
-          <summary>添加执行组合</summary>
+        <details className={css.details} data-opl-panel="custom-combinations">
+          <summary>自定义执行组合</summary>
           <div className={css.detailsBody}>
             <label className={css.field}>
               名称
@@ -94,91 +181,21 @@ export function ExecutionCatalogSection({
           </div>
         </details>
       )}
-      {catalog?.combinations.map((item) => {
-        const model = catalog.models.find((x) => modelRefKey(x.ref) === modelRefKey(item.modelRef)),
-          harness = catalog.harnesses.find((x) => x.id === item.harnessRef)
-        const status = availability.find((c) => c.id === item.id)
-        return (
-          <details
-            className={css.card}
-            key={item.id}
-            open={editing === item.id}
-            onToggle={(event) => {
-              const open = event.currentTarget.open
-              setEditing((current) => (open ? item.id : current === item.id ? undefined : current))
-            }}
-          >
-            <summary className={css.header}>
-              <span className={css.identity}>
-                <strong>{item.name}</strong>
-                {item.isDefault && item.enabled && (
-                  <span className={css.muted}>此模型的默认执行组合</span>
-                )}
-                <span className={css.muted}>
-                  {displayModelSource(item.modelRef, model?.source)} ·{' '}
-                  {model?.name ?? item.modelRef.model} · {harness?.name ?? item.harnessRef}
-                </span>
-              </span>
-              <span className={css.row}>
-                <span className={css.muted}>
-                  {!item.enabled
-                    ? '已停用'
-                    : status?.available
-                      ? '可执行'
-                      : (status?.reason ?? model?.reason ?? '尚未验证')}
-                </span>
-                <Switch
-                  label={`启用 ${item.name}`}
-                  disabled={busy}
-                  checked={item.enabled}
-                  onChange={(enabled) => update(item.id, { enabled })}
-                />
-              </span>
-            </summary>
-            <div className={css.detailsBody}>
-              <label className={css.field}>
-                配置名称
-                <input
-                  className={css.input}
-                  defaultValue={item.name}
-                  disabled={busy}
-                  onBlur={(e) => {
-                    if (e.target.value !== item.name) update(item.id, { name: e.target.value })
-                  }}
-                />
-              </label>
-              <div className={css.row}>
-                <Switch
-                  label="作为此模型的默认执行组合"
-                  disabled={busy || !item.enabled}
-                  checked={item.isDefault}
-                  onChange={(isDefault) => update(item.id, { isDefault })}
-                />
-                <span className={css.muted}>默认执行组合</span>
-              </div>
-              <label className={css.field}>
-                权限
-                <select
-                  className={css.input}
-                  value={item.permissionPolicy}
-                  disabled={busy}
-                  onChange={(e) =>
-                    update(item.id, {
-                      permissionPolicy: e.target.value as 'workspace' | 'read-only' | 'full-access',
-                    })
-                  }
-                >
-                  <option value="read-only">只读</option>
-                  <option value="workspace">工作区内修改（仍需 Harness 授权）</option>
-                  {item.harnessRef === 'minimax-code' && (
-                    <option value="full-access">完整访问（使用 MiniMax 官方 CLI 授权）</option>
-                  )}
-                </select>
-              </label>
-            </div>
-          </details>
-        )
-      })}
+      {catalog && (
+        <details className={css.details} data-opl-panel="combination-list" open>
+          <summary>执行组合列表</summary>
+          <div className={css.detailsBody}>
+            <section data-opl-panel="official-combinations">
+              <h3>官方组合</h3>
+              {catalog.combinations.filter((item) => item.generated).map(renderCombination)}
+            </section>
+            <section data-opl-panel="custom-combination-list">
+              <h3>自定义组合</h3>
+              {catalog.combinations.filter((item) => !item.generated).map(renderCombination)}
+            </section>
+          </div>
+        </details>
+      )}
     </div>
   )
 }

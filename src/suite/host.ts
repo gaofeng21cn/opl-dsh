@@ -22,7 +22,7 @@ export const inject: string[] = []
 export function apply(ctx: Context, config: Config): void {
   if (process.platform === 'win32') ctx.plugin(gitBash, {})
   ctx.plugin(gateway, structuredClone(config.gateway.get()) as gateway.OplGatewayConfig)
-  ctx.plugin(control, {})
+  ctx.plugin(control, { executionLimits: config.executionLimits })
   ctx.plugin(nativeModelProviders)
   ctx.plugin(GatewayModelsService)
   ctx.plugin(SetupService)

@@ -34,6 +34,7 @@ import type {
   ReviewRequest,
   ReportRequest,
 } from '../../contracts/types.ts'
+import type { ExecutionLimits } from '../contracts/limits.ts'
 declare module '@deepseek-ai/cordis' {
   interface Context {
     oplExecution: ExecutionService
@@ -91,6 +92,18 @@ export class ExecutionService extends TypertRemoteService {
   @Remote('combinations')
   combinations(): Promise<HarnessCatalog['combinations']> {
     return this.execution.combinations()
+  }
+  @Remote('queue-status')
+  queueStatus(request: { sessionId: string }): Promise<{ queued: boolean }> {
+    return this.execution.queueStatus(request.sessionId)
+  }
+  @Remote('execution-limits')
+  executionLimits(): ExecutionLimits {
+    return this.execution.executionLimits()
+  }
+  @Remote('save-execution-limits')
+  saveExecutionLimits(request: ExecutionLimits): Promise<ExecutionLimits> {
+    return this.execution.saveExecutionLimits(request)
   }
   @Remote('sessions')
   sessions(request: HarnessSessionsRequest): Promise<HarnessSessionsPage> {

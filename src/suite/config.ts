@@ -4,8 +4,12 @@ import { Config as AutoReviewConfig } from '../auto-review/host/settings.ts'
 import z from '@deepseek-ai/schemastery'
 import type { Volatile } from '@deepseek-ai/cordis'
 import type { LoginChoice } from '../setup/contracts.ts'
+import { executionLimitsSchema, type ExecutionLimits } from '../execution/contracts/limits.ts'
+export { executionLimitsSchema } from '../execution/contracts/limits.ts'
 export type { LoginChoice } from '../setup/contracts.ts'
 export interface Config {
+  /** Execution deadlines in milliseconds, excluding explicitly surfaced human waits. */
+  executionLimits: ExecutionLimits
   /** Last built-in permission preset selected by the user for future native Sessions. */
   lastPermissionPreset: Volatile<'read-only' | 'workspace-write' | 'danger-full-access'>
   toolAutoReview: Volatile<import('../auto-review/host/settings.ts').Config>
@@ -21,6 +25,7 @@ export interface Config {
   wakeDistro: Volatile<string>
 }
 export const Config = z.object({
+  executionLimits: executionLimitsSchema,
   lastPermissionPreset: z
     .union(['read-only', 'workspace-write', 'danger-full-access'])
     .default('workspace-write')

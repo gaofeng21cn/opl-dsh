@@ -1491,3 +1491,116 @@ describe('generated combination permission policy', () => {
     expect((await restored.snapshot({ sessionId: created.id })).sandbox).toBe('read-only')
   })
 })
+
+it('does not report queue admission for an unrelated conversation', async () => {
+  const { service } = await setup()
+  expect(await service.queueStatus('not-associated')).toEqual({ queued: false })
+})
+
+describe('external execution progress deadlines', () => {
+  it('persists a failed turn when a silent execution exceeds its deadline', async () => {
+    const { service, root, options } = await setup()
+    const session = await start(service, root)
+    service.configureProgressLimits({ firstProgressMs: 1000, idleProgressMs: 1000, totalMs: 5000 })
+    await service.prompt({ sessionId: session.id, text: 'wait', operationId: 'silent-deadline' })
+    const snapshot = await wait(service, session.id)
+    expect(snapshot.state).toBe('failed')
+    expect(snapshot.turns[0]?.error).toContain('等待期限')
+    await service.dispose()
+    const stored = await new HarnessSessionStore(options.home).load()
+    expect(stored.find((record) => record.id === session.id)?.turns[0]).toMatchObject({
+      state: 'failed',
+      error: snapshot.turns[0]?.error,
+    })
+  })
+
+  it('fails after useful output becomes silent', async () => {
+    const { service, root } = await setup()
+    const session = await start(service, root)
+    service.configureProgressLimits({ firstProgressMs: 1000, idleProgressMs: 100, totalMs: 3000 })
+    await service.prompt({
+      sessionId: session.id,
+      text: 'partial-then-wait',
+      operationId: 'idle-deadline',
+    })
+    const snapshot = await wait(service, session.id)
+    expect(snapshot.state).toBe('failed')
+    expect(snapshot.turns[0]?.text).toBe('partial answer')
+    expect(snapshot.turns[0]?.error).toContain('等待期限')
+  })
+
+  it('does not start a deadline while queued behind another execution', async () => {
+    const { service, root } = await setup()
+    const holder = await start(service, root, 'deadline-holder')
+    await service.prompt({ sessionId: holder.id, text: 'wait', operationId: 'hold' })
+    const queued = await start(service, root, 'deadline-queued')
+    service.configureProgressLimits({ firstProgressMs: 100, idleProgressMs: 100, totalMs: 300 })
+    await service.prompt({ sessionId: queued.id, text: 'result', operationId: 'queued-result' })
+    expect((await service.snapshot({ sessionId: queued.id })).state).toBe('queued')
+    await service.cancel({ sessionId: holder.id })
+    expect((await wait(service, queued.id)).state).toBe('completed')
+  })
+
+  it('pauses all deadlines while approval is waiting', async () => {
+    const { service, root } = await setup()
+    const session = await start(service, root)
+    service.configureProgressLimits({ firstProgressMs: 100, idleProgressMs: 100, totalMs: 200 })
+    await service.prompt({
+      sessionId: session.id,
+      text: 'allow-write',
+      operationId: 'approval-pause',
+    })
+    const pending = await wait(service, session.id)
+    expect(pending.state).toBe('waiting_approval')
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    expect((await service.snapshot({ sessionId: session.id })).state).toBe('waiting_approval')
+    await service.answer({
+      sessionId: session.id,
+      approvalId: pending.approvals[0]!.id,
+      optionId: 'yes',
+    })
+    expect((await wait(service, session.id)).state).toBe('completed')
+  })
+
+  it('allows a quiet running tool past idle time but stops it at total time', async () => {
+    const { service, root } = await setup()
+    const session = await start(service, root)
+    service.configureProgressLimits({ firstProgressMs: 1000, idleProgressMs: 1000, totalMs: 4000 })
+    await service.prompt({
+      sessionId: session.id,
+      text: 'tool-in-progress-wait',
+      operationId: 'quiet-tool-total',
+    })
+    await vi.waitFor(async () => {
+      const snapshot = await service.snapshot({ sessionId: session.id })
+      expect(snapshot.turns[0]?.tools).toEqual([
+        expect.objectContaining({ id: 'quiet-tool', status: 'in_progress' }),
+      ])
+    })
+    const snapshot = await wait(service, session.id)
+    expect(snapshot.state).toBe('failed')
+    expect(snapshot.turns[0]?.error).toContain('总时长上限')
+    expect(snapshot.turns[0]?.tools[0]?.status).toBe('in_progress')
+  })
+
+  it('clears the active deadline on manual cancellation', async () => {
+    const { service, root } = await setup()
+    const session = await start(service, root)
+    service.configureProgressLimits({ firstProgressMs: 5000, idleProgressMs: 5000, totalMs: 10000 })
+    await service.prompt({ sessionId: session.id, text: 'wait', operationId: 'manual-deadline' })
+    await vi.waitFor(async () =>
+      expect(await readFile(join(root, 'calls.txt'), 'utf8')).toBe('wait\n'),
+    )
+    const active = (
+      service as unknown as {
+        active: Map<string, { watchdog?: { dispose(): void } }>
+      }
+    ).active.get(session.id)
+    expect(active?.watchdog).toBeDefined()
+    const dispose = vi.spyOn(active!.watchdog!, 'dispose')
+    const snapshot = await service.cancel({ sessionId: session.id })
+    expect(dispose).toHaveBeenCalled()
+    expect(snapshot.state).toBe('cancelled')
+    expect(snapshot.turns[0]?.error).toBeUndefined()
+  })
+})
