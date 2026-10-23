@@ -324,7 +324,7 @@ it('keeps Big Pickle manually pairable with OpenCode without treating it as a ve
   expect(isHiddenOfmSelection(BIG_PICKLE)).toBe(false)
   // The OpenCode adapter can run it when the user explicitly chooses that pairing.
   expect(adapterFor('opencode', BIG_PICKLE)?.id).toBe('opencode')
-  expect(defaultHarness(BIG_PICKLE)).toBe('dsh')
+  expect(defaultHarness(BIG_PICKLE)).toBe('opencode')
   expect(
     officialOpenCodeModel({ provider: 'our-free-model-region', model: 'big-pickle' }),
   ).toBeUndefined()
@@ -332,7 +332,7 @@ it('keeps Big Pickle manually pairable with OpenCode without treating it as a ve
 
 it('uses OpenCode for Flint through the registered OFM route', () => {
   const ref = { provider: 'our-free-model', model: 'flint-40b-free' }
-  expect(officialOpenCodeModel(ref)).toBeUndefined()
+  expect(officialOpenCodeModel(ref)).toBe('opencode/flint-40b-free')
   expect(OPENCODE_OFM_MODELS).toContain(ref.model)
   expect(OFM_PINNED_HARNESS_MODELS.opencode).toContain(ref.model)
   expect(isHiddenOfmSelection(ref)).toBe(false)

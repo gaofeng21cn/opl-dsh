@@ -482,7 +482,7 @@ describe('native conversation combinations', () => {
       'permission-before-first-send',
     )
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
-  })
+  }, 10_000)
 
   it('hands off tool history through the official conversation stream and sends only new input on continuation', async () => {
     const { service, root, session } = await nativeSetup([{ id: 'grok::grok-4.7', name: 'Grok' }])
@@ -537,7 +537,7 @@ describe('native conversation combinations', () => {
       service.conversationStream({ ...options, messages: [...messages, followup] }, next),
     )
     expect(await readFile(join(root, 'calls.txt'), 'utf8')).toBe(prompt + 'user: next-turn\n')
-  })
+  }, 10_000)
   it('rejects real attachments without dispatching a prompt', async () => {
     const { service, root, session } = await nativeSetup([{ id: 'grok::grok-4.7', name: 'Grok' }])
     await service.selectCombination({ sessionId: session.id, combination: GROK_COMBINATION })

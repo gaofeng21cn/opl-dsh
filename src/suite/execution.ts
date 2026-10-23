@@ -62,9 +62,6 @@ export const inject = [
  */
 export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => installPermissionMemory(ctx))
-  const harness = createHarnessService(ctx)
-  harness.configureProgressLimits(config.executionLimits)
-  ctx.provide('oplExternalModelSources', harness.modelSources)
   const ofmOwner = createOfmOwnerApiReader(ctx, config.ofmConnectionTimeoutMs)
   const harness = createHarnessService(ctx, {
     readOfm: () => ofmOwner.read('/summary'),

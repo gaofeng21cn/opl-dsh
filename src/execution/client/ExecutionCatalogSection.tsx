@@ -8,7 +8,6 @@ import type { RemoteCallInput } from '../../shared/client/remote-call.ts'
 import type { TypertRemoteNamespace } from '@deepseek-ai/dsh-typert-protocol'
 import css from '../../shared/client/SettingsSection.module.css'
 import type { ExecutionCall as Call } from '../../shared/client/remote-call.ts'
-import type { CombinationDefinition } from '../../contracts/types.ts'
 export function ExecutionCatalogSection({
   call,
   embedded = false,
@@ -37,6 +36,7 @@ export function ExecutionCatalogSection({
     return (
       <details
         className={css.card}
+        data-opl-combination={item.id}
         key={item.id}
         open={editing === item.id}
         onToggle={(event) => {
@@ -47,6 +47,11 @@ export function ExecutionCatalogSection({
         <summary className={css.header}>
           <span className={css.identity}>
             <strong>{item.name}</strong>
+            {!isOfficialPairing(item.harnessRef, item.modelRef) && (
+              <span className={css.muted} data-opl-custom-combination>
+                自定义
+              </span>
+            )}
             {item.isDefault && item.enabled && (
               <span className={css.muted}>此模型的默认执行组合</span>
             )}
@@ -193,14 +198,29 @@ export function ExecutionCatalogSection({
         <details className={css.details} data-opl-panel="combination-list" open>
           <summary>执行组合列表</summary>
           <div className={css.detailsBody}>
-            <section data-opl-panel="official-combinations">
-              <h3>官方组合</h3>
-              {catalog.combinations.filter((item) => item.generated).map(renderCombination)}
-            </section>
-            <section data-opl-panel="custom-combination-list">
-              <h3>自定义组合</h3>
-              {catalog.combinations.filter((item) => !item.generated).map(renderCombination)}
-            </section>
+            {(() => {
+              const official = catalog.combinations.filter((item) => item.generated)
+              const custom = catalog.combinations.filter((item) => !item.generated)
+              const inactive = catalog.combinations.filter((item) => !item.enabled)
+              return (
+                <>
+                  <section data-opl-panel="official-combinations">
+                    <h3>官方组合</h3>
+                    {official.filter((item) => item.enabled).map(renderCombination)}
+                  </section>
+                  <section data-opl-panel="custom-combination-list">
+                    <h3>自定义组合</h3>
+                    {custom.filter((item) => item.enabled).map(renderCombination)}
+                  </section>
+                  {inactive.length > 0 && (
+                    <details data-opl-inactive-combinations>
+                      <summary>可启用但未启用的组合（{inactive.length}）</summary>
+                      {inactive.map(renderCombination)}
+                    </details>
+                  )}
+                </>
+              )
+            })()}
           </div>
         </details>
       )}
@@ -251,7 +271,7 @@ function CombinationRow({
       <summary className={css.header}>
         <span className={css.identity}>
           <strong>{item.name}</strong>
-          {!item.generated && !isOfficialPairing(item.harnessRef, item.modelRef) && (
+          {!isOfficialPairing(item.harnessRef, item.modelRef) && (
             <span className={css.muted} data-opl-custom-combination>
               自定义
             </span>
