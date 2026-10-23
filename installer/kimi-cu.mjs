@@ -119,6 +119,12 @@ function command(command, args, options = {}) {
   }
 }
 
+function copyBundle(source, destination) {
+  return process.platform === 'darwin'
+    ? command('/usr/bin/ditto', [source, destination])
+    : command('/bin/cp', ['-R', source, destination])
+}
+
 /** Hash a private local archive so an explicit local candidate has one immutable input. */
 function localArchiveDigest(path) {
   if (!existsSync(path)) throw Error('本地 KimiCU 归档不存在')
@@ -350,7 +356,7 @@ export async function installKimiCu({
         const backup = `${appPath}.opl-backup-${String(process.pid)}`
         rmSync(replacement, { recursive: true, force: true })
         rmSync(backup, { recursive: true, force: true })
-        const copied = command('/usr/bin/ditto', [staged, replacement])
+        const copied = copyBundle(staged, replacement)
         if (!copied.ok) throw Error(`KimiCU 暂存复制失败：${copied.stderr.trim()}`)
         try {
           if (existsSync(appPath)) renameSync(appPath, backup)
@@ -435,7 +441,7 @@ export async function installKimiCu({
       const backup = `${appPath}.opl-backup-${String(process.pid)}`
       rmSync(replacement, { recursive: true, force: true })
       rmSync(backup, { recursive: true, force: true })
-      const copied = command('/usr/bin/ditto', [staged, replacement])
+      const copied = copyBundle(staged, replacement)
       if (!copied.ok) throw Error(`KimiCU 暂存复制失败：${copied.stderr.trim()}`)
       try {
         if (existsSync(appPath)) renameSync(appPath, backup)
