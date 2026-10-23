@@ -192,5 +192,5 @@ it('rejects a pending request immediately, ignores late notifications, and ends 
   await new Promise((resolve) => setTimeout(resolve, 60))
   expect(updates).toEqual([])
   expect(child.closed).toBe(true)
-  expect(child['child'].exitCode).not.toBeNull()
+  expect(child['child'].exitCode !== null || child['child'].signalCode !== null).toBe(true)
 })

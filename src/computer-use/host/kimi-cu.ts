@@ -1,6 +1,7 @@
 /** KimiCU stdio MCP bridge for native DSH Agent tools. */
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import os from 'node:os'
 
 /** Fixed executable and MCP arguments verified by the OPL Framework contract. */
 export const KIMI_CU_EXECUTABLE = '/Applications/KimiCU.app/Contents/MacOS/kimi-cu'
@@ -303,7 +304,7 @@ export interface KimiCuProbeOptions {
 export function qualifyKimiCu(options: KimiCuProbeOptions = {}): KimiCuQualification {
   const platform = options.platform ?? process.platform
   const arch = options.arch ?? process.arch
-  const windowsRelease = options.windowsRelease ?? process.env.OS_RELEASE ?? ''
+  const windowsRelease = options.windowsRelease ?? os.release()
   const build = Number(windowsRelease.split('.')[2])
   const windowsVersionKnown = platform === 'win32' && Number.isInteger(build) && build > 0
   const supportedWindowsVersion = windowsVersionKnown && build >= 18362
@@ -321,7 +322,10 @@ export function qualifyKimiCu(options: KimiCuProbeOptions = {}): KimiCuQualifica
     pluginInstalled,
     callable: false,
     tools: [],
-    status: platform === 'win32' && arch === 'x64' && pluginInstalled ? 'eligible-but-no-protocol' : 'unavailable',
+    status:
+      platform === 'win32' && arch === 'x64' && pluginInstalled
+        ? 'eligible-but-no-protocol'
+        : 'unavailable',
     reason,
     installCommand: KIMI_CU_INSTALL_COMMAND,
   }

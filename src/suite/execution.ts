@@ -1,9 +1,6 @@
 import { executionLimitsSchema } from './config.ts'
 import { installNativeProgressGuard } from '../execution/host/native-progress-guard.ts'
 import type { ProgressWatchdogLimits } from '../execution/host/progress-watchdog.ts'
-import { executionLimitsSchema } from './config.ts'
-import { installNativeProgressGuard } from '../execution/host/native-progress-guard.ts'
-import type { ProgressWatchdogLimits } from '../execution/host/progress-watchdog.ts'
 import { installExternalCodex } from '../collaboration/host/external-codex.ts'
 import { installLegacyHarnessChannel } from '../compat/host/legacy-channel.ts'
 import { ExecutionService } from '../execution/host/service.ts'
@@ -65,15 +62,6 @@ export const inject = [
  */
 export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => installPermissionMemory(ctx))
-<<<<<<< ours
-||||||| base
-  const harness = createHarnessService(ctx)
-  ctx.provide('oplExternalModelSources', harness.modelSources)
-=======
-  const harness = createHarnessService(ctx)
-  harness.configureProgressLimits(config.executionLimits)
-  ctx.provide('oplExternalModelSources', harness.modelSources)
->>>>>>> theirs
   const ofmOwner = createOfmOwnerApiReader(ctx, config.ofmConnectionTimeoutMs)
   const harness = createHarnessService(ctx, {
     readOfm: () => ofmOwner.read('/summary'),
