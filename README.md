@@ -55,7 +55,7 @@ Windows · x64，在 PowerShell 中运行：
 - **分组模型路由**：按账号权限自动管理各分组密钥，并保留每个模型的明确分组归属。模型归属决定实际协议：DeepSeek 模型通过官方 DeepSeek adapter 使用 Messages，GPT 等 OpenAI 协议模型通过官方 `dsh-llm-pi-ai` 协议库使用 OpenAI。两组不会因为请求失败而互相回退。模型协议与执行引擎分别管理：DSH 组合由官方 DSH 执行工具；Codex、Claude、OpenCode 等外部组合由所选 Harness 执行工具，结果回到同一 DSH 会话。
 - **Codex ↔ DSH 协作**：自动安装 `opl-dsh-official` Skill，可启动 DSH、连续派发任务、等待结果、读取持久化反馈。设置中可修复 Skill、调整自动启动和可选通知桥。
 - **任务系统通知**：DSH 在后台时，原生与已接入外部 Harness 的运行结束或失败会发送系统通知。**设置 → 通用设置 → 系统通知** 提供开关和测试按钮；通知只显示对话标题与结束状态，手动停止也属于运行结束。详见[任务系统通知](docs/desktop-notifications.md)。
-- **编辑消息**：原生 DSH 对话选择消息后，在正常输入框修改并发送，直接替换原对话中的该消息及后续回复；首条消息也保留同一对话。取消保留历史，磁盘文件不回退。外部 Harness 隐藏入口，分叉沿用官方菜单。详见[编辑消息](docs/stop-edit.md)。
+- **编辑消息**：原生 DSH 对话的可编辑用户消息在右下角提供与“复制”并列的编辑图标；点击后原文回到正常输入框，修改并发送会替换原对话中的该消息及后续回复，首条消息也保留同一对话。取消保留历史，磁盘文件不回退。外部 Harness 隐藏入口，分叉沿用官方菜单。详见[编辑消息](docs/stop-edit.md)。
 - **对话空白区域**：隐藏对话两侧的隐形宽度拖动区，空白处不显示横向缩放光标；侧栏与面板分隔条仍可拖动。
 - **Auto Review 工具审批**：默认关闭；DSH 与 ZCode 默认使用专用 codex-auto-review，也可显式选择独立审查模型。会话选择 Auto 后送审，失败不执行工具，保存审核输入与结果。Codex、Claude 使用官方审核接口。入口位于“执行与组合”页，详见[Auto Review 工具审批](docs/auto-review.md)。
 - **BambooNode StartLux Auto Review**：可在模型供应商中配置 Bamboo API Key，作为可选的无工具 Auto Review 路线。Key 仅保存到 Windows Credential Manager；低风险允许、高风险拒绝和不完整结果均按固定安全策略处理。详见[BambooNode StartLux Auto Review](docs/bamboo-startlux-auto-review.md)。

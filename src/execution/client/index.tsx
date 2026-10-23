@@ -14,7 +14,9 @@ import { LiveTranscriptRow } from './LiveTranscriptRow.tsx'
 import { liveTranscriptDefinition, LIVE_TRANSCRIPT_KIND } from './live-transcript.ts'
 import { DeliverAssetsRow } from './DeliverAssetsRow.tsx'
 import { deliverAssetsDefinition, DELIVER_ASSETS_KIND } from './deliver-assets.ts'
-import { MessageEditControl, type EditSelection } from './MessageEditControl.tsx'
+import { MessageEditControl } from './MessageEditControl.tsx'
+import { MessageEditSession, type EditSelection } from './message-edit-session.ts'
+import { MessageEditUserRow } from './MessageEditUserRow.tsx'
 import {
   installMessageEditViews,
   installMessageEditNavigation,
@@ -120,6 +122,18 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
     string,
     { selection: () => EditSelection | undefined; accepted: () => void }
   >()
+  const messageEdits = new Map<string, MessageEditSession>()
+  const messageEditFor = (sessionId: string) => {
+    const current = messageEdits.get(sessionId)
+    if (current) return current
+    const created = new MessageEditSession(sessionId, call)
+    messageEdits.set(sessionId, created)
+    editors.set(sessionId, {
+      selection: () => created.getSnapshot().selection,
+      accepted: () => created.accepted(),
+    })
+    return created
+  }
   const remote = ctx.remote.session
   ctx.effect(() => {
     let owner: object | null = remote
@@ -156,17 +170,6 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
         Object.defineProperty(owner!, 'prompt', previous)
     }
   })
-  const bindPrompt = (
-    id: string,
-    selection: () => EditSelection | undefined,
-    accepted: () => void,
-  ) => {
-    const editor = { selection, accepted }
-    editors.set(id, editor)
-    return () => {
-      if (editors.get(id) === editor) editors.delete(id)
-    }
-  }
   const sessionChangesFor = (sessionId: string, listener: () => void) =>
     sessionChanges(ctx, sessionId, listener)
   ctx.effect(() => ctx.uiConversation.events.register(liveTranscriptDefinition))
@@ -177,6 +180,22 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
       LiveTranscriptRow,
     ),
   )
+  ctx.slots.inject('conversation.chat.node', () => {
+    const dispose = ctx.slots.register(
+      {
+        name: 'conversation.chat.node',
+        key: 'user',
+        priority: -1,
+        locale: 'chat',
+        inject: (sessionId) => {
+          const edit = messageEditFor(sessionId)
+          return { edit }
+        },
+      },
+      MessageEditUserRow,
+    )
+    return dispose
+  })
   ctx.slots.inject('conversation.chat.node', () =>
     ctx.slots.register(
       { name: 'conversation.chat.node', key: DELIVER_ASSETS_KIND, locale: 'chat' },
@@ -211,10 +230,10 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
       {
         name: 'conversation.input.activity',
         inject: (sessionId) => ({
+          session: messageEditFor(sessionId),
           sessionId,
           call,
           subscribeSession: sessionChangesFor,
-          bindPrompt,
         }),
       },
       MessageEditControl,
