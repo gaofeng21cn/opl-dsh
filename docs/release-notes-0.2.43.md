@@ -7,7 +7,7 @@
 - 自动组合改为来自维护的“Harness + 官配模型”表：DSH 只配 DeepSeek 自家模型，Codex、Claude、Grok Build、MiniMax、ZCode、Kimi、MiMo、Poolside、StepCode、Muse 只在对应厂商模型就绪时自动生成组合。
 - OpenCode、Kilo、Pi 没有自己的模型，官配列表为空，不再自动生成组合；其他模型与执行引擎仍可在“添加执行组合”中自由配对，并明确显示为“自定义”。
 - 清理旧版遗留的通用执行器自动组合和跨厂商自动组合；用户自己创建的同名组合保留，手动停用状态也不会被自动恢复。
-- MiniMax、MiMo、StepCode、OpenCode、Kilo、Pi 和 Kimi Code 在未安装时提供官方安装入口；安装结束后重新检测可执行文件和版本，首次检测到的真实路径会保存。
+- MiniMax、MiMo、StepCode、OpenCode、Kilo 和 Pi 在未安装时提供官方安装入口；安装结束后重新检测可执行文件和版本，首次检测到的真实路径会保存。Kimi Code 原有的 npm 安装包入口继续保留。
 - MiniMax 安装后仍需运行官方 `mcode login`；OPL 不代替登录，也不读取账号凭据。未安装或未登录时，对应组合保持停用。
 - “可启用但当前停用”的组合继续折叠，未就绪项不堆在主列表中。
 

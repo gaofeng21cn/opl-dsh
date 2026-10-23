@@ -468,10 +468,15 @@ try {
   )
   externalCatalog.harnesses.find((item) => item.id === 'minimax-code').command = minimaxWrapper
   await harness('save-catalog', { catalog: externalCatalog })
+  const preparedCatalog = await harness('catalog')
+  const minimaxCombination = preparedCatalog.combinations.find(
+    (item) => item.harnessRef === 'minimax-code',
+  )
+  assert(minimaxCombination, 'MiniMax official combination is missing after CLI discovery')
   let history = await harness('snapshot', { sessionId: 'harness-qualification-history' })
   assert.equal(history.nativeSessionId, 'session-harness-qualification-history')
   const fullAccess = await harness('start', {
-    combination: 'minimax-code/MiniMax-M3',
+    combination: minimaxCombination.id,
     cwd: project,
     taskId: 'qualification-full-access-permissions',
     origin: { kind: 'codex', sessionId: 'qualification-permission-review' },
