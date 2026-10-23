@@ -816,12 +816,15 @@ describe('native conversation combinations', () => {
     expect((await restored.modelSelection(session.id)).combination).toBeUndefined()
   })
   it.each(['read-only', 'workspace-write', 'danger-full-access'])(
-    'preserves the selected %s preset when switching to a generated native combination',
+    'preserves the selected %s preset when switching to the Grok official combination',
     async (mode) => {
       const { service, ctx, session, options } = await nativeSetup([
         { id: 'deepseek-flash', name: 'DeepSeek' },
-        { id: 'codex::gpt-test-model', name: 'GPT Test Model' },
+        { id: 'grok::grok-4.7', name: 'Grok 4.7' },
       ])
+      useNodeAcpFixtureAgent()
+      const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
+      vi.spyOn(adapterFor('grok-build', ref)!, 'available').mockResolvedValue({ available: true })
       const setPermission = vi.fn()
       ctx.get = ((name: string) =>
         name === 'permissionPresets' ? { set: setPermission } : undefined) as typeof ctx.get
@@ -830,10 +833,8 @@ describe('native conversation combinations', () => {
         ctx: { get: () => ({ resolve: () => ({ mode }) }) },
       })) as typeof ctx.agents.get
       const catalog = await service.executionCatalog()
-      const combination = catalog.combinations.find(
-        (item) => item.generated && item.modelRef.model === 'codex::gpt-test-model',
-      )!
-      expect(combination.permissionPolicy).toBe('read-only')
+      const combination = catalog.combinations.find((item) => item.id === GROK_COMBINATION)!
+      expect(combination.permissionPolicy).toBe('workspace')
       await service.selectCombination({ sessionId: session.id, combination: combination.id })
       expect(setPermission).not.toHaveBeenCalled()
       expect(session.append).not.toHaveBeenCalled()
