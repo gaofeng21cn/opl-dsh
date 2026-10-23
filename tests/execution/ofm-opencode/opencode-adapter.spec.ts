@@ -384,7 +384,7 @@ describe('OpenCode 启动参数与环境', () => {
   it('以 acp 子命令和真实 cwd 启动，中文加空格目录逐字保留', async () => {
     const dir = await workspace('opl-opencode-launch-')
     const started = openCodeLaunch(process.execPath, dir)
-    expect(started.args.slice(-3)).toEqual(['acp', '--cwd', dir])
+    expect(started.args.slice(-4)).toEqual(['acp', '--print-logs', '--cwd', dir])
     expect(started.args).toContain(dir)
     // 目录确实存在且名字没有被改写。
     await expect(access(dir)).resolves.toBeUndefined()

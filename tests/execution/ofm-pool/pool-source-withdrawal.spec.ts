@@ -102,7 +102,7 @@ describe('source withdrawn while the shell preflight is awaiting', () => {
     await entered
     gate.release!()
     const launch = await pending
-    expect(launch.args).toContain('--settings')
+    expect(launch.args.some((arg) => arg.startsWith('--settings='))).toBe(true)
     expect(launch.env.POOLSIDE_STANDALONE_MODEL).toBe(POOL_LAGUNA_S)
   })
 

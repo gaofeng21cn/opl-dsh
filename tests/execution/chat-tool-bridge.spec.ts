@@ -1,3 +1,4 @@
+import { openCodeStreamFailure } from '../../src/execution/host/adapters/opencode/stream-failure.ts'
 import { build } from 'esbuild'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
@@ -250,6 +251,95 @@ it.skipIf(!process.env.OPENCODE_OFFICIAL_BINARY).each([403, 429])(
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
     expect(requests).toBe(1)
+  },
+  90000,
+)
+
+it.skipIf(!process.env.OPENCODE_OFFICIAL_BINARY).each([429])(
+  'official OpenCode stderr terminates a direct prompt on HTTP %s',
+  async (status) => {
+    const home = await mkdtemp(join(root, 'official-'))
+    const profile = openCodeProfileRoots(home)
+    for (const directory of Object.values(profile)) await mkdir(directory, { recursive: true })
+    let requests = 0
+    const server = createServer((req, res) => {
+      requests++
+      req.resume()
+      res.writeHead(status, { 'content-type': 'application/json' }).flushHeaders()
+      res.end(
+        JSON.stringify({
+          error: { message: 'Free usage limit reached.', type: 'rate_limit_error' },
+        }),
+      )
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw Error('Missing fixture port')
+    const acp = new AcpProcess(
+      process.env.OPENCODE_OFFICIAL_BINARY!,
+      ['acp', '--print-logs', '--cwd', home],
+      home,
+      {
+        SystemRoot: process.env.SystemRoot,
+        PATH: process.env.PATH,
+        TEMP: home,
+        TMP: home,
+        ...profile,
+        OPENCODE_DISABLE_AUTOUPDATE: '1',
+        OPL_CHAT_CLI: 'opencode',
+        OPL_CHAT_COMMAND: process.env.OPENCODE_OFFICIAL_BINARY!,
+        OPL_CHAT_ARGS: JSON.stringify(['acp', '--cwd', home]),
+        OPENCODE_CONFIG_CONTENT: JSON.stringify({
+          provider: {
+            oplopencode: {
+              npm: '@ai-sdk/openai-compatible',
+              options: { baseURL: `http://127.0.0.1:${address.port}/v1`, apiKey: 'owned-key' },
+              models: { 'flint-40b-free': { name: 'flint-40b-free' } },
+            },
+          },
+        }),
+      },
+      () => {},
+      () => {},
+      () => {},
+    )
+    try {
+      await acp.request(
+        'initialize',
+        {
+          protocolVersion: 1,
+          clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false },
+          clientInfo: { name: 'owned-error-probe', version: '1' },
+        },
+        30000,
+      )
+      const session = (await acp.request('session/new', { cwd: home, mcpServers: [] }, 30000)) as {
+        sessionId: string
+      }
+      await acp.request('session/set_config_option', {
+        sessionId: session.sessionId,
+        configId: 'model',
+        value: 'oplopencode/flint-40b-free',
+      })
+      const failure = await acp
+        .request(
+          'session/prompt',
+          {
+            sessionId: session.sessionId,
+            prompt: [{ type: 'text', text: 'Reply OK without tools.' }],
+          },
+          15000,
+          { stderrFailure: (line) => openCodeStreamFailure(line, session.sessionId) },
+        )
+        .catch((error: unknown) => error)
+      expect(String(failure)).toContain('额度已达上限')
+      expect(String(failure)).not.toMatch(/synthetic-private-key|请求超时/)
+    } finally {
+      await acp.dispose()
+      server.closeAllConnections()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+    expect(requests).toBeGreaterThan(0)
   },
   90000,
 )

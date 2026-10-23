@@ -58,6 +58,20 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         sessionUpdate: 'session_info_update',
         title: text.replace(/s+/g, ' ').slice(0, 200),
       })
+    if (text === 'tool-in-progress-wait') {
+      update({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'quiet-tool',
+        title: 'Long running tool',
+        kind: 'execute',
+        status: 'in_progress',
+      })
+      return
+    }
+    if (text === 'partial-then-wait') {
+      chunk('partial answer')
+      return
+    }
     if (text === 'wait' || text === 'wait-end-on-cancel') {
       completeOnCancel = text === 'wait-end-on-cancel'
       if (completeOnCancel) chunk('partial answer')

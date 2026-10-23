@@ -1,3 +1,9 @@
+import { executionLimitsSchema } from './config.ts'
+import { installNativeProgressGuard } from '../execution/host/native-progress-guard.ts'
+import type { ProgressWatchdogLimits } from '../execution/host/progress-watchdog.ts'
+import { executionLimitsSchema } from './config.ts'
+import { installNativeProgressGuard } from '../execution/host/native-progress-guard.ts'
+import type { ProgressWatchdogLimits } from '../execution/host/progress-watchdog.ts'
 import { installExternalCodex } from '../collaboration/host/external-codex.ts'
 import { installLegacyHarnessChannel } from '../compat/host/legacy-channel.ts'
 import { ExecutionService } from '../execution/host/service.ts'
@@ -29,9 +35,11 @@ import {
 import z from '@deepseek-ai/schemastery'
 
 export interface Config {
+  executionLimits: ProgressWatchdogLimits
   ofmConnectionTimeoutMs: number
 }
 export const Config = z.object({
+  executionLimits: executionLimitsSchema,
   ofmConnectionTimeoutMs: z.number().step(1).min(100).max(120_000).default(10_000),
 })
 
@@ -57,10 +65,20 @@ export const inject = [
  */
 export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => installPermissionMemory(ctx))
+<<<<<<< ours
+||||||| base
+  const harness = createHarnessService(ctx)
+  ctx.provide('oplExternalModelSources', harness.modelSources)
+=======
+  const harness = createHarnessService(ctx)
+  harness.configureProgressLimits(config.executionLimits)
+  ctx.provide('oplExternalModelSources', harness.modelSources)
+>>>>>>> theirs
   const ofmOwner = createOfmOwnerApiReader(ctx, config.ofmConnectionTimeoutMs)
   const harness = createHarnessService(ctx, {
     readOfm: () => ofmOwner.read('/summary'),
   })
+  harness.configureProgressLimits(config.executionLimits)
   ctx.provide('oplExternalModelSources', harness.modelSources)
   applyOfmModelSource(ctx, {
     providers: [OFM_PROVIDER],
@@ -113,6 +131,16 @@ export function apply(ctx: Context, config: Config): void {
       : { ...request, reasoningEffort: ReasoningEffortId(effort) }
   })
   ctx.on('llm/stream', (options, next) => harness.conversationStream(options, next))
+  installNativeProgressGuard(
+    ctx,
+    () => harness.executionLimits(),
+    (options) => !options.purpose,
+  )
+  installNativeProgressGuard(
+    ctx,
+    () => harness.executionLimits(),
+    (options) => !options.purpose,
+  )
   // Register the official MiniMax Code account models through the public LLM extension
   // point. Without this the two models exist in the execution catalog but the official
   // session controller cannot list or select them, so no message would ever route.

@@ -61,3 +61,34 @@ it('does not reflect arbitrary thrown errors through the ACP bridge', () => {
     message: '官方 Harness 调用未完成',
   })
 })
+
+it('preserves bounded ZCode provider cause facts without raw messages', () => {
+  const error = new HarnessReportedError(
+    'zcode',
+    {
+      message: 'private',
+      cause: { context: { providerCode: 'NO_PROGRESS', responseStatus: 200 }, message: 'private' },
+    },
+    'failed',
+  )
+  expect(error.details.errorName).toBe('NO_PROGRESS')
+  expect(error.details.httpStatus).toBeUndefined()
+  expect(JSON.stringify(bridgeFailure(error))).not.toContain('private')
+})
+
+it('recognizes the flattened official ZCode no-progress diagnostic without echoing it', () => {
+  const error = new HarnessReportedError(
+    'zcode',
+    {
+      type: 'unknown_error',
+      code: 'UNKNOWN_ERROR',
+      attribution: { providerErrorCode: 'NO_PROGRESS', statusCode: 200 },
+      underlyingErrorMessage:
+        'EAC returned no text, reasoning or tool progress for 60s; the request was stopped and will not be retried automatically (phase=reading_sse, status=200, frames=0, invalidJsonFrames=0)',
+    },
+    'failed',
+  )
+  expect(error.details.errorName).toBe('NO_PROGRESS')
+  expect(error.details.httpStatus).toBeUndefined()
+  expect(safeFailureDetails({ underlyingErrorMessage: 'private NO_PROGRESS secret' })).toEqual({})
+})
