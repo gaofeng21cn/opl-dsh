@@ -304,6 +304,7 @@ export class HarnessService {
       command?: string
       prefix?: string[]
       resolveKey?: () => Promise<string | undefined>
+      readOfm?: () => Promise<unknown>
     } = {},
     private readonly conversations?: NativeHarnessConversations,
   ) {
@@ -311,8 +312,11 @@ export class HarnessService {
     this.modelSources = new ExternalModelSources(ctx, () => this.events.emit('catalog'))
     this.sessionStore = new HarnessSessionStore(this.directory)
     this.catalogStore = new ExecutionCatalogStore(this.directory)
-    this.modelResolver = new ExecutionModelResolver(ctx, this.catalogStore, (ref) =>
-      this.probeExternalModel(ref),
+    this.modelResolver = new ExecutionModelResolver(
+      ctx,
+      this.catalogStore,
+      (ref) => this.probeExternalModel(ref),
+      options.readOfm,
     )
     this.events.setMaxListeners(100)
     this.stopEditIntents = new StopEditIntentStore(this.directory)
@@ -592,7 +596,7 @@ export class HarnessService {
           throw Error(
             `已下载 ${result.expectedVersion}，但当前启动入口仍运行 ${fresh.version}；请修复原安装器的启动入口后重试`,
           )
-        if (!item.installed && fresh.path && ['codex', 'claude'].includes(id)) {
+        if (!item.installed && fresh.path) {
           const latest = await this.catalogStore.get()
           latest.harnesses = latest.harnesses.map((h) =>
             h.id === id && fresh.path ? { ...h, command: fresh.path } : h,
@@ -619,7 +623,9 @@ export class HarnessService {
     this.maintenanceJobs.set(id, job)
     return { ...state }
   }
-  async combinations(): Promise<HarnessCatalog['combinations']> {
+  async combinations(
+    request: { includeDisabled?: boolean } = {},
+  ): Promise<HarnessCatalog['combinations']> {
     const catalog = await this.executionCatalog()
     const availability = new Map<string, { available: boolean; reason?: string }>()
     const probes = new Map<HarnessAdapter, Promise<{ available: boolean; reason?: string }>>()
@@ -659,7 +665,10 @@ export class HarnessService {
         availability.set(id, await probe)
       }),
     )
-    return catalogView(catalog, availability)
+    // Settings opts in to disabled rows so it can collapse only the ones that
+    // are genuinely ready to enable. Model selection and delegation keep the
+    // established enabled-only view.
+    return catalogView(catalog, availability, request.includeDisabled === true)
   }
   /** Legacy external callers may still request full snapshots. UI uses pages. */
   async list(): Promise<HarnessCatalog> {
@@ -3994,5 +4003,7 @@ export class HarnessService {
     await this.messageEditStore.drain()
   }
 }
-export const createHarnessService = (ctx: Context) =>
-  new HarnessService(ctx, {}, new NativeHarnessConversations(ctx))
+export const createHarnessService = (
+  ctx: Context,
+  options: { readOfm?: () => Promise<unknown> } = {},
+) => new HarnessService(ctx, options, new NativeHarnessConversations(ctx))

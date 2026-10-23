@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { TypertRemoteNamespace } from '@deepseek-ai/dsh-typert-protocol'
 import { modelRefKey } from '../contracts/catalog.ts'
 import { safeFailureMessage } from './proxy-draft.ts'
 import type {
@@ -6,7 +7,7 @@ import type {
   CombinationDefinition,
   HarnessCatalog,
 } from '../../contracts/types.ts'
-import type { ExecutionCall } from '../../shared/client/remote-call.ts'
+import type { RemoteCallInput } from '../../shared/client/remote-call.ts'
 /**
  * The catalog is one document, so a save is all-or-nothing. `blocked` is kept apart
  * from `failed`: a save that never ran because another one was in flight must not
@@ -16,7 +17,7 @@ export type SaveResult =
   | { status: 'saved'; catalog: ExecutionCatalog }
   | { status: 'failed'; message: string }
   | { status: 'blocked' }
-export function useExecutionCatalog(call: ExecutionCall) {
+export function useExecutionCatalog(call: RemoteCallInput<TypertRemoteNamespace<'oplExecution'>>) {
   const [catalog, setCatalog] = useState<ExecutionCatalog>()
   const [availability, setAvailability] = useState<HarnessCatalog['combinations']>([])
   const [busy, setBusy] = useState(false),
@@ -32,7 +33,10 @@ export function useExecutionCatalog(call: ExecutionCall) {
     void (async () => {
       for (let attempt = 0; attempt < 3 && !cancelled; attempt++) {
         try {
-          const [next, combinations] = await Promise.all([call('catalog'), call('combinations')])
+          const [next, combinations] = await Promise.all([
+            call('catalog'),
+            call('combinations', { includeDisabled: true }),
+          ])
           if (!cancelled) {
             setCatalog(next)
             setAvailability(combinations)
@@ -65,7 +69,7 @@ export function useExecutionCatalog(call: ExecutionCall) {
       const saved = await operation()
       if (mounted.current) setCatalog(saved)
       try {
-        const combinations = await call('combinations')
+        const combinations = await call('combinations', { includeDisabled: true })
         if (mounted.current) {
           setAvailability(combinations)
           setNotice('已保存，新的选择使用此配置。')
@@ -92,7 +96,13 @@ export function useExecutionCatalog(call: ExecutionCall) {
       ...catalog,
       combinations: catalog.combinations.map((item) =>
         item.id === id
-          ? { ...item, ...patch, generated: false }
+          ? {
+              ...item,
+              ...patch,
+              generated: false,
+              autoEnabled: false,
+              autoEnabledDisabled: true,
+            }
           : patch.isDefault && modelRefKey(item.modelRef) === modelRefKey(target.modelRef)
             ? { ...item, isDefault: false }
             : item,
@@ -115,6 +125,8 @@ export function useExecutionCatalog(call: ExecutionCall) {
           permissionPolicy: 'read-only',
           isDefault: false,
           enabled: true,
+          autoEnabled: false,
+          autoEnabledDisabled: true,
         },
       ],
     })

@@ -1,5 +1,6 @@
 import { installSkill, verifySkill } from './skill-install.mjs'
 import { isLocalCandidateInstall } from './update.mjs'
+import { installKimiCu } from './kimi-cu.mjs'
 /** Install OPL-owned files into the official DSH profile, then launch the official app. */
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync } from 'node:fs'
@@ -196,6 +197,10 @@ foreach ($folder in @('Programs', 'Desktop')) {
   }
 }
 const skillDir = installSkill({ executable, home, launcher, root, release, codexHome })
+const computerUse = await installKimiCu({
+  suiteRoot: root,
+  log: (message) => process.stdout.write(`${message}\n`),
+})
 const resources = join(app, process.platform === 'win32' ? 'resources' : 'Contents/Resources')
 const manifestPath = join(resources, 'app.asar/package.json')
 const manifest = spawnSync(
@@ -227,6 +232,7 @@ const installation = {
   launcher,
   compatibilityLauncher,
   skillDir,
+  computerUse,
   installedAt: new Date().toISOString(),
 }
 mkdirSync(join(home, 'opl-dsh'), { recursive: true, mode: 0o700 })
@@ -239,6 +245,10 @@ writeFileSync(
   { mode: 0o600 },
 )
 console.log('官方桌面和 OPL 增强已安装。Codex Skill：opl-dsh-official。')
+if (process.platform === 'darwin' && computerUse.state === 'installed')
+  console.log('KimiCU Computer Use 已安装；首次使用请在系统设置中授予辅助功能和屏幕录制权限。')
+else if (process.platform === 'darwin' && computerUse.state === 'deferred')
+  console.log('KimiCU Computer Use 未完成安装；DSH 其他功能可继续使用，详情见安装回执。')
 if (!flags.includes('--no-launch')) {
   // Same entry point as the desktop shortcut and the Skill: launch.vbs sets
   // ELECTRON_RUN_AS_NODE and setup.mjs receives home/root/app as argv, so the

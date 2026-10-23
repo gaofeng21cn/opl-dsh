@@ -439,6 +439,8 @@ describe('Muse Bash tool: MCP protocol surface', () => {
       )
       const listed = await call('tools/list')
       expect(listed.result.tools).toHaveLength(1)
+      // stdout RPC completion does not order delivery on the separate stderr pipe.
+      await waitFor(async () => /没有对应的运行中调用/.test(stderr.join('')))
       expect(stderr.join('')).toMatch(/没有对应的运行中调用/)
     } finally {
       child.kill()

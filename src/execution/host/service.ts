@@ -90,8 +90,8 @@ export class ExecutionService extends TypertRemoteService {
     return this.execution.list()
   }
   @Remote('combinations')
-  combinations(): Promise<HarnessCatalog['combinations']> {
-    return this.execution.combinations()
+  combinations(request: { includeDisabled?: boolean }): Promise<HarnessCatalog['combinations']> {
+    return this.execution.combinations(request)
   }
   @Remote('queue-status')
   queueStatus(request: { sessionId: string }): Promise<{ queued: boolean }> {

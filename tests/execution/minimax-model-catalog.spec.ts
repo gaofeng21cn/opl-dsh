@@ -368,6 +368,7 @@ describe('MiniMax Code execution catalog wiring', () => {
         combinations.some((item) => item.id.startsWith('auto:')),
         model,
       ).toBe(false)
+      expect(combinations[0]).toMatchObject({ enabled: false })
     }
   })
 

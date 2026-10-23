@@ -393,6 +393,21 @@ export async function verifyDesktopClient(
         process.platform === 'win32' ? 280 : 80,
       )
       result.settingsSlots.push('auto-review')
+      // First-run setup can advance opl-suite settings after this panel mounts.
+      // Read the current Host revision before editing; keep the CAS guard
+      // rejecting stale writes instead of bypassing it in the qualification.
+      await pipe.evaluate(
+        session,
+        `new Promise((resolve,reject) => { const refresh=document.querySelector('[data-opl-auto-review-refresh]'); if (!refresh || refresh.disabled) {reject(new Error('Auto Review read is unavailable'));return}; refresh.click(); requestAnimationFrame(()=>requestAnimationFrame(resolve)) })`,
+      )
+      await waitFor(
+        `(() => {const panel=document.querySelector('[data-opl-panel="auto-review"]');const refresh=document.querySelector('[data-opl-auto-review-refresh]');return Boolean(panel && panel.getAttribute('aria-busy')!=='true' && refresh && !refresh.disabled && document.querySelector('[data-opl-auto-review-revision]')?.dataset.oplAutoReviewRevision && !document.querySelector('[data-opl-auto-review-stale],[data-opl-auto-review-uncertain]'))})()`,
+        '工具审批 Host 状态未重新读取',
+      )
+      result.autoReviewBaselineRevision = await pipe.evaluate(
+        session,
+        `document.querySelector('[data-opl-auto-review-revision]').dataset.oplAutoReviewRevision`,
+      )
       await waitFor(
         `(() => { const radio=document.querySelector('input[name="opl-auto-review-route"][value="decision"]'); if (!radio || radio.disabled) return false; radio.click(); return true })()`,
         '决策模型选项未就绪',

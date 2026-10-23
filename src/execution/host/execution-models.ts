@@ -17,6 +17,7 @@ import {
 } from '../contracts/catalog.ts'
 import { ExecutionCatalogStore, type ExecutionCatalog } from './catalog.ts'
 import { defaultHarness } from './adapters/index.ts'
+import { isOfficialPairing, officialHarnessFor } from '../contracts/official-harnesses.ts'
 import { HUAWEI_ZCODE_MODEL, HUAWEI_ZCODE_COMBINATION } from './adapters/zcode-models.ts'
 import {
   minimaxCodeCombinations,
@@ -26,6 +27,7 @@ import {
 } from './adapters/minimax.ts'
 import { isHiddenOfmSelection, officialOpenCodeModel } from './ofm-source/selection-policy.ts'
 import { OFM_PROVIDERS } from './ofm-source/provider.ts'
+import { ofmModelReadiness, type OfmModelReadiness } from './ofm-source/readiness.ts'
 import { BAMBOO_STARTLUX_MODEL } from './adapters/bamboo.ts'
 import { JEV_DECISION_MODEL, JEV_TYPESAFE_MODEL } from './adapters/jev.ts'
 export class ExecutionModelResolver {
@@ -40,6 +42,7 @@ export class ExecutionModelResolver {
     private readonly probeExternal?: (
       ref: ModelRef,
     ) => Promise<{ available: boolean; reason?: string }>,
+    private readonly readOfm?: () => Promise<unknown>,
   ) {}
   async resolve(): Promise<ExecutionCatalog> {
     let catalog = await this.store.get()
@@ -50,15 +53,12 @@ export class ExecutionModelResolver {
     const legacyDefault = catalog.combinations.find(
       (item) => item.id === DSH_COMBINATION && item.name === 'DeepSeek + DSH',
     )
-    // An automatic row is generated per model for the default Harness of that model.
-    // A persisted `auto:` row whose Harness no longer matches the current default is a
-    // stale copy (for example Big Pickle's old `auto:["our-free-model","big-pickle"]`
-    // DSH combination, generated when it was still treated as a DSH-only lane). Rows the
+    // An automatic row is generated only for a model/harness pair in the shared official
+    // pairing table. A persisted `auto:` row whose pair is no longer official is a stale
+    // copy (for example a generic OpenCode lane previously generated for DSH). Rows the
     // user created carry their own id, so they are never selected here.
     const staleAutomatic = (item: CombinationDefinition) =>
-      item.id.startsWith('auto:') &&
-      OFM_PROVIDERS.includes(item.modelRef.provider) &&
-      item.harnessRef !== defaultHarness(item.modelRef)
+      item.id.startsWith('auto:') && !isOfficialPairing(item.harnessRef, item.modelRef)
     if (
       retired.length ||
       legacyDefault ||
@@ -84,6 +84,23 @@ export class ExecutionModelResolver {
         this.probeExternal?.(ref) ??
         Promise.resolve({ available: false, reason: '外部 Harness 未就绪' })
       externalAvailability.set(model, pending)
+      return pending
+    }
+    let ofmSummary: Promise<unknown> | undefined
+    const ofmAvailability = new Map<string, Promise<OfmModelReadiness>>()
+    const probeOfm = (ref: ModelRef) => {
+      const model = modelRefKey(ref)
+      const existing = ofmAvailability.get(model)
+      if (existing) return existing
+      const pending: Promise<OfmModelReadiness> =
+        this.readOfm === undefined
+          ? Promise.resolve({ available: true })
+          : (ofmSummary ??= this.readOfm().catch(() => undefined)).then((summary) =>
+              summary === undefined
+                ? { available: false, reason: 'OFM 状态读取失败，对应模型尚未确认启用' }
+                : ofmModelReadiness(summary, ref, defaultHarness(ref) !== 'dsh'),
+            )
+      ofmAvailability.set(model, pending)
       return pending
     }
     const providerModels = await Promise.all(
@@ -144,6 +161,7 @@ export class ExecutionModelResolver {
                 provider.id === MINIMAX_CODE_PROVIDER || provider.id === HUAWEI_ZCODE_MODEL.provider
                   ? probeExternal(ref)
                   : undefined
+              const ofm = OFM_PROVIDERS.includes(provider.id) ? probeOfm(ref) : undefined
               const source =
                 provider.id === 'deepseek-account'
                   ? 'DeepSeek 官方'
@@ -151,7 +169,7 @@ export class ExecutionModelResolver {
                     ? 'OPL Gateway'
                     : provider.name
               return [
-                Promise.resolve(external).then((availability) => ({
+                Promise.resolve(external ?? ofm).then((availability) => ({
                   ref,
                   name: displayModelName(ref, model.name),
                   source: officialOpenCodeModel(ref) ? 'OpenCode 官方免费通道' : source,
@@ -210,17 +228,37 @@ export class ExecutionModelResolver {
           ...(probe.available ? {} : { reason: probe.reason ?? '官方 MiniMax Code 未就绪' }),
         })
       }
-    for (const fixed of minimaxCodeCombinations())
-      if (!catalog.combinations.some((item) => item.id === fixed.combination))
+    for (const fixed of minimaxCodeCombinations()) {
+      const modelRef = { provider: MINIMAX_CODE_PROVIDER, model: fixed.model }
+      const available = await probeExternal(modelRef)
+      const existing = catalog.combinations.find((item) => item.id === fixed.combination)
+      if (!existing)
         catalog.combinations.push({
           id: fixed.combination,
           name: fixed.name,
-          modelRef: { provider: MINIMAX_CODE_PROVIDER, model: fixed.model },
+          modelRef,
           harnessRef: MINIMAX_CODE_HARNESS,
           permissionPolicy: 'full-access',
           isDefault: true,
-          enabled: true,
+          enabled: available.available,
+          autoEnabled: true,
         })
+      else {
+        // Existing rows from before this field was introduced keep their
+        // current state on first projection. A disabled row is treated as an
+        // explicit user choice; an enabled row remains managed by readiness.
+        if (existing.autoEnabled === undefined) existing.autoEnabled = existing.enabled
+        Object.assign(existing, {
+          modelRef,
+          harnessRef: MINIMAX_CODE_HARNESS,
+          permissionPolicy: 'full-access',
+          isDefault: true,
+          ...(existing.autoEnabled && !existing.autoEnabledDisabled
+            ? { enabled: available.available }
+            : {}),
+        })
+      }
+    }
     if (
       providers.some((provider) => provider.id === HUAWEI_ZCODE_MODEL.provider) &&
       !catalog.combinations.some((item) => item.id === HUAWEI_ZCODE_COMBINATION)
@@ -254,13 +292,14 @@ export class ExecutionModelResolver {
         (item) =>
           !isRetiredModel(item.modelRef) &&
           (item.id === 'auto:' + modelRefKey(model.ref) ||
+            item.autoEnabledDisabled === true ||
             (item.enabled &&
               item.isDefault &&
               modelRefKey(item.modelRef) === modelRefKey(model.ref))),
       )
-      if (!isRetiredModel(model.ref) && model.available && !hasDefault) {
-        const harnessRef = defaultHarness(model.ref),
-          harnessName = catalog.harnesses.find((h) => h.id === harnessRef)?.name ?? 'DSH'
+      const harnessRef = officialHarnessFor(model.ref)
+      if (!isRetiredModel(model.ref) && model.available && !hasDefault && harnessRef) {
+        const harnessName = catalog.harnesses.find((h) => h.id === harnessRef)?.name ?? 'DSH'
         catalog.combinations.push({
           id: 'auto:' + modelRefKey(model.ref),
           name:
@@ -276,6 +315,20 @@ export class ExecutionModelResolver {
           generated: true,
         })
       }
+    }
+    // A persisted automatic row is a projection, not a user decision. Keep its
+    // identity and permission settings, but make its enabled state follow the
+    // model that actually owns it. This also repairs rows written by an older
+    // release that enabled every advertised OFM lane before the source was ready.
+    for (const combination of catalog.combinations) {
+      if (!combination.generated || isRetiredModel(combination.modelRef)) continue
+      const model = catalog.models.find(
+        (item) => modelRefKey(item.ref) === modelRefKey(combination.modelRef),
+      )
+      // An absent model row means the fixture or source never projected a
+      // readiness verdict. Keep the saved state in that case; a projected row
+      // is an explicit verdict and owns the automatic row's enabled state.
+      if (model && !combination.autoEnabledDisabled) combination.enabled = model.available
     }
     return catalog
   }

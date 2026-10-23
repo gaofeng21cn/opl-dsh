@@ -23,6 +23,27 @@
 .trigger[aria-expanded='true'] {
   background: var(--opl-surface-hover, rgb(0 0 0 / 6%));
 }
+.iconTrigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+.iconTrigger:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+.iconTrigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
 .panel {
   position: absolute;
   bottom: calc(100% + 8px);

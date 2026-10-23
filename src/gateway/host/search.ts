@@ -29,6 +29,9 @@ export const OPL_GATEWAY_SEARCH_PROVIDER_ID = 'opl-gateway'
 /** Internal auxiliary search model, independent of the conversation model. */
 export const OPL_GATEWAY_SEARCH_DEFAULT_MODEL = 'gpt-6-luna'
 
+/** Search-capable fallback used when the primary auxiliary model is unavailable. */
+export const OPL_GATEWAY_SEARCH_FALLBACK_MODELS = ['gpt-6.1-sol'] as const
+
 /** Default upper bound on generated tokens for the search turn. */
 export const OPL_GATEWAY_SEARCH_DEFAULT_MAX_OUTPUT_TOKENS = 1024
 
@@ -50,6 +53,8 @@ export interface OplGatewaySearchProviderOptions {
   baseURL: string
   /** Model that runs the auxiliary search turn. */
   model: string
+  /** Models tried in order when the primary model cannot complete a search. */
+  fallbackModels?: readonly string[] | undefined
   /** Upper bound on generated tokens for the search turn. */
   maxOutputTokens: number
   /** Budget for one search. */
@@ -264,6 +269,7 @@ export class OplGatewaySearchProvider implements WebSearchProvider {
       ((options.apiKey?.length ?? 0) > 0 || options.resolveApiKey !== undefined) &&
       URL.canParse(options.baseURL) &&
       options.model.trim().length > 0 &&
+      (options.fallbackModels ?? []).every((model) => model.trim().length > 0) &&
       isPositiveInteger(options.maxOutputTokens) &&
       isPositiveInteger(options.timeoutMs)
     )
@@ -280,18 +286,55 @@ export class OplGatewaySearchProvider implements WebSearchProvider {
     const apiKey = await this.apiKey(options, signal)
     throwIfSearchAborted(signal)
     const endpoint = `${options.baseURL.replace(/\/+$/u, '')}/responses`
+    const budget = AbortSignal.any([
+      ...(signal === undefined ? [] : [signal]),
+      AbortSignal.timeout(options.timeoutMs),
+    ])
+    const models = searchModels(options)
+    const attemptTimeoutMs = Math.max(1, Math.floor(options.timeoutMs / models.length))
+    const failures: Array<{ model: string; message: string }> = []
+    for (const model of models) {
+      try {
+        return await this.searchWithModel(
+          endpoint,
+          model,
+          request,
+          apiKey,
+          options,
+          budget,
+          attemptTimeoutMs,
+          signal,
+        )
+      } catch (error: unknown) {
+        if (signal?.aborted === true) throw searchAborted(signal, error)
+        failures.push({ model, message: errorMessage(error) })
+        if (!isRetryableSearchFailure(error)) break
+        if (budget.aborted) break
+      }
+    }
+    throw searchModelsError(endpoint, failures, budget.aborted)
+  }
+
+  /** Run one model attempt under both the operation budget and its fair share of it. */
+  private async searchWithModel(
+    endpoint: string,
+    model: string,
+    request: WebSearchRequest,
+    apiKey: string,
+    options: OplGatewaySearchProviderOptions,
+    budget: AbortSignal,
+    attemptTimeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<WebSearchResult> {
     const body = {
-      model: options.model,
+      model,
       input: `Perform a web search for the query: ${request.query}`,
       tools: [{ type: 'web_search' }],
       max_output_tokens: options.maxOutputTokens,
       stream: true,
     }
+    const attemptBudget = AbortSignal.any([budget, AbortSignal.timeout(attemptTimeoutMs)])
     throwIfSearchAborted(signal)
-    const budget = AbortSignal.any([
-      ...(signal === undefined ? [] : [signal]),
-      AbortSignal.timeout(options.timeoutMs),
-    ])
     let response: Response
     try {
       response = await fetch(endpoint, {
@@ -304,38 +347,41 @@ export class OplGatewaySearchProvider implements WebSearchProvider {
           'user-agent': USER_AGENT,
         },
         body: JSON.stringify(body),
-        signal: budget,
+        signal: attemptBudget,
       })
     } catch (error: unknown) {
       if (signal?.aborted === true) throw searchAborted(signal, error)
-      if (budget.aborted) throw searchTimeout(endpoint, options.timeoutMs)
-      throw searchEndpointError(
-        endpoint,
+      if (attemptBudget.aborted) throw searchTimeout(attemptTimeoutMs)
+      throw new WebError(
         `OPL Gateway search request failed: ${String(error)}`,
-        error,
+        'WEB_PROVIDER_ERROR',
+        {
+          cause: error,
+        },
       )
     }
     if (!response.ok) {
       const detail = await this.errorDetail(response, signal)
-      throw searchEndpointError(
-        endpoint,
+      throw new SearchAttemptError(
         `OPL Gateway search error: HTTP ${String(response.status)}${detail}`,
+        response.status,
       )
     }
     if (response.body === null) {
-      throw searchEndpointError(endpoint, 'OPL Gateway search returned no response body')
+      throw new WebError('OPL Gateway search returned no response body', 'WEB_PROVIDER_ERROR')
     }
     try {
-      const parsed = await readSearchStream(response.body, budget)
+      const parsed = await readSearchStream(response.body, attemptBudget)
       return mapSearchStream(parsed)
     } catch (error: unknown) {
       if (signal?.aborted === true) throw searchAborted(signal, error)
-      if (budget.aborted) throw searchTimeout(endpoint, options.timeoutMs)
-      const message =
-        error instanceof WebError
-          ? error.message
-          : `OPL Gateway search response was unusable: ${String(error)}`
-      throw searchEndpointError(endpoint, message, error)
+      if (attemptBudget.aborted) throw searchTimeout(attemptTimeoutMs)
+      if (error instanceof WebError) throw error
+      throw new WebError(
+        `OPL Gateway search response was unusable: ${String(error)}`,
+        'WEB_PROVIDER_ERROR',
+        { cause: error },
+      )
     }
   }
 
@@ -399,12 +445,69 @@ function searchEndpointError(endpoint: string, message: string, cause?: unknown)
   )
 }
 
-/** Name a search that exceeded its budget, distinct from the caller's cancellation. */
-function searchTimeout(endpoint: string, timeoutMs: number): WebError {
+/** Name every model that failed and retain the individual gateway messages. */
+function searchModelsError(
+  endpoint: string,
+  failures: readonly { model: string; message: string }[],
+  timedOut: boolean,
+): WebError {
+  if (failures.length === 0) {
+    return searchEndpointError(
+      endpoint,
+      timedOut ? 'OPL Gateway search did not finish in time' : 'OPL Gateway search failed',
+    )
+  }
+  const detail = failures.map(({ model, message }) => `${model}: ${message}`).join('; ')
   return searchEndpointError(
     endpoint,
-    `OPL Gateway search did not finish within ${String(timeoutMs)}ms`,
+    failures.length === 1
+      ? `OPL Gateway search failed on ${failures[0]!.model}. ${detail}`
+      : `OPL Gateway search failed on every configured search model. ${detail}`,
   )
+}
+
+/** Name a search that exceeded its budget, distinct from the caller's cancellation. */
+function searchTimeout(timeoutMs: number): WebError {
+  return new WebError(
+    `OPL Gateway search did not finish within ${String(timeoutMs)}ms`,
+    'WEB_PROVIDER_ERROR',
+  )
+}
+
+/** Deduplicate the primary and fallback models without changing their priority. */
+function searchModels(options: OplGatewaySearchProviderOptions): string[] {
+  return [...new Set([options.model, ...(options.fallbackModels ?? [])])]
+}
+
+/** A SearchAttemptError retains the HTTP status that decides whether switching models can help. */
+class SearchAttemptError extends WebError {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message, 'WEB_PROVIDER_ERROR')
+  }
+}
+
+/** Switch models for a transient channel failure or a search the model did not trigger. */
+function isRetryableSearchFailure(error: unknown): boolean {
+  if (error instanceof SearchAttemptError) {
+    return error.status === 408 || error.status === 429 || error.status >= 500
+  }
+  return (
+    error instanceof WebError &&
+    (error.message.includes('did not finish within') ||
+      error.message.includes('request failed') ||
+      error.message.includes('ran no web search') ||
+      /^OPL Gateway search failed: .*(?:busy|overload|rate limit|too many|temporar|unavailable|try again)/iu.test(
+        error.message,
+      ))
+  )
+}
+
+/** Preserve the gateway's own failure text for the aggregate error. */
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 /**

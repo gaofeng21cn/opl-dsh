@@ -96,6 +96,7 @@ export function installExternalCodex(ctx: Context, harness: HarnessService) {
       }
       if (request.namespace === HARNESS_NAMESPACE)
         return invokeExecutionRpc(ctx, request.method, request.args, request.signal)
+      if (request.namespace === 'oplExecution') return invokeHostRemote(ctx, request)
       return invokeHostRemote(ctx, request)
     },
   }

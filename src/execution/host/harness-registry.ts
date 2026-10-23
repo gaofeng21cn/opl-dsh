@@ -36,7 +36,8 @@ const info: Record<
     command: process.platform === 'win32' ? 'mcode.cmd' : 'mcode',
     website: 'https://github.com/MiniMax-AI/minimax-code',
     instructions:
-      '使用 MiniMax Code 官方安装器安装 mcode；登录请在终端运行 mcode login，凭据由官方 CLI 自行保存与刷新。',
+      '可使用 MiniMax 官方安装器安装 mcode；登录请在终端运行 mcode login，凭据由官方 CLI 自行保存与刷新。',
+    installable: true,
   },
   zcode: {
     command: 'zcode',
@@ -47,12 +48,14 @@ const info: Record<
   'kimi-code': {
     command: 'kimi',
     website: 'https://www.npmjs.com/package/@moonshot-ai/kimi-code',
-    instructions: '使用 Kimi Code 官方安装方式安装 kimi；模型连接由模型供应商管理。',
+    instructions: '可使用 Kimi Code 官方 npm 包安装 kimi；模型连接由模型供应商管理。',
+    installable: true,
   },
   'mimo-code': {
     command: 'mimo',
     website: 'https://github.com/XiaomiMiMo/MiMo-Code',
-    instructions: '使用 MiMo Code 官方安装方式安装 mimo；模型连接由模型供应商管理。',
+    instructions: '可使用 MiMo Code 官方安装器安装 mimo；模型连接由模型供应商管理。',
+    installable: true,
   },
   pool: {
     command: 'pool',
@@ -62,7 +65,8 @@ const info: Record<
   'step-code': {
     command: 'step',
     website: 'https://github.com/stepfun-ai/Step-Code',
-    instructions: '使用 StepCode 官方安装方式安装 step；模型连接由模型供应商管理。',
+    instructions: '可使用 StepCode 官方安装器安装 step；模型连接由模型供应商管理。',
+    installable: true,
   },
   'muse-code': {
     command: 'muse',
@@ -72,17 +76,20 @@ const info: Record<
   opencode: {
     command: 'opencode',
     website: 'https://opencode.ai',
-    instructions: '使用 OpenCode 官方安装方式安装 opencode；模型连接由模型供应商管理。',
+    instructions: '可使用 OpenCode 官方 npm 包安装 opencode；模型连接由模型供应商管理。',
+    installable: true,
   },
   pi: {
     command: 'pi',
     website: 'https://github.com/badlogic/pi-mono',
-    instructions: '使用 Pi Coding Agent 官方安装方式安装 pi；模型连接由模型供应商管理。',
+    instructions: '可使用 Pi Coding Agent 官方安装器安装 pi；模型连接由模型供应商管理。',
+    installable: true,
   },
   kilo: {
     command: 'kilo',
     website: 'https://github.com/Kilo-Org/kilocode',
-    instructions: '使用 Kilo Code 官方安装方式安装 kilo；模型连接由模型供应商管理。',
+    instructions: '可使用 Kilo Code 官方 npm 包安装 kilo；模型连接由模型供应商管理。',
+    installable: true,
   },
 }
 /**
@@ -124,6 +131,9 @@ const knownRoots = (id: string): string[] => {
   if (id === 'claude' && process.env.LOCALAPPDATA)
     roots.push(join(process.env.LOCALAPPDATA, 'Programs/Claude Code'))
   if (id === 'minimax-code') roots.push(...minimaxCodeRoots())
+  if (id === 'mimo-code') roots.push(join(home, '.mimocode/bin'))
+  if (id === 'kimi-code') roots.push(join(home, '.local/bin'), join(home, '.kimi-code/bin'))
+  if (id === 'step-code') roots.push(join(home, '.stepcode/bin'))
   return [...new Set(roots.filter(Boolean))]
 }
 function candidatePaths(
@@ -296,7 +306,7 @@ export async function inspectHarness(
       detectedBy = 'shell-path'
     }
   }
-  const maintenanceAction = ['codex', 'claude'].includes(harness.id)
+  const maintenanceAction = entry?.installable
     ? path
       ? 'update'
       : 'install'

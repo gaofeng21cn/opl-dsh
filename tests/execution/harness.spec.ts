@@ -286,7 +286,7 @@ describe('ACP model namespaces', () => {
 
 async function nativeSetup(
   models = [
-    { id: 'codex::test-model', name: 'Test Model' },
+    { id: 'codex::gpt-test-model', name: 'Test Model' },
     { id: 'deepseek-flash', name: 'DeepSeek' },
   ],
   providers = [{ id: 'opl-gateway', name: 'OPL Gateway' }],
@@ -295,7 +295,7 @@ async function nativeSetup(
   const { root, options, service: initial } = await setup()
   await initial.executionCatalog()
   await initial.dispose()
-  let current = { provider: 'opl-gateway', model: 'codex::test-model' }
+  let current = { provider: 'opl-gateway', model: 'codex::gpt-test-model' }
   let permission = initialPermission
   const session = {
     id: 'native-session',
@@ -599,7 +599,7 @@ describe('native conversation combinations', () => {
   it('honours an explicitly stated permission for a generated combination in every origin', async () => {
     const { service, root } = await nativeSetup()
     const automatic = (await service.executionCatalog()).combinations.find(
-      (item) => item.generated && item.modelRef.model === 'codex::test-model',
+      (item) => item.generated && item.modelRef.model === 'codex::gpt-test-model',
     )!
     // `generated` is the default the catalog generator picked, so an origin is irrelevant: both the
     // DSH conversation path and the CLI dispatch path keep the permission the caller stated.
@@ -723,7 +723,7 @@ describe('native conversation combinations', () => {
       }
     },
   )
-  it('creates independently named combinations for explicit Gateway channels', async () => {
+  it('keeps a DeepSeek OpenAI-protocol channel manual instead of treating it as Codex', async () => {
     // This assertion lists every available model, so the machine's own official CLIs
     // must not leak into it: an installed MiniMax Code would legitimately add its own
     // account models and make the expected list environment-dependent.
@@ -740,13 +740,18 @@ describe('native conversation combinations', () => {
       catalog.combinations.filter(
         (item) => item.harnessRef === 'dsh' && item.modelRef.model.includes('deepseek-flash'),
       ),
-    ).toHaveLength(2)
+    ).toHaveLength(1)
+    expect(
+      catalog.combinations.some(
+        (item) => item.modelRef.model === 'codex::deepseek-flash' && item.harnessRef === 'codex',
+      ),
+    ).toBe(false)
     expect(catalog.models.filter((item) => item.available).map((item) => item.source)).toEqual([
       'OPL Gateway',
       'OPL Gateway',
     ])
   })
-  it('binds the selected OPL Gateway Gemini models to OpenCode', async () => {
+  it('keeps OPL Gateway Gemini manual-only until the user creates an OpenCode pairing', async () => {
     vi.stubEnv('USERPROFILE', join(tmpdir(), 'opl-gemini-opencode-absent-cli'))
     vi.stubEnv('HOME', join(tmpdir(), 'opl-gemini-opencode-absent-cli'))
     vi.stubEnv('PATH', '')
@@ -758,15 +763,16 @@ describe('native conversation combinations', () => {
     ])
     const catalog = await service.executionCatalog()
     expect(
-      catalog.combinations
-        .filter((item) => item.modelRef.model.startsWith('gemini::'))
-        .map((item) => [item.modelRef.model, item.harnessRef]),
-    ).toEqual([
-      ['gemini::gemini-4-argon', 'opencode'],
-      ['gemini::gemini-3.8-flash', 'opencode'],
-      ['gemini::gemini-3.1-pro', 'opencode'],
-      ['gemini::gemini-3.7-flash', 'dsh'],
-    ])
+      catalog.combinations.filter((item) => item.modelRef.model.startsWith('gemini::')),
+    ).toEqual([])
+    expect(catalog.models.map((item) => item.ref.model)).toEqual(
+      expect.arrayContaining([
+        'gemini::gemini-4-argon',
+        'gemini::gemini-3.8-flash',
+        'gemini::gemini-3.1-pro',
+        'gemini::gemini-3.7-flash',
+      ]),
+    )
   })
   it('restores the chosen combination among bindings to the same model without elevating permissions', async () => {
     const { service, ctx, options, session, changeModel } = await nativeSetup()
@@ -774,7 +780,7 @@ describe('native conversation combinations', () => {
     ctx.get = ((name: string) =>
       name === 'permissionPresets' ? { set: setPermission } : undefined) as typeof ctx.get
     const catalog = await service.executionCatalog()
-    const modelRef = { provider: 'opl-gateway', model: 'codex::test-model' }
+    const modelRef = { provider: 'opl-gateway', model: 'codex::gpt-test-model' }
     catalog.combinations.push(
       {
         id: 'review',
@@ -810,12 +816,15 @@ describe('native conversation combinations', () => {
     expect((await restored.modelSelection(session.id)).combination).toBeUndefined()
   })
   it.each(['read-only', 'workspace-write', 'danger-full-access'])(
-    'preserves the selected %s preset when switching to a generated native combination',
+    'preserves the selected %s preset when switching to the Grok official combination',
     async (mode) => {
       const { service, ctx, session, options } = await nativeSetup([
         { id: 'deepseek-flash', name: 'DeepSeek' },
-        { id: 'codex::deepseek-flash', name: 'DeepSeek OpenAI' },
+        { id: 'grok::grok-4.7', name: 'Grok 4.7' },
       ])
+      useNodeAcpFixtureAgent()
+      const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
+      vi.spyOn(adapterFor('grok-build', ref)!, 'available').mockResolvedValue({ available: true })
       const setPermission = vi.fn()
       ctx.get = ((name: string) =>
         name === 'permissionPresets' ? { set: setPermission } : undefined) as typeof ctx.get
@@ -824,10 +833,8 @@ describe('native conversation combinations', () => {
         ctx: { get: () => ({ resolve: () => ({ mode }) }) },
       })) as typeof ctx.agents.get
       const catalog = await service.executionCatalog()
-      const combination = catalog.combinations.find(
-        (item) => item.generated && item.modelRef.model === 'codex::deepseek-flash',
-      )!
-      expect(combination.permissionPolicy).toBe('read-only')
+      const combination = catalog.combinations.find((item) => item.id === GROK_COMBINATION)!
+      expect(combination.permissionPolicy).toBe('workspace')
       await service.selectCombination({ sessionId: session.id, combination: combination.id })
       expect(setPermission).not.toHaveBeenCalled()
       expect(session.append).not.toHaveBeenCalled()
@@ -843,7 +850,7 @@ describe('native conversation combinations', () => {
     const { service } = await nativeSetup(),
       catalog = await service.executionCatalog()
     const automatic = catalog.combinations.find(
-      (item) => item.generated && item.modelRef.model === 'codex::test-model',
+      (item) => item.generated && item.modelRef.model === 'codex::gpt-test-model',
     )!
     automatic.generated = false
     automatic.enabled = false

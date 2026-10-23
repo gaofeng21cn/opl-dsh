@@ -28,7 +28,7 @@ describe('OpenCode OPL Gateway Gemini pairing', () => {
     for (const ref of supported) {
       expect(isOpenCodeGatewayGeminiModel(ref)).toBe(true)
       expect(adapterFor(OPENCODE_HARNESS, ref)?.id).toBe(OPENCODE_HARNESS)
-      expect(defaultHarness(ref)).toBe(OPENCODE_HARNESS)
+      expect(defaultHarness(ref)).toBe('dsh')
     }
     expect(
       isOpenCodeGatewayGeminiModel({ provider: 'opl-gateway', model: 'gemini::gemini-3.7-flash' }),

@@ -184,6 +184,10 @@ export function normalizeCatalog(value: unknown): ExecutionCatalog {
         permissionPolicy,
         isDefault: x.isDefault === true,
         enabled: x.enabled !== false,
+        ...(x.autoEnabled === undefined ? {} : { autoEnabled: x.autoEnabled === true }),
+        ...(x.autoEnabledDisabled === undefined
+          ? {}
+          : { autoEnabledDisabled: x.autoEnabledDisabled === true }),
       }
     })
   if (input.version !== 2)
@@ -385,12 +389,13 @@ export class ExecutionCatalogStore {
 export function catalogView(
   catalog: ExecutionCatalog,
   availability: Map<string, { available: boolean; reason?: string }>,
+  includeDisabled = false,
 ): HarnessCatalog['combinations'] {
   return catalog.combinations
-    .filter((x) => x.enabled)
+    .filter((x) => includeDisabled || x.enabled)
     .map((x) => {
       const model = catalog.models.find((m) => modelRefKey(m.ref) === modelRefKey(x.modelRef)),
-        harness = catalog.harnesses.find((h) => h.id === x.harnessRef)!
+        harness = catalog.harnesses.find((h) => h.id === x.harnessRef)
       const status = availability.get(x.id) ?? {
         available: false,
         reason: '尚未安装对应 Harness 适配器',
@@ -400,7 +405,7 @@ export function catalogView(
         name: x.name,
         model: model?.name ?? x.modelRef.model,
         modelId: x.modelRef.model,
-        harness: harness.name,
+        harness: harness?.name ?? x.harnessRef,
         source: displayModelSource(x.modelRef, model?.source),
         ...status,
       }

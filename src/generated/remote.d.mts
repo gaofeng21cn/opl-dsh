@@ -25,7 +25,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     cancel: (request: SessionRequest) => Promise<RemoteResult<HarnessSnapshot>>
     'cancel-task': (request: { origin: HarnessOrigin; sessionId: string; }) => Promise<RemoteResult<HarnessSnapshot>>
     catalog: () => Promise<RemoteResult<ExecutionCatalog>>
-    combinations: () => Promise<RemoteResult<HarnessCatalog['combinations']>>
+    combinations: (request: { includeDisabled?: boolean; }) => Promise<RemoteResult<HarnessCatalog['combinations']>>
     'cooperation-settings': () => Promise<RemoteResult<CooperationSettings>>
     delegate: (request: DelegateRequest, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
     detail: (request: HarnessDetailRequest) => Promise<RemoteResult<HarnessDetailPage>>
@@ -106,7 +106,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/cancel': (request: SessionRequest) => Promise<RemoteResult<HarnessSnapshot>>
     'oplExecution/cancel-task': (request: { origin: HarnessOrigin; sessionId: string; }) => Promise<RemoteResult<HarnessSnapshot>>
     'oplExecution/catalog': () => Promise<RemoteResult<ExecutionCatalog>>
-    'oplExecution/combinations': () => Promise<RemoteResult<HarnessCatalog['combinations']>>
+    'oplExecution/combinations': (request: { includeDisabled?: boolean; }) => Promise<RemoteResult<HarnessCatalog['combinations']>>
     'oplExecution/cooperation-settings': () => Promise<RemoteResult<CooperationSettings>>
     'oplExecution/delegate': (request: DelegateRequest, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
     'oplExecution/detail': (request: HarnessDetailRequest) => Promise<RemoteResult<HarnessDetailPage>>
@@ -191,7 +191,7 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'oplExecution/cancel': TypertRemoteMethod<{ readonly 'request': SessionRequest }, HarnessSnapshot>
   readonly 'oplExecution/cancel-task': TypertRemoteMethod<{ readonly 'request': { origin: HarnessOrigin; sessionId: string; } }, HarnessSnapshot>
   readonly 'oplExecution/catalog': TypertRemoteMethod<{  }, ExecutionCatalog>
-  readonly 'oplExecution/combinations': TypertRemoteMethod<{  }, HarnessCatalog['combinations']>
+  readonly 'oplExecution/combinations': TypertRemoteMethod<{ readonly 'request': { includeDisabled?: boolean; } }, HarnessCatalog['combinations']>
   readonly 'oplExecution/cooperation-settings': TypertRemoteMethod<{  }, CooperationSettings>
   readonly 'oplExecution/delegate': TypertRemoteMethod<{ readonly 'request': DelegateRequest }, HarnessSnapshot>
   readonly 'oplExecution/detail': TypertRemoteMethod<{ readonly 'request': HarnessDetailRequest }, HarnessDetailPage>

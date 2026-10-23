@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { adapterFor, defaultHarness } from '../../src/execution/host/adapters/index.ts'
+import {
+  isOfficialPairing,
+  officialHarnessFor,
+} from '../../src/execution/contracts/official-harnesses.ts'
 import type { HarnessSession } from '../../src/execution/contracts/sessions.ts'
+const BIG_PICKLE = { provider: 'our-free-model', model: 'big-pickle' } as const
+const FLINT = { provider: 'our-free-model', model: 'flint-40b-free' } as const
 const roots: string[] = []
 afterEach(async () => {
   vi.unstubAllEnvs()
@@ -21,11 +27,22 @@ describe('official Harness adapter registry', () => {
     expect(defaultHarness(claude)).toBe('claude')
     const gatewayGemini = { provider: 'opl-gateway', model: 'gemini::gemini-3.8-flash' }
     expect(adapterFor('opencode', gatewayGemini)?.id).toBe('opencode')
-    expect(defaultHarness(gatewayGemini)).toBe('opencode')
+    expect(defaultHarness(gatewayGemini)).toBe('dsh')
     expect(
       adapterFor('opencode', { provider: 'opl-gateway', model: 'gemini::gemini-3.7-flash' }),
     ).toBeUndefined()
     expect(defaultHarness({ provider: 'custom', model: 'gpt-current' })).toBe('dsh')
+  })
+  it('treats generic runners as having no official model pairing', () => {
+    expect(officialHarnessFor(BIG_PICKLE)).toBeUndefined()
+    expect(officialHarnessFor(FLINT)).toBeUndefined()
+    for (const id of ['opencode', 'kilo', 'pi'])
+      expect(isOfficialPairing(id, BIG_PICKLE)).toBe(false)
+    expect(isOfficialPairing('codex', { provider: 'opl-gateway', model: 'codex::gpt-5' })).toBe(
+      true,
+    )
+    expect(isOfficialPairing('codex', BIG_PICKLE)).toBe(false)
+    expect(isOfficialPairing('dsh', { provider: 'custom', model: 'gpt-current' })).toBe(false)
   })
 
   it('keeps selected-channel credentials and per-session homes inside the chosen native process', async () => {

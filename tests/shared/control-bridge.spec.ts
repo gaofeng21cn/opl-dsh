@@ -104,6 +104,28 @@ it('routes candidate selection to the execution owner without granting arbitrary
   }
 })
 
+it('allows only read and catalog-save operations for the execution namespace', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'opl-execution-control-'))
+  const invoke = vi.fn(async () => ({ ok: true }))
+  const stop = await startBridge({ invoke } as unknown as TypertGateway, join(dir, 'control.json'))
+  try {
+    const binding = readBinding(join(dir, 'control.json'))
+    for (const method of ['catalog', 'combinations', 'harness-installations', 'save-catalog']) {
+      expect(await rpc(binding, { namespace: 'oplExecution', method, args: {} })).toMatchObject({
+        status: 200,
+        json: { ok: true },
+      })
+    }
+    expect(
+      (await rpc(binding, { namespace: 'oplExecution', method: 'start', args: {} })).status,
+    ).toBe(403)
+    expect(invoke).toHaveBeenCalledTimes(4)
+  } finally {
+    await stop()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 it('routes Codex selection and rollback through the authenticated execution owner', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'opl-codex-control-'))
   const invoke = vi.fn(async () => ({ mode: 'git-bash', command: 'verified-codex' }))

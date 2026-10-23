@@ -18,25 +18,7 @@ import { piAdapter } from './pi/index.ts'
 import { kiloAdapter } from './kilo/index.ts'
 import type { HarnessAdapter } from './types.ts'
 import type { ExternalModelSources } from '../model-sources.ts'
-/**
- * Harnesses that own their own model catalog and authentication. An automatic
- * combination must bind one of these instead of the DSH loop, because DSH cannot
- * route a model that belongs to an external official CLI account.
- */
-const externalHarnessIds: readonly string[] = [
-  'codex',
-  'claude',
-  MINIMAX_CODE_HARNESS,
-  'zcode',
-  'kimi-code',
-  'mimo-code',
-  'pool',
-  'step-code',
-  'muse-code',
-  'opencode',
-  'pi',
-  'kilo',
-]
+import { officialHarnessFor } from '../../contracts/official-harnesses.ts'
 export const harnessAdapters: readonly HarnessAdapter[] = [
   codexAdapter,
   claudeAdapter,
@@ -69,9 +51,5 @@ export function nativeHarnessMatches(id: string, ref: ModelRef): boolean {
   return (id === 'codex' || id === 'claude') && adapterFor(id, ref) !== undefined
 }
 export function defaultHarness(ref: ModelRef): string {
-  return (
-    harnessAdapters.find(
-      (adapter) => externalHarnessIds.includes(adapter.id) && adapter.matches(ref),
-    )?.id ?? 'dsh'
-  )
+  return officialHarnessFor(ref) ?? 'dsh'
 }

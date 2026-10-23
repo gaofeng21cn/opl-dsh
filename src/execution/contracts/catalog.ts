@@ -27,6 +27,10 @@ export interface CombinationDefinition {
   permissionPolicy: 'read-only' | 'workspace' | 'full-access'
   isDefault: boolean
   enabled: boolean
+  /** Enabled state follows the model readiness until the user edits this combination. */
+  autoEnabled?: boolean
+  /** The user turned automatic readiness management off; readiness must not re-enable it. */
+  autoEnabledDisabled?: boolean
 }
 export interface ExecutionCatalog {
   version: 2

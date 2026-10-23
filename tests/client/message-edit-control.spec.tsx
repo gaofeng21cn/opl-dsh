@@ -2,11 +2,15 @@ import { createTestDom } from './dom.ts'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
-import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-store'
 import type { ExecutionCall } from '../../src/shared/client/remote-call.ts'
 import { MessageEditControl } from '../../src/execution/client/MessageEditControl.tsx'
+import { MessageEditSession } from '../../src/execution/client/message-edit-session.ts'
 import type { MessageEditSend } from '../../src/execution/contracts/message-edit.ts'
+
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
+  IconCloseOutlineRegular: () => null,
+  Tooltip: ({ children }: { children: unknown }) => children,
+}))
 
 type ShimNode = {
   nodeType: number
@@ -19,10 +23,6 @@ type ShimNode = {
   click?(): boolean
 }
 
-/**
- * Give the shim a real bubbling `click`, so React's delegated listener runs the
- * component's own handler instead of the test reaching into it.
- */
 function enableClick(dom: { document: { createElement(name: string): object } }) {
   const proto = Object.getPrototypeOf(dom.document.createElement('div')) as Record<string, unknown>
   const listeners = new WeakMap<object, Map<string, Set<(event: unknown) => void>>>()
@@ -51,19 +51,13 @@ function enableClick(dom: { document: { createElement(name: string): object } })
       preventDefault() {
         event.defaultPrevented = true
       },
-      stopPropagation() {
-        stopped = true
-      },
-      stopImmediatePropagation() {
-        stopped = true
-      },
+      stopPropagation() {},
+      stopImmediatePropagation() {},
     }
-    let stopped = false
     let node = target as { parentNode?: ShimNode | null } | null
     while (node) {
       for (const listener of listeners.get(node)?.get(type) ?? []) listener(event)
       node = node.parentNode
-      if (stopped) break
     }
     return true
   }
@@ -77,17 +71,27 @@ function enableClick(dom: { document: { createElement(name: string): object } })
 
 const dom = createTestDom()
 enableClick(dom)
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: {
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {},
+  },
+})
 let root: Root
 afterEach(async () => {
   await act(async () => root?.unmount())
 })
+
 function buttons(scope: ShimNode): ShimNode[] {
   return [
     ...(scope.nodeName === 'BUTTON' ? [scope] : []),
     ...(scope.childNodes ?? []).flatMap(buttons),
   ]
 }
-it('offers explicit recovery when replaced history has no edit choices, without automatically sending', async () => {
+
+it('keeps unconfirmed edit recovery reachable without offering a normal composer trigger', async () => {
   const recovery: MessageEditSend = {
     prompt: {
       sessionId: 'failed-prepare' as MessageEditSend['prompt']['sessionId'],
@@ -111,57 +115,44 @@ it('offers explicit recovery when replaced history has no edit choices, without 
         }
       : { accepted: true },
   )
+  const session = new MessageEditSession('failed-prepare', call as ExecutionCall)
   const container = dom.container()
   root = createRoot(container as unknown as HTMLElement)
   await act(async () =>
     root.render(
       createElement(MessageEditControl, {
-        sessionId: 'failed-prepare',
-        call: call as ExecutionCall,
+        session,
         inputActions: { setDraft: vi.fn() },
-        useInput: ((selector: (state: InputState) => unknown) =>
-          selector({ draft: '' } as InputState)) as SnapshotSelectorHook<InputState>,
-        bindPrompt: () => () => {},
       }),
     ),
   )
-  expect(call).toHaveBeenCalledTimes(1)
-  expect(container.textContent).toContain('编辑消息')
+  expect(container.textContent).not.toContain('编辑消息')
+  expect(container.textContent).toContain('重试未确认的编辑')
   await act(async () => buttons(container)[0]!.click!())
-  const retry = buttons(container).find((button) => button.textContent === '重试未确认的编辑')
-  expect(retry).toBeDefined()
-  expect(call).toHaveBeenCalledTimes(1)
-  await act(async () => retry!.click!())
   expect(call).toHaveBeenNthCalledWith(2, 'message-edit-send', recovery)
-  expect(container.textContent).not.toContain('重试未确认的编辑')
 })
 
-it('keeps the edit button when the parent recreates callback props', async () => {
-  const state = {
-    sessionId: 'rerender-edit',
-    supported: true,
-    busy: false,
-    pending: false,
+it('selects one message in shared state without opening a second message list', async () => {
+  const call = vi.fn(async (method: string) =>
+    method === 'message-edit-state'
+      ? {
+          sessionId: 'one-message',
+          supported: true,
+          busy: false,
+          pending: false,
+          head: 4,
+          choices: [{ seq: 3, text: '可编辑消息' }],
+        }
+      : { accepted: true },
+  )
+  const session = new MessageEditSession('one-message', call as ExecutionCall)
+  await session.load()
+  expect(await session.select(3, '')).toBe(true)
+  expect(session.getSnapshot().selection).toEqual({
+    seq: 3,
     head: 4,
-    choices: [{ seq: 3, text: '可编辑消息' }],
-  }
-  const container = dom.container()
-  root = createRoot(container as unknown as HTMLElement)
-  const render = () =>
-    root.render(
-      createElement(MessageEditControl, {
-        sessionId: state.sessionId,
-        call: vi.fn(async (method: string) =>
-          method === 'message-edit-state' ? state : { accepted: true },
-        ) as ExecutionCall,
-        inputActions: { setDraft: vi.fn() },
-        useInput: ((selector: (value: InputState) => unknown) =>
-          selector({ draft: '' } as InputState)) as SnapshotSelectorHook<InputState>,
-        bindPrompt: () => () => {},
-      }),
-    )
-  await act(async () => render())
-  expect(container.textContent).toContain('编辑消息')
-  await act(async () => render())
-  expect(container.textContent).toContain('编辑消息')
+    previousDraft: '',
+  })
+  expect(await session.select(3, '已有草稿')).toBe(false)
+  expect(session.getSnapshot().error).toContain('草稿')
 })

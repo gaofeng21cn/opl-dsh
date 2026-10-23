@@ -177,6 +177,7 @@ export async function refreshEnhancements(root, application) {
       'install.mjs',
       'profile.cjs',
       'model-plugins.cjs',
+      'kimi-cu.mjs',
       'setup.mjs',
       'update.mjs',
       'skill-install.mjs',

@@ -1,6 +1,11 @@
 import { useExecutionCatalog } from './use-execution-catalog.ts'
 import { Button, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { displayModelSource, selectableModels, modelRefKey } from '../contracts/catalog.ts'
+import { isOfficialPairing } from '../contracts/official-harnesses.ts'
+import type { CombinationDefinition, ExecutionCatalog } from '../contracts/catalog.ts'
+import type { HarnessCatalog } from '../../contracts/types.ts'
+import type { RemoteCallInput } from '../../shared/client/remote-call.ts'
+import type { TypertRemoteNamespace } from '@deepseek-ai/dsh-typert-protocol'
 import css from '../../shared/client/SettingsSection.module.css'
 import type { ExecutionCall as Call } from '../../shared/client/remote-call.ts'
 import type { CombinationDefinition } from '../../contracts/types.ts'
@@ -8,7 +13,7 @@ export function ExecutionCatalogSection({
   call,
   embedded = false,
 }: {
-  call: Call
+  call: RemoteCallInput<TypertRemoteNamespace<'oplExecution'>>
   embedded?: boolean
 }) {
   const {
@@ -172,6 +177,9 @@ export function ExecutionCatalogSection({
                 ))}
               </select>
             </label>
+            <p className={css.muted}>
+              手动组合可自由选择任意已就绪模型和执行引擎；它不是厂商官配，只有当前配置的默认项会自动生成。
+            </p>
             <Button
               disabled={busy || !draft.name.trim() || !draft.model}
               onClick={() => void add()}
@@ -197,5 +205,118 @@ export function ExecutionCatalogSection({
         </details>
       )}
     </div>
+  )
+}
+
+function CombinationRow({
+  item,
+  catalog,
+  availability,
+  busy,
+  editing,
+  setEditing,
+  update,
+}: {
+  item: CombinationDefinition
+  catalog: ExecutionCatalog
+  availability: HarnessCatalog['combinations']
+  busy: boolean
+  editing: string | undefined
+  setEditing: (
+    value: string | undefined | ((current: string | undefined) => string | undefined),
+  ) => void
+  update: ReturnType<typeof useExecutionCatalog>['update']
+}) {
+  const model = catalog.models.find((x) => modelRefKey(x.ref) === modelRefKey(item.modelRef)),
+    harness = catalog.harnesses.find((x) => x.id === item.harnessRef)
+  const status = availability.find((c) => c.id === item.id)
+  const readiness = status?.available
+    ? status
+    : model?.available === true
+      ? { available: true }
+      : {
+          available: false,
+          reason: status?.reason ?? model?.reason ?? '尚未验证',
+        }
+  return (
+    <details
+      className={css.card}
+      data-opl-combination={item.id}
+      open={editing === item.id}
+      onToggle={(event) => {
+        const open = event.currentTarget.open
+        setEditing((current) => (open ? item.id : current === item.id ? undefined : current))
+      }}
+    >
+      <summary className={css.header}>
+        <span className={css.identity}>
+          <strong>{item.name}</strong>
+          {!item.generated && !isOfficialPairing(item.harnessRef, item.modelRef) && (
+            <span className={css.muted} data-opl-custom-combination>
+              自定义
+            </span>
+          )}
+          {item.isDefault && item.enabled && (
+            <span className={css.muted}>此模型的默认执行组合</span>
+          )}
+          <span className={css.muted}>
+            {displayModelSource(item.modelRef, model?.source)} ·{' '}
+            {model?.name ?? item.modelRef.model} · {harness?.name ?? item.harnessRef}
+          </span>
+        </span>
+        <span className={css.row}>
+          <span className={css.muted}>
+            {!item.enabled ? '已停用' : readiness.available ? '可执行' : readiness.reason}
+          </span>
+          <Switch
+            label={`启用 ${item.name}`}
+            disabled={busy}
+            checked={item.enabled}
+            onChange={(enabled) => update(item.id, { enabled })}
+          />
+        </span>
+      </summary>
+      <div className={css.detailsBody}>
+        <label className={css.field}>
+          配置名称
+          <input
+            className={css.input}
+            defaultValue={item.name}
+            disabled={busy}
+            onBlur={(e) => {
+              if (e.target.value !== item.name) update(item.id, { name: e.target.value })
+            }}
+          />
+        </label>
+        <div className={css.row}>
+          <Switch
+            label="作为此模型的默认执行组合"
+            disabled={busy || !item.enabled}
+            checked={item.isDefault}
+            onChange={(isDefault) => update(item.id, { isDefault })}
+          />
+          <span className={css.muted}>默认执行组合</span>
+        </div>
+        <label className={css.field}>
+          权限
+          <select
+            className={css.input}
+            value={item.permissionPolicy}
+            disabled={busy}
+            onChange={(e) =>
+              update(item.id, {
+                permissionPolicy: e.target.value as 'workspace' | 'read-only' | 'full-access',
+              })
+            }
+          >
+            <option value="read-only">只读</option>
+            <option value="workspace">工作区内修改（仍需 Harness 授权）</option>
+            {item.harnessRef !== 'antigravity' && (
+              <option value="full-access">完整访问（使用该执行引擎的官方授权）</option>
+            )}
+          </select>
+        </label>
+      </div>
+    </details>
   )
 }

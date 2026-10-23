@@ -30,6 +30,7 @@ import {
   OPL_GATEWAY_SEARCH_DEFAULT_MAX_OUTPUT_TOKENS,
   OPL_GATEWAY_SEARCH_DEFAULT_MODEL,
   OPL_GATEWAY_SEARCH_DEFAULT_TIMEOUT_MS,
+  OPL_GATEWAY_SEARCH_FALLBACK_MODELS,
 } from './search.ts'
 import type { OplGatewaySearchProviderOptions } from './search.ts'
 import { OplGatewaySearchProvider } from './search.ts'
@@ -55,6 +56,7 @@ export {
   OPL_GATEWAY_SEARCH_DEFAULT_MAX_OUTPUT_TOKENS,
   OPL_GATEWAY_SEARCH_DEFAULT_MODEL,
   OPL_GATEWAY_SEARCH_DEFAULT_TIMEOUT_MS,
+  OPL_GATEWAY_SEARCH_FALLBACK_MODELS,
   OPL_GATEWAY_SEARCH_PROVIDER_ID,
 } from './search.ts'
 export {
@@ -350,6 +352,7 @@ export function apply(ctx: Context, config: Config): void {
         },
         baseURL: options().baseURL,
         model: OPL_GATEWAY_SEARCH_DEFAULT_MODEL,
+        fallbackModels: OPL_GATEWAY_SEARCH_FALLBACK_MODELS,
         maxOutputTokens: OPL_GATEWAY_SEARCH_DEFAULT_MAX_OUTPUT_TOKENS,
         timeoutMs: OPL_GATEWAY_SEARCH_DEFAULT_TIMEOUT_MS,
       }),

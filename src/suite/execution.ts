@@ -17,6 +17,7 @@ import { MiniMaxCodeModelAdapter } from '../execution/host/adapters/minimax-mode
 import { MINIMAX_CODE_PROVIDER } from '../execution/host/adapters/minimax.ts'
 import { installCollaborationTools } from '../collaboration/host/tools.ts'
 import { installPermissionMemory } from '../compat/host/permission-memory.ts'
+import { installComputerUse } from '../computer-use/host/index.ts'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { modelDefaultEffort } from '../shared/model-reasoning.ts'
@@ -65,6 +66,10 @@ export function apply(ctx: Context, config: Config): void {
   harness.configureProgressLimits(config.executionLimits)
   ctx.provide('oplExternalModelSources', harness.modelSources)
   const ofmOwner = createOfmOwnerApiReader(ctx, config.ofmConnectionTimeoutMs)
+  const harness = createHarnessService(ctx, {
+    readOfm: () => ofmOwner.read('/summary'),
+  })
+  ctx.provide('oplExternalModelSources', harness.modelSources)
   applyOfmModelSource(ctx, {
     providers: [OFM_PROVIDER],
     connection: createOfmApiConnection(async (request) => {
@@ -128,6 +133,7 @@ export function apply(ctx: Context, config: Config): void {
   new ExecutionService(ctx, harness)
   ctx.effect(() => () => harness.dispose())
   installCollaborationTools(ctx, harness)
+  installComputerUse(ctx)
   installLegacyHarnessChannel(ctx)
   installSessionWaitProjection(ctx)
   installExternalCodex(ctx, harness)

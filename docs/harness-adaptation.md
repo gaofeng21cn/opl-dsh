@@ -38,7 +38,7 @@
 
 `step-5-preview-free` 与 `muse-spark-1.2-contributor-free` 当前从 OPL 选择器隐藏；Jev 与 Content Safety 不作为编码组合提供。MiMo Code、Muse Code 没有可用默认组合，不默认登记或提示安装，已有程序与显式配置保留。
 
-OPL Gateway 的 Gemini 模型列表使用 `Gemini 4 Argon`、`Gemini 3.8 Flash` 和 `Gemini 3.1 Pro`，执行组合统一附加 `OpenCode`；请求仍保留原始模型 ID。
+OPL Gateway 的 Gemini 模型列表使用 `Gemini 4 Argon`、`Gemini 3.8 Flash` 和 `Gemini 3.1 Pro`；用户可手动选择 OpenCode 执行，请求仍保留原始模型 ID。它们不是 OpenCode 的官配，因此不自动生成内置组合。
 
 MiniMax M3.1 Flash Free 使用正式 ID `minimax-m3.1-flash-free` 与 OpenCode 官方免费通道；Kilo 的 `minimax/minimax-m3.1-flash:free` 是独立的 OFM 转发车道，也使用 OpenCode，不与前者互换。旧 Space Bunny 会话保留原模型身份，不自动替换历史路由。
 
