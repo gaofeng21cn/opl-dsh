@@ -198,7 +198,7 @@ try {
     autoEnabled: false,
     autoEnabledDisabled: true,
   })
-  await rpc('oplExecution', 'save-catalog', { catalog: manual })
+  await rpc('oplExecution', 'save-catalog', { request: { catalog: manual } })
   const savedManual = await rpc('oplExecution', 'catalog')
   assert(
     savedManual.combinations.some(
@@ -250,7 +250,7 @@ try {
   const stored = execution.combinations.find((item) => item.id === 'qualification-manual-dsh')
   assert(stored, 'stored manual combination missing')
   stored.enabled = false
-  await rpc('oplExecution', 'save-catalog', { catalog: execution })
+  await rpc('oplExecution', 'save-catalog', { request: { catalog: execution } })
   const afterUserStop = await rpc('oplExecution', 'catalog')
   const stopped = afterUserStop.combinations.find(
     (item) => item.modelRef.model === MODEL_PLUGIN_FIXTURE,

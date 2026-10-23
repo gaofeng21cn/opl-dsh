@@ -10,6 +10,9 @@ const root = import.meta.dirname
 const output = process.env.OPL_DIST_DIR ? resolve(process.env.OPL_DIST_DIR) : join(root, 'dist')
 const project = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
 const version = project.version
+const suiteVersionDefine = {
+  __OPL_SUITE_VERSION__: JSON.stringify(version),
+}
 
 /** Let Node write esbuild output so Windows endpoint policy cannot block the helper executable. */
 async function bundle(options) {
@@ -29,6 +32,7 @@ const hostBuild = await bundle({
   target: 'node24',
   packages: 'external',
   external: ['@deepseek-ai/*'],
+  define: suiteVersionDefine,
   tsconfig: join(root, 'tsconfig.host.json'),
   outfile: join(output, 'package/lib/index.js'),
 })
