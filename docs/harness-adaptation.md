@@ -14,23 +14,33 @@
 
 ## Our Free Model 组合
 
+默认仅生成厂商官配。OpenCode、Pi、Kilo 和 ZCode 的已适配渠道在“添加执行组合”中提供推荐选项，选择后填入模型、执行引擎和名称，保存后才加入列表。推荐采用来源与模型的精确 ID，不按名称猜测；用户自定义默认组合、停用选择和权限保留。未知模型需手动配置，不可用组合不进入对话选择列表。
+
 套件通过 OFM 的公开 `/clients` 接口读取免费车道的运行端点、Key 与模型目录，并在启动前再次核对官方 LLM 注册表。先在 OFM 的「本地转发」启用免费车道；未启用、模型撤销、来源卸载或准入失败时拒绝启动。账号车道 `our-free-model-region` 不借用免费车道的端点。
 
-| 模型                                                               | 自动官配 Harness | 协议      |
-| ------------------------------------------------------------------ | ---------------- | --------- |
-| Kimi K2.6、K3                                                      | Kimi Code        | Messages  |
-| MiMo v2.6 Flash（mimo-v2.6-flash-free）                            | MiMo Code        | Chat      |
-| Laguna S、XS 2.1                                                   | Poolside         | Chat      |
-| GLM 5.3、5.3 Flash（z-ai 原始 ID）                                 | ZCode            | Chat      |
-| GPT-OSS 20B                                                        | Codex CLI        | Responses |
-| Kilo Step 5 Preview（stepfun/step-5-preview-free）                 | StepCode         | Chat      |
-| Nemotron Nano Omni、LFM、Inkling Small                             | Pi Coding Agent  | Chat      |
+| 模型                                                                       | 首选 Harness           | 协议      |
+| -------------------------------------------------------------------------- | ---------------------- | --------- |
+| Kimi K2.6、K3                                                              | Kimi Code              | Messages  |
+| MiMo v2.6 Flash（mimo-v2.6-flash-free）                                    | OpenCode，官方免费通道 | Chat      |
+| Laguna S、XS 2.1                                                           | Poolside               | Chat      |
+| GLM 5.3、5.3 Flash（z-ai 原始 ID）                                         | ZCode                  | Chat      |
+| EAC GLM 5.3 Flash Free（opencode/glm-5.3-flash-free）                      | OpenCode，经 OFM 转发  | Chat      |
+| EAC DeepSeek V4.1 Flash Free（opencode/deepseek-v4.1-flash-free）          | OpenCode，经 OFM 转发  | Chat      |
+| Big Pickle（big-pickle）                                                   | OpenCode，官方免费通道 | Chat      |
+| Flint v1.0 Free（recursive/flint-v1.0:free）                               | Kilo Code，经 OFM 转发 | Chat      |
+| Flint 40B Free（flint-40b-free）                                           | OpenCode，经 OFM 转发  | Chat      |
+| GPT-OSS 20B                                                                | Codex CLI              | Responses |
+| Kilo Step 5 Preview（stepfun/step-5-preview-free）                         | StepCode               | Chat      |
+| Ling、LongCat、North Mini Code、Nemotron 3.5、Space Bunny、OpenRouter Free | OpenCode               | Chat      |
+| OPL Gateway Gemini 4 Argon、Gemini 3.8 Flash、Gemini 3.1 Pro               | OpenCode               | Chat      |
+| Nemotron Nano Omni、LFM、Inkling Small                                     | Pi Coding Agent        | Chat      |
+| Dots、Glyph、Kilo Auto Free、Kilo Beam、Xing 4.0                           | Kilo Code              | Chat      |
 
-上表只列出自动生成内置组合的厂商模型配对；模型必须仍在来源目录中且通过启动前检查。OpenCode、Kilo、Pi 等通用执行器没有自己的模型，不会自动生成任何组合；MiMo、OpenCode、Big Pickle、Flint、EAC GLM/DeepSeek、Gemini、Ling、LongCat、Space Bunny、OpenRouter Free、Dots、Glyph、Kilo Beam、Xing 等车道，以及所有其他跨厂商配对，都在“添加执行组合”中手动选择模型和执行器。手动组合会标记为“自定义”，不改变 OFM 的模型归属或凭据所有者。
+表格描述适配器配对，不是当前在线可用性承诺；模型必须仍在来源目录中且通过启动前检查。Cat Jam、MiMo v2.6 Flash、Muse Spark 1.3、Longcat 2.5、OpenCode 的 DeepSeek/GLM/Beam/Nemotron 免费条目、Space Bunny 和 Big Pickle 的精确裸 ID 使用 OpenCode 官方免费通道。Flint 的 `flint-40b-free` 使用 OpenCode 执行器并经 OFM Chat 转发；它与 OpenCode 自己的 `opencode/flint-40b-free` 服务是不同线路。`recursive/flint-v1.0:free` 由 Kilo 执行并经 OFM 转发。带 EAC/Kilo 前缀的同名模型仍是独立 OFM 转发车道，不互相替换。
 
 `step-5-preview-free` 与 `muse-spark-1.2-contributor-free` 当前从 OPL 选择器隐藏；Jev 与 Content Safety 不作为编码组合提供。MiMo Code、Muse Code 没有可用默认组合，不默认登记或提示安装，已有程序与显式配置保留。
 
-OPL Gateway 的 Gemini 模型列表使用 `Gemini 4 Argon`、`Gemini 3.8 Flash` 和 `Gemini 3.1 Pro`；用户可手动选择 OpenCode 执行，请求仍保留原始模型 ID。它们不是 OpenCode 的官配，因此不自动生成内置组合。
+OPL Gateway 的 Gemini 模型列表使用 `Gemini 4 Argon`、`Gemini 3.8 Flash` 和 `Gemini 3.1 Pro`；在添加组合时推荐 OpenCode，请求仍保留原始模型 ID，不自动加入列表。
 
 MiniMax M3.1 Flash Free 使用正式 ID `minimax-m3.1-flash-free` 与 OpenCode 官方免费通道；Kilo 的 `minimax/minimax-m3.1-flash:free` 是独立的 OFM 转发车道，也使用 OpenCode，不与前者互换。旧 Space Bunny 会话保留原模型身份，不自动替换历史路由。
 
@@ -69,4 +79,6 @@ OpenCode 内置免费端点启用官方 `--print-logs`。Host 仅将当前在途
 
 手动停止外部任务保留 cancelled 状态，不把取消引发的连接关闭显示成上游错误。ZCode 的结构化原因链仅提取已知错误类别及 HTTP 状态，不回显响应体。会话输入栏显示本地排队状态；排队时请求尚未发往模型，不能计为模型无进展。Pool 使用 `--settings=路径` 固定单个参数，避免配置路径解析歧义。
 
-执行插件的 `executionLimits` 配置统一约束原生和外部请求：`firstProgressMs` 默认 90000，`idleProgressMs` 默认 90000，`totalMs` 默认 1800000，单位均为毫秒，设置页保存后对后续执行轮次生效，正在运行的轮次保留启动时快照。计时从实际执行开始，排队不计入；心跳和空更新不延长等待，重试不重置当前轮次预算。工具执行暂停无进展计时但计入总时长，公开人工等待暂停全部计时。截止后停止本轮，不自动重发；未收到明确错误时只报告无进展或总时长超限，不推断上游原因。
+执行插件的 `executionLimits` 配置统一约束原生和外部请求：`firstProgressMs` 默认 90000，`idleProgressMs` 默认 90000，单位均为毫秒，设置页保存后对后续执行轮次生效，正在运行的轮次保留启动时快照。计时从实际执行开始，排队不计入；心跳和空更新不延长等待，重试不重置当前轮次预算。工具执行与公开人工等待暂停无进展计时。不设置单轮总时长上限；持续产生有效进展的任务不会因累计运行时间被终止，旧配置中的 `totalMs` 不再生效。无进展截止后停止本轮，不自动重发；未收到明确错误时只报告无进展，不推断上游原因。
+
+模型菜单仅在已确认的执行组合提供可选档位时显示推理设置。组合已停用、目录缺失或预检未完成时，不使用供应商通用档位代替 Harness 能力；旧会话保存的档位不在当前选项中时也不展示为生效值。

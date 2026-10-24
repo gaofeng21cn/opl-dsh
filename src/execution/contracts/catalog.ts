@@ -32,9 +32,28 @@ export interface CombinationDefinition {
   /** The user turned automatic readiness management off; readiness must not re-enable it. */
   autoEnabledDisabled?: boolean
 }
+export type OfmDiscoveryStatus =
+  | { kind: 'official'; harness: string; label: string }
+  | { kind: 'recommended'; harness: string; label: string }
+  | { kind: 'manual'; harnesses: string[]; label: string }
+  | { kind: 'excluded'; reason: string; label: string }
+  | { kind: 'unknown'; label: string }
+
+export interface OfmDiscoveryItem {
+  modelRef: ModelRef
+  name: string
+  available: boolean
+  status: OfmDiscoveryStatus
+}
 export interface ExecutionCatalog {
   version: 2
   models: ModelDefinition[]
   harnesses: HarnessDefinition[]
   combinations: CombinationDefinition[]
+  /** Available, explicitly adapted channel pairings offered for manual addition. */
+  recommendations?: Array<{ modelRef: ModelRef; harnessRef: string; name: string }>
+  /** Live adapter compatibility for the manual pairing form; not a readiness verdict. */
+  supportedPairings?: Array<{ modelRef: ModelRef; harnessRefs: string[] }>
+  /** Live OFM models that need maintainer review before becoming combinations. */
+  ofmDiscovery?: OfmDiscoveryItem[]
 }

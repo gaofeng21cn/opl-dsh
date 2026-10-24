@@ -1,6 +1,6 @@
 /** Install and configure the optional KimiCU companion from its official release. */
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, renameSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'

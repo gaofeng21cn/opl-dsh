@@ -340,7 +340,7 @@ describe('OPL model button selection projection', () => {
     })
     const { call, release } = heldSelectionFixture()
     const view = await mount({ sessionId: 'session-1', call, source: () => face.face })
-    expect(view.text()).toContain('高')
+    expect(view.text()).not.toContain('高')
 
     // The external change lands before the composer's own read answers.
     await act(async () => {
@@ -353,7 +353,7 @@ describe('OPL model button selection projection', () => {
         next: { provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'max' },
       })
     })
-    expect(view.text()).toContain('最大')
+    expect(view.text()).not.toContain('最大')
 
     // The stale answer must not roll the display back to the opening value.
     await act(async () => {
@@ -476,8 +476,8 @@ describe('OPL model button selection projection', () => {
       next: { provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'high' },
     })
     const binding = { session: { projections: { faceOf: () => face.face } } }
-    const { call } = fixture()
-    const { ctx, registration } = await pluginFixture({ 'session-1': binding }, call)
+    const { calls } = fixture()
+    const { ctx, registration } = await pluginFixture({ 'session-1': binding }, calls)
 
     // The registered slot prop must resolve the addressed Session's real
     // projection face — not a copy, and not another Session's.

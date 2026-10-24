@@ -1,6 +1,7 @@
 import { installSkill, verifySkill } from './skill-install.mjs'
 import { isLocalCandidateInstall } from './update.mjs'
 import { installKimiCu } from './kimi-cu.mjs'
+import { installWindowsKimiCu } from './kimi-cu-windows.mjs'
 /** Install OPL-owned files into the official DSH profile, then launch the official app. */
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync } from 'node:fs'
@@ -197,7 +198,7 @@ foreach ($folder in @('Programs', 'Desktop')) {
   }
 }
 const skillDir = installSkill({ executable, home, launcher, root, release, codexHome })
-const computerUse = await installKimiCu({
+const computerUse = await (process.platform === 'win32' ? installWindowsKimiCu : installKimiCu)({
   suiteRoot: root,
   log: (message) => process.stdout.write(`${message}\n`),
 })

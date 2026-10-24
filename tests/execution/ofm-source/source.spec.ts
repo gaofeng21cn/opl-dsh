@@ -87,7 +87,6 @@ describe('OFM source pairing', () => {
       ['codex', 'openai/gpt-oss-20b'],
       ['kilo', 'reflection/beam-free'],
       ['kilo', 'xingchen-agi/xing4.0-29b-a4b:free'],
-      ['claude', 'mimo-v2.6-flash-free'],
     ] as const)
       expect(source.supports(harness, { provider: OFM_PROVIDER, model })).toBe(true)
     // An alias for a CLI id reaches the same pinning decision.
@@ -178,7 +177,7 @@ describe('OFM source pairing', () => {
     expect(adapterFor('kimi', ref, sources)).toBeUndefined()
     applyOfmModelSource(ctx, { providers: OFM_PROVIDERS, connection: async () => facts })
     expect(sources.supports('claude', { provider: OFM_REGION_PROVIDER, model: 'kimi-k3' })).toBe(
-      true,
+      false,
     )
     // Adapter selection needs an adapter registered for the harness id. `kimi`'s
     // adapter is owned by its own task and is not mounted yet, so the pairing is
@@ -186,6 +185,35 @@ describe('OFM source pairing', () => {
     expect(sources.supports('kimi', ref)).toBe(true)
     const codexRef = { provider: OFM_PROVIDER, model: 'openai/gpt-oss-20b' }
     expect(adapterFor('codex', codexRef, sources)?.id).toBe('codex')
+  })
+
+  it('does not advertise Claude Code for OFM models based on Messages protocol support', async () => {
+    const connection = vi.fn(async () => facts)
+    const ctx = {
+      llm: fakeLlm(loaded),
+      effect: (e: () => () => void) => e(),
+    } as unknown as Context
+    const sources = new ExternalModelSources(ctx)
+    ctx.oplExternalModelSources = sources
+    applyOfmModelSource(ctx, { providers: OFM_PROVIDERS, connection })
+    for (const provider of OFM_PROVIDERS) {
+      for (const model of ['moonshotai/kimi-k3', 'mimo-v2.6-flash-free', 'openai/gpt-oss-20b']) {
+        const ref = { provider, model }
+        expect(adapterFor('claude', ref, sources)).toBeUndefined()
+        await expect(sources.resolve('claude', ref, 'messages')).rejects.toThrow(
+          '尚未适配此 Harness',
+        )
+      }
+    }
+    expect(connection).not.toHaveBeenCalled()
+    for (const channel of ['aws', 'kiro'])
+      expect(
+        adapterFor(
+          'claude',
+          { provider: 'opl-gateway', model: `${channel}::claude-opus-5-5` },
+          sources,
+        )?.id,
+      ).toBe('claude')
   })
 
   it('withdraws every pair when the owner unloads', () => {
@@ -223,9 +251,12 @@ describe('OFM source resolution', () => {
   it('treats resolveModelInfo answering an unknown id as not-catalogued', async () => {
     // The fake registry synthesizes metadata for anything, so only the live
     // catalog can refuse this model.
-    const { source } = harness(loaded, { connection: async () => facts })
+    const { source } = harness(loaded, {
+      connection: async () => facts,
+      protocols: { 'future-cli': 'chat' },
+    })
     await expect(
-      source.resolve('claude', { provider: OFM_PROVIDER, model: 'not/in-any-catalog' }),
+      source.resolve('future-cli', { provider: OFM_PROVIDER, model: 'not/in-any-catalog' }),
     ).rejects.toThrow('当前目录未提供模型')
   })
 

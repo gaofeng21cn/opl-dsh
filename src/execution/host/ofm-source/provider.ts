@@ -64,15 +64,12 @@ export const OFM_EXCLUDED_MODELS: readonly string[] = [
 ]
 
 /**
- * Harnesses that pin an exact model set. For these, a structurally valid model
- * id is not enough: the id must be one this run named for that Harness. A
- * A Harness absent from this table (the official `claude` route) accepts any
- * model the owning plugin itself currently advertises, which resolve() proves
- * against the live catalog. Codex is listed explicitly because this run assigns
- * GPT-OSS 20B to Codex only.
+ * Exact OFM model assignments per Harness. An empty set disables the Harness
+ * for this source; protocol support alone does not establish an adaptation.
  */
 export const OFM_PINNED_HARNESS_MODELS: Readonly<Record<string, readonly string[]>> = {
   codex: ['openai/gpt-oss-20b'],
+  claude: [],
   kimi: ['moonshotai/kimi-k2.6', 'moonshotai/kimi-k3'],
   mimo: ['mimo-v2.6-flash-free'],
   pool: ['poolside/laguna-s-2.1:free', 'poolside/laguna-xs-2.1:free'],

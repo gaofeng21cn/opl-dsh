@@ -4,7 +4,7 @@ import type {
   TypertRemoteInfo,
   TypertRemoteMethod,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, CodexRuntimeRequest, CodexRuntimeResult, ContextBudgetRequest, ContextBudgetSnapshot, CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, ExecutionLimits, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessReasoningPreflight, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, MessageEditSend, MessageEditState, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
+import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, CodexRuntimeRequest, CodexRuntimeResult, ContextBudgetRequest, ContextBudgetSnapshot, CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, ExecutionLimits, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessReasoningPreflight, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, MessageEditSend, MessageEditState, MiniMaxAccountLoginRequest, MiniMaxAccountStatus, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$6f706c4175746f526576696577 {
@@ -35,6 +35,10 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     list: () => Promise<RemoteResult<HarnessCatalog>>
     'message-edit-send': (request: MessageEditSend) => Promise<RemoteResult<SessionPromptValue>>
     'message-edit-state': (request: { sessionId: string; }) => Promise<RemoteResult<MessageEditState>>
+    'minimax-account-cancel': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
+    'minimax-account-login': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
+    'minimax-account-logout': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
+    'minimax-account-status': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
     'model-selection': (request: SessionRequest) => Promise<RemoteResult<HarnessSelection>>
     'projectless-session': () => Promise<RemoteResult<{ sessionId: string; cwd: string; }>>
     prompt: (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
@@ -116,6 +120,10 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/list': () => Promise<RemoteResult<HarnessCatalog>>
     'oplExecution/message-edit-send': (request: MessageEditSend) => Promise<RemoteResult<SessionPromptValue>>
     'oplExecution/message-edit-state': (request: { sessionId: string; }) => Promise<RemoteResult<MessageEditState>>
+    'oplExecution/minimax-account-cancel': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
+    'oplExecution/minimax-account-login': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
+    'oplExecution/minimax-account-logout': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
+    'oplExecution/minimax-account-status': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
     'oplExecution/model-selection': (request: SessionRequest) => Promise<RemoteResult<HarnessSelection>>
     'oplExecution/projectless-session': () => Promise<RemoteResult<{ sessionId: string; cwd: string; }>>
     'oplExecution/prompt': (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
@@ -201,6 +209,10 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'oplExecution/list': TypertRemoteMethod<{  }, HarnessCatalog>
   readonly 'oplExecution/message-edit-send': TypertRemoteMethod<{ readonly 'request': MessageEditSend }, SessionPromptValue>
   readonly 'oplExecution/message-edit-state': TypertRemoteMethod<{ readonly 'request': { sessionId: string; } }, MessageEditState>
+  readonly 'oplExecution/minimax-account-cancel': TypertRemoteMethod<{ readonly 'request': MiniMaxAccountLoginRequest }, MiniMaxAccountStatus>
+  readonly 'oplExecution/minimax-account-login': TypertRemoteMethod<{ readonly 'request': MiniMaxAccountLoginRequest }, MiniMaxAccountStatus>
+  readonly 'oplExecution/minimax-account-logout': TypertRemoteMethod<{ readonly 'request': MiniMaxAccountLoginRequest }, MiniMaxAccountStatus>
+  readonly 'oplExecution/minimax-account-status': TypertRemoteMethod<{ readonly 'request': MiniMaxAccountLoginRequest }, MiniMaxAccountStatus>
   readonly 'oplExecution/model-selection': TypertRemoteMethod<{ readonly 'request': SessionRequest }, HarnessSelection>
   readonly 'oplExecution/projectless-session': TypertRemoteMethod<{  }, { sessionId: string; cwd: string; }>
   readonly 'oplExecution/prompt': TypertRemoteMethod<{ readonly 'request': HarnessPromptRequest }, HarnessSnapshot>

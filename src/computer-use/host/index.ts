@@ -7,6 +7,7 @@ import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { WINCU_ACTIONS } from './windows.ts'
 import {
   KIMI_CU_TOOLS,
   KimiCuClient,
@@ -29,23 +30,26 @@ export const KIMI_CU_MUTATIONS = new Set<KimiCuAction>([
   'select_text',
   'drag',
   'drag_paths',
+  'drag_path',
   'debug_tap',
 ])
 
 /** Register one tool on each native DSH Agent, not on every external Harness. */
 export function installComputerUse(ctx: Context): void {
+  const windows = process.platform === 'win32'
   const clients = new Map<string, KimiCuClient>()
   const install = (agent: Agent): void => {
     agent.ctx.inject(['tools', 'attachments'], (scope) => {
       scope.tools.register(
         defineTool({
           name: 'computer_use',
-          description:
-            '通过 KimiCU 操作本机 macOS 应用。先用 list_apps、list_windows 或 get_app_state 观察，再执行操作；截图会作为图像返回。修改桌面前必须在当前会话选择“完全访问”。权限或服务未就绪时原样报告失败，不要反复重试。',
+          description: windows
+            ? '通过官方 KimiCU Windows 插件操作桌面。先 list_windows 获取 {app,id,title} 窗口；get_window_state 参数为 {window,include_text,include_screenshot}，返回 accessibility.tree 字符串与截图。点击用 {window,element_index} 或截图中的 {window,screenshotId,x,y}；type_text 用 {window,text}，仅在确认焦点后输入；press_key 用 {window,key}；scroll 用 {window,x,y,scrollX,scrollY}，正值向下/右。每次操作后重新观察。图片自动返回。变更操作需要完全访问。错误不自动重试；不得操作系统安全设置或认证窗口。'
+            : '通过 KimiCU 操作本机 macOS 应用。先用 list_apps、list_windows 或 get_app_state 观察，再执行操作；截图会作为图像返回。修改桌面前必须在当前会话选择“完全访问”。权限或服务未就绪时原样报告失败，不要反复重试。',
           parameters: {
             action: {
               type: 'string',
-              enum: [...KIMI_CU_TOOLS],
+              enum: windows ? [...WINCU_ACTIONS] : [...KIMI_CU_TOOLS],
               required: true,
               description: 'KimiCU 原始工具名。',
             },
@@ -93,7 +97,7 @@ export function installComputerUse(ctx: Context): void {
               })),
             ],
           },
-          isConcurrencySafe: (args) => !KIMI_CU_MUTATIONS.has(args.action),
+          isConcurrencySafe: (args) => !windows && !KIMI_CU_MUTATIONS.has(args.action),
           timeoutMs: 40_000,
           execute: async (args, exec) => {
             if (KIMI_CU_MUTATIONS.has(args.action)) {
@@ -109,7 +113,14 @@ export function installComputerUse(ctx: Context): void {
               client = new KimiCuClient()
               clients.set(key, client)
             }
-            const raw = await client.call(args.action, args.args ?? {}, exec.signal)
+            let raw: unknown
+            try {
+              raw = await client.call(args.action, args.args ?? {}, exec.signal)
+            } catch (error) {
+              clients.delete(key)
+              await client.close()
+              throw error
+            }
             const result = kimiCuResult(raw)
             if (result.isError) throw Error(kimiCuFailure(raw))
             const attachments = await scope.attachments.saveImages(result.images)

@@ -1,0 +1,115 @@
+diff --git a/packages/oauth-core/src/auth-core.ts b/packages/oauth-core/src/auth-core.ts
+index 52322bc..59b7195 100644
+--- a/packages/oauth-core/src/auth-core.ts
++++ b/packages/oauth-core/src/auth-core.ts
+@@ -589,6 +589,7 @@ export class MCodeOAuthCore {
+         ...state,
+         authorization: {
+           ...state.authorization,
++          leaseExpiresAtMs: Math.min(state.authorization.leaseExpiresAtMs, this.now() + authorization.expiresInSec * 1000),
+           userCode: authorization.userCode,
+           verificationUri: authorization.verificationUri,
+           ...(authorization.verificationUriComplete
+diff --git a/packages/tui/src/auth/application.ts b/packages/tui/src/auth/application.ts
+index 657c7a6..92502de 100644
+--- a/packages/tui/src/auth/application.ts
++++ b/packages/tui/src/auth/application.ts
+@@ -36,6 +36,7 @@ export interface McodeAuthPort {
+ }
+ 
+ export interface McodeSharedAuthCore {
++  cancelLogin?(): Promise<void>;
+   getStatus(): Promise<AuthStatusSnapshot>;
+   login(options?: LoginOptions): Promise<LoginResult>;
+   logout(options: { revoke: boolean }): Promise<LogoutResult>;
+@@ -56,6 +57,14 @@ export interface McodeAuthApplicationOptions {
+ }
+ 
+ export class McodeAuthApplication implements McodeAuthPort {
++  private loginCancelled = false;
++  private activeLoginCore: McodeSharedAuthCore | undefined;
++
++  async cancelLogin(): Promise<void> {
++    this.loginCancelled = true;
++    await this.activeLoginCore?.cancelLogin?.();
++  }
++
+   private readonly scope: { region: MavisRegion; buildEnv: MavisBuildEnv };
+ 
+   constructor(private readonly options: McodeAuthApplicationOptions) {
+@@ -72,6 +81,7 @@ export class McodeAuthApplication implements McodeAuthPort {
+     onProgress?: (progress: McodeAuthProgress) => void,
+     region: MavisRegion = this.scope.region,
+   ): Promise<McodeAuthResult> {
++    this.loginCancelled = false;
+     this.track('login_click', {});
+     try {
+       const requestedScope = { ...this.scope, region };
+@@ -83,7 +93,9 @@ export class McodeAuthApplication implements McodeAuthPort {
+         }
+         sharedAuthCore = this.options.resolveSharedAuthCore(region);
+       }
++      this.activeLoginCore = sharedAuthCore;
+       const wasAuthenticated = (await sharedAuthCore.getStatus()).status === 'authenticated';
++      if (this.loginCancelled) throw new Error('MCode login cancelled.');
+       let deviceFlowStarted = false;
+       await sharedAuthCore.login({
+         onDeviceAuthorization: (authorization: DeviceAuthorizationPrompt) => {
+@@ -111,6 +123,8 @@ export class McodeAuthApplication implements McodeAuthPort {
+     } catch (error) {
+       this.trackLoginResult('2', classifyLoginFailure(error));
+       throw error;
++    } finally {
++      this.activeLoginCore = undefined;
+     }
+   }
+ 
+diff --git a/packages/tui/src/cli/auth-command.ts b/packages/tui/src/cli/auth-command.ts
+index aeebabe..8105880 100644
+--- a/packages/tui/src/cli/auth-command.ts
++++ b/packages/tui/src/cli/auth-command.ts
+@@ -10,6 +10,7 @@ import type { MavisRegion } from '@mavis/config';
+ 
+ interface TuiAuthCommandApplication {
+   login: McodeAuthApplication['login'];
++  cancelLogin?: McodeAuthApplication['cancelLogin'];
+   logout: McodeAuthApplication['logout'];
+ }
+ 
+@@ -28,7 +29,26 @@ export async function runTuiLogin(options: RunTuiAuthCommandOptions = {}): Promi
+     ? options.createApplication(options.region)
+     : await createAuthApplication(options.region, options.prepareDataDir);
+   const writeError = options.writeError ?? ((value: string) => process.stderr.write(value));
++  const controlled = process.env.OPL_MCODE_AUTH_CONTROL === '1';
++  let input = '';
++  const cancel = () => { void application.cancelLogin?.().catch(() => {}); };
++  const receive = (chunk: Buffer) => {
++    input += chunk.toString('utf8');
++    if (input.length > 1024) { cancel(); input = ''; return; }
++    let index: number;
++    while ((index = input.indexOf('\n')) >= 0) {
++      const line = input.slice(0, index); input = input.slice(index + 1);
++      if (line === 'OPL_AUTH_CANCEL_V1') cancel();
++    }
++  };
++  if (controlled) {
++    process.stdin.on('data', receive);
++    process.stdin.on('end', cancel);
++    process.stdout.write('OPL_AUTH_READY_V1\n');
++  }
++  try {
+   const result = await application.login((progress) => {
++    if (controlled) process.stdout.write('OPL_AUTH_EXPIRES_V1 ' + Math.ceil(progress.expiresInSec) + '\n');
+     const authorizationUrl = markTuiAuthorizationUrl(
+       progress.verificationUriComplete ?? progress.verificationUri,
+     );
+@@ -43,6 +63,9 @@ export async function runTuiLogin(options: RunTuiAuthCommandOptions = {}): Promi
+     });
+   });
+   return result.message;
++  } finally {
++    if (controlled) { process.stdin.off('data', receive); process.stdin.off('end', cancel); process.stdin.pause(); }
++  }
+ }
+ 
+ export async function runTuiLogout(options: RunTuiAuthCommandOptions = {}): Promise<string> {

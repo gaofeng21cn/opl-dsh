@@ -143,7 +143,6 @@ export function installNativeProgressGuard(
           record.reason = {
             'first-progress': '原生执行首次进展等待超时',
             'idle-progress': '原生执行长时间没有新进展',
-            total: '原生执行达到总时长上限',
           }[reason]
           record.expired = true
           expiry.abort()

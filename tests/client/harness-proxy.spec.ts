@@ -29,8 +29,21 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   // through, which is what the desktop composition relies on anyway.
   Button: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) =>
     React.createElement('button', { ...props, type: 'button' }, children),
-  Switch: ({ label, ...props }: { label?: string } & Record<string, unknown>) =>
-    React.createElement('button', { ...props, role: 'switch' }, label),
+  Switch: ({
+    label,
+    checked,
+    onChange,
+    ...props
+  }: {
+    label?: string
+    checked?: boolean
+    onChange?: (checked: boolean) => void
+  } & Record<string, unknown>) =>
+    React.createElement(
+      'button',
+      { ...props, role: 'switch', 'aria-checked': checked, onClick: () => onChange?.(!checked) },
+      label,
+    ),
 }))
 
 // `./dom.ts` installs the process DOM on import, before React DOM is loaded.
@@ -248,6 +261,10 @@ function fixture(start: ReturnType<typeof catalog>, save?: (next: any) => unknow
         definition: JSON.parse(JSON.stringify(definition)),
       }))
     if (method === 'catalog') return JSON.parse(JSON.stringify(stored))
+    if (method === 'save-catalog') {
+      stored = JSON.parse(JSON.stringify((args as { catalog: unknown }).catalog))
+      return JSON.parse(JSON.stringify(stored))
+    }
     if (method === 'combinations')
       return stored.combinations.map((item: { id: string }) => ({ id: item.id, available: true }))
     if (method === 'save-harness-proxy') {
@@ -295,6 +312,280 @@ async function open(call: ExecutionCall, component = HarnessSettings) {
 }
 
 describe('每个外部 Harness 独立的代理设置', () => {
+  it('先选模型后仅列出适配的 Harness，切换模型会清除旧 Harness', async () => {
+    const data = {
+      ...catalog(),
+      supportedPairings: [
+        { modelRef: catalog().models[0].ref, harnessRefs: ['minimax-code', 'codex'] },
+        { modelRef: { provider: 'opl-gateway', model: 'codex::gpt-test' }, harnessRefs: ['codex'] },
+      ],
+    }
+    data.models.push({
+      ref: data.supportedPairings[1].modelRef,
+      name: 'GPT',
+      source: 'OPL',
+      available: true,
+    })
+    const { call, calls } = fixture(data)
+    const view = await open(call, ExecutionCatalogSection)
+    const manual = walk(view).find(
+      (node) => node.getAttribute?.('data-opl-panel') === 'custom-combinations',
+    )!
+    const selects = () => walk(manual).filter((node) => node.nodeName === 'SELECT')
+    expect(text(selects()[1])).toBe('先选择模型')
+    await act(async () => {
+      selects()[0].value = JSON.stringify(['minimax-official', 'MiniMax-M3.1-Flash-Preview'])
+      selects()[0].dispatchEvent('change')
+    })
+    expect(text(selects()[1])).toContain('MiniMax Code')
+    expect(text(selects()[1])).not.toContain('Codex CLI')
+    await act(async () => {
+      selects()[1].value = 'minimax-code'
+      selects()[1].dispatchEvent('change')
+    })
+    await act(async () => {
+      selects()[0].value = JSON.stringify(['opl-gateway', 'codex::gpt-test'])
+      selects()[0].dispatchEvent('change')
+    })
+    expect(text(selects()[1])).toContain('Codex CLI')
+    expect(text(selects()[1])).not.toContain('MiniMax Code')
+    expect(
+      walk(selects()[1])
+        .find(
+          (node) => node.nodeName === 'OPTION' && (node as Node & { selected: boolean }).selected,
+        )
+        ?.getAttribute('value'),
+    ).toBe('')
+    expect(calls.some((entry) => entry.method === 'save-catalog')).toBe(false)
+  })
+
+  it('手动添加只选模型与 Harness，名称自动生成且可在管理列表修改', async () => {
+    const initial = catalog()
+    const data = {
+      ...initial,
+      supportedPairings: [{ modelRef: initial.models[0].ref, harnessRefs: ['minimax-code'] }],
+    }
+    const { call, stored } = fixture(data)
+    const view = await open(call, ExecutionCatalogSection)
+    const manual = walk(view).find(
+      (node) => node.getAttribute?.('data-opl-panel') === 'custom-combinations',
+    )!
+    expect(walk(manual).some((node) => node.nodeName === 'INPUT')).toBe(false)
+    const selects = walk(manual).filter((node) => node.nodeName === 'SELECT')
+    await act(async () => {
+      selects[0].value = JSON.stringify(['minimax-official', 'MiniMax-M3.1-Flash-Preview'])
+      selects[0].dispatchEvent('change')
+    })
+    await act(async () => {
+      selects[1].value = 'minimax-code'
+      selects[1].dispatchEvent('change')
+    })
+    await press(walk(manual).find((node) => node.nodeName === 'BUTTON')!)
+    expect(stored().combinations.at(-1)).toMatchObject({
+      name: 'MiniMax-M3.1-Flash-Preview + MiniMax Code',
+      enabled: true,
+      permissionPolicy: 'read-only',
+    })
+    const added = walk(view).find(
+      (node) => node.getAttribute?.('data-opl-combination') === stored().combinations.at(-1).id,
+    )!
+    expect(walk(added).some((node) => node.nodeName === 'INPUT')).toBe(true)
+  })
+
+  it('按 Harness 全选和取消只影响本组，逐项取消后只保存剩余勾选', async () => {
+    const initial = catalog()
+    const data = {
+      ...initial,
+      recommendations: [
+        {
+          modelRef: { provider: 'our-free-model', model: 'big-pickle' },
+          harnessRef: 'opencode',
+          name: 'Pickle',
+        },
+        {
+          modelRef: { provider: 'our-free-model', model: 'beam' },
+          harnessRef: 'opencode',
+          name: 'Beam',
+        },
+        {
+          modelRef: { provider: 'our-free-model', model: 'other' },
+          harnessRef: 'pi',
+          name: 'Other',
+        },
+      ],
+    }
+    const { call, calls, stored } = fixture(data)
+    const view = await open(call, ExecutionCatalogSection)
+    const group = (id: string) =>
+      walk(view).find((node) => node.getAttribute?.('data-opl-recommendation-group') === id)!
+    const check = async (node: Node, value: boolean) =>
+      act(async () => {
+        node.checked = value
+        node.click()
+      })
+    await check(group('opencode'), true)
+    expect(group('pi').checked).toBe(false)
+    await check(group('pi'), true)
+    await check(group('opencode'), false)
+    expect(group('pi').checked).toBe(true)
+    await check(group('opencode'), true)
+    await check(
+      walk(view).find((node) =>
+        node.getAttribute?.('data-opl-recommendation-item')?.includes('beam'),
+      )!,
+      false,
+    )
+    expect(group('opencode').checked).toBe(false)
+    expect((group('opencode') as Node & { indeterminate: boolean }).indeterminate).toBe(true)
+    expect(calls.some((entry) => entry.method === 'save-catalog')).toBe(false)
+    await press(
+      walk(view).find((node) => node.nodeName === 'BUTTON' && text(node).startsWith('保存选择'))!,
+    )
+    expect(
+      stored()
+        .combinations.slice(initial.combinations.length)
+        .map((item: { name: string }) => item.name),
+    ).toEqual(['Pickle', 'Other'])
+    expect(calls.filter((entry) => entry.method === 'save-catalog')).toHaveLength(1)
+  })
+
+  it('批量推荐一次保存并跳过已有或重复组合，不改变已有权限和默认项', async () => {
+    const initial = catalog()
+    const recommendation = {
+      modelRef: { provider: 'our-free-model', model: 'big-pickle' },
+      harnessRef: 'opencode',
+      name: 'Big Pickle + OpenCode',
+    }
+    const data = {
+      ...initial,
+      recommendations: [
+        recommendation,
+        recommendation,
+        { ...recommendation, modelRef: { ...recommendation.modelRef, model: 'beam' } },
+        { ...initial.combinations[0] },
+      ],
+    }
+    const { call, calls, stored } = fixture(data)
+    const view = await open(call, ExecutionCatalogSection)
+    const button = () =>
+      walk(view).find((node) => node.nodeName === 'BUTTON' && text(node).startsWith('保存选择'))!
+    expect(calls.some((entry) => entry.method === 'save-catalog')).toBe(false)
+    await press(walk(view).find((node) => node.nodeName === 'BUTTON' && text(node) === '全选')!)
+    await press(button())
+    expect(calls.filter((entry) => entry.method === 'save-catalog')).toHaveLength(1)
+    expect(stored().combinations.slice(0, initial.combinations.length)).toEqual(
+      initial.combinations.map((item) =>
+        item.enabled
+          ? item
+          : {
+              ...item,
+              enabled: true,
+              generated: false,
+              autoEnabled: false,
+              autoEnabledDisabled: true,
+            },
+      ),
+    )
+    const additions = stored().combinations.slice(initial.combinations.length)
+    expect(additions).toHaveLength(2)
+    expect(new Set(additions.map((item: { id: string }) => item.id)).size).toBe(2)
+    for (const item of additions)
+      expect(item).toMatchObject({
+        permissionPolicy: 'read-only',
+        isDefault: false,
+        enabled: true,
+        autoEnabled: false,
+        autoEnabledDisabled: true,
+      })
+    await press(button())
+    expect(calls.filter((entry) => entry.method === 'save-catalog')).toHaveLength(1)
+    await press(walk(view).find((node) => node.nodeName === 'BUTTON' && text(node) === '取消全选')!)
+    await press(button())
+    expect(stored().combinations).toHaveLength(initial.combinations.length + 2)
+    expect(stored().combinations[0]).toMatchObject({
+      ...initial.combinations[0],
+      enabled: false,
+      generated: false,
+      autoEnabled: false,
+      autoEnabledDisabled: true,
+    })
+    expect(stored().combinations[1]).toMatchObject({
+      ...initial.combinations[1],
+      generated: false,
+      autoEnabled: false,
+      autoEnabledDisabled: true,
+    })
+    expect(stored().combinations.every((item: { enabled: boolean }) => !item.enabled)).toBe(true)
+    await press(walk(view).find((node) => node.nodeName === 'BUTTON' && text(node) === '全选')!)
+    await press(button())
+    expect(stored().combinations).toHaveLength(initial.combinations.length + 2)
+    expect(stored().combinations[0]).toMatchObject({
+      permissionPolicy: initial.combinations[0].permissionPolicy,
+      isDefault: initial.combinations[0].isDefault,
+      enabled: true,
+    })
+  })
+
+  it('推荐选择和手动添加表单分开，批量保存不依赖手动表单', async () => {
+    const data = {
+      ...catalog(),
+      recommendations: [
+        {
+          modelRef: { provider: 'our-free-model', model: 'big-pickle' },
+          harnessRef: 'opencode',
+          name: 'Big Pickle + OpenCode',
+        },
+      ],
+    }
+    data.models.push({
+      ref: data.recommendations[0].modelRef,
+      name: 'Big Pickle',
+      source: 'OFM',
+      available: true,
+    })
+    const { call, calls } = fixture(data)
+    const view = await open(call, ExecutionCatalogSection)
+    const manual = walk(view).find(
+      (node) => node.getAttribute?.('data-opl-panel') === 'custom-combinations',
+    )!
+    const recommended = walk(view).find(
+      (node) => node.getAttribute?.('data-opl-panel') === 'recommended-combinations',
+    )!
+    expect(walk(manual).some((node) => node.getAttribute?.('data-opl-recommendation-group'))).toBe(
+      false,
+    )
+    expect(walk(recommended).some((node) => node.nodeName === 'SELECT')).toBe(false)
+    expect(
+      walk(view).some((node) => node.getAttribute?.('data-opl-recommendation') === 'true'),
+    ).toBe(false)
+    expect(calls.some((entry) => entry.method === 'save-catalog')).toBe(false)
+    await press(
+      walk(recommended).find((node) => node.nodeName === 'BUTTON' && text(node) === '全选')!,
+    )
+    expect(walk(manual).some((node) => node.nodeName === 'INPUT')).toBe(false)
+    await press(
+      walk(recommended).find(
+        (node) => node.nodeName === 'BUTTON' && text(node).startsWith('保存选择'),
+      )!,
+    )
+    const saved = calls.find((entry) => entry.method === 'save-catalog')!.args as {
+      catalog: {
+        combinations: Array<{
+          name: string
+          harnessRef: string
+          generated?: boolean
+          permissionPolicy: string
+        }>
+      }
+    }
+    expect(saved.catalog.combinations.at(-1)).toMatchObject({
+      name: 'Big Pickle + OpenCode',
+      harnessRef: 'opencode',
+      permissionPolicy: 'read-only',
+    })
+    expect(saved.catalog.combinations.at(-1)?.generated).not.toBe(true)
+  })
+
   it('把组合、执行程序、代理和工具审批收拢在一个设置入口内', async () => {
     const { call } = fixture(catalog())
     const view = await open(call, ExecutionSettings)
@@ -318,35 +609,208 @@ describe('每个外部 Harness 独立的代理设置', () => {
     expect(walk(combinations).some((node) => node.getAttribute?.('data-opl-proxy-row'))).toBe(false)
   })
 
-  it('把可启用但未启用的组合折叠，启用中的组合保持展开可见', async () => {
-    const { call } = fixture(catalog())
+  it('仅在上方选择启停，停用后从下方隐藏并保留原配置以供恢复', async () => {
+    const initial = catalog()
+    const { call, stored } = fixture(initial)
     const view = await open(call, ExecutionCatalogSection)
-    const folded = walk(view).find((node) => node.getAttribute?.('data-opl-inactive-combinations'))
-    expect(folded, '找不到折叠区').toBeDefined()
-    expect(text(folded)).toContain('可启用但未启用的组合（1）')
-    expect(
-      walk(folded).some((node) => node.getAttribute?.('data-opl-combination') === 'inactive/one'),
-    ).toBe(true)
-    const visibleRows = walk(view)
-      .map((node) => node.getAttribute?.('data-opl-combination'))
-      .filter((id): id is string => typeof id === 'string')
-    expect(visibleRows).toContain('codex/one')
+    const rows = () => walk(view).filter((node) => node.getAttribute?.('data-opl-combination'))
+    expect(rows().map((node) => node.getAttribute('data-opl-combination'))).toEqual(['codex/one'])
+    expect(walk(rows()[0]).filter((node) => node.getAttribute?.('role') === 'switch')).toHaveLength(
+      0,
+    )
+    const choice = () =>
+      walk(view).find((node) =>
+        node.getAttribute?.('data-opl-recommendation-item')?.includes('inactive/one'),
+      )!
+    expect(choice().checked).toBe(false)
+    await act(async () => {
+      choice().checked = true
+      choice().click()
+    })
+    expect(rows()).toHaveLength(1)
+    const save = () =>
+      walk(view).find((node) => node.nodeName === 'BUTTON' && text(node).startsWith('保存选择'))!
+    await press(save())
+    expect(rows()).toHaveLength(2)
+    expect(stored().combinations[1]).toMatchObject({ ...initial.combinations[1], enabled: true })
+    await act(async () => {
+      choice().checked = false
+      choice().click()
+    })
+    await press(save())
+    expect(rows()).toHaveLength(1)
+    expect(stored().combinations[1]).toMatchObject(initial.combinations[1])
+    expect(stored().combinations).toHaveLength(2)
+    await act(async () => {
+      choice().checked = true
+      choice().click()
+    })
+    await press(save())
+    expect(rows()).toHaveLength(2)
+    expect(stored().combinations[1].id).toBe('inactive/one')
   })
 
-  it('只把模型与执行器的官配标成内置，其他配对明确显示自定义', async () => {
+  it('相同模型和 Harness 的两份配置可独立选择，不因推荐重复新增', async () => {
+    const initial = catalog()
+    const existing = initial.combinations[0]
+    const data = {
+      ...initial,
+      combinations: [
+        existing,
+        {
+          ...existing,
+          id: 'copy',
+          name: '另一份配置',
+          enabled: false,
+          permissionPolicy: 'read-only',
+        },
+      ],
+      recommendations: [{ ...existing }],
+    }
+    const { call, stored } = fixture(data as ReturnType<typeof catalog>)
+    const view = await open(call, ExecutionCatalogSection)
+    const inputs = () =>
+      walk(view).filter((node) => node.getAttribute?.('data-opl-recommendation-item'))
+    expect(inputs()).toHaveLength(2)
+    const copy = inputs().find((node) =>
+      node.getAttribute('data-opl-recommendation-item')?.includes('copy'),
+    )!
+    await act(async () => {
+      copy.checked = true
+      copy.click()
+    })
+    const first = inputs().find((node) =>
+      node.getAttribute('data-opl-recommendation-item')?.includes('codex/one'),
+    )!
+    await act(async () => {
+      first.checked = false
+      first.click()
+    })
+    await press(
+      walk(view).find((node) => node.nodeName === 'BUTTON' && text(node).startsWith('保存选择'))!,
+    )
+    expect(stored().combinations).toHaveLength(2)
+    expect(stored().combinations.map((item: { enabled: boolean }) => item.enabled)).toEqual([
+      false,
+      true,
+    ])
+    expect(stored().combinations[0].permissionPolicy).toBe('full-access')
+    expect(stored().combinations[1].permissionPolicy).toBe('read-only')
+  })
+
+  it('单一组合仅显示名称和来源，不显示默认状态或可执行标签', async () => {
     const { call } = fixture(catalog())
     const view = await open(call, ExecutionCatalogSection)
+    const active = walk(view).find(
+      (node) => node.getAttribute?.('data-opl-combination') === 'codex/one',
+    )!
+    const summary = walk(active).find((node) => node.nodeName === 'SUMMARY')!
+    expect(text(summary)).toContain('Codex 组合')
+    expect(text(summary)).toContain('MiniMax 官方账号')
+    expect(text(summary)).not.toContain('默认')
+    expect(text(summary)).not.toContain('可执行')
+    expect(text(summary)).not.toContain('自定义')
     expect(
-      walk(view).some(
-        (node) =>
-          node.getAttribute?.('data-opl-combination') === 'codex/one' &&
-          walk(node).some((child) => child.textContent === '自定义'),
-      ),
-    ).toBe(true)
-    const custom = walk(view).find(
+      walk(view).some((node) => node.getAttribute?.('data-opl-combination') === 'inactive/one'),
+    ).toBe(false)
+  })
+
+  it('单一组合未设置默认标记也不显示非默认，且不修改保存标记', async () => {
+    const initial = catalog()
+    initial.combinations[0].isDefault = false
+    const { call, calls, stored } = fixture(initial)
+    const view = await open(call, ExecutionCatalogSection)
+    const row = walk(view).find(
+      (node) => node.getAttribute?.('data-opl-combination') === 'codex/one',
+    )!
+    expect(text(walk(row).find((node) => node.nodeName === 'SUMMARY')!)).not.toContain('默认')
+    expect(walk(row).some((node) => node.getAttribute?.('role') === 'switch')).toBe(false)
+    expect(stored().combinations[0].isDefault).toBe(false)
+    expect(calls.some((entry) => entry.method === 'save-catalog')).toBe(false)
+  })
+
+  it('仅同一模型有多个已启用组合时提供默认组合开关', async () => {
+    const initial = catalog()
+    const data = {
+      ...initial,
+      combinations: initial.combinations.map((item) => ({ ...item, enabled: true })),
+    }
+    const { call, stored } = fixture(data)
+    const view = await open(call, ExecutionCatalogSection)
+    const target = walk(view).find(
       (node) => node.getAttribute?.('data-opl-combination') === 'inactive/one',
     )!
-    expect(text(custom)).toContain('自定义')
+    const switches = walk(target).filter((node) => node.getAttribute?.('role') === 'switch')
+    expect(switches).toHaveLength(1)
+    expect(text(walk(target).find((node) => node.nodeName === 'SUMMARY')!)).toContain('非默认')
+    await press(switches[0])
+    expect(text(walk(target).find((node) => node.nodeName === 'SUMMARY')!)).not.toContain('非默认')
+    expect(stored().combinations.map((item: { isDefault: boolean }) => item.isDefault)).toEqual([
+      false,
+      true,
+    ])
+  })
+
+  it('编辑官方配对的默认项或名称后仍留在官方分组', async () => {
+    const initial = catalog()
+    const ref = initial.models[0].ref
+    const data = {
+      ...initial,
+      combinations: [
+        { ...initial.combinations[0], harnessRef: 'minimax-code', generated: true },
+        {
+          ...initial.combinations[0],
+          id: 'official-copy',
+          name: '另一配置',
+          harnessRef: 'minimax-code',
+          generated: false,
+          isDefault: false,
+        },
+      ],
+    }
+    const { call, stored } = fixture(data)
+    const view = await open(call, ExecutionCatalogSection)
+    const official = () =>
+      walk(view).find((node) => node.getAttribute?.('data-opl-panel') === 'official-combinations')!
+    const rows = () =>
+      walk(official()).filter((node) => node.getAttribute?.('data-opl-combination'))
+    expect(rows()).toHaveLength(2)
+    await press(walk(rows()[0]).find((node) => node.getAttribute?.('role') === 'switch')!)
+    expect(stored().combinations[0]).toMatchObject({
+      isDefault: false,
+      generated: false,
+      modelRef: ref,
+    })
+    expect(rows()).toHaveLength(2)
+    expect(text(walk(rows()[0]).find((node) => node.nodeName === 'SUMMARY')!)).toContain('非默认')
+    const input = walk(rows()[0]).find((node) => node.nodeName === 'INPUT')!
+    await act(async () => {
+      input.value = '重命名配置'
+      input.dispatchEvent('focusout')
+    })
+    expect(stored().combinations[0].name).toBe('重命名配置')
+    expect(rows()).toHaveLength(2)
+    expect(
+      walk(view).find(
+        (node) => node.getAttribute?.('data-opl-panel') === 'custom-combination-list',
+      ),
+    ).toBeUndefined()
+  })
+
+  it('组合明确不可用时显示未就绪并在悬停保留原因', async () => {
+    const initial = fixture(catalog())
+    const call = (async (method: string, args?: unknown) =>
+      method === 'combinations'
+        ? [{ id: 'codex/one', available: false, reason: 'CLI 尚未安装' }]
+        : initial.call(method as never, args as never)) as unknown as ExecutionCall
+    const view = await open(call, ExecutionCatalogSection)
+    const row = walk(view).find(
+      (node) => node.getAttribute?.('data-opl-combination') === 'codex/one',
+    )!
+    const summary = walk(row).find((node) => node.nodeName === 'SUMMARY')!
+    expect(text(summary)).toContain('未就绪')
+    expect(walk(summary).some((node) => node.getAttribute?.('title') === 'CLI 尚未安装')).toBe(true)
+    expect(text(summary)).not.toContain('可执行')
   })
 
   it('为每个外部 Harness 提供三种方式，内置 DSH 不可设置并说明原因', async () => {

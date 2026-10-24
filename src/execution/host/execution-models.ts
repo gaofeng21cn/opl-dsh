@@ -16,8 +16,8 @@ import {
   type ModelRef,
 } from '../contracts/catalog.ts'
 import { ExecutionCatalogStore, type ExecutionCatalog } from './catalog.ts'
-import { defaultHarness } from './adapters/index.ts'
-import { isOfficialPairing, officialHarnessFor } from '../contracts/official-harnesses.ts'
+import { defaultHarness, automaticHarness } from './adapters/index.ts'
+import { officialHarnessFor } from '../contracts/official-harnesses.ts'
 import { HUAWEI_ZCODE_MODEL, HUAWEI_ZCODE_COMBINATION } from './adapters/zcode-models.ts'
 import {
   minimaxCodeCombinations,
@@ -26,10 +26,11 @@ import {
   MINIMAX_CODE_PROVIDER,
 } from './adapters/minimax.ts'
 import { isHiddenOfmSelection, officialOpenCodeModel } from './ofm-source/selection-policy.ts'
-import { OFM_PROVIDERS } from './ofm-source/provider.ts'
+import { OFM_PROVIDERS, isExcludedOfmModel } from './ofm-source/provider.ts'
 import { ofmModelReadiness, type OfmModelReadiness } from './ofm-source/readiness.ts'
 import { BAMBOO_STARTLUX_MODEL } from './adapters/bamboo.ts'
 import { JEV_DECISION_MODEL, JEV_TYPESAFE_MODEL } from './adapters/jev.ts'
+import { adapterFor } from './adapters/index.ts'
 export class ExecutionModelResolver {
   constructor(
     private readonly ctx: Context,
@@ -53,22 +54,22 @@ export class ExecutionModelResolver {
     const legacyDefault = catalog.combinations.find(
       (item) => item.id === DSH_COMBINATION && item.name === 'DeepSeek + DSH',
     )
-    // An automatic row is generated only for a model/harness pair in the shared official
-    // pairing table. A persisted `auto:` row whose pair is no longer official is a stale
-    // copy (for example a generic OpenCode lane previously generated for DSH). Rows the
-    // user created carry their own id, so they are never selected here.
+    const userEdited = (item: CombinationDefinition) =>
+      item.autoEnabled === false && item.autoEnabledDisabled === true
     const staleAutomatic = (item: CombinationDefinition) =>
-      item.id.startsWith('auto:') && !isOfficialPairing(item.harnessRef, item.modelRef)
-    if (
-      retired.length ||
-      legacyDefault ||
-      catalog.combinations.some((item) => staleAutomatic(item))
-    ) {
+      item.id.startsWith('auto:') &&
+      !userEdited(item) &&
+      (officialHarnessFor(item.modelRef) !== item.harnessRef ||
+        automaticHarness(item.modelRef) !== item.harnessRef)
+    if (retired.length || legacyDefault || catalog.combinations.some(staleAutomatic)) {
       catalog = await this.store.cleanLegacyCombinations(staleAutomatic)
     }
-    // The store's cleanup persists the removal; this in-memory filter also covers a
-    // store double that does not apply the predicate, so the projection is unchanged.
     catalog.combinations = catalog.combinations.filter((item) => !staleAutomatic(item))
+    for (const item of catalog.combinations) {
+      if (!item.id.startsWith('auto:')) continue
+      item.generated = !userEdited(item)
+      if (!item.enabled) item.autoEnabledDisabled = true
+    }
     catalog.combinations = catalog.combinations.filter(
       (item) => !isHiddenOfmSelection(item.modelRef),
     )
@@ -291,13 +292,13 @@ export class ExecutionModelResolver {
       const hasDefault = catalog.combinations.some(
         (item) =>
           !isRetiredModel(item.modelRef) &&
+          modelRefKey(item.modelRef) === modelRefKey(model.ref) &&
           (item.id === 'auto:' + modelRefKey(model.ref) ||
             item.autoEnabledDisabled === true ||
-            (item.enabled &&
-              item.isDefault &&
-              modelRefKey(item.modelRef) === modelRefKey(model.ref))),
+            (item.enabled && item.isDefault)),
       )
-      const harnessRef = officialHarnessFor(model.ref)
+      const official = officialHarnessFor(model.ref)
+      const harnessRef = automaticHarness(model.ref) === official ? official : undefined
       if (!isRetiredModel(model.ref) && model.available && !hasDefault && harnessRef) {
         const harnessName = catalog.harnesses.find((h) => h.id === harnessRef)?.name ?? 'DSH'
         catalog.combinations.push({
@@ -330,6 +331,75 @@ export class ExecutionModelResolver {
       // is an explicit verdict and owns the automatic row's enabled state.
       if (model && !combination.autoEnabledDisabled) combination.enabled = model.available
     }
+    catalog.recommendations = catalog.models.flatMap((model) => {
+      const harnessRef = automaticHarness(model.ref)
+      if (
+        !model.available ||
+        !harnessRef ||
+        harnessRef === officialHarnessFor(model.ref) ||
+        !catalog.harnesses.some((h) => h.id === harnessRef)
+      )
+        return []
+      const harnessName = catalog.harnesses.find((h) => h.id === harnessRef)!.name
+      return [{ modelRef: model.ref, harnessRef, name: model.name + ' + ' + harnessName }]
+    })
+    const ofmDiscovery = new Map<string, (typeof catalog.models)[number]>()
+    for (const model of catalog.models)
+      if (OFM_PROVIDERS.includes(model.ref.provider))
+        ofmDiscovery.set(modelRefKey(model.ref), model)
+    const rawSummary = ofmSummary ? await ofmSummary : undefined
+    const rawCatalog =
+      rawSummary !== null && typeof rawSummary === 'object' && rawSummary !== undefined
+        ? (rawSummary as { catalog?: unknown }).catalog
+        : undefined
+    if (Array.isArray(rawCatalog))
+      for (const entry of rawCatalog) {
+        if (entry === null || typeof entry !== 'object' || !('id' in entry)) continue
+        const id = (entry as { id?: unknown }).id
+        if (typeof id !== 'string' || !id) continue
+        const ref = { provider: 'our-free-model', model: id }
+        if (!ofmDiscovery.has(modelRefKey(ref)))
+          ofmDiscovery.set(modelRefKey(ref), {
+            ref,
+            name: id,
+            source: 'Our Free Model',
+            available: ofmModelReadiness(rawSummary, ref, automaticHarness(ref) !== 'dsh')
+              .available,
+          })
+      }
+    catalog.ofmDiscovery = [...ofmDiscovery.values()].map((model) => {
+      const declaredOfficial = officialHarnessFor(model.ref)
+      const official =
+        declaredOfficial &&
+        catalog.harnesses.some(
+          (harness) =>
+            harness.id === declaredOfficial && adapterFor(harness.id, model.ref) !== undefined,
+        )
+          ? declaredOfficial
+          : undefined
+      const automatic = automaticHarness(model.ref)
+      const harnesses = catalog.harnesses
+        .filter((harness) => adapterFor(harness.id, model.ref) !== undefined)
+        .map((harness) => harness.id)
+      const status = isExcludedOfmModel(model.ref.model)
+        ? { kind: 'excluded' as const, reason: '已明确排除', label: '已排除' }
+        : official
+          ? {
+              kind: 'official' as const,
+              harness: official,
+              label: `官方 ${catalog.harnesses.find((h) => h.id === official)?.name ?? official}`,
+            }
+          : automatic && automatic !== 'dsh'
+            ? {
+                kind: 'recommended' as const,
+                harness: automatic,
+                label: `推荐 ${catalog.harnesses.find((h) => h.id === automatic)?.name ?? automatic}`,
+              }
+            : harnesses.length
+              ? { kind: 'manual' as const, harnesses, label: '仅可手动尝试' }
+              : { kind: 'unknown' as const, label: '尚未适配' }
+      return { modelRef: model.ref, name: model.name, available: model.available, status }
+    })
     return catalog
   }
 }

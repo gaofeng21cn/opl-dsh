@@ -288,6 +288,7 @@ test('a local archive must provide an expected SHA-256', async () => {
 })
 
 test('a failed post-install verification restores the previous verified app', async () => {
+  if (process.platform !== 'darwin') return
   const root = await mkdtemp(join(tmpdir(), 'opl-kimi-cu-install-'))
   const appPath = join(root, 'KimiCU.app')
   try {

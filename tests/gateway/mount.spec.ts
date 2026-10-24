@@ -441,6 +441,48 @@ describe('account flow without any local OPL installation', () => {
     })
   })
 
+  it.each([
+    new TypeError('fetch failed'),
+    new GatewayControlError('rate_limited', 'temporary rate limit', 429),
+    new GatewayControlError('gateway_unavailable', 'temporary outage', 503),
+  ])('retains a restarted login after transient renewal failure: %s', async (failure) => {
+    const { control, calls } = gateway()
+    const { account } = await service(control)
+    await account.signIn('person@example.test', 'right')
+    const renew = control.refreshSession.bind(control)
+    control.refreshSession = async () => {
+      throw failure
+    }
+    const restarted = (await service(control)).account
+    expect(await restarted.refresh()).toMatchObject({
+      phase: 'connected',
+      account: { email: 'person@example.test', stale: true },
+      error: { message: failure.message },
+    })
+    control.refreshSession = renew
+    expect(await restarted.refresh()).toMatchObject({
+      phase: 'connected',
+      account: { email: 'person@example.test' },
+    })
+    expect(calls).toContain('refresh:refresh-1')
+    expect((await restarted.status()).error).toBeUndefined()
+  })
+
+  it.each([401, 403])(
+    'forgets a restarted login after explicit HTTP %i refusal',
+    async (status) => {
+      const { control } = gateway()
+      const { account } = await service(control)
+      await account.signIn('person@example.test', 'right')
+      control.refreshSession = async () => {
+        throw new GatewayControlError('invalid_credentials', 'session refused', status)
+      }
+      const restarted = (await service(control)).account
+      expect(await restarted.refresh()).toMatchObject({ phase: 'unavailable' })
+      expect(await (await service(control)).account.status()).toMatchObject({ phase: 'signed-out' })
+    },
+  )
+
   it('renews a stored session on refresh without another sign-in', async () => {
     const { control, calls } = gateway()
     const { account } = await service(control)

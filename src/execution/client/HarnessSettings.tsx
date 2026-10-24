@@ -103,7 +103,7 @@ export function HarnessSettings({ call, embedded = false }: { call: Call; embedd
             </div>
           )}
           {item.id !== 'dsh' && (
-            <details>
+            <details className={css.pathDetails}>
               <summary>可执行文件路径</summary>
               <input
                 className={css.input}

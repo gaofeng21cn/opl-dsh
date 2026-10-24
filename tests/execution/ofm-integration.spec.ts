@@ -51,7 +51,7 @@ function fixture() {
 }
 
 describe('central OFM wiring', () => {
-  for (const pairing of pairings) {
+  for (const pairing of pairings.filter((pairing) => pairing.models.length > 0)) {
     it(`${pairing.id} binds every declared lane and refuses unrelated models`, async () => {
       const test = fixture()
       const catalog = defaultExecutionCatalog()

@@ -1,4 +1,5 @@
 import { refreshEnhancements } from './update.mjs'
+import { WINDOWS_KIMI_CU_VERSION } from './kimi-cu-windows.mjs'
 /** Launch the signed official app; let the OPL plugin own the in-app first run.
  * The native welcome bridge uses a private Chromium pipe (no TCP debugging
  * port). If a future desktop does not expose the skip operation, its own
@@ -24,6 +25,9 @@ const env = {
   DSH_HOME: home,
   NODE_USE_SYSTEM_CA: '1',
   OPL_OFFICIAL_VERSION: manifest.version,
+  ...(process.platform === 'win32'
+    ? { OPL_KIMI_CU_WINDOWS_ROOT: join(root, 'kimi-cu', WINDOWS_KIMI_CU_VERSION) }
+    : {}),
 }
 delete env.ELECTRON_RUN_AS_NODE
 const log = openSync(join(root, 'desktop.log'), 'a', 0o600)

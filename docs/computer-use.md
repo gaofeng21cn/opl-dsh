@@ -1,8 +1,9 @@
 # KimiCU Computer Use
 
-OPL DSH 可以把本机 [KimiCU](https://kimi.com) 的桌面操作能力接入原生 DSH 会话。接入只增加一个 `computer_use` 工具；应用发现、窗口读取、截图、点击、输入和拖拽仍由 KimiCU 自己执行，OPL 不维护第二套桌面自动化。macOS 新机安装 OPL DSH 时会自动安装并配置 KimiCU；安装失败不会阻断 DSH，原因写入套件目录的 `kimi-cu-installation.json`。
 
-## 使用条件
+OPL DSH 通过官方 KimiCU 观察和操作桌面，Windows 使用 code-mode 插件，macOS 使用原始 MCP companion。变更桌面需要当前会话明确选择完全访问。
+
+## macOS
 
 - macOS 14 或更高版本，Apple Silicon。
 - `/Applications/KimiCU.app` 已安装并可信，Bundle ID 为 `ai.kimi.cu`，Team ID 为 `2J9472RW75`。新机由 OPL 安装器自动安装，不需要另装。
@@ -32,7 +33,7 @@ drag_paths, debug_tap
 
 ## 安装与升级
 
-macOS 安装器从 KimiCU 官方 `https://cdn.kimi.com/kimi-computer-use/latest/version.json` 选择与当前架构匹配的稳定版本，下载后校验官方 SHA-256，再校验 Developer ID 签名、公证、Team ID、Bundle ID、版本和架构。校验通过后才原子替换 `/Applications/KimiCU.app`；替换后执行 KimiCU 官方 `install`，并完成 MCP `initialize`、`tools/list` 和必需工具检查。Windows 安装器在读取 macOS 路径或联网前直接跳过 KimiCU，不写 `/Applications`。
+macOS 安装器从 KimiCU 官方 `https://cdn.kimi.com/kimi-computer-use/latest/version.json` 选择与当前架构匹配的稳定版本，下载后校验官方 SHA-256，再校验 Developer ID 签名、公证、Team ID、Bundle ID、版本和架构。校验通过后才原子替换 `/Applications/KimiCU.app`；替换后执行 KimiCU 官方 `install`，并完成 MCP `initialize`、`tools/list` 和必需工具检查。macOS 安装模块在 Windows 上直接跳过；Windows 使用下述独立安装模块，不写 `/Applications`。
 
 已有可信的相同或更高版本会保留并重新检查配置，不降级。已有身份不可信的 KimiCU 会保留原应用并拒绝自动覆盖。下载、验签、安装或配置失败时，旧版本会恢复，DSH 继续安装，结果写入 `kimi-cu-installation.json`。首次安装后仍需在 macOS 系统设置中授予 KimiCU 辅助功能和屏幕录制权限；安装器不会代替用户接受系统权限。
 
@@ -44,14 +45,18 @@ macOS 安装器从 KimiCU 官方 `https://cdn.kimi.com/kimi-computer-use/latest/
 - 缺少 KimiCU、权限不足、XPC 服务失联或 KimiCU 返回错误时，工具失败且不自动重试。用户修复 companion 后可重新观察或执行。
 - 截图可能包含桌面内容。调用前应确认目标应用和任务范围；不要用桌面自动化绕过应用自身的认证、授权或安全确认。
 
-## 当前验证
+## macOS 验证记录
 
 本机 KimiCU 0.6.6 的签名、Bundle ID、Team ID、辅助功能、屏幕录制、SkyLight 和后台输入检查通过；MCP `initialize` 与 `tools/list` 可用。验收时 XPC `permissionStatus` 服务返回失败，因此实际 `list_apps` 不能视为通过。DSH 侧的协议、取消、结果映射和权限门禁由自动测试覆盖；完整的桌面操作仍需在 KimiCU 服务恢复后执行。
 
-# KimiCU WinCU
+## Windows WinCU
 
-DSH checks Windows x64 hosts for Windows 10 build 18362 (1903) or newer and exposes the official Kimi Code plugin install entry:
+Windows 10 1903（build 18362）及更新版本、Windows 11 x64 可使用官方 Windows 插件。安装器将已固定版本 0.3.10 的完整插件与 native runtime 安装到 套件目录下的 `kimi-cu/0.3.10`，校验官方清单 SHA-256 和 Moonshot Authenticode 签名；启动器通过明确的组件路径交给 Host，避免安装进程与独立桌面进程的本地应用目录不同。不增加登录自启，不改 Kimi Code 或 Codex 配置。
 
-`/plugins install https://cdn.kimi.com/kimi-computer-use-windows/latest/kimi-cu-win-plugin.zip`
+实际 MCP 入口是 `plugin/runtime/node-repl.exe`，提供 `js` 工具。DSH 把已声明的桌面动作与 JSON 参数转换为固定的 `@kimi/cu` 调用，不接受任意 JavaScript，不把 native `kimi-cu.exe` 当成 MCP。原生 Agent 由官方插件按需启动；关闭 DSH 的 MCP 连接只释放本连接，不终止其他程序共享的 Agent。
 
-The public materials do not provide a verifiable plugin installation path or a stable DSH-callable stdio/MCP command, JSON-RPC protocol, or tool list. DSH therefore reports the unavailable state explicitly and only shows the official install guidance; it does not claim the tools are callable, download or execute unknown programs, or read credentials. Computer-use calls still require the explicit permission gate.
+需要 PATH 中的 Node.js 24.15 或更新版本。截图作为 DSH 图片附件返回；窗口观察保留官方窗口 ID、截图 ID、坐标和无障碍索引。Windows 不广告 macOS 专属 `get_app_state`、`paste` 或 `drag_paths`，使用 `get_window_state`、`type_text` 与 `drag_path`。取消、超时或进程退出会失败，不自动重放输入；下一次操作前重新观察目标窗口。
+
+Windows 的点击、输入、滚动等变更操作仍要求当前会话完全访问。只读权限不能借工具绕过该要求。系统认证、UAC 和安全设置由用户操作。
+
+Windows 0.3.10 已通过本机安装后的原生 DSH 4.1 Flash 实测：窗口发现、无障碍文本读取、点击、按键、中文及英文输入、截图附件返回。停止独占测试服务后，正式安装路径的 native Agent 能按需重新启动并继续观察。此结果不代表外部 Harness 自动获得该工具，也不代表所有 Windows 应用都具备完整无障碍支持。

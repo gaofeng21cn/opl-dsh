@@ -84,9 +84,9 @@ export function HarnessProxySection({
             自身的网络栈发出，不经过这个子进程代理选项；只有外部 CLI 使用它。
           </p>
         )}
-        <div className={css.facts} role="radiogroup" aria-label={`${harness.name} 的网络代理`}>
+        <div className={css.proxyModes} role="radiogroup" aria-label={`${harness.name} 的网络代理`}>
           {MODES.map((item) => (
-            <label className={css.label} key={item.mode}>
+            <label className={css.proxyMode} key={item.mode}>
               <input
                 type="radio"
                 name={`opl-harness-proxy-${harness.id}`}

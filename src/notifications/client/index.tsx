@@ -17,6 +17,21 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 export const inject = ['remote', 'remote.session', 'sessions', 'connection', 'slots', 'locale']
 
+type SessionKey = Parameters<TaskNoticeTracker['status']>[0]
+type SessionEventRow = {
+  sessionId: SessionKey
+  running: boolean
+  origin?: 'subagent'
+  displayTitle?: string
+  projections?: unknown
+}
+
+function sessionTitle(row: SessionEventRow): string {
+  if (typeof row.displayTitle === 'string') return row.displayTitle
+  const values = (row.projections as { values?: { title?: unknown } } | undefined)?.values
+  return typeof values?.title === 'string' ? values.title : row.sessionId
+}
+
 /** @param ctx - Official Client root. */
 export function apply(ctx: Context): void {
   const ns = 'settings.oplNotifications'
@@ -43,22 +58,19 @@ export function apply(ctx: Context): void {
   let generation = connection.generation.getSnapshot()?.id
   let disposed = false
   let revision = 0
-  const observed = new Map<Parameters<TaskNoticeTracker['status']>[0], number>()
+  const observed = new Map<SessionKey, number>()
   const metadata = new Map<
-    Parameters<TaskNoticeTracker['status']>[0],
+    SessionKey,
     {
       displayTitle: string
       internal: boolean
     }
   >()
-  const show = (
-    id: Parameters<TaskNoticeTracker['status']>[0],
-    kind: ReturnType<TaskNoticeTracker['status']>,
-  ) => {
+  const show = (id: SessionKey, kind: ReturnType<TaskNoticeTracker['status']>) => {
     if (!kind) return
-    const row = ctx.sessions.list.getSnapshot().byId[id]
+    const row = ctx.sessions.list.getSnapshot().byId[id] as unknown as SessionEventRow | undefined
     const summary = row
-      ? { displayTitle: row.displayTitle, internal: row.origin === 'subagent' }
+      ? { displayTitle: row.displayTitle ?? row.sessionId, internal: row.origin === 'subagent' }
       : metadata.get(id)
     if (!summary || summary.internal || ctx.sessions.subagentAddress(id)) return
     controller.notify(id, summary.displayTitle, kind)
@@ -75,13 +87,10 @@ export function apply(ctx: Context): void {
       return
     }
     if (disposed || expected !== generation || !result.ok) return
-    for (const row of result.value.items) {
+    for (const row of result.value.items as unknown as readonly SessionEventRow[]) {
       if ((observed.get(row.sessionId) ?? 0) > cut) continue
       metadata.set(row.sessionId, {
-        displayTitle:
-          typeof row.projections?.values.title === 'string'
-            ? row.projections.values.title
-            : row.sessionId,
+        displayTitle: sessionTitle(row),
         internal: row.origin === 'subagent',
       })
       // An active baseline arms a future live ending; an idle baseline never emits.
@@ -90,31 +99,29 @@ export function apply(ctx: Context): void {
   }
   ctx.effect(() =>
     ctx.remote.$on('api-session/added', (row) => {
-      observed.set(row.sessionId, ++revision)
-      metadata.set(row.sessionId, {
-        displayTitle:
-          typeof row.projections?.values.title === 'string'
-            ? row.projections.values.title
-            : row.sessionId,
-        internal: row.origin === 'subagent',
+      const event = row as unknown as SessionEventRow
+      observed.set(event.sessionId, ++revision)
+      metadata.set(event.sessionId, {
+        displayTitle: sessionTitle(event),
+        internal: event.origin === 'subagent',
       })
-      if (row.running) tracker.status(row.sessionId, true)
+      if (event.running) tracker.status(event.sessionId, true)
     }),
   )
   ctx.effect(() =>
-    ctx.remote.$on('api-session/status', (id, running) => {
+    ctx.remote.$on('api-session/status', (id: SessionKey, running: boolean) => {
       observed.set(id, ++revision)
       show(id, tracker.status(id, running))
     }),
   )
   ctx.effect(() =>
-    ctx.remote.$on('api-session/error', (id) => {
+    ctx.remote.$on('api-session/error', (id: SessionKey) => {
       observed.set(id, ++revision)
       show(id, tracker.failure(id))
     }),
   )
   ctx.effect(() =>
-    ctx.remote.$on('api-session/removed', (id) => {
+    ctx.remote.$on('api-session/removed', (id: SessionKey) => {
       observed.set(id, ++revision)
       tracker.remove(id)
       metadata.delete(id)

@@ -1,3 +1,7 @@
+import type {
+  MiniMaxAccountStatus,
+  MiniMaxAccountLoginRequest,
+} from '../contracts/minimax-account.ts'
 /** Typed UI boundary; lifecycle, authorization and sessions stay in the execution owner. */
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -41,6 +45,23 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 export class ExecutionService extends TypertRemoteService {
+  @Remote('minimax-account-status')
+  minimaxAccountStatus(request: MiniMaxAccountLoginRequest): Promise<MiniMaxAccountStatus> {
+    return this.execution.minimaxAccountStatus(request)
+  }
+  @Remote('minimax-account-cancel')
+  minimaxAccountCancel(request: MiniMaxAccountLoginRequest): Promise<MiniMaxAccountStatus> {
+    return this.execution.minimaxAccountCancel(request)
+  }
+  @Remote('minimax-account-logout')
+  minimaxAccountLogout(request: MiniMaxAccountLoginRequest): Promise<MiniMaxAccountStatus> {
+    return this.execution.minimaxAccountLogout(request)
+  }
+  @Remote('minimax-account-login')
+  minimaxAccountLogin(request: MiniMaxAccountLoginRequest): Promise<MiniMaxAccountStatus> {
+    return this.execution.minimaxAccountLogin(request)
+  }
+
   /** Reserve a regular Session identity with an explicit non-Workspace working directory. */
   @Remote('projectless-session')
   projectlessSession(): Promise<{ sessionId: string; cwd: string }> {

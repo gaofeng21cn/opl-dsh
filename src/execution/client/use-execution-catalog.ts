@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { TypertRemoteNamespace } from '@deepseek-ai/dsh-typert-protocol'
 import { modelRefKey } from '../contracts/catalog.ts'
+import { pairingKey, savedChoiceKey, recommendationChoiceKey } from './combination-choices.ts'
 import { safeFailureMessage } from './proxy-draft.ts'
 import type {
   ExecutionCatalog,
@@ -23,7 +24,7 @@ export function useExecutionCatalog(call: RemoteCallInput<TypertRemoteNamespace<
   const [busy, setBusy] = useState(false),
     [notice, setNotice] = useState('')
   const [loadRevision, setLoadRevision] = useState(0)
-  const [draft, setDraft] = useState({ name: '', model: '', harness: 'dsh' })
+  const [draft, setDraft] = useState({ model: '', harness: 'dsh' })
   const [editing, setEditing] = useState<string>()
   const running = useRef(false),
     mounted = useRef(true)
@@ -113,13 +114,31 @@ export function useExecutionCatalog(call: RemoteCallInput<TypertRemoteNamespace<
     if (!catalog) return
     const model = catalog.models.find((item) => modelRefKey(item.ref) === draft.model)
     if (!model) return
+    if (
+      !catalog.supportedPairings?.some(
+        (item) =>
+          modelRefKey(item.modelRef) === draft.model && item.harnessRefs.includes(draft.harness),
+      )
+    ) {
+      setNotice('请先选择模型及已适配的 Harness。')
+      return
+    }
+    const chosen = { modelRef: model.ref, harnessRef: draft.harness }
+    if (
+      [...catalog.combinations, ...(catalog.recommendations ?? [])].some(
+        (item) => pairingKey(item) === pairingKey(chosen),
+      )
+    ) {
+      setNotice('该组合已在选择列表中，请在上方勾选。')
+      return
+    }
     const result = await save({
       ...catalog,
       combinations: [
         ...catalog.combinations,
         {
           id: crypto.randomUUID(),
-          name: draft.name.trim(),
+          name: `${model.name} + ${catalog.harnesses.find((item) => item.id === draft.harness)?.name ?? draft.harness}`,
           modelRef: model.ref,
           harnessRef: draft.harness,
           permissionPolicy: 'read-only',
@@ -130,8 +149,43 @@ export function useExecutionCatalog(call: RemoteCallInput<TypertRemoteNamespace<
         },
       ],
     })
-    if (result.status === 'saved' && mounted.current)
-      setDraft({ name: '', model: '', harness: 'dsh' })
+    if (result.status === 'saved' && mounted.current) setDraft({ model: '', harness: 'dsh' })
+  }
+  const addRecommendations = async (selected: ReadonlySet<string>) => {
+    if (!catalog) return
+    const existing = new Set(catalog.combinations.map(pairingKey))
+    const additions: CombinationDefinition[] = []
+    for (const item of catalog.recommendations ?? []) {
+      const key = pairingKey(item)
+      if (!selected.has(recommendationChoiceKey(item)) || existing.has(key)) continue
+      existing.add(key)
+      additions.push({
+        ...item,
+        id: crypto.randomUUID(),
+        permissionPolicy: 'read-only',
+        isDefault: false,
+        enabled: true,
+        autoEnabled: false,
+        autoEnabledDisabled: true,
+      })
+    }
+    const combinations = catalog.combinations.map((item) => {
+      const key = savedChoiceKey(item.id)
+      return item.enabled !== selected.has(key)
+        ? {
+            ...item,
+            enabled: selected.has(key),
+            generated: false,
+            autoEnabled: false,
+            autoEnabledDisabled: true,
+          }
+        : item
+    })
+    if (
+      additions.length ||
+      combinations.some((item, index) => item !== catalog.combinations[index])
+    )
+      await save({ ...catalog, combinations: [...combinations, ...additions] })
   }
   return {
     catalog,
@@ -148,5 +202,6 @@ export function useExecutionCatalog(call: RemoteCallInput<TypertRemoteNamespace<
     setEditing,
     update,
     add,
+    addRecommendations,
   }
 }

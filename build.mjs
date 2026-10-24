@@ -177,6 +177,7 @@ for (const file of [
   'profile.cjs',
   'model-plugins.cjs',
   'kimi-cu.mjs',
+  'kimi-cu-windows.mjs',
   'official-pnpm.cjs',
   'migrate.cjs',
   'setup.mjs',

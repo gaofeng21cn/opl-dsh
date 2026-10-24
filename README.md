@@ -61,7 +61,7 @@ Windows · x64，在 PowerShell 中运行：
 - **BambooNode StartLux Auto Review**：可在模型供应商中配置 Bamboo API Key，作为可选的无工具 Auto Review 路线。Key 仅保存到 Windows Credential Manager；低风险允许、高风险拒绝和不完整结果均按固定安全策略处理。详见[BambooNode StartLux Auto Review](docs/bamboo-startlux-auto-review.md)。
 - **Jev Auto Review 决策模型**：工具审批的“决策模型”下拉列表可选择 OpenCode 的 Jev 1.13 Free，无需个人 API Key；也可在模型供应商中配置 TypeSafe 个人 API Key（仅 Windows Keyring 保存），选择独立的个人路线。使用专用 System One 接口，低置信度、异常或不确定结果拒绝放行，不进入聊天列表。详见[Jev 决策模型](docs/jev-auto-review.md)。
 - **Todo 状态展示**：会话停止后，未完成的记录项静态显示，不自动标记完成；父会话与子会话活动分别显示，未知状态明确保留。详见[Todo 状态展示](docs/todo-status.md)。
-- **模型 + Harness 组合**：DSH 原生会话继续使用官方会话列表、消息流和输入框；已启用的模型 + Harness 组合都在同一个模型选择器中显示。自动内置组合只来自预先维护的官配表：DSH 配 DeepSeek 自家模型，Codex、Claude、Grok Build、MiniMax、ZCode、Kimi、MiMo、Poolside、StepCode、Muse 配各自厂商模型；OpenCode、Kilo、Pi 等通用执行器没有自己的模型，官配列表为空。任意其他模型与执行器可在“添加执行组合”中手动配对，跨厂商或通用执行器组合会显示“自定义”。选择 Codex CLI、Claude Code 或 Grok Build 后，当前官方会话仍使用同一输入框和消息流，后台将本轮请求转发给绑定的官方 Harness 并把结果回写；组合、权限和恢复记录由后台维护。支持的组合沿用该菜单的推理强度选择，已提供的档位统一显示为低、中、高、极高、最大、超高，实际可选档位仍由模型决定；切换时显示目标组合与等待状态，首次发送时启动对应 Harness。外部组合按当前 DSH 权限核对目标 Harness 的能力；不支持只读或工作区隔离的 Harness 会拒绝启动，不会自动提升为完全权限。Claude Code 的受限任务依赖官方 sandbox 后端；显式完整访问使用官方 bypassPermissions，允许工作目录外访问。外部任务可按每轮 `writeScope` 的精确文件或目录范围并行；重叠写入、未声明范围的项目写入、构建和安装保持串行。该声明用于调度，不改变工具权限。从 Codex 或对话内协作工具 `delegate` 派出的外部任务绑定一个真实的官方 DSH 会话：它出现在对应项目的官方会话列表侧栏，按普通会话查看、续作和人工审批；设置中不再有独立的“外部任务”页面。
+- **模型 + Harness 组合**：DSH 原生会话继续使用官方会话列表、消息流和输入框；已启用的模型 + Harness 组合都在同一个模型选择器中显示。自动组合只来自厂商官配：DSH 配 DeepSeek 自家模型，Codex、Claude、Grok Build、MiniMax、ZCode、Kimi、MiMo、Poolside、StepCode、Muse 配各自厂商模型；“选择与添加组合”集中提供官方、已保存和推荐配对，按 Harness 分组勾选、全选或取消选择，点击“保存选择”统一启停并添加缺少的推荐；停用仅保留配置，重新勾选恢复原名称、权限和默认项。“手动添加组合”先选择模型，仅列出尚未在选择列表出现的已适配搭配，名称自动生成为“模型名 + Harness 名”；OFM 的 Messages 协议兼容不自动提供 Claude Code 配对，后台拒绝新增或改配到不支持的搭配。“已启用的组合”单行显示名称、来源与默认状态，异常原因放在“未就绪”的悬停提示中，点击展开管理名称和权限，同一模型有多个启用组合时才显示默认状态和默认项开关，启停统一在上方选择，不重复提供开关。官方与自定义按模型和 Harness 的配对关系分组，修改名称、权限或默认项不改变分组。选择 Codex CLI、Claude Code 或 Grok Build 后，当前官方会话仍使用同一输入框和消息流，后台将本轮请求转发给绑定的官方 Harness 并把结果回写；组合、权限和恢复记录由后台维护。支持的组合沿用该菜单的推理强度选择，已提供的档位统一显示为低、中、高、极高、最大、超高，实际可选档位仍由模型决定；切换时显示目标组合与等待状态，首次发送时启动对应 Harness。外部组合按当前 DSH 权限核对目标 Harness 的能力；不支持只读或工作区隔离的 Harness 会拒绝启动，不会自动提升为完全权限。Claude Code 的受限任务依赖官方 sandbox 后端；显式完整访问使用官方 bypassPermissions，允许工作目录外访问。外部任务可按每轮 `writeScope` 的精确文件或目录范围并行；重叠写入、未声明范围的项目写入、构建和安装保持串行。该声明用于调度，不改变工具权限。从 Codex 或对话内协作工具 `delegate` 派出的外部任务绑定一个真实的官方 DSH 会话：它出现在对应项目的官方会话列表侧栏，按普通会话查看、续作和人工审批；设置中不再有独立的“外部任务”页面。
 - **MiniMax 官方账号组合**：接入官方 MiniMax CLI `mcode` 的 ACP 模式并使用官方账号登录；只提供两个模型组合（M3.1-Flash-Preview 默认 `max`、M3 默认开启思考），推理设置按官方能力可选，不需要 MiniMax Code 图形界面自动化，也不使用 OPL Gateway 的 MiniMax 密钥。Windows Git Bash 固定后端需支持 Shell 回读的 mcode 候选版；官方 0.6.3 默认 PowerShell，不能仅靠 SHELL 环境变量切换。详见[官方 MiniMax 账号与 mcode](docs/minimax-code.md)。
 
 - **网页搜索**：登录 OPL Gateway 后，DSH 原生 `web_search` 使用 OPL 的搜索路由；`web_fetch` 继续使用官方公共 HTTP 提供方。搜索优先使用低成本的 `gpt-6-luna`，该模型忙碌、过载、限流、超时或未触发搜索时自动改用 `gpt-6.1-sol`；无需额外配置，也不提供独立搜索设置页或本地统计。
@@ -119,7 +119,7 @@ Codex Skill 的 `delegate` 返回组合会话 `id`，用它继续、等待或取
 
 Homebrew 用户可用 `brew upgrade --cask gaofeng21cn/opl-dsh/opl-dsh` 更新到最新联合稳定版；Homebrew 卸载仅移除 OPL 快捷入口，保留官方桌面、用户数据和 Codex Skill。
 
-增强包、更新缓存和安装记录保存在 OPL DSH Suite；官方 profile、登录、会话和设置保存在 `~/.dsh`。重新安装会保留两处已有数据。安装位置与数据兼容细节见[开发与验证说明](docs/development.md)。
+增强包、更新缓存和安装记录保存在 OPL DSH Suite；官方 profile、登录、会话和设置保存在 `~/.dsh`。重新安装会保留两处已有数据。Gateway 登录续期遇到网络故障、限流或服务端暂时不可用时保留登录记录供重试；仅明确的认证拒绝会清除登录状态。安装位置与数据兼容细节见[开发与验证说明](docs/development.md)。
 
 新对话显示官方有效默认模型；直接发送也会使用该模型对应的默认 Harness，无需先点选一次。Grok CLI 的 marketplace 初始化标记保留在配置中，后续启动不会把它当作用户修改；其他配置改动仍受保护。
 
