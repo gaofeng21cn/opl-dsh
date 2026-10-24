@@ -200,7 +200,9 @@ describe('OFM source pairing', () => {
       for (const model of ['moonshotai/kimi-k3', 'mimo-v2.6-flash-free', 'openai/gpt-oss-20b']) {
         const ref = { provider, model }
         expect(adapterFor('claude', ref, sources)).toBeUndefined()
-        await expect(sources.resolve('claude', ref, 'messages')).rejects.toThrow('尚未适配此 Harness')
+        await expect(sources.resolve('claude', ref, 'messages')).rejects.toThrow(
+          '尚未适配此 Harness',
+        )
       }
     }
     expect(connection).not.toHaveBeenCalled()

@@ -236,6 +236,9 @@ test('default Windows component directory belongs to the supplied Suite root', a
     })
     assert.equal(result.state, 'deferred')
     assert.equal(await readFile(join(target, 'sentinel'), 'utf8'), 'preserve')
-    assert.equal(JSON.parse(await readFile(join(root, 'kimi-cu-installation.json'), 'utf8')).state, 'deferred')
+    assert.equal(
+      JSON.parse(await readFile(join(root, 'kimi-cu-installation.json'), 'utf8')).state,
+      'deferred',
+    )
   })
 })

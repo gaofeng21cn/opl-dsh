@@ -483,8 +483,7 @@ describe('MiniMax Code model menu labels', () => {
       .buttons()
       .filter(
         (button) =>
-          button.getAttribute('role') === 'menuitemradio' &&
-          button.textContent?.includes(M3_FLASH),
+          button.getAttribute('role') === 'menuitemradio' && button.textContent?.includes(M3_FLASH),
       )
     expect(rows).toHaveLength(1)
     expect(rows[0]?.getAttribute('disabled')).toBeNull()

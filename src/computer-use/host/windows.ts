@@ -35,7 +35,9 @@ export function windowsKimiCuLaunch(env: NodeJS.ProcessEnv = process.env) {
     try {
       if (!statSync(file).isFile()) throw Error(`不是文件：${file}`)
     } catch (error) {
-      throw Error(`Windows KimiCU 组件无法读取：${file}；${error instanceof Error ? error.message : String(error)}`)
+      throw Error(
+        `Windows KimiCU 组件无法读取：${file}；${error instanceof Error ? error.message : String(error)}`,
+      )
     }
   }
   const manifest = JSON.parse(readFileSync(join(plugin, 'kimi.plugin.json'), 'utf8'))

@@ -4,12 +4,19 @@ import { RuntimeMaintenance } from '../../src/execution/host/runtime-maintenance
 
 function barrier() {
   let resolve!: () => void
-  const promise = new Promise<void>((done) => { resolve = done })
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
   return { promise, resolve }
 }
 
 function owner(ready: Promise<void>, idle: () => Promise<void>) {
-  const status = { installed: true, region: 'cn' as const, loginState: 'signed-out' as const, loginPending: false }
+  const status = {
+    installed: true,
+    region: 'cn' as const,
+    loginState: 'signed-out' as const,
+    loginPending: false,
+  }
   const account = {
     status: vi.fn(async () => status),
     login: vi.fn(async () => status),
@@ -40,7 +47,8 @@ describe('MiniMax account admission cancellation', () => {
   })
 
   it('cancellation bypasses maintenance and prevents login after a delayed idle check', async () => {
-    const entered = barrier(), idle = barrier()
+    const entered = barrier(),
+      idle = barrier()
     const { service, account } = owner(Promise.resolve(), async () => {
       entered.resolve()
       await idle.promise
