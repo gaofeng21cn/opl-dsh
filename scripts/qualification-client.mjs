@@ -221,8 +221,13 @@ export async function verifyDesktopClient(
       ]),
       '账户或设置入口未挂载',
     )
-    if (!(await pipe.evaluate(session, `Boolean(${settingsNav})`)))
+    if (!(await pipe.evaluate(session, `Boolean(${settingsNav})`))) {
+      await pipe.evaluate(
+        session,
+        `window.dispatchEvent(new KeyboardEvent('keydown',{key:',',code:'Comma',metaKey:/Mac|iPhone|iPad/.test(navigator.platform),ctrlKey:!/Mac|iPhone|iPad/.test(navigator.platform),bubbles:true}))`,
+      )
       await waitFor(clickLabel(['设置', 'Settings']), '设置菜单不可见')
+    }
   }
   async function openSettings() {
     if (await pipe.evaluate(session, `Boolean(${settingsNav})`)) return
