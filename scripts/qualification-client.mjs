@@ -208,24 +208,12 @@ export async function verifyDesktopClient(
   )
   const settingsNav = "document.querySelector('[role=dialog] nav')"
   async function activateSettings() {
-    await waitFor(
-      clickLabel([
-        '账户菜单',
-        'Account menu',
-        '账户与设置',
-        'Account and settings',
-        '更多',
-        'More',
-        '设置',
-        'Settings',
-      ]),
-      '账户或设置入口未挂载',
+    const accountOpened = await pipe.evaluate(
+      session,
+      `(() => {if(document.querySelector('[role=menu]')) return true;const labels=['账户菜单','Account menu','账户与设置','Account and settings'];const node=Array.from(document.querySelectorAll('button,[role=menuitem]')).find(x=>x.getClientRects().length&&!x.disabled&&labels.includes((x.getAttribute('aria-label')||x.textContent||'').trim()));if(node){node.click();return true}const textLabels=['未登录','Not signed in'];const textNode=Array.from(document.querySelectorAll('*')).find(x=>x.getClientRects().length&&textLabels.includes((x.textContent||'').trim())&&x.children.length===0);textNode?.click();return Boolean(textNode)})()`,
     )
+    if (!accountOpened) throw new Error('账户入口未挂载')
     if (!(await pipe.evaluate(session, `Boolean(${settingsNav})`))) {
-      await pipe.evaluate(
-        session,
-        `window.dispatchEvent(new KeyboardEvent('keydown',{key:',',code:'Comma',metaKey:/Mac|iPhone|iPad/.test(navigator.platform),ctrlKey:!/Mac|iPhone|iPad/.test(navigator.platform),bubbles:true}))`,
-      )
       await waitFor(clickLabel(['设置', 'Settings']), '设置菜单不可见')
     }
   }
