@@ -57,7 +57,7 @@ function fixture() {
   } as unknown as Context
   installNativeProgressGuard(
     ctx,
-    { firstProgressMs: 90, idleProgressMs: 90, totalMs: 150 },
+    { firstProgressMs: 90, idleProgressMs: 90 },
     (options) => options.provider === 'native',
   )
   const options = {
@@ -117,15 +117,17 @@ it.each(['stopping', 'dispose'] as const)('removes deadlines on %s', async (meth
   expect(f.cancel).not.toHaveBeenCalled()
 })
 
-it('preserves the total deadline across same-turn request retries', async () => {
+it('allows useful progress across same-turn requests without a total deadline', async () => {
   vi.useFakeTimers()
   const f = fixture()
-  await f.consume()
-  await vi.advanceTimersByTimeAsync(80)
-  await f.consume()
-  await vi.advanceTimersByTimeAsync(70)
+  for (let i = 0; i < 20; i++) {
+    await f.consume()
+    await vi.advanceTimersByTimeAsync(80)
+  }
+  expect(f.cancel).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(10)
   expect(f.cancel).toHaveBeenCalledWith(
-    { kind: 'hook', reason: '原生执行达到总时长上限' },
+    { kind: 'hook', reason: '原生执行长时间没有新进展' },
     { keepInbox: true },
   )
 })
@@ -218,7 +220,7 @@ it.each(['approval/request', 'user-questions/request'])(
 )
 
 it.each(['tools/pre-execute', 'tools/execute'])(
-  'suspends idle but preserves total during %s',
+  'does not limit the duration of %s',
   async (event) => {
     vi.useFakeTimers()
     const f = fixture()
@@ -233,21 +235,23 @@ it.each(['tools/pre-execute', 'tools/execute'])(
     )
     await vi.advanceTimersByTimeAsync(100)
     expect(f.cancel).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(50)
-    expect(f.cancel).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(3_600_000)
+    expect(f.cancel).not.toHaveBeenCalled()
     finish()
     await pending
+    await vi.advanceTimersByTimeAsync(90)
+    expect(f.cancel).toHaveBeenCalledOnce()
   },
 )
 
-it('preserves total across child signals and renews after idle', async () => {
+it('preserves inactivity protection across child signals and renews after idle', async () => {
   vi.useFakeTimers()
   const f = fixture()
   await f.consume()
   await vi.advanceTimersByTimeAsync(80)
   f.options.signal = new AbortController().signal
   await f.consume()
-  await vi.advanceTimersByTimeAsync(70)
+  await vi.advanceTimersByTimeAsync(90)
   expect(f.cancel).toHaveBeenCalledOnce()
   f.idle()
   f.options.signal = new AbortController().signal
@@ -275,11 +279,7 @@ it.each(['approval/request', 'user-questions/request'] as const)(
           finish = () => resolve(undefined as never)
         }),
     )
-    installNativeProgressGuard(
-      ctx,
-      { firstProgressMs: 90, idleProgressMs: 90, totalMs: 150 },
-      () => true,
-    )
+    installNativeProgressGuard(ctx, { firstProgressMs: 90, idleProgressMs: 90 }, () => true)
     const options = {
       provider: 'native',
       model: 'test',

@@ -265,7 +265,13 @@ export class OplGatewayAccountService extends TypertRemoteService {
     }
 
     if (this.facts !== undefined) {
-      return { ...base, phase: 'connected', source: this.source ?? 'session', account: this.facts }
+      return {
+        ...base,
+        phase: 'connected',
+        source: this.source ?? 'session',
+        account: { ...this.facts, ...(this.failure ? { stale: true } : {}) },
+        ...(this.failure ? { error: this.failure } : {}),
+      }
     }
     // Nothing in memory: show what this Harness already recorded, without
     // touching the network, so a restart paints the account rather than an
@@ -279,7 +285,12 @@ export class OplGatewayAccountService extends TypertRemoteService {
           ...base,
           phase: 'connected',
           source: 'session',
-          account: { ...cached.facts, observedAt: cached.observedAt, stale: cached.stale },
+          account: {
+            ...cached.facts,
+            observedAt: cached.observedAt,
+            stale: cached.stale || this.failure !== undefined,
+          },
+          ...(this.failure ? { error: this.failure } : {}),
         }
       }
     }
@@ -445,10 +456,15 @@ export class OplGatewayAccountService extends TypertRemoteService {
         await writeSession(credentials, renewed.refreshToken)
         this.session = renewed
       } catch (error) {
-        // A refused renewal ends the session: keeping it would leave the page
-        // showing a cached account behind a credential that no longer works.
-        await clearSession(credentials).catch(() => undefined)
-        clearFacts(this.home())
+        // Only an explicit authentication refusal invalidates the saved login.
+        // Network, rate-limit, server and local storage failures retain it for retry.
+        if (
+          error instanceof GatewayControlError &&
+          (error.status === 401 || error.status === 403)
+        ) {
+          await clearSession(credentials)
+          clearFacts(this.home())
+        }
         this.failure = describe(error)
         this.session = undefined
         return this.status()

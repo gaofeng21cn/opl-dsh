@@ -2,12 +2,11 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import os from 'node:os'
+import { windowsKimiCuLaunch, windowsKimiCuCall, type WinCuAction } from './windows.ts'
 
 /** Fixed executable and MCP arguments verified by the OPL Framework contract. */
 export const KIMI_CU_EXECUTABLE = '/Applications/KimiCU.app/Contents/MacOS/kimi-cu'
 export const KIMI_CU_MCP_ARGS = ['mcp', '-s', 'user'] as const
-/** Windows Kimi Code exposes the plugin bridge as a PATH-resolved executable. */
-export const KIMI_CU_WINDOWS_EXECUTABLE = 'kimi-cu.exe'
 declare const __OPL_SUITE_VERSION__: string
 const suiteVersion =
   typeof __OPL_SUITE_VERSION__ === 'string' ? __OPL_SUITE_VERSION__ : 'development'
@@ -36,7 +35,7 @@ export const KIMI_CU_TOOLS = [
   'debug_tap',
 ] as const
 
-export type KimiCuAction = (typeof KIMI_CU_TOOLS)[number]
+export type KimiCuAction = (typeof KIMI_CU_TOOLS)[number] | WinCuAction
 
 /** One JSON-RPC response frame from KimiCU. */
 export interface KimiCuResponse {
@@ -51,6 +50,15 @@ export class KimiCuClient {
   private exitError: Error | undefined
   private nextId = 1
   private buffer = ''
+  private starting: Promise<void> | undefined
+  private closed = false
+  private readonly launch: {
+    executable: string
+    args: readonly string[]
+    cwd?: string
+    env?: NodeJS.ProcessEnv
+    codeMode?: boolean
+  }
   private readonly pending = new Map<
     number,
     {
@@ -63,33 +71,49 @@ export class KimiCuClient {
   >()
 
   constructor(
-    private readonly executable = process.platform === 'win32'
-      ? KIMI_CU_WINDOWS_EXECUTABLE
-      : KIMI_CU_EXECUTABLE,
-    private readonly args: readonly string[] = KIMI_CU_MCP_ARGS,
-  ) {}
+    executable?: string,
+    args: readonly string[] = KIMI_CU_MCP_ARGS,
+    options: { cwd?: string; env?: NodeJS.ProcessEnv; codeMode?: boolean } = {},
+  ) {
+    this.launch =
+      executable === undefined && process.platform === 'win32'
+        ? windowsKimiCuLaunch()
+        : { executable: executable ?? KIMI_CU_EXECUTABLE, args, ...options }
+  }
 
   /** Start the process and negotiate the protocol before accepting a tool call. */
   async start(): Promise<void> {
-    if (this.child !== undefined) return
+    if (this.closed) throw Error('KimiCU MCP 已关闭')
+    if (!this.starting) this.starting = this.initialize()
+    return this.starting
+  }
+
+  private async initialize(): Promise<void> {
     if (this.exitError !== undefined) throw this.exitError
-    if (!existsSync(this.executable))
-      throw Error(`KimiCU 未安装或不可执行：${this.executable}。请先安装 KimiCU。`)
-    const child = this.executable.endsWith('.mjs')
-      ? spawn(process.execPath, [this.executable, ...this.args], {
-          stdio: ['pipe', 'pipe', 'pipe'],
-          env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined },
-        })
-      : spawn(this.executable, [...this.args], {
-          stdio: ['pipe', 'pipe', 'pipe'],
-          env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined },
-        })
+    const { executable, args, cwd, env } = this.launch
+    if (!existsSync(executable))
+      throw Error(`KimiCU 未安装或不可执行：${executable}。请先安装 KimiCU。`)
+    const script = executable.endsWith('.mjs')
+    const child = spawn(
+      script ? process.execPath : executable,
+      script ? [executable, ...args] : [...args],
+      {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+        ...(cwd ? { cwd } : {}),
+        env: { ...(env ?? process.env), ELECTRON_RUN_AS_NODE: script ? '1' : undefined },
+      },
+    )
     this.child = child
     child.stdout.setEncoding('utf8')
     child.stdout.on('data', (chunk: string) => this.read(chunk))
     child.stderr.setEncoding('utf8')
     child.stderr.on('data', () => {})
-    child.once('error', (error) => this.failAll(error))
+    child.once('error', (error) => {
+      this.exitError = error
+      this.failAll(error)
+    })
+    child.stdin.on('error', (error) => this.failAll(error))
     child.once('exit', (code, signal) => {
       this.exitError = Error(
         `KimiCU MCP 已退出（${signal === null ? `code ${String(code)}` : signal}）。请重启 KimiCU 服务后重试。`,
@@ -107,10 +131,22 @@ export class KimiCuClient {
       10_000,
     )
     this.write({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} })
+    if (this.launch.codeMode) {
+      const listed = await this.request('tools/list', {}, 10_000)
+      if (
+        !isRecord(listed) ||
+        !Array.isArray(listed.tools) ||
+        !listed.tools.some((tool: unknown) => isRecord(tool) && tool.name === 'js')
+      ) {
+        await this.close()
+        throw Error('Windows KimiCU 未广告已验证的 js 工具，未执行操作。')
+      }
+    }
   }
 
   /** Close the owned MCP process and settle every pending request. */
   async close(): Promise<void> {
+    this.closed = true
     this.failAll(Error('KimiCU MCP 已关闭'))
     const child = this.child
     this.child = undefined
@@ -127,13 +163,14 @@ export class KimiCuClient {
 
   /** Call one original KimiCU tool and return its unmodified result. */
   async call(action: KimiCuAction, args: unknown, signal: AbortSignal): Promise<unknown> {
+    if (signal.aborted) throw Error('KimiCU 调用已取消')
     await this.start()
     if (signal.aborted) throw Error('KimiCU 调用已取消')
     let result: unknown
     try {
       result = await this.request(
         'tools/call',
-        { name: action, arguments: args },
+        this.launch.codeMode ? windowsKimiCuCall(action, args) : { name: action, arguments: args },
         KIMI_CU_CALL_TIMEOUT_MS,
         signal,
       )
@@ -158,6 +195,7 @@ export class KimiCuClient {
     const id = this.nextId++
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
+        signal?.removeEventListener('abort', abort)
         this.pending.delete(id)
         this.write({
           jsonrpc: '2.0',
@@ -171,6 +209,7 @@ export class KimiCuClient {
               : `KimiCU ${method} 超时`,
           ),
         )
+        if (method === 'tools/call') void this.close()
       }, timeoutMs)
       const abort = (): void => {
         const entry = this.pending.get(id)
@@ -183,6 +222,7 @@ export class KimiCuClient {
           params: { requestId: id, reason: 'cancelled' },
         })
         reject(Error('KimiCU 调用已取消'))
+        if (method === 'tools/call') void this.close()
       }
       this.pending.set(id, {
         resolve,
@@ -197,6 +237,7 @@ export class KimiCuClient {
   }
 
   private write(value: unknown): void {
+    if (this.exitError) throw this.exitError
     this.child?.stdin.write(`${JSON.stringify(value)}\n`)
   }
 
@@ -266,13 +307,14 @@ export function kimiCuResult(value: unknown): {
 }
 
 /** Append local service diagnosis without hiding the companion's own error. */
-export function kimiCuFailure(
-  value: unknown,
-  executable = process.platform === 'win32' ? KIMI_CU_WINDOWS_EXECUTABLE : KIMI_CU_EXECUTABLE,
-): string {
+export function kimiCuFailure(value: unknown, executable = KIMI_CU_EXECUTABLE): string {
   const result = kimiCuResult(value)
   const message = result.text || 'KimiCU 操作失败'
-  if (!/service unavailable|invalidated from this process|EX_CONFIG/iu.test(message)) return message
+  if (
+    process.platform === 'win32' ||
+    !/service unavailable|invalidated from this process|EX_CONFIG/iu.test(message)
+  )
+    return message
   const status = spawnSync(executable, ['service-status'], {
     encoding: 'utf8',
     timeout: 5_000,
@@ -300,7 +342,7 @@ export interface KimiCuQualification {
   pluginInstalled: boolean
   callable: false
   tools: readonly KimiCuTool[]
-  status: 'unavailable' | 'eligible-but-no-protocol'
+  status: 'unavailable' | 'installed-awaiting-handshake'
   reason: string
   installCommand: string
 }
@@ -312,7 +354,7 @@ export interface KimiCuProbeOptions {
   env?: NodeJS.ProcessEnv
 }
 
-/** WinCU stays fail-closed until Kimi publishes a stable DSH-callable stdio/MCP contract. */
+/** Check local files only; a successful MCP handshake and actual desktop call are separate evidence. */
 export function qualifyKimiCu(options: KimiCuProbeOptions = {}): KimiCuQualification {
   const platform = options.platform ?? process.platform
   const arch = options.arch ?? process.arch
@@ -320,12 +362,19 @@ export function qualifyKimiCu(options: KimiCuProbeOptions = {}): KimiCuQualifica
   const build = Number(windowsRelease.split('.')[2])
   const windowsVersionKnown = platform === 'win32' && Number.isInteger(build) && build > 0
   const supportedWindowsVersion = windowsVersionKnown && build >= 18362
-  const pluginInstalled = false
-  let reason = 'WinCU 没有公开可验证的 stdio/MCP 启动协议，DSH 不会调用它。'
+  let pluginInstalled = false
+  let reason = 'Windows KimiCU 文件已就绪；调用时验证官方 code-mode MCP 及原生服务。'
   if (platform !== 'win32') reason = 'KimiCU WinCU 仅支持 Windows。'
   else if (arch !== 'x64') reason = 'KimiCU WinCU 仅支持 x64 Windows。'
   else if (!supportedWindowsVersion) reason = '需要 Windows 10 1903 或更新版本（含 Windows 11）。'
-  else if (!pluginInstalled) reason = '未检测到官方 Kimi Code WinCU 插件。'
+  else {
+    try {
+      windowsKimiCuLaunch(options.env)
+      pluginInstalled = true
+    } catch (error) {
+      reason = error instanceof Error ? error.message : String(error)
+    }
+  }
   return {
     supportedPlatform: platform === 'win32',
     supportedArchitecture: arch === 'x64',
@@ -336,7 +385,7 @@ export function qualifyKimiCu(options: KimiCuProbeOptions = {}): KimiCuQualifica
     tools: [],
     status:
       platform === 'win32' && arch === 'x64' && pluginInstalled
-        ? 'eligible-but-no-protocol'
+        ? 'installed-awaiting-handshake'
         : 'unavailable',
     reason,
     installCommand: KIMI_CU_INSTALL_COMMAND,

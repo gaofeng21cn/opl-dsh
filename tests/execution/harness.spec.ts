@@ -751,7 +751,7 @@ describe('native conversation combinations', () => {
       'OPL Gateway',
     ])
   })
-  it('keeps OPL Gateway Gemini manual-only until the user creates an OpenCode pairing', async () => {
+  it('generates only supported Gateway Gemini recommendations', async () => {
     vi.stubEnv('USERPROFILE', join(tmpdir(), 'opl-gemini-opencode-absent-cli'))
     vi.stubEnv('HOME', join(tmpdir(), 'opl-gemini-opencode-absent-cli'))
     vi.stubEnv('PATH', '')
@@ -765,6 +765,11 @@ describe('native conversation combinations', () => {
     expect(
       catalog.combinations.filter((item) => item.modelRef.model.startsWith('gemini::')),
     ).toEqual([])
+    expect(
+      catalog.recommendations
+        ?.filter((item) => item.modelRef.model.startsWith('gemini::'))
+        .map((item) => item.harnessRef),
+    ).toEqual(['opencode', 'opencode', 'opencode'])
     expect(catalog.models.map((item) => item.ref.model)).toEqual(
       expect.arrayContaining([
         'gemini::gemini-4-argon',
@@ -846,6 +851,34 @@ describe('native conversation combinations', () => {
       expect(session.append).not.toHaveBeenCalled()
     },
   )
+  it('projects adapter compatibility and refuses unsupported new pairings before saving', async () => {
+    const { service } = await nativeSetup()
+    const catalog = await service.executionCatalog()
+    const ref = { provider: 'opl-gateway', model: 'codex::gpt-test-model' }
+    const supported = catalog.supportedPairings!.find((item) => item.modelRef.model === ref.model)!
+    expect(supported.harnessRefs).toContain('codex')
+    expect(supported.harnessRefs).not.toContain('minimax-code')
+    await expect(
+      service.saveExecutionCatalog({
+        ...catalog,
+        combinations: [
+          ...catalog.combinations,
+          {
+            id: 'unsupported-new',
+            name: 'Unsupported',
+            modelRef: ref,
+            harnessRef: 'minimax-code',
+            permissionPolicy: 'read-only',
+            enabled: true,
+            isDefault: false,
+          },
+        ],
+      }),
+    ).rejects.toThrow('尚无兼容适配器')
+    expect(
+      (await service.executionCatalog()).combinations.some((item) => item.id === 'unsupported-new'),
+    ).toBe(false)
+  })
   it('preserves a disabled automatic combination instead of generating a duplicate', async () => {
     const { service } = await nativeSetup(),
       catalog = await service.executionCatalog()
@@ -1508,7 +1541,7 @@ describe('external execution progress deadlines', () => {
   it('persists a failed turn when a silent execution exceeds its deadline', async () => {
     const { service, root, options } = await setup()
     const session = await start(service, root)
-    service.configureProgressLimits({ firstProgressMs: 1000, idleProgressMs: 1000, totalMs: 5000 })
+    service.configureProgressLimits({ firstProgressMs: 1000, idleProgressMs: 1000 })
     await service.prompt({ sessionId: session.id, text: 'wait', operationId: 'silent-deadline' })
     const snapshot = await wait(service, session.id)
     expect(snapshot.state).toBe('failed')
@@ -1524,7 +1557,7 @@ describe('external execution progress deadlines', () => {
   it('fails after useful output becomes silent', async () => {
     const { service, root } = await setup()
     const session = await start(service, root)
-    service.configureProgressLimits({ firstProgressMs: 1000, idleProgressMs: 100, totalMs: 3000 })
+    service.configureProgressLimits({ firstProgressMs: 1000, idleProgressMs: 100 })
     await service.prompt({
       sessionId: session.id,
       text: 'partial-then-wait',
@@ -1541,7 +1574,7 @@ describe('external execution progress deadlines', () => {
     const holder = await start(service, root, 'deadline-holder')
     await service.prompt({ sessionId: holder.id, text: 'wait', operationId: 'hold' })
     const queued = await start(service, root, 'deadline-queued')
-    service.configureProgressLimits({ firstProgressMs: 100, idleProgressMs: 100, totalMs: 300 })
+    service.configureProgressLimits({ firstProgressMs: 100, idleProgressMs: 100 })
     await service.prompt({ sessionId: queued.id, text: 'result', operationId: 'queued-result' })
     expect((await service.snapshot({ sessionId: queued.id })).state).toBe('queued')
     await service.cancel({ sessionId: holder.id })
@@ -1551,7 +1584,7 @@ describe('external execution progress deadlines', () => {
   it('pauses all deadlines while approval is waiting', async () => {
     const { service, root } = await setup()
     const session = await start(service, root)
-    service.configureProgressLimits({ firstProgressMs: 100, idleProgressMs: 100, totalMs: 200 })
+    service.configureProgressLimits({ firstProgressMs: 100, idleProgressMs: 100 })
     await service.prompt({
       sessionId: session.id,
       text: 'allow-write',
@@ -1569,14 +1602,14 @@ describe('external execution progress deadlines', () => {
     expect((await wait(service, session.id)).state).toBe('completed')
   })
 
-  it('allows a quiet running tool past idle time but stops it at total time', async () => {
+  it('allows a quiet running tool past idle time until explicitly cancelled', async () => {
     const { service, root } = await setup()
     const session = await start(service, root)
-    service.configureProgressLimits({ firstProgressMs: 1000, idleProgressMs: 1000, totalMs: 4000 })
+    service.configureProgressLimits({ firstProgressMs: 1000, idleProgressMs: 1000 })
     await service.prompt({
       sessionId: session.id,
       text: 'tool-in-progress-wait',
-      operationId: 'quiet-tool-total',
+      operationId: 'quiet-tool-running',
     })
     await vi.waitFor(async () => {
       const snapshot = await service.snapshot({ sessionId: session.id })
@@ -1584,16 +1617,18 @@ describe('external execution progress deadlines', () => {
         expect.objectContaining({ id: 'quiet-tool', status: 'in_progress' }),
       ])
     })
-    const snapshot = await wait(service, session.id)
-    expect(snapshot.state).toBe('failed')
-    expect(snapshot.turns[0]?.error).toContain('总时长上限')
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    const snapshot = await service.snapshot({ sessionId: session.id })
+    expect(snapshot.state).toBe('running')
+    expect(snapshot.turns[0]?.error).toBeUndefined()
     expect(snapshot.turns[0]?.tools[0]?.status).toBe('in_progress')
+    expect((await service.cancel({ sessionId: session.id })).state).toBe('cancelled')
   })
 
   it('clears the active deadline on manual cancellation', async () => {
     const { service, root } = await setup()
     const session = await start(service, root)
-    service.configureProgressLimits({ firstProgressMs: 5000, idleProgressMs: 5000, totalMs: 10000 })
+    service.configureProgressLimits({ firstProgressMs: 5000, idleProgressMs: 5000 })
     await service.prompt({ sessionId: session.id, text: 'wait', operationId: 'manual-deadline' })
     await vi.waitFor(async () =>
       expect(await readFile(join(root, 'calls.txt'), 'utf8')).toBe('wait\n'),

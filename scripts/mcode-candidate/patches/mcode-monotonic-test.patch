@@ -1,0 +1,21 @@
+diff --git a/packages/local-runtime/test/unit/child-bash-lifecycle.test.ts b/packages/local-runtime/test/unit/child-bash-lifecycle.test.ts
+index 2a11aab..712d510 100644
+--- a/packages/local-runtime/test/unit/child-bash-lifecycle.test.ts
++++ b/packages/local-runtime/test/unit/child-bash-lifecycle.test.ts
+@@ -236,6 +236,7 @@ describe('real child Bash boundaries', () => {
+       mode: 'off',
+     });
+     const startedAt = Date.now();
++    const elapsedStart = performance.now();
+     try {
+       const receipt = await tool.execute(
+         { ...toolContext('child'), canConsumeBackgroundBashOutput: true },
+@@ -245,7 +246,7 @@ describe('real child Bash boundaries', () => {
+         controller.signal,
+       );
+       expect(receipt.details).toMatchObject({ status: 'auto_promoted' });
+-      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(60000);
++      expect(performance.now() - elapsedStart).toBeGreaterThanOrEqual(60000);
+       const timing = receipt.details?.timing as {
+         commandTimeoutSeconds: number;
+         commandTimerStartedAt: number;

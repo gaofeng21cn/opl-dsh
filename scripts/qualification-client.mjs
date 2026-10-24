@@ -349,6 +349,67 @@ export async function verifyDesktopClient(
       )
         throw new Error('执行组合仍重复提供 Harness 代理配置')
       result.combinationsOnly = true
+      await waitFor(
+        `Boolean(document.querySelector('[data-opl-recommendation-item]'))`,
+        '组合选择列表未加载',
+      )
+      const selectedCombination = await pipe.evaluate(
+        session,
+        `(() => {const panel=document.querySelector('[data-opl-panel="recommended-combinations"]'); panel.open=true; const input=Array.from(panel.querySelectorAll('[data-opl-recommendation-item]')).find(x=>x.checked && JSON.parse(x.dataset.oplRecommendationItem)[0]==='saved'); return input ? {key:input.dataset.oplRecommendationItem,id:JSON.parse(input.dataset.oplRecommendationItem)[1]} : null})()`,
+      )
+      if (!selectedCombination) throw new Error('隔离目录缺少可核验启停的已保存组合')
+      const choice = `Array.from(document.querySelectorAll('[data-opl-recommendation-item]')).find(x=>x.dataset.oplRecommendationItem===${JSON.stringify(selectedCombination.key)})`
+      const row = `Array.from(document.querySelectorAll('[data-opl-combination]')).find(x=>x.dataset.oplCombination===${JSON.stringify(selectedCombination.id)})`
+      const saveChoices = `Array.from(document.querySelector('[data-opl-panel="recommended-combinations"]').querySelectorAll('button')).find(x=>x.textContent.startsWith('保存选择'))`
+      if (
+        await pipe.evaluate(
+          session,
+          `Boolean(${row}?.querySelector('[role="switch"][aria-label^="启用 "]'))`,
+        )
+      )
+        throw new Error('已启用列表仍提供重复启停开关')
+      const originalGroup = await pipe.evaluate(session, `${row}.parentElement.dataset.oplPanel`)
+      await pipe.evaluate(session, `${choice}.click(); ${saveChoices}.click()`)
+      await waitFor(
+        `!(${row}) && Boolean(${choice}) && !${choice}.checked && !${saveChoices}.disabled`,
+        '停用组合未从管理列表隐藏，或选择入口丢失',
+      )
+      await pipe.evaluate(session, `${choice}.click(); ${saveChoices}.click()`)
+      await waitFor(
+        `Boolean(${row}) && ${choice}.checked && !${saveChoices}.disabled`,
+        '重新勾选未恢复原组合',
+      )
+      if ((await pipe.evaluate(session, `${row}.parentElement.dataset.oplPanel`)) !== originalGroup)
+        throw new Error('修改组合启停后错误地改变官方/自定义分组')
+      result.combinationSelection = {
+        singleEnableSurface: true,
+        disabledRowHidden: true,
+        savedIdRestored: true,
+      }
+      await pipe.evaluate(
+        session,
+        `document.querySelector('[data-opl-panel="recommended-combinations"]').open=false; document.querySelector('[data-opl-panel="combination-list"]').scrollIntoView({block:'center'})`,
+      )
+      const compactRows = await pipe.evaluate(
+        session,
+        `Array.from(document.querySelectorAll('[data-opl-combination] > summary')).map(x=>({height:x.getBoundingClientRect().height,text:x.textContent,clipped:x.scrollWidth>x.clientWidth}))`,
+      )
+      if (
+        !compactRows.length ||
+        compactRows.some((x) => x.height > 42 || x.text.includes('可执行') || x.clipped)
+      )
+        throw new Error('组合摘要未保持紧凑单行或仍重复显示可执行：' + JSON.stringify(compactRows))
+      if (compactRows.some((x) => x.text.includes('默认')))
+        throw new Error('单一执行组合仍显示默认状态')
+      result.compactCombinationRows = compactRows
+      const selectionScreenshot = await captureScreenshot('combination-selection')
+      if (selectionScreenshot) screenshots.push(selectionScreenshot)
+      else result.screenshotFailures.push('combination-selection')
+      await pipe.evaluate(
+        session,
+        `document.querySelector('[data-opl-panel="recommended-combinations"]').open=false`,
+      )
+
       await pipe.evaluate(
         session,
         `document.querySelector('[data-opl-panel="execution-settings"]').open=true`,
@@ -357,6 +418,26 @@ export async function verifyDesktopClient(
         `(() => {const row=document.querySelector('[data-opl-proxy-row="minimax-code"]'); const builtin=document.querySelector('[data-opl-proxy-row="dsh"]'); return Boolean(row && row.querySelectorAll('input[type=radio]').length===3 && builtin && Array.from(builtin.querySelectorAll('input[type=radio]')).every(x=>x.disabled))})()`,
         'Harness 独立代理设置未注册',
       )
+      result.expandedPathSpacing = await pipe.evaluate(
+        session,
+        `(() => {const row=document.querySelector('[data-opl-harness-row="codex"]');const detail=Array.from(row.querySelectorAll('details')).find(x=>x.querySelector(':scope > summary')?.textContent==='可执行文件路径');detail.open=true;const summary=detail.querySelector(':scope > summary');const input=detail.querySelector('input');const gap=input.getBoundingClientRect().top-summary.getBoundingClientRect().bottom;detail.open=false;return gap})()`,
+      )
+      if (result.expandedPathSpacing < 11 || result.expandedPathSpacing > 13)
+        throw new Error('展开的路径输入框未保留12px间距')
+      result.collapsedHarnessSpacing = await pipe.evaluate(
+        session,
+        `Array.from(document.querySelectorAll('[data-opl-harness-row] details:not([open]) > summary')).map(x=>({text:x.textContent,marginBottom:getComputedStyle(x).marginBottom}))`,
+      )
+      if (
+        !result.collapsedHarnessSpacing.length ||
+        result.collapsedHarnessSpacing.some((x) => parseFloat(x.marginBottom) !== 0)
+      )
+        throw new Error('收起的执行引擎折叠项仍有底部空行')
+      const emptyGroups = await pipe.evaluate(
+        session,
+        `Array.from(document.querySelectorAll('[data-opl-panel="official-combinations"],[data-opl-panel="custom-combination-list"]')).filter(x=>!x.querySelector('[data-opl-combination]')).length`,
+      )
+      if (emptyGroups) throw new Error('空组合分组仍占用行距')
       await pipe.evaluate(
         session,
         `(() => {const row=document.querySelector('[data-opl-proxy-row="minimax-code"]'); row.open=true; row.querySelector('input[value="custom"]').click()})()`,
@@ -460,6 +541,34 @@ export async function verifyDesktopClient(
     if (panel.marker === 'gateway-models') {
       const dialog = "document.querySelector('[role=dialog]')"
       const editLabels = ['编辑 华为云 MaaS (huawei-maas)', 'Edit 华为云 MaaS (huawei-maas)']
+      await waitFor(
+        `Boolean(document.querySelector('[data-opl-region-select]'))`,
+        'MiniMax地区选择未挂载',
+      )
+      await pipe.evaluate(
+        session,
+        `(() => {const select=document.querySelector('[data-opl-region-select]');select.value='global';select.dispatchEvent(new Event('change',{bubbles:true}))})()`,
+      )
+      await waitFor(
+        `document.querySelector('[data-opl-panel="minimax-account"]').textContent.includes('在中国大陆使用国际版需要代理。')`,
+        '国际版代理说明未显示',
+      )
+      result.minimaxGlobalNetworkHint = true
+      await pipe.evaluate(
+        session,
+        `document.querySelector('[data-opl-panel="minimax-account"]').scrollIntoView({block:'center'})`,
+      )
+      const minimaxScreenshot = await captureScreenshot('minimax-global-hint')
+      if (minimaxScreenshot) screenshots.push(minimaxScreenshot)
+      await pipe.evaluate(
+        session,
+        `(() => {const select=document.querySelector('[data-opl-region-select]');select.value='cn';select.dispatchEvent(new Event('change',{bubbles:true}))})()`,
+      )
+      await waitFor(
+        `!document.querySelector('[data-opl-panel="minimax-account"]').textContent.includes('在中国大陆使用国际版需要代理。')`,
+        '大陆版仍显示国际版提示',
+      )
+
       async function enterNativeCredential(value) {
         await waitFor(
           `Boolean(${dialog}.querySelector('input[type=password]'))`,

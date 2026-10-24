@@ -1,3 +1,10 @@
+import {
+  minimaxAccountZh,
+  minimaxAccountEn,
+  MINIMAX_ACCOUNT_NAMESPACE,
+  type MiniMaxAccountLocaleKey,
+} from './minimax-account-locales.ts'
+import { MiniMaxAccountSection } from './MiniMaxAccountSection.tsx'
 import { QueueStatus } from './QueueStatus.tsx'
 import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
 import type { Context } from '@deepseek-ai/cordis'
@@ -91,7 +98,15 @@ function sessionChanges(ctx: Context, sessionId: string, listener: () => void): 
   }
 }
 
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    'settings.minimaxAccount': MiniMaxAccountLocaleKey
+  }
+}
 export function apply(ctx: Context, config: ClientConfig = {}): void {
+  ctx.effect(() =>
+    ctx.locale.register(MINIMAX_ACCOUNT_NAMESPACE, { zh: minimaxAccountZh, en: minimaxAccountEn }),
+  )
   ctx.effect(() =>
     ctx.locale.register(PROJECTLESS_COMPOSER_NAMESPACE, {
       zh: projectlessComposerZh,
@@ -100,6 +115,11 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
   )
   const composerText = ctx.locale.bind(PROJECTLESS_COMPOSER_NAMESPACE)
   const call = remoteCall(ctx.remote.oplExecution)
+  ctx.slots.inject('settings.models.footer', () =>
+    ctx.slots.register({ name: 'settings.models.footer', id: 'opl-minimax-account' }, () => (
+      <MiniMaxAccountSection call={call} t={ctx.locale.bind(MINIMAX_ACCOUNT_NAMESPACE)} />
+    )),
+  )
   const workspace = ctx.uiWorkspace
   const sessions = ctx.sessions
   ctx.effect(() =>

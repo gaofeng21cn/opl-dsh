@@ -192,7 +192,7 @@
   font-weight: 500;
   line-height: 18px;
 }
-.details[open] summary {
+.details[open] > summary {
   margin-bottom: 12px;
 }
 .details .actions,
@@ -251,6 +251,25 @@ select.input {
 }
 .facts > div {
   min-width: 0;
+}
+.proxyModes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+.proxyMode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.proxyMode input {
+  flex: 0 0 auto;
+  margin: 0;
 }
 .factValue {
   margin: 0;
@@ -333,4 +352,8 @@ select.input {
   -webkit-box-orient: vertical;
   overflow: hidden;
   font-weight: 500;
+}
+
+.pathDetails[open] > summary {
+  margin-bottom: 12px;
 }

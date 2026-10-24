@@ -27,7 +27,7 @@ describe('official Harness adapter registry', () => {
     expect(defaultHarness(claude)).toBe('claude')
     const gatewayGemini = { provider: 'opl-gateway', model: 'gemini::gemini-3.8-flash' }
     expect(adapterFor('opencode', gatewayGemini)?.id).toBe('opencode')
-    expect(defaultHarness(gatewayGemini)).toBe('dsh')
+    expect(defaultHarness(gatewayGemini)).toBe('opencode')
     expect(
       adapterFor('opencode', { provider: 'opl-gateway', model: 'gemini::gemini-3.7-flash' }),
     ).toBeUndefined()

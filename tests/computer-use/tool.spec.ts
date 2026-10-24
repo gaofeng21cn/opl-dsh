@@ -14,8 +14,13 @@ describe('KimiCU WinCU qualification', () => {
     expect(result.reason).toContain('Windows')
   })
 
-  it('does not invent a callable protocol on Windows', () => {
-    const result = qualifyKimiCu({ platform: 'win32', arch: 'x64', windowsRelease: '10.0.19045' })
+  it('does not report missing Windows plugin files as callable', () => {
+    const result = qualifyKimiCu({
+      platform: 'win32',
+      arch: 'x64',
+      windowsRelease: '10.0.19045',
+      env: {},
+    })
     expect(result.status).toBe('unavailable')
     expect(result.callable).toBe(false)
     expect(result.pluginInstalled).toBe(false)

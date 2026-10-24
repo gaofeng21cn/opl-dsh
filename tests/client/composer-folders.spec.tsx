@@ -40,12 +40,16 @@ function detailsPanels() {
 }
 
 describe('执行组合分区', () => {
-  it('按 generated 状态把官方和自定义组合分别渲染到对应分组', () => {
+  it('按模型与 Harness 配对关系分组，不按用户编辑状态分组', () => {
     const text = source.getText()
     expect(text).toContain('data-opl-panel="official-combinations"')
     expect(text).toContain('data-opl-panel="custom-combination-list"')
-    expect(text).toMatch(/combinations\.filter\(\(item\) => item\.generated\)/)
-    expect(text).toMatch(/combinations\.filter\(\(item\) => !item\.generated\)/)
+    expect(text).toContain('data-opl-panel="recommended-combinations"')
+    expect(text).toContain('手动添加组合')
+    expect(text).toContain('isOfficialPairing(item.harnessRef, item.modelRef)')
+    expect(text).not.toContain('item.generated &&')
+    expect(text).toContain('catalog.combinations.filter((item) => item.enabled)')
+    expect(text).toContain('combinations.filter((item) => !official.includes(item))')
   })
 
   it('列表默认展开且可折叠，添加表单默认折叠', () => {

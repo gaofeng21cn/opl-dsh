@@ -1,3 +1,5 @@
+import type { MiniMaxAccountLoginRequest } from '../contracts/minimax-account.ts'
+import { MiniMaxAccount } from './minimax-account.ts'
 import { ProgressWatchdog, type ProgressWatchdogLimits } from './progress-watchdog.ts'
 import { executionLimitsSchema } from '../contracts/limits.ts'
 import { openCodeStreamFailure } from './adapters/opencode/stream-failure.ts'
@@ -230,9 +232,62 @@ interface Active {
 export { grokConfiguration } from './adapters/grok.ts'
 export { nativeHarnessMatches, defaultHarness } from './adapters/index.ts'
 export class HarnessService {
+  private minimaxLoginAttempt:
+    | { region: MiniMaxAccountLoginRequest['region']; cancelled: boolean }
+    | undefined
+  private readonly minimaxAccount = new MiniMaxAccount(async () => {
+    const harness = (await this.catalogStore.get()).harnesses.find(
+      (item) => item.id === 'minimax-code',
+    )
+    return {
+      ...(harness?.command ? { command: harness.command } : {}),
+      ...(harness?.prefix ? { prefix: harness.prefix } : {}),
+    }
+  })
+  minimaxAccountStatus(request: MiniMaxAccountLoginRequest) {
+    return this.minimaxAccount.status(request.region)
+  }
+  minimaxAccountCancel(request: MiniMaxAccountLoginRequest) {
+    if (this.minimaxLoginAttempt?.region === request.region)
+      this.minimaxLoginAttempt.cancelled = true
+    return this.minimaxAccount.cancel(request.region)
+  }
+  async minimaxAccountLogout(request: MiniMaxAccountLoginRequest) {
+    await this.ready
+    return this.runtimeMaintenance.change(
+      () => this.runtimeBusy(),
+      async () => {
+        await this.assertNoGlobalActivity()
+        return this.minimaxAccount.logout(request.region)
+      },
+    )
+  }
+  async minimaxAccountLogin(request: MiniMaxAccountLoginRequest) {
+    if (this.minimaxLoginAttempt) throw Error('官方登录尚未结束')
+    const attempt = { region: request.region, cancelled: false }
+    this.minimaxLoginAttempt = attempt
+    try {
+      await this.ready
+      if (attempt.cancelled) return this.minimaxAccount.status(request.region)
+      return await this.runtimeMaintenance.change(
+        () => this.runtimeBusy(),
+        async () => {
+          await this.assertNoGlobalActivity()
+          if (attempt.cancelled) return this.minimaxAccount.status(request.region)
+          return this.minimaxAccount.login(request.region)
+        },
+      )
+    } finally {
+      if (this.minimaxLoginAttempt === attempt) this.minimaxLoginAttempt = undefined
+    }
+  }
+
   private progressLimits?: ProgressWatchdogLimits
   configureProgressLimits(limits: ProgressWatchdogLimits): void {
-    this.progressLimits = { ...limits }
+    this.progressLimits = {
+      firstProgressMs: limits.firstProgressMs,
+      idleProgressMs: limits.idleProgressMs,
+    }
   }
   /** Return the limits used when the next turn starts. */
   executionLimits(): ProgressWatchdogLimits {
@@ -770,7 +825,15 @@ export class HarnessService {
   async executionCatalog(): Promise<ExecutionCatalog> {
     if (this.disposed) throw Error('组合服务已关闭')
     if (this.executionCatalogPending) return this.executionCatalogPending
-    const pending = this.modelResolver.resolve()
+    const pending = this.modelResolver.resolve().then((catalog) => ({
+      ...catalog,
+      supportedPairings: catalog.models.map((model) => ({
+        modelRef: model.ref,
+        harnessRefs: catalog.harnesses
+          .filter((harness) => adapterFor(harness.id, model.ref, this.modelSources) !== undefined)
+          .map((harness) => harness.id),
+      })),
+    }))
     this.executionCatalogPending = pending
     void pending.then(
       () => {
@@ -811,6 +874,19 @@ export class HarnessService {
     const previous = await this.catalogStore.get()
     this.runtimeMaintenance.assertAvailable()
     const next = normalizeCatalog(value)
+    for (const combination of next.combinations) {
+      const old = previous.combinations.find((item) => item.id === combination.id)
+      const unchanged =
+        old &&
+        modelRefKey(old.modelRef) === modelRefKey(combination.modelRef) &&
+        old.harnessRef === combination.harnessRef &&
+        (!combination.enabled || old.enabled)
+      if (
+        !unchanged &&
+        !adapterFor(combination.harnessRef, combination.modelRef, this.modelSources)
+      )
+        throw Error('该模型与 Harness 尚无兼容适配器，未保存组合')
+    }
     const launch = (catalog: ExecutionCatalog) =>
       catalog.harnesses.map((h) => [h.id, h.command, h.prefix])
     const changed = JSON.stringify(launch(previous)) !== JSON.stringify(launch(next))
@@ -1737,12 +1813,10 @@ export class HarnessService {
       delete active.deadlineError
       delete active.deadlineCleanup
       if (record.harnessRef !== 'dsh' && this.progressLimits) {
-        active.watchdog = new ProgressWatchdog(this.progressLimits, (reason) => {
+        active.watchdog = new ProgressWatchdog(this.progressLimits, () => {
           if (active.turn !== turn || active.cancelled) return
           active.deadlineError =
-            reason === 'total'
-              ? '本轮执行已达到总时长上限，已停止；原任务未自动重发。'
-              : '本轮在等待期限内没有新的正文、思考或工具进展，已停止；具体上游原因未知，原任务未自动重发。'
+            '本轮在等待期限内没有新的正文、思考或工具进展，已停止；具体上游原因未知，原任务未自动重发。'
           if (active.acp)
             active.deadlineCleanup = active.acp.terminate(active.deadlineError).catch(() => {
               active.deadlineError += ' 自有 Harness 进程清理失败，请检查后再运行。'
@@ -3975,6 +4049,7 @@ export class HarnessService {
   async dispose() {
     this.disposed = true
     clearInterval(this.tick)
+    await this.minimaxAccount.dispose()
     await this.runtimeMaintenance.close()
     await this.ready
     await Promise.allSettled(this.maintenanceJobs.values())

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ProgressWatchdog } from '../../src/execution/host/progress-watchdog.js'
 
-const limits = { firstProgressMs: 100, idleProgressMs: 50, totalMs: 300 }
+const limits = { firstProgressMs: 100, idleProgressMs: 50 }
 
 describe('ProgressWatchdog', () => {
   beforeEach(() => vi.useFakeTimers())
@@ -38,20 +38,20 @@ describe('ProgressWatchdog', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('expires at the total deadline despite continued progress', () => {
+  it('allows continuous progress beyond an hour and still expires on later silence', () => {
     const expire = vi.fn()
-    const watchdog = new ProgressWatchdog(limits, expire)
+    const watchdog = new ProgressWatchdog(
+      { firstProgressMs: 90_000, idleProgressMs: 90_000 },
+      expire,
+    )
     watchdog.start()
-    for (let i = 0; i < 7; i++) {
-      vi.advanceTimersByTime(40)
+    for (let i = 0; i < 90; i++) {
+      vi.advanceTimersByTime(60_000)
       watchdog.progress()
     }
-    vi.advanceTimersByTime(20)
-    expect(expire).toHaveBeenCalledExactlyOnceWith('total')
-    watchdog.progress()
-    watchdog.start()
-    vi.runAllTimers()
-    expect(expire).toHaveBeenCalledTimes(1)
+    expect(expire).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(90_000)
+    expect(expire).toHaveBeenCalledExactlyOnceWith('idle-progress')
   })
 
   it('preserves remaining first-progress time across a human wait', () => {
@@ -72,36 +72,36 @@ describe('ProgressWatchdog', () => {
     expect(expire).toHaveBeenCalledExactlyOnceWith('first-progress')
   })
 
-  it('preserves total remaining time while progress resets idle time after a pause', () => {
+  it('resets inactivity after new progress following a human wait', () => {
     const expire = vi.fn()
-    const watchdog = new ProgressWatchdog({ ...limits, idleProgressMs: 500 }, expire)
+    const watchdog = new ProgressWatchdog(limits, expire)
     watchdog.start()
     vi.advanceTimersByTime(50)
-    watchdog.progress()
-    vi.advanceTimersByTime(100)
     watchdog.pause()
-    vi.advanceTimersByTime(10000)
+    vi.advanceTimersByTime(3_600_000)
     watchdog.resume()
     watchdog.progress()
-    vi.advanceTimersByTime(149)
+    vi.advanceTimersByTime(49)
     expect(expire).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1)
-    expect(expire).toHaveBeenCalledExactlyOnceWith('total')
+    expect(expire).toHaveBeenCalledExactlyOnceWith('idle-progress')
   })
 
-  it('keeps total time bounded during an idle-only tool pause', () => {
+  it('allows a long active tool and resumes the remaining inactivity budget', () => {
     const expire = vi.fn()
     const watchdog = new ProgressWatchdog(limits, expire)
     watchdog.start()
     vi.advanceTimersByTime(40)
     watchdog.pauseIdle()
     watchdog.pauseIdle()
-    vi.advanceTimersByTime(259)
+    vi.advanceTimersByTime(86_400_000)
+    expect(expire).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+    watchdog.resumeIdle()
+    vi.advanceTimersByTime(59)
     expect(expire).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1)
-    expect(expire).toHaveBeenCalledExactlyOnceWith('total')
-    watchdog.resumeIdle()
-    expect(vi.getTimerCount()).toBe(0)
+    expect(expire).toHaveBeenCalledExactlyOnceWith('first-progress')
   })
 
   it('preserves independent tool and human pauses', () => {
@@ -121,7 +121,7 @@ describe('ProgressWatchdog', () => {
     vi.advanceTimersByTime(59)
     expect(expire).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1)
-    expect(expire).toHaveBeenCalledExactlyOnceWith('total')
+    expect(expire).toHaveBeenCalledExactlyOnceWith('first-progress')
   })
 
   it('can end a tool pause during a human wait without restarting timers', () => {
@@ -151,14 +151,9 @@ describe('ProgressWatchdog', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it.each(['firstProgressMs', 'idleProgressMs', 'totalMs'] as const)(
-    'rejects invalid %s',
-    (field) => {
-      for (const value of [0, -1, 0.5, NaN, Infinity, -Infinity, 2_147_483_648]) {
-        expect(() => new ProgressWatchdog({ ...limits, [field]: value }, vi.fn())).toThrow(
-          RangeError,
-        )
-      }
-    },
-  )
+  it.each(['firstProgressMs', 'idleProgressMs'] as const)('rejects invalid %s', (field) => {
+    for (const value of [0, -1, 0.5, NaN, Infinity, -Infinity, 2_147_483_648]) {
+      expect(() => new ProgressWatchdog({ ...limits, [field]: value }, vi.fn())).toThrow(RangeError)
+    }
+  })
 })

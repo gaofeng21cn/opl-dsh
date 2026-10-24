@@ -1,3 +1,4 @@
+import { RecommendationPicker } from './RecommendationPicker.tsx'
 import { useExecutionCatalog } from './use-execution-catalog.ts'
 import { Button, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { displayModelSource, selectableModels, modelRefKey } from '../contracts/catalog.ts'
@@ -7,7 +8,7 @@ import type { HarnessCatalog } from '../../contracts/types.ts'
 import type { RemoteCallInput } from '../../shared/client/remote-call.ts'
 import type { TypertRemoteNamespace } from '@deepseek-ai/dsh-typert-protocol'
 import css from '../../shared/client/SettingsSection.module.css'
-import type { ExecutionCall as Call } from '../../shared/client/remote-call.ts'
+import listCss from './CombinationRows.module.css'
 export function ExecutionCatalogSection({
   call,
   embedded = false,
@@ -27,99 +28,18 @@ export function ExecutionCatalogSection({
     setEditing,
     update,
     add,
+    addRecommendations,
   } = useExecutionCatalog(call)
-  const renderCombination = (item: CombinationDefinition) => {
-    if (!catalog) return null
-    const model = catalog.models.find((x) => modelRefKey(x.ref) === modelRefKey(item.modelRef))
-    const harness = catalog.harnesses.find((x) => x.id === item.harnessRef)
-    const status = availability.find((c) => c.id === item.id)
-    return (
-      <details
-        className={css.card}
-        data-opl-combination={item.id}
-        key={item.id}
-        open={editing === item.id}
-        onToggle={(event) => {
-          const open = event.currentTarget.open
-          setEditing((current) => (open ? item.id : current === item.id ? undefined : current))
-        }}
-      >
-        <summary className={css.header}>
-          <span className={css.identity}>
-            <strong>{item.name}</strong>
-            {!isOfficialPairing(item.harnessRef, item.modelRef) && (
-              <span className={css.muted} data-opl-custom-combination>
-                自定义
-              </span>
-            )}
-            {item.isDefault && item.enabled && (
-              <span className={css.muted}>此模型的默认执行组合</span>
-            )}
-            <span className={css.muted}>
-              {displayModelSource(item.modelRef, model?.source)} ·{' '}
-              {model?.name ?? item.modelRef.model} · {harness?.name ?? item.harnessRef}
-            </span>
-          </span>
-          <span className={css.row}>
-            <span className={css.muted}>
-              {!item.enabled
-                ? '已停用'
-                : status?.available
-                  ? '可执行'
-                  : (status?.reason ?? model?.reason ?? '尚未验证')}
-            </span>
-            <Switch
-              label={`启用 ${item.name}`}
-              disabled={busy}
-              checked={item.enabled}
-              onChange={(enabled) => update(item.id, { enabled })}
-            />
-          </span>
-        </summary>
-        <div className={css.detailsBody}>
-          <label className={css.field}>
-            配置名称
-            <input
-              className={css.input}
-              defaultValue={item.name}
-              disabled={busy}
-              onBlur={(e) => {
-                if (e.target.value !== item.name) update(item.id, { name: e.target.value })
-              }}
-            />
-          </label>
-          <div className={css.row}>
-            <Switch
-              label="作为此模型的默认执行组合"
-              disabled={busy || !item.enabled}
-              checked={item.isDefault}
-              onChange={(isDefault) => update(item.id, { isDefault })}
-            />
-            <span className={css.muted}>默认执行组合</span>
-          </div>
-          <label className={css.field}>
-            权限
-            <select
-              className={css.input}
-              value={item.permissionPolicy}
-              disabled={busy}
-              onChange={(e) =>
-                update(item.id, {
-                  permissionPolicy: e.target.value as 'workspace' | 'read-only' | 'full-access',
-                })
-              }
-            >
-              <option value="read-only">只读</option>
-              <option value="workspace">工作区内修改（仍需 Harness 授权）</option>
-              {item.harnessRef === 'minimax-code' && (
-                <option value="full-access">完整访问（使用 MiniMax 官方 CLI 授权）</option>
-              )}
-            </select>
-          </label>
-        </div>
-      </details>
-    )
-  }
+  const supportedHarnesses =
+    catalog?.supportedPairings?.find((item) => modelRefKey(item.modelRef) === draft.model)
+      ?.harnessRefs ?? []
+  const remainingHarnesses = supportedHarnesses.filter(
+    (harnessRef) =>
+      ![...(catalog?.combinations ?? []), ...(catalog?.recommendations ?? [])].some(
+        (item) => modelRefKey(item.modelRef) === draft.model && item.harnessRef === harnessRef,
+      ),
+  )
+  const selectedHarness = remainingHarnesses.includes(draft.harness) ? draft.harness : ''
   return (
     <div className={css.section} data-opl-panel="catalog" aria-busy={busy || (!catalog && !notice)}>
       {embedded ? null : <h2 className={css.title}>执行组合</h2>}
@@ -140,24 +60,50 @@ export function ExecutionCatalogSection({
         </p>
       )}
       {!catalog && notice && <Button onClick={retry}>重试</Button>}
+      {catalog?.ofmDiscovery && catalog.ofmDiscovery.length > 0 && (
+        <details className={css.details} data-opl-panel="ofm-discovery">
+          <summary>OFM 新模型发现（{catalog.ofmDiscovery.length}）</summary>
+          <div className={css.detailsBody}>
+            <p className={css.muted}>
+              这些模型来自 OFM 的实时目录。状态仅表示当前登记情况，不会自动启用或发送测试请求。
+            </p>
+            <div className={listCss.discoveryList}>
+              {catalog.ofmDiscovery.map((item) => (
+                <div className={listCss.discoveryRow} key={modelRefKey(item.modelRef)}>
+                  <span className={listCss.discoveryName}>{item.name}</span>
+                  <span
+                    className={
+                      item.available ? listCss.discoveryStatus : listCss.discoveryUnavailable
+                    }
+                    title={item.modelRef.model}
+                  >
+                    {item.status.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </details>
+      )}
+      {catalog &&
+        (catalog.combinations.length > 0 || (catalog.recommendations?.length ?? 0) > 0) && (
+          <details className={css.details} data-opl-panel="recommended-combinations">
+            <summary>选择与添加组合</summary>
+            <div className={css.detailsBody}>
+              <RecommendationPicker catalog={catalog} busy={busy} onAdd={addRecommendations} />
+            </div>
+          </details>
+        )}
       {catalog && (
         <details className={css.details} data-opl-panel="custom-combinations">
-          <summary>添加执行组合</summary>
+          <summary>手动添加组合</summary>
           <div className={css.detailsBody}>
-            <label className={css.field}>
-              名称
-              <input
-                className={css.input}
-                value={draft.name}
-                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-              />
-            </label>
             <label className={css.field}>
               模型
               <select
                 className={css.input}
                 value={draft.model}
-                onChange={(e) => setDraft({ ...draft, model: e.target.value })}
+                onChange={(e) => setDraft({ ...draft, model: e.target.value, harness: '' })}
               >
                 <option value="">选择模型</option>
                 {selectableModels(catalog.models).map((model) => (
@@ -172,23 +118,27 @@ export function ExecutionCatalogSection({
               Harness
               <select
                 className={css.input}
-                value={draft.harness}
+                value={selectedHarness}
+                disabled={busy || !draft.model || !remainingHarnesses.length}
                 onChange={(e) => setDraft({ ...draft, harness: e.target.value })}
               >
-                {catalog.harnesses.map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.name}
-                  </option>
-                ))}
+                <option value="">
+                  {!draft.model
+                    ? '先选择模型'
+                    : remainingHarnesses.length
+                      ? '选择已适配的 Harness'
+                      : '暂无其他已适配的 Harness'}
+                </option>
+                {catalog.harnesses
+                  .filter((h) => remainingHarnesses.includes(h.id))
+                  .map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name}
+                    </option>
+                  ))}
               </select>
             </label>
-            <p className={css.muted}>
-              手动组合可自由选择任意已就绪模型和执行引擎；它不是厂商官配，只有当前配置的默认项会自动生成。
-            </p>
-            <Button
-              disabled={busy || !draft.name.trim() || !draft.model}
-              onClick={() => void add()}
-            >
+            <Button disabled={busy || !draft.model || !selectedHarness} onClick={() => void add()}>
               保存执行组合
             </Button>
           </div>
@@ -196,19 +146,11 @@ export function ExecutionCatalogSection({
       )}
       {catalog &&
         (() => {
-          const inactive = catalog.combinations.filter(
-            (item) =>
-              !item.enabled &&
-              (availability.find((candidate) => candidate.id === item.id)?.available === true ||
-                (availability.length === 0 &&
-                  catalog.models.find(
-                    (model) => modelRefKey(model.ref) === modelRefKey(item.modelRef),
-                  )?.available === true)),
+          const combinations = catalog.combinations.filter((item) => item.enabled)
+          const official = combinations.filter((item) =>
+            isOfficialPairing(item.harnessRef, item.modelRef),
           )
-          const combinations = catalog.combinations
-          const official = combinations.filter((item) => item.generated)
-          const custom = combinations.filter((item) => !item.generated)
-          const rows = combinations.filter((item) => !inactive.includes(item))
+          const custom = combinations.filter((item) => !official.includes(item))
           const renderRow = (item: CombinationDefinition) => (
             <CombinationRow
               key={item.id}
@@ -224,29 +166,22 @@ export function ExecutionCatalogSection({
           return (
             <>
               <details className={css.details} data-opl-panel="combination-list" open>
-                <summary>执行组合列表</summary>
+                <summary>已启用的组合</summary>
                 <div className={css.detailsBody}>
-                  <section data-opl-panel="official-combinations">
-                    <h3>官方组合</h3>
-                    {official.filter((item) => !inactive.includes(item)).map(renderRow)}
-                  </section>
-                  <section data-opl-panel="custom-combination-list">
-                    <h3>自定义组合</h3>
-                    {custom.filter((item) => !inactive.includes(item)).map(renderRow)}
-                  </section>
+                  {official.length > 0 && (
+                    <section className={listCss.group} data-opl-panel="official-combinations">
+                      <h3>官方组合</h3>
+                      {official.map(renderRow)}
+                    </section>
+                  )}
+                  {custom.length > 0 && (
+                    <section className={listCss.group} data-opl-panel="custom-combination-list">
+                      <h3>自定义组合</h3>
+                      {custom.map(renderRow)}
+                    </section>
+                  )}
                 </div>
               </details>
-              {inactive.length > 0 && (
-                <details className={css.details} data-opl-inactive-combinations>
-                  <summary>可启用但未启用的组合（{inactive.length}）</summary>
-                  <div className={css.detailsBody}>
-                    <p className={css.muted}>
-                      模型与执行引擎已就绪，但组合当前停用。展开后可单独启用。
-                    </p>
-                    {inactive.map(renderRow)}
-                  </div>
-                </details>
-              )}
             </>
           )
         })()}
@@ -276,17 +211,22 @@ function CombinationRow({
   const model = catalog.models.find((x) => modelRefKey(x.ref) === modelRefKey(item.modelRef)),
     harness = catalog.harnesses.find((x) => x.id === item.harnessRef)
   const status = availability.find((c) => c.id === item.id)
-  const readiness = status?.available
-    ? status
-    : model?.available === true
-      ? { available: true }
-      : {
-          available: false,
-          reason: status?.reason ?? model?.reason ?? '尚未验证',
-        }
+  const failure =
+    status && !status.available
+      ? (status.reason ?? '尚未就绪')
+      : !status && model?.available !== true
+        ? (model?.reason ?? '尚未验证')
+        : undefined
+  const hasAlternatives =
+    catalog.combinations.filter(
+      (candidate) =>
+        candidate.enabled && modelRefKey(candidate.modelRef) === modelRefKey(item.modelRef),
+    ).length > 1
+  const source = displayModelSource(item.modelRef, model?.source)
+  const description = `${source} · ${model?.name ?? item.modelRef.model} · ${harness?.name ?? item.harnessRef}`
   return (
     <details
-      className={css.card}
+      className={listCss.item}
       data-opl-combination={item.id}
       open={editing === item.id}
       onToggle={(event) => {
@@ -294,35 +234,23 @@ function CombinationRow({
         setEditing((current) => (open ? item.id : current === item.id ? undefined : current))
       }}
     >
-      <summary className={css.header}>
-        <span className={css.identity}>
-          <strong>{item.name}</strong>
-          {!isOfficialPairing(item.harnessRef, item.modelRef) && (
-            <span className={css.muted} data-opl-custom-combination>
-              自定义
+      <summary className={listCss.summary}>
+        <span className={listCss.name} title={`${item.name} · ${description}`}>
+          {item.name}
+        </span>
+        <span className={listCss.metadata}>
+          {failure && (
+            <span className={listCss.failure} title={failure}>
+              未就绪
             </span>
           )}
-          {item.isDefault && item.enabled && (
-            <span className={css.muted}>此模型的默认执行组合</span>
-          )}
-          <span className={css.muted}>
-            {displayModelSource(item.modelRef, model?.source)} ·{' '}
-            {model?.name ?? item.modelRef.model} · {harness?.name ?? item.harnessRef}
+          <span className={listCss.source} title={source}>
+            {source}
           </span>
-        </span>
-        <span className={css.row}>
-          <span className={css.muted}>
-            {!item.enabled ? '已停用' : readiness.available ? '可执行' : readiness.reason}
-          </span>
-          <Switch
-            label={`启用 ${item.name}`}
-            disabled={busy}
-            checked={item.enabled}
-            onChange={(enabled) => update(item.id, { enabled })}
-          />
+          {hasAlternatives && <span>{item.isDefault ? '默认' : '非默认'}</span>}
         </span>
       </summary>
-      <div className={css.detailsBody}>
+      <div className={`${css.detailsBody} ${listCss.editor}`}>
         <label className={css.field}>
           配置名称
           <input
@@ -334,15 +262,17 @@ function CombinationRow({
             }}
           />
         </label>
-        <div className={css.row}>
-          <Switch
-            label="作为此模型的默认执行组合"
-            disabled={busy || !item.enabled}
-            checked={item.isDefault}
-            onChange={(isDefault) => update(item.id, { isDefault })}
-          />
-          <span className={css.muted}>默认执行组合</span>
-        </div>
+        {hasAlternatives && (
+          <div className={css.row}>
+            <Switch
+              label="作为此模型的默认执行组合"
+              disabled={busy || !item.enabled}
+              checked={item.isDefault}
+              onChange={(isDefault) => update(item.id, { isDefault })}
+            />
+            <span className={css.muted}>默认执行组合</span>
+          </div>
+        )}
         <label className={css.field}>
           权限
           <select

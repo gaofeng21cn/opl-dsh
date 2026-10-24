@@ -3,10 +3,9 @@ import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from '../../shared/client/SettingsSection.module.css'
 import type { ExecutionCall as Call } from '../../shared/client/remote-call.ts'
 
-type Limits = { firstProgressMs: number; idleProgressMs: number; totalMs: number }
-const defaults: Limits = { firstProgressMs: 90_000, idleProgressMs: 90_000, totalMs: 1_800_000 }
+type Limits = { firstProgressMs: number; idleProgressMs: number }
+const defaults: Limits = { firstProgressMs: 90_000, idleProgressMs: 90_000 }
 const seconds = (value: number) => String(Math.max(1, Math.round(value / 1000)))
-const minutes = (value: number) => String(Math.max(1, Math.round(value / 60_000)))
 
 /** Persisted execution wait controls for turns started after saving. */
 export function ExecutionLimitsSection({ call }: { call: Call }) {
@@ -77,17 +76,6 @@ export function ExecutionLimitsSection({ call }: { call: Call }) {
             value={seconds(draft.idleProgressMs)}
             disabled={busy}
             onChange={(e) => update('idleProgressMs', e.target.value, 1000)}
-          />
-        </label>
-        <label className={css.field}>
-          单轮最长运行（分钟）
-          <input
-            className={css.input}
-            type="number"
-            min="1"
-            value={minutes(draft.totalMs)}
-            disabled={busy}
-            onChange={(e) => update('totalMs', e.target.value, 60_000)}
           />
         </label>
         {message && (

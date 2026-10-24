@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "note": "MiniMax Bash 候选版的固定输入：官方来源与归档摘要、补丁及其摘要、构建链会下载的第三方归档、必须随产物保留的许可文件，以及启动器约定。脚本按本文件失败关闭；修改任何一项都要同时复核脚本检查和 docs/minimax-bash-candidate.md。",
-  "candidateVersion": "0.6.3-opl-bash.20261010.2",
+  "candidateVersion": "0.6.3-opl-bash.20261024.1",
   "official": {
     "repository": "https://github.com/MiniMax-AI/minimax-code",
     "tag": "v0.6.3",
@@ -57,6 +57,28 @@
         "packages/tui/test/unit/acp-agent.test.ts"
       ],
       "summary": "停止后编辑的 ACP 会话历史扩展 v1：opl/session/history/list 与 conversation-only rewind，以及 clientRequestId 到真实已接纳 turn/用户消息的 opl/session/history/boundary 绑定，并把两个 focused 测试登记进 capability 组。rewind 不做前置 preview，直接沿用官方顺序（validate → completed-operation 复放 → resume），以免已应用回退的重试被已删除的边界挡住。agent.ts 的 _meta 上下文依赖 minimal 补丁先应用；vitest-suites.json 的 hunk 锚在 acp-agent.test.ts 行，与 repo-gates 的尾部 hunk 不重叠，两个补丁顺序无关。 新增三个历史接口源码/测试路径登记到官方公开源码清单。 官方 initialize 整体响应严格断言包含新增能力，保留其他全部断言。"
+    },
+    {
+      "id": "account-cancel",
+      "file": "patches/mcode-account-cancel.patch",
+      "sha256": "5f82d14b6b31d266f0d1167448ef7880fca42c9fc4ecfbfbdb00b73b8a42bfd6",
+      "required": true,
+      "touches": [
+        "packages/oauth-core/src/auth-core.ts",
+        "packages/tui/src/auth/application.ts",
+        "packages/tui/src/cli/auth-command.ts"
+      ],
+      "summary": "官方授权租约遵循服务端有效期；可选stdin取消调用官方cancelLogin，不退出账号。"
+    },
+    {
+      "id": "monotonic-test",
+      "file": "patches/mcode-monotonic-test.patch",
+      "sha256": "c3a8b89950dd688a78af24b4e3fe6328fc14c2fe60abbd257bb0c42439997cd6",
+      "required": true,
+      "touches": [
+        "packages/local-runtime/test/unit/child-bash-lifecycle.test.ts"
+      ],
+      "summary": "仅测试：真实等待耗时用单调时钟，避免系统校时导致60秒断言误报；保留时间戳语义断言。"
     }
   ],
   "build": {
@@ -68,14 +90,39 @@
       "@vscode/ripgrep",
       "@larksuiteoapi/node-sdk"
     ],
-    "install": [["pnpm", "install", "--frozen-lockfile"]],
-    "bundle": ["node", "scripts/build.mjs"],
+    "install": [
+      [
+        "pnpm",
+        "install",
+        "--frozen-lockfile"
+      ]
+    ],
+    "bundle": [
+      "node",
+      "scripts/build.mjs"
+    ],
     "gates": [
-      ["pnpm", "typecheck"],
-      ["pnpm", "check:tsconfig"],
-      ["pnpm", "check:source"],
-      ["pnpm", "check:standalone"],
-      ["node", "scripts/run-vitest-suite.mjs", "capability"]
+      [
+        "pnpm",
+        "typecheck"
+      ],
+      [
+        "pnpm",
+        "check:tsconfig"
+      ],
+      [
+        "pnpm",
+        "check:source"
+      ],
+      [
+        "pnpm",
+        "check:standalone"
+      ],
+      [
+        "node",
+        "scripts/run-vitest-suite.mjs",
+        "capability"
+      ]
     ],
     "note": "install 与 gates 都是 argv 数组：元素是“可执行文件 + 参数”，不是扁平字符串列表；Windows 上 pnpm 是 pnpm.cmd shim，由 run() 经 cmd.exe 逐字传参启动。"
   },
@@ -88,7 +135,12 @@
     "note": "integritySha512 是整包摘要，entryCliSha256 是包内 embedded/mcode-tools/cli.mjs 的摘要；两者都来自官方 scripts/lib/mcode-tools-artifact.mjs 的固定值，语义不同不能互换。"
   },
   "license": {
-    "rootFiles": ["LICENSE", "NOTICE", "LICENSE-STATUS.md", "THIRD_PARTY_NOTICES.md"],
+    "rootFiles": [
+      "LICENSE",
+      "NOTICE",
+      "LICENSE-STATUS.md",
+      "THIRD_PARTY_NOTICES.md"
+    ],
     "extraFiles": [
       "release/dependency-licenses.json",
       "third_party/pi-mono/LICENSE",
@@ -102,12 +154,20 @@
   "capability": {
     "acpMetaKey": "minimax-code/shell",
     "acpMetaVersion": 1,
-    "bundleMarkers": ["minimax-code/shell", "MCODE_SHELL_PATH"],
+    "bundleMarkers": [
+      "minimax-code/shell",
+      "MCODE_SHELL_PATH"
+    ],
     "acpSessionHistory": {
       "metaKey": "opl/session-history",
       "version": 1,
-      "methods": ["opl/session/history/list", "opl/session/history/rewind"],
-      "notifications": ["opl/session/history/boundary"],
+      "methods": [
+        "opl/session/history/list",
+        "opl/session/history/rewind"
+      ],
+      "notifications": [
+        "opl/session/history/boundary"
+      ],
       "clientRequestIdMetaKey": "opl/clientRequestId",
       "rewindScope": "conversation-only",
       "runtimeOperationId": "sha256(sessionId\\u0000clientRequestId) 截断 32 位十六进制，前缀 oplsh1-；wire 始终回传调用方原始 ID",

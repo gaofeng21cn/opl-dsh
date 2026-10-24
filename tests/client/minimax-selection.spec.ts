@@ -483,7 +483,8 @@ describe('MiniMax Code model menu labels', () => {
       .buttons()
       .filter(
         (button) =>
-          button.getAttribute('role') === 'menuitemradio' && button.textContent?.includes(M3_FLASH),
+          button.getAttribute('role') === 'menuitemradio' &&
+          button.textContent?.includes(M3_FLASH),
       )
     expect(rows).toHaveLength(1)
     expect(rows[0]?.getAttribute('disabled')).toBeNull()
@@ -604,6 +605,33 @@ describe('MiniMax Code model menu labels', () => {
     expect(view.menuText()).not.toContain('最大')
     expect(view.menuText()).not.toContain('极高')
   })
+
+  it.each(['missing', 'disabled'] as const)(
+    'does not present provider effort as native when the selected combination is %s',
+    async (state) => {
+      const base = fixture({ model: M3_FLASH, reasoningEffort: 'max' })
+      const call = (async (method: string, args?: unknown) => {
+        if (method === 'catalog')
+          return {
+            ...catalog,
+            combinations:
+              state === 'missing'
+                ? []
+                : catalog.combinations.map((item) => ({ ...item, enabled: false })),
+          }
+        return base.call(method as never, args as never)
+      }) as ExecutionCall
+      const face = createFace({
+        lastUsed: null,
+        next: { provider: PROVIDER, model: M3_FLASH, reasoningEffort: 'max' },
+      })
+      const view = await mount({ call, source: () => face.face })
+      expect(view.trigger.textContent).not.toContain('最大')
+      await view.open()
+      expect(view.menuText()).not.toContain('推理强度')
+      expect(base.calls.some((entry) => entry.method === 'select-effort')).toBe(false)
+    },
+  )
 
   it('offers a read retry and no effort ladder after a preflight failure', async () => {
     const base = fixture({ model: M3_FLASH, reasoningEffort: 'max' })
