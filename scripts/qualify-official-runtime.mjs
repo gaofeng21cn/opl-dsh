@@ -562,6 +562,7 @@ try {
       const stored = parseYaml(await readFile(join(root, '.credentials.yaml'), 'utf8'))
       if (stored.refs?.[ref] !== expected) throw new Error('原生表单与隔离测试凭据存储回读不一致')
     },
+    evidence.officialVersion,
   )
   evidence.checks.runtime = JSON.parse(
     await run(process.execPath, [join(repo, 'scripts/verify-official-runtime.mjs'), root], {

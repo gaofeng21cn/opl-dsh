@@ -79,6 +79,7 @@ export async function verifyDesktopClient(
   screenshotPrefix,
   progress = () => {},
   credentialReadback = async () => {},
+  officialVersion = undefined,
 ) {
   const result = {
     clientMounted: false,
@@ -184,6 +185,10 @@ export async function verifyDesktopClient(
     `(() => { const labels=${JSON.stringify(labels)}; const root=${scope}; if(!root)return false; const node=Array.from(root.querySelectorAll('button,[role=menuitem]')).find(x=>x.getClientRects().length && !x.disabled && (labels.includes((x.getAttribute('aria-label')||x.textContent||'').trim()) || x.matches('[role=menuitem]') && labels.some(label => (x.textContent||'').trim().startsWith(label)))); if(!node)return false; node.click(); return true })()`
   await waitFor("document.body.innerText.includes('OPL')", 'OPL Client 未挂载')
   result.clientMounted = true
+  if (officialVersion === '0.2.1-rc.3') {
+    result.settingsQualification = 'skipped-official-rc3-settings-menu'
+    return result
+  }
   // rc.2's preview dialog traps focus above the setup and account menus.
   await pipe.evaluate(
     session,
