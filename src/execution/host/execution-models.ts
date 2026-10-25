@@ -387,7 +387,11 @@ export class ExecutionModelResolver {
         .filter((harness) => adapterFor(harness.id, model.ref) !== undefined)
         .map((harness) => harness.id)
       const status = isExcludedOfmModel(model.ref.model)
-        ? { kind: 'excluded' as const, reason: '已明确排除', label: '已排除' }
+        ? {
+            kind: 'excluded' as const,
+            reason: '决策或内容安全用途，不加入对话组合',
+            label: '非对话模型',
+          }
         : official
           ? {
               kind: 'official' as const,
