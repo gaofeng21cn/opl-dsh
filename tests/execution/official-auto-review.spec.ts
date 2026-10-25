@@ -583,6 +583,14 @@ describe('Codex CLI official auto reviewer', () => {
 })
 
 describe('Claude Code official auto permission mode', () => {
+  /** Read the option value from either spelling the official SDK can pass to the CLI. */
+  function option(argv: string[], name: string): string | undefined {
+    const index = argv.findIndex((value) => value === name || value.startsWith(`${name}=`))
+    if (index < 0) return undefined
+    const argument = argv[index]!
+    return argument === name ? argv[index + 1] : argument.slice(name.length + 1)
+  }
+
   /**
    * Run one ACP prompt against the Claude fixture through the real Agent SDK.
    * @param autoReview - whether the bridge is asked for the official Auto route.
@@ -684,8 +692,8 @@ describe('Claude Code official auto permission mode', () => {
     expect(prompt).toEqual({ stopReason: 'end_turn' })
     // The official switch that removes this session's host approval surface, verified in the
     // argument vector the installed CLI actually receives rather than in the options object.
-    expect(argv.join(' ')).toContain('--permission-prompts none')
-    expect(argv.join(' ')).toContain('--permission-prompt-tool stdio')
+    expect(option(argv, '--permission-prompts')).toBe('none')
+    expect(option(argv, '--permission-prompt-tool')).toBe('stdio')
   })
 
   it(
@@ -709,7 +717,7 @@ describe('Claude Code official auto permission mode', () => {
       expect(failure).toBeUndefined()
       expect(prompt).toEqual({ stopReason: 'end_turn' })
       // An ordinary session keeps its host approval surface: the CLI is told a host answers.
-      expect(argv.join(' ')).not.toContain('--permission-prompts none')
+      expect(option(argv, '--permission-prompts')).not.toBe('none')
     },
   )
 
