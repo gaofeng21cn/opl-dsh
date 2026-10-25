@@ -1224,6 +1224,7 @@ const _one_person_lab_dsh_opl_oplExecution_model_selection_result$schema = () =>
 })).readonly(),
 })),
   'combination': z.string().optional(),
+  'effortSource': z.literal("harness").optional().describe('External CLI effort must not be overwritten by the native provider projection.'),
 }))
 let _one_person_lab_dsh_opl_oplExecution_projectless_session_result$schema$value
 const _one_person_lab_dsh_opl_oplExecution_projectless_session_result$schema = () => (_one_person_lab_dsh_opl_oplExecution_projectless_session_result$schema$value ??= z.object({
@@ -4730,7 +4731,7 @@ const $remote = createTypertRemoteInfo({
         mode: 'strict',
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessSelection',
         create: _one_person_lab_dsh_opl_oplExecution_model_selection_result$schema,
-        jsonSchema: {"type":"object","properties":{"current":{"oneOf":[{"type":"null","const":null},{"type":"object","properties":{"provider":{"type":"string"},"model":{"type":"string"},"reasoningEffort":{"type":"string"}},"required":["provider","model"],"additionalProperties":true}]},"groups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"models":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"reasoning":{"type":"object","properties":{"efforts":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"}},"required":["id","name"],"additionalProperties":true}},"defaultEffort":{"type":"string"}},"required":["efforts"],"additionalProperties":true}},"required":["id","name"],"additionalProperties":true}}},"required":["id","name","models"],"additionalProperties":true}},"combination":{"type":"string"}},"required":["current","groups"],"additionalProperties":true},
+        jsonSchema: {"type":"object","properties":{"current":{"oneOf":[{"type":"null","const":null},{"type":"object","properties":{"provider":{"type":"string"},"model":{"type":"string"},"reasoningEffort":{"type":"string"}},"required":["provider","model"],"additionalProperties":true}]},"groups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"models":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"reasoning":{"type":"object","properties":{"efforts":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"}},"required":["id","name"],"additionalProperties":true}},"defaultEffort":{"type":"string"}},"required":["efforts"],"additionalProperties":true}},"required":["id","name"],"additionalProperties":true}}},"required":["id","name","models"],"additionalProperties":true}},"combination":{"type":"string"},"effortSource":{"type":"string","const":"harness","description":"External CLI effort must not be overwritten by the native provider projection."}},"required":["current","groups"],"additionalProperties":true},
       },
       sourceLocation: {"file":"src/execution/host/service.ts","line":201,"column":3},
     },

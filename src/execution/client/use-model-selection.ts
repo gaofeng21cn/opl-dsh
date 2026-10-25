@@ -34,13 +34,14 @@ export type SelectionState = {
   current: ModelSelection | null
   groups: ModelCatalog['groups']
   combination?: string
+  effortSource?: 'harness'
 }
 /** One Session read result: the official selection plus everything displayed around it. */
 export type SelectionRead = SelectionState
 /** State shown before any read or frame answers. */
 export const NO_SELECTION: SelectionState = { current: null, groups: [] }
 
-function projectionSelection(value: unknown): ModelSelection | null | undefined {
+function projectionSelection(value: unknown): ModelSelection | undefined {
   if (value === null || value === undefined) return undefined
   const projection = value as ModelSelectionProjection
   return projection.next ?? projection.lastUsed ?? undefined
@@ -94,10 +95,22 @@ export class ModelSelectionState {
       selection?.provider === this.value.current?.provider &&
       selection?.model === this.value.current?.model
     const combination = sameModel ? this.value.combination : undefined
+    const effortSource = sameModel ? this.value.effortSource : undefined
+    const { reasoningEffort: _nativeEffort, ...ref } = selection
+    const current =
+      effortSource === 'harness'
+        ? {
+            ...ref,
+            ...(this.value.current?.reasoningEffort
+              ? { reasoningEffort: this.value.current.reasoningEffort }
+              : {}),
+          }
+        : selection
     return {
-      current: selection,
+      current,
       groups: this.value.groups,
       ...(combination === undefined ? {} : { combination }),
+      ...(effortSource ? { effortSource } : {}),
     }
   }
   /**
@@ -147,7 +160,20 @@ export function useModelSelection(options: {
     const face = latest.current.selectionSource?.(sessionId)
     store.reset(sessionId, face)
     const offStore = store.subscribe(() => setRevision((revision) => revision + 1))
-    const off = face?.subscribe(() => setRevision((revision) => revision + 1))
+    const modelKey = () => {
+      const selected = projectionSelection(face?.getSnapshot())
+      return selected ? JSON.stringify([selected.provider, selected.model]) : undefined
+    }
+    let lastModel = modelKey()
+    const off = face?.subscribe(() => {
+      setRevision((revision) => revision + 1)
+      const nextModel = modelKey()
+      if (nextModel === lastModel) return
+      lastModel = nextModel
+      void store.refresh(sessionId).catch((cause: unknown) => {
+        if (mounted) latest.current.onError(cause instanceof Error ? cause.message : '无法读取组合')
+      })
+    })
     setRevision((revision) => revision + 1)
     void store.refresh(sessionId).catch((cause: unknown) => {
       if (!mounted) return

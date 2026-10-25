@@ -3470,11 +3470,17 @@ export class HarnessService {
         ? this.conversationEffort(sessionId, selected, executionCatalog)
         : undefined
     const { reasoningEffort: _providerEffort, ...ref } = current as ModelSelection
-    const displayed =
-      selected && this.cliOwnsEffort(selected)
-        ? { ...ref, ...(choice ? { reasoningEffort: choice } : {}) }
-        : current
-    return { current: displayed, groups, ...(selected ? { combination: selected.id } : {}) }
+    const harnessOwnsEffort =
+      !!selected && (this.cliOwnsEffort(selected) || adapter?.capabilities.reasoning === 'none')
+    const displayed = harnessOwnsEffort
+      ? { ...ref, ...(choice ? { reasoningEffort: choice } : {}) }
+      : current
+    return {
+      current: displayed,
+      groups,
+      ...(selected ? { combination: selected.id } : {}),
+      ...(harnessOwnsEffort ? { effortSource: 'harness' as const } : {}),
+    }
   }
   /** CLI-advertised controls for third-party sources are not native provider effort IDs. */
   private cliOwnsEffort(definition: CombinationDefinition): boolean {
@@ -3715,27 +3721,21 @@ export class HarnessService {
         ))
     )
       return undefined
-    const externalDefault = catalog.combinations.find(
-      (item) =>
-        item.enabled &&
-        item.isDefault &&
-        item.harnessRef !== 'dsh' &&
-        modelRefKey(item.modelRef) === modelRefKey(ref),
+    const candidates = catalog.combinations.filter(
+      (item) => item.enabled && modelRefKey(item.modelRef) === modelRefKey(ref),
     )
-    if (externalDefault) return externalDefault
-    if (ref.provider !== MINIMAX_CODE_PROVIDER) return undefined
-    return catalog.combinations.find(
-      (item) =>
-        item.enabled &&
-        item.harnessRef === MINIMAX_CODE_HARNESS &&
-        modelRefKey(item.modelRef) === modelRefKey(ref),
-    )
+    const defaults = candidates.filter((item) => item.isDefault)
+    if (defaults.length === 1) return defaults[0]
+    return candidates.length === 1 ? candidates[0] : undefined
   }
   /** Restore this Session's choice for the exact model, using its live default if absent or retired. */
-  private async selectionForModel(session: Session, ref: ModelRef): Promise<ModelSelection> {
-    const selected = this.combinationFor(session.id, await this.executionCatalog(), ref)
-    const adapter = selected && adapterFor(selected.harnessRef, ref, this.modelSources)
-    if (selected && this.cliOwnsEffort(selected)) return ref
+  private async selectionForModel(
+    session: Session,
+    selected: CombinationDefinition,
+  ): Promise<ModelSelection> {
+    const ref = selected.modelRef
+    const adapter = adapterFor(selected.harnessRef, ref, this.modelSources)
+    if (this.cliOwnsEffort(selected)) return ref
     if (adapter?.capabilities.reasoning === 'none') return ref
     const catalog = (await invokeHostRemote(this.ctx, {
       namespace: 'session',
@@ -3801,7 +3801,7 @@ export class HarnessService {
       this.adapterOptions(harness.command, harness.prefix, harness?.codexRuntime),
     )
     if (!available.available) throw Error(available.reason ?? 'Harness 未就绪')
-    const selection = await this.selectionForModel(session, definition.modelRef)
+    const selection = await this.selectionForModel(session, definition)
     if (definition.harnessRef === 'dsh') {
       await this.native('selectModel', { sessionId: session.id, ...selection })
       await this.bindSelection(session.id, definition.id)
@@ -3848,6 +3848,22 @@ export class HarnessService {
       options.sessionId && catalog
         ? this.combinationFor(options.sessionId, catalog, options)
         : undefined
+    if (options.sessionId && !options.purpose && catalog) {
+      if (
+        !definition &&
+        catalog.combinations.some((item) => modelRefKey(item.modelRef) === modelRefKey(options))
+      )
+        throw new LlmError(
+          '请在模型菜单明确选择一个已启用的执行组合，本轮未发送。',
+          'HARNESS_BINDING',
+        )
+      if (
+        definition &&
+        this.selections[options.sessionId] !== definition.id &&
+        !this.replacementFor(options.sessionId, catalog, options)
+      )
+        await this.bindSelection(options.sessionId, definition.id)
+    }
     if (!options.sessionId || options.purpose || !definition || definition.harnessRef === 'dsh') {
       yield* next()
       return

@@ -43,6 +43,17 @@ async function useUnknownCapabilityHarness(): Promise<string> {
   const id = 'acme-unknown-cli'
   const adapter: HarnessAdapter = {
     id,
+    capabilities: {
+      transport: 'acp',
+      authentication: 'api-source',
+      protocols: ['responses'],
+      customEndpoint: false,
+      permissions: ['read-only', 'workspace'],
+      sessionLoad: true,
+      cancel: true,
+      reasoning: 'none',
+      autoReview: 'unsupported',
+    },
     transport: 'acp',
     matches: () => true,
     available: async () => ({ available: true }),
