@@ -7,6 +7,7 @@
  *
  */
 
+import { GatewayPasswordStore } from './remembered-login.ts'
 import { gatewayGroupEnabled } from './group-settings.ts'
 import { homedir, hostname } from 'node:os'
 import { join } from 'node:path'
@@ -20,6 +21,7 @@ import type {
   GatewayAccountStatus,
   GatewayGroupStatus,
   GatewaySignInResult,
+  GatewayRememberedLogin,
 } from '../contracts/account.ts'
 import {
   GatewayControlClient,
@@ -133,6 +135,7 @@ export class OplGatewayAccountService extends TypertRemoteService {
   private failure: { code: string; message: string } | undefined
   private readonly managedKeys = new Map<GatewayGroupId, GatewayManagedKey>()
   private readonly groupStates = new Map<GatewayGroupId, GatewayGroupStatus>()
+  private readonly passwords = new GatewayPasswordStore()
   private pending: Promise<unknown> = Promise.resolve()
   private defaultControl: GatewayControlClient | undefined
 
@@ -302,11 +305,45 @@ export class OplGatewayAccountService extends TypertRemoteService {
    * Sign in to the gateway and make its key this machine's credential.
    * @param email - account email.
    * @param password - account password.
+   * @param rememberPassword - save after success, clear when false, preserve when omitted.
    * @returns the resulting status and whether this attempt minted the key.
    */
   @Remote
-  async signIn(email: string, password: string): Promise<GatewaySignInResult> {
-    return this.serialize(() => this.signInOnce(email, password))
+  async signIn(
+    email: string,
+    password: string,
+    rememberPassword?: boolean,
+  ): Promise<GatewaySignInResult> {
+    return this.serialize(async () => {
+      if (rememberPassword === false) await this.passwords.clear()
+      const result = await this.signInOnce(email, password)
+      if (rememberPassword) {
+        try {
+          await this.passwords.save(email, password)
+        } catch {
+          return { ...result, passwordSaveFailed: true }
+        }
+      }
+      return result
+    })
+  }
+
+  /** Read saved account metadata without returning the password. */
+  @Remote
+  async rememberedLogin(): Promise<GatewayRememberedLogin> {
+    return this.passwords.describe()
+  }
+
+  /** Sign in only the account the user submitted, using its saved password. */
+  @Remote
+  async signInRemembered(email: string): Promise<GatewaySignInResult> {
+    return this.serialize(async () => this.signInOnce(email, await this.passwords.password(email)))
+  }
+
+  /** Delete the optional saved password without changing the active login. */
+  @Remote
+  async forgetPassword(): Promise<void> {
+    await this.serialize(() => this.passwords.clear())
   }
 
   private async signInOnce(email: string, password: string): Promise<GatewaySignInResult> {

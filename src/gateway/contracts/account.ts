@@ -81,4 +81,12 @@ export interface GatewaySignInResult {
   readonly status: GatewayAccountStatus
   /** Whether this attempt minted a new inference key rather than reusing one. */
   readonly createdKey: boolean
+  /** Authentication succeeded but optional password storage failed. */
+  readonly passwordSaveFailed?: boolean
+}
+
+/** Saved login metadata, without the password. */
+export interface GatewayRememberedLogin {
+  readonly supported: boolean
+  readonly email?: string
 }

@@ -19,6 +19,7 @@ import { TYPERT } from '../../src/generated/host.mjs'
 import { TYPERT_REMOTE } from '../../src/generated/remote.mjs'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
 import * as OplGateway from '../../src/gateway/host/index.ts'
+import { GatewayPasswordStore } from '../../src/gateway/host/remembered-login.ts'
 import { OplGatewayAccountService, gatewayKeyName } from '../../src/gateway/host/account-service.ts'
 import {
   GatewayControlClient,
@@ -44,6 +45,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   if (previousStateRoot === undefined) delete process.env.OPL_GATEWAY_STATE_ROOT
   else process.env.OPL_GATEWAY_STATE_ROOT = previousStateRoot
   if (previousDshHome === undefined) delete process.env.DSH_HOME
@@ -123,7 +125,7 @@ describe('OPL Gateway composition', () => {
     }
     for (const allDescriptors of [TYPERT.invocations, TYPERT_REMOTE.descriptors]) {
       const descriptors = allDescriptors.filter((item) => item.namespace === 'oplGatewayAccount')
-      expect(descriptors.map((item) => item.namespace)).toEqual(Array(4).fill('oplGatewayAccount'))
+      expect(descriptors.map((item) => item.namespace)).toEqual(Array(7).fill('oplGatewayAccount'))
       const codec = descriptors.find((item) => item.method === 'status')!.result.create()
       expect(codec.parse(status)).toMatchObject(status)
     }
@@ -270,6 +272,42 @@ describe('account flow without any local OPL installation', () => {
       credentials: credentials!,
     }
   }
+
+  it('saves a password only after successful explicit opt-in', async () => {
+    const save = vi.spyOn(GatewayPasswordStore.prototype, 'save').mockResolvedValue()
+    const clear = vi.spyOn(GatewayPasswordStore.prototype, 'clear').mockResolvedValue()
+    const { account } = await service(gateway().control)
+    await expect(account.signIn('person@example.test', 'wrong', true)).rejects.toThrow()
+    expect(save).not.toHaveBeenCalled()
+    await account.signIn('person@example.test', 'right', true)
+    expect(save).toHaveBeenCalledExactlyOnceWith('person@example.test', 'right')
+    await account.signIn('person@example.test', 'right', false)
+    expect(clear).toHaveBeenCalledOnce()
+    expect(save).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves a successful login when optional password storage fails', async () => {
+    vi.spyOn(GatewayPasswordStore.prototype, 'save').mockRejectedValue(Error('keyring unavailable'))
+    const { account } = await service(gateway().control)
+    expect(await account.signIn('person@example.test', 'right', true)).toMatchObject({
+      passwordSaveFailed: true,
+      status: { phase: 'connected' },
+    })
+  })
+
+  it('uses a remembered password only on explicit sign-in and forgets without logging out', async () => {
+    const password = vi.spyOn(GatewayPasswordStore.prototype, 'password').mockResolvedValue('right')
+    const clear = vi.spyOn(GatewayPasswordStore.prototype, 'clear').mockResolvedValue()
+    const { control, calls } = gateway()
+    const { account } = await service(control)
+    expect(password).not.toHaveBeenCalled()
+    await account.signInRemembered('person@example.test')
+    expect(password).toHaveBeenCalledExactlyOnceWith('person@example.test')
+    expect(calls.filter((x) => x.startsWith('login:'))).toHaveLength(1)
+    await account.forgetPassword()
+    expect(clear).toHaveBeenCalledOnce()
+    expect((await account.status()).phase).toBe('connected')
+  })
 
   it('takes a fresh machine from no account to a working key', async () => {
     const { control, calls } = gateway()

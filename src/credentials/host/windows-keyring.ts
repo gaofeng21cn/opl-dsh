@@ -100,6 +100,9 @@ function fixedKeyring(target: string): SuiteKeyringCredential {
   }
 }
 
+/** Optional Gateway password stored for the current Windows user. */
+export const gatewayLoginKeyring = fixedKeyring('OPLDSH:Gateway:RememberedLogin')
+
 /** Bamboo StartLux API key backed only by Windows Credential Manager. */
 export const bambooStartLuxKeyring = fixedKeyring(BAMBOO_STARTLUX_KEYRING_TARGET)
 

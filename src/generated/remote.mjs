@@ -2746,6 +2746,8 @@ const _one_person_lab_dsh_opl_oplExecution_wait_result$schema = () => (_one_pers
   'at': z.string(),
 }).optional().describe('最近一次停止后编辑的持久谱系。缺失表示这个会话从未被回退过。 `pendingOperationId` 是回退后下一次发送必须使用的 operation 身份；被回退轮次的 旧身份一律不再复用，避免反馈落错目标。'),
 }))
+let _one_person_lab_dsh_opl_oplGatewayAccount_forgetPassword_result$schema$value
+const _one_person_lab_dsh_opl_oplGatewayAccount_forgetPassword_result$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_forgetPassword_result$schema$value ??= z.void())
 let _one_person_lab_dsh_opl_oplGatewayAccount_refresh_result$schema$value
 const _one_person_lab_dsh_opl_oplGatewayAccount_refresh_result$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_refresh_result$schema$value ??= z.object({
   'phase': z.union([z.literal("unavailable"), z.literal("signed-out"), z.literal("connected")]).readonly(),
@@ -2791,10 +2793,17 @@ const _one_person_lab_dsh_opl_oplGatewayAccount_refresh_result$schema = () => (_
   'message': z.string().readonly(),
 }).readonly().optional().describe('Why the last operation failed, when one did.'),
 }))
+let _one_person_lab_dsh_opl_oplGatewayAccount_rememberedLogin_result$schema$value
+const _one_person_lab_dsh_opl_oplGatewayAccount_rememberedLogin_result$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_rememberedLogin_result$schema$value ??= z.object({
+  'supported': z.boolean().readonly(),
+  'email': z.string().readonly().optional(),
+}))
 let _one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_0$schema$value ??= z.string())
 let _one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_1$schema$value
 const _one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_1$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_1$schema$value ??= z.string())
+let _one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_2$schema$value
+const _one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_2$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_2$schema$value ??= z.union([z.undefined(), z.literal(false), z.literal(true)]))
 let _one_person_lab_dsh_opl_oplGatewayAccount_signIn_result$schema$value
 const _one_person_lab_dsh_opl_oplGatewayAccount_signIn_result$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_signIn_result$schema$value ??= z.object({
   'status': z.object({
@@ -2842,6 +2851,58 @@ const _one_person_lab_dsh_opl_oplGatewayAccount_signIn_result$schema = () => (_o
 }).readonly().optional().describe('Why the last operation failed, when one did.'),
 }).readonly(),
   'createdKey': z.boolean().readonly().describe('Whether this attempt minted a new inference key rather than reusing one.'),
+  'passwordSaveFailed': z.boolean().readonly().optional().describe('Authentication succeeded but optional password storage failed.'),
+}))
+let _one_person_lab_dsh_opl_oplGatewayAccount_signInRemembered_parameter_0$schema$value
+const _one_person_lab_dsh_opl_oplGatewayAccount_signInRemembered_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_signInRemembered_parameter_0$schema$value ??= z.string())
+let _one_person_lab_dsh_opl_oplGatewayAccount_signInRemembered_result$schema$value
+const _one_person_lab_dsh_opl_oplGatewayAccount_signInRemembered_result$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_signInRemembered_result$schema$value ??= z.object({
+  'status': z.object({
+  'phase': z.union([z.literal("unavailable"), z.literal("signed-out"), z.literal("connected")]).readonly(),
+  'groups': z.array(z.object({
+  'id': z.union([z.literal("codex"), z.literal("deepseek"), z.literal("grok"), z.literal("gemini"), z.literal("kiro"), z.literal("aws")]).readonly(),
+  'name': z.string().readonly(),
+  'enabled': z.boolean().readonly().optional(),
+  'authorized': z.boolean().readonly().optional(),
+  'rateMultiplier': z.number().readonly().optional(),
+  'state': z.union([z.literal("ready"), z.literal("unauthorized"), z.literal("unconfigured"), z.literal("error")]).readonly(),
+  'error': z.string().readonly().optional(),
+})).readonly().optional(),
+  'endpoint': z.string().readonly().describe('Endpoint inference uses for this account.'),
+  'keyReady': z.boolean().readonly().describe('Whether the credential reference the adapter resolves currently resolves.'),
+  'codexKeyReady': z.boolean().readonly().optional().describe('Independent OpenAI-protocol key for OpenAI-routed models and search.'),
+  'grokKeyReady': z.boolean().readonly().optional().describe('Independent Grok-group key for the Grok Build harness.'),
+  'activeChannel': z.union([z.undefined(), z.literal("codex"), z.literal("deepseek"), z.literal("grok"), z.literal("gemini"), z.literal("kiro"), z.literal("aws")]).readonly().optional().describe('Last model group that returned output in this process.'),
+  'channelError': z.union([z.undefined(), z.string()]).readonly().optional().describe('Provisioning failure of the optional OpenAI-protocol model group.'),
+  'harnessError': z.union([z.undefined(), z.string()]).readonly().optional().describe('Provisioning failure of the optional Grok Build combination.'),
+  'source': z.union([z.literal("session"), z.literal("opl")]).readonly().optional().describe('Where the account facts came from: this process\'s own session, or the binding OPL recorded. Absent when neither has one.'),
+  'account': z.object({
+  'availableGroups': z.array(z.object({
+  'id': z.string(),
+  'label': z.string(),
+  'rateMultiplier': z.number().optional(),
+})).readonly().optional(),
+  'displayName': z.union([z.literal(null), z.string()]).readonly(),
+  'email': z.union([z.literal(null), z.string()]).readonly(),
+  'status': z.string().readonly(),
+  'balanceAmount': z.union([z.literal(null), z.number()]).readonly(),
+  'balanceCurrency': z.string().readonly(),
+  'todayTokens': z.union([z.literal(null), z.number()]).readonly(),
+  'totalTokens': z.union([z.literal(null), z.number()]).readonly(),
+  'todayCost': z.union([z.literal(null), z.number()]).readonly(),
+  'totalCost': z.union([z.literal(null), z.number()]).readonly(),
+  'usageCurrency': z.string().readonly(),
+  'keyName': z.union([z.literal(null), z.string()]).readonly().describe('Name of the inference key this route uses, when one is known.'),
+  'observedAt': z.union([z.literal(null), z.string()]).readonly().optional().describe('When the facts were observed, for the freshness line.'),
+  'stale': z.boolean().readonly().optional().describe('Whether the observation is past its freshness window.'),
+}).readonly().optional(),
+  'error': z.object({
+  'code': z.string().readonly(),
+  'message': z.string().readonly(),
+}).readonly().optional().describe('Why the last operation failed, when one did.'),
+}).readonly(),
+  'createdKey': z.boolean().readonly().describe('Whether this attempt minted a new inference key rather than reusing one.'),
+  'passwordSaveFailed': z.boolean().readonly().optional().describe('Authentication succeeded but optional password storage failed.'),
 }))
 let _one_person_lab_dsh_opl_oplGatewayAccount_signOut_result$schema$value
 const _one_person_lab_dsh_opl_oplGatewayAccount_signOut_result$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_signOut_result$schema$value ??= z.object({
@@ -3945,6 +4006,10 @@ let _one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_0_strict$schema$v
 const _one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_0_strict$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_0_strict$schema$value ??= z.string())
 let _one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_1_strict$schema$value
 const _one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_1_strict$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_1_strict$schema$value ??= z.string())
+let _one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_2_strict$schema$value
+const _one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_2_strict$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_2_strict$schema$value ??= z.union([z.undefined(), z.literal(false), z.literal(true)]))
+let _one_person_lab_dsh_opl_oplGatewayAccount_signInRemembered_parameter_0_strict$schema$value
+const _one_person_lab_dsh_opl_oplGatewayAccount_signInRemembered_parameter_0_strict$schema = () => (_one_person_lab_dsh_opl_oplGatewayAccount_signInRemembered_parameter_0_strict$schema$value ??= z.string())
 let _one_person_lab_dsh_opl_oplGatewayModels_activate_parameter_0_strict$schema$value
 const _one_person_lab_dsh_opl_oplGatewayModels_activate_parameter_0_strict$schema = () => (_one_person_lab_dsh_opl_oplGatewayModels_activate_parameter_0_strict$schema$value ??= z.strictObject({
   'id': z.string(),
@@ -5403,6 +5468,20 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
       },
       sourceLocation: {"file":"src/execution/host/service.ts","line":159,"column":3},
     },
+    'oplGatewayAccount/forgetPassword': {
+      service: 'oplGatewayAccount',
+      description: 'Delete the optional saved password without changing the active login.',
+      invocation: { kind: 'direct' },
+      parameters: [
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl#oplGatewayAccount/forgetPassword:result',
+        create: _one_person_lab_dsh_opl_oplGatewayAccount_forgetPassword_result$schema,
+        jsonSchemaError: 'typert tool schema: unsupported void value',
+      },
+      sourceLocation: {"file":"src/gateway/host/account-service.ts","line":345,"column":9},
+    },
     'oplGatewayAccount/refresh': {
       service: 'oplGatewayAccount',
       description: 'Re-read the account from the gateway.',
@@ -5416,7 +5495,21 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'the refreshed status, or the current status when this machine holds no session.',
         jsonSchema: {"type":"object","properties":{"phase":{"type":"string","enum":["unavailable","signed-out","connected"]},"groups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","enum":["codex","deepseek","grok","gemini","kiro","aws"]},"name":{"type":"string"},"enabled":{"type":"boolean"},"authorized":{"type":"boolean"},"rateMultiplier":{"type":"number"},"state":{"type":"string","enum":["ready","unauthorized","unconfigured","error"]},"error":{"type":"string"}},"required":["id","name","state"],"additionalProperties":true}},"endpoint":{"type":"string","description":"Endpoint inference uses for this account."},"keyReady":{"type":"boolean","description":"Whether the credential reference the adapter resolves currently resolves."},"codexKeyReady":{"type":"boolean","description":"Independent OpenAI-protocol key for OpenAI-routed models and search."},"grokKeyReady":{"type":"boolean","description":"Independent Grok-group key for the Grok Build harness."},"activeChannel":{"type":"string","enum":["codex","deepseek","grok","gemini","kiro","aws"],"description":"Last model group that returned output in this process."},"channelError":{"type":"string","description":"Provisioning failure of the optional OpenAI-protocol model group."},"harnessError":{"type":"string","description":"Provisioning failure of the optional Grok Build combination."},"source":{"type":"string","enum":["session","opl"],"description":"Where the account facts came from: this process's own session, or the binding OPL recorded. Absent when neither has one."},"account":{"type":"object","properties":{"availableGroups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"rateMultiplier":{"type":"number"}},"required":["id","label"],"additionalProperties":true}},"displayName":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"email":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"status":{"type":"string"},"balanceAmount":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"balanceCurrency":{"type":"string"},"todayTokens":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"totalTokens":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"todayCost":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"totalCost":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"usageCurrency":{"type":"string"},"keyName":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"Name of the inference key this route uses, when one is known."},"observedAt":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"When the facts were observed, for the freshness line."},"stale":{"type":"boolean","description":"Whether the observation is past its freshness window."}},"required":["displayName","email","status","balanceAmount","balanceCurrency","todayTokens","totalTokens","todayCost","totalCost","usageCurrency","keyName"],"additionalProperties":true},"error":{"type":"object","properties":{"code":{"type":"string"},"message":{"type":"string"}},"required":["code","message"],"additionalProperties":true,"description":"Why the last operation failed, when one did."}},"required":["phase","endpoint","keyReady"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"src/gateway/host/account-service.ts","line":442,"column":9},
+      sourceLocation: {"file":"src/gateway/host/account-service.ts","line":479,"column":9},
+    },
+    'oplGatewayAccount/rememberedLogin': {
+      service: 'oplGatewayAccount',
+      description: 'Read saved account metadata without returning the password.',
+      invocation: { kind: 'direct' },
+      parameters: [
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#GatewayRememberedLogin',
+        create: _one_person_lab_dsh_opl_oplGatewayAccount_rememberedLogin_result$schema,
+        jsonSchema: {"type":"object","properties":{"supported":{"type":"boolean"},"email":{"type":"string"}},"required":["supported"],"additionalProperties":true},
+      },
+      sourceLocation: {"file":"src/gateway/host/account-service.ts","line":333,"column":9},
     },
     'oplGatewayAccount/signIn': {
       service: 'oplGatewayAccount',
@@ -5457,15 +5550,63 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
             jsonSchema: {"type":"string"},
           },
         },
+        {
+          name: 'rememberPassword',
+          description: 'save after success, clear when false, preserve when omitted.',
+          source: 'json',
+          acceptsUndefined: true,
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl#oplGatewayAccount/signIn:rememberPassword',
+            create: _one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_2$schema,
+            jsonSchema: {"type":"boolean","enum":[false,true]},
+          },
+          strictCodec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl#oplGatewayAccount/signIn:rememberPassword',
+            create: _one_person_lab_dsh_opl_oplGatewayAccount_signIn_parameter_2_strict$schema,
+            jsonSchema: {"type":"boolean","enum":[false,true]},
+          },
+        },
       ],
       result: {
         mode: 'strict',
         typeSymbol: '@one-person-lab/dsh-opl/types#GatewaySignInResult',
         create: _one_person_lab_dsh_opl_oplGatewayAccount_signIn_result$schema,
         description: 'the resulting status and whether this attempt minted the key.',
-        jsonSchema: {"type":"object","properties":{"status":{"type":"object","properties":{"phase":{"type":"string","enum":["unavailable","signed-out","connected"]},"groups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","enum":["codex","deepseek","grok","gemini","kiro","aws"]},"name":{"type":"string"},"enabled":{"type":"boolean"},"authorized":{"type":"boolean"},"rateMultiplier":{"type":"number"},"state":{"type":"string","enum":["ready","unauthorized","unconfigured","error"]},"error":{"type":"string"}},"required":["id","name","state"],"additionalProperties":true}},"endpoint":{"type":"string","description":"Endpoint inference uses for this account."},"keyReady":{"type":"boolean","description":"Whether the credential reference the adapter resolves currently resolves."},"codexKeyReady":{"type":"boolean","description":"Independent OpenAI-protocol key for OpenAI-routed models and search."},"grokKeyReady":{"type":"boolean","description":"Independent Grok-group key for the Grok Build harness."},"activeChannel":{"type":"string","enum":["codex","deepseek","grok","gemini","kiro","aws"],"description":"Last model group that returned output in this process."},"channelError":{"type":"string","description":"Provisioning failure of the optional OpenAI-protocol model group."},"harnessError":{"type":"string","description":"Provisioning failure of the optional Grok Build combination."},"source":{"type":"string","enum":["session","opl"],"description":"Where the account facts came from: this process's own session, or the binding OPL recorded. Absent when neither has one."},"account":{"type":"object","properties":{"availableGroups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"rateMultiplier":{"type":"number"}},"required":["id","label"],"additionalProperties":true}},"displayName":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"email":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"status":{"type":"string"},"balanceAmount":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"balanceCurrency":{"type":"string"},"todayTokens":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"totalTokens":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"todayCost":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"totalCost":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"usageCurrency":{"type":"string"},"keyName":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"Name of the inference key this route uses, when one is known."},"observedAt":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"When the facts were observed, for the freshness line."},"stale":{"type":"boolean","description":"Whether the observation is past its freshness window."}},"required":["displayName","email","status","balanceAmount","balanceCurrency","todayTokens","totalTokens","todayCost","totalCost","usageCurrency","keyName"],"additionalProperties":true},"error":{"type":"object","properties":{"code":{"type":"string"},"message":{"type":"string"}},"required":["code","message"],"additionalProperties":true,"description":"Why the last operation failed, when one did."}},"required":["phase","endpoint","keyReady"],"additionalProperties":true},"createdKey":{"type":"boolean","description":"Whether this attempt minted a new inference key rather than reusing one."}},"required":["status","createdKey"],"additionalProperties":true},
+        jsonSchema: {"type":"object","properties":{"status":{"type":"object","properties":{"phase":{"type":"string","enum":["unavailable","signed-out","connected"]},"groups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","enum":["codex","deepseek","grok","gemini","kiro","aws"]},"name":{"type":"string"},"enabled":{"type":"boolean"},"authorized":{"type":"boolean"},"rateMultiplier":{"type":"number"},"state":{"type":"string","enum":["ready","unauthorized","unconfigured","error"]},"error":{"type":"string"}},"required":["id","name","state"],"additionalProperties":true}},"endpoint":{"type":"string","description":"Endpoint inference uses for this account."},"keyReady":{"type":"boolean","description":"Whether the credential reference the adapter resolves currently resolves."},"codexKeyReady":{"type":"boolean","description":"Independent OpenAI-protocol key for OpenAI-routed models and search."},"grokKeyReady":{"type":"boolean","description":"Independent Grok-group key for the Grok Build harness."},"activeChannel":{"type":"string","enum":["codex","deepseek","grok","gemini","kiro","aws"],"description":"Last model group that returned output in this process."},"channelError":{"type":"string","description":"Provisioning failure of the optional OpenAI-protocol model group."},"harnessError":{"type":"string","description":"Provisioning failure of the optional Grok Build combination."},"source":{"type":"string","enum":["session","opl"],"description":"Where the account facts came from: this process's own session, or the binding OPL recorded. Absent when neither has one."},"account":{"type":"object","properties":{"availableGroups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"rateMultiplier":{"type":"number"}},"required":["id","label"],"additionalProperties":true}},"displayName":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"email":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"status":{"type":"string"},"balanceAmount":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"balanceCurrency":{"type":"string"},"todayTokens":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"totalTokens":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"todayCost":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"totalCost":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"usageCurrency":{"type":"string"},"keyName":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"Name of the inference key this route uses, when one is known."},"observedAt":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"When the facts were observed, for the freshness line."},"stale":{"type":"boolean","description":"Whether the observation is past its freshness window."}},"required":["displayName","email","status","balanceAmount","balanceCurrency","todayTokens","totalTokens","todayCost","totalCost","usageCurrency","keyName"],"additionalProperties":true},"error":{"type":"object","properties":{"code":{"type":"string"},"message":{"type":"string"}},"required":["code","message"],"additionalProperties":true,"description":"Why the last operation failed, when one did."}},"required":["phase","endpoint","keyReady"],"additionalProperties":true},"createdKey":{"type":"boolean","description":"Whether this attempt minted a new inference key rather than reusing one."},"passwordSaveFailed":{"type":"boolean","description":"Authentication succeeded but optional password storage failed."}},"required":["status","createdKey"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"src/gateway/host/account-service.ts","line":308,"column":9},
+      sourceLocation: {"file":"src/gateway/host/account-service.ts","line":312,"column":9},
+    },
+    'oplGatewayAccount/signInRemembered': {
+      service: 'oplGatewayAccount',
+      description: 'Sign in only the account the user submitted, using its saved password.',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'email',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl#oplGatewayAccount/signInRemembered:email',
+            create: _one_person_lab_dsh_opl_oplGatewayAccount_signInRemembered_parameter_0$schema,
+            jsonSchema: {"type":"string"},
+          },
+          strictCodec: {
+            mode: 'strict',
+            typeSymbol: '@one-person-lab/dsh-opl#oplGatewayAccount/signInRemembered:email',
+            create: _one_person_lab_dsh_opl_oplGatewayAccount_signInRemembered_parameter_0_strict$schema,
+            jsonSchema: {"type":"string"},
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl/types#GatewaySignInResult',
+        create: _one_person_lab_dsh_opl_oplGatewayAccount_signInRemembered_result$schema,
+        jsonSchema: {"type":"object","properties":{"status":{"type":"object","properties":{"phase":{"type":"string","enum":["unavailable","signed-out","connected"]},"groups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","enum":["codex","deepseek","grok","gemini","kiro","aws"]},"name":{"type":"string"},"enabled":{"type":"boolean"},"authorized":{"type":"boolean"},"rateMultiplier":{"type":"number"},"state":{"type":"string","enum":["ready","unauthorized","unconfigured","error"]},"error":{"type":"string"}},"required":["id","name","state"],"additionalProperties":true}},"endpoint":{"type":"string","description":"Endpoint inference uses for this account."},"keyReady":{"type":"boolean","description":"Whether the credential reference the adapter resolves currently resolves."},"codexKeyReady":{"type":"boolean","description":"Independent OpenAI-protocol key for OpenAI-routed models and search."},"grokKeyReady":{"type":"boolean","description":"Independent Grok-group key for the Grok Build harness."},"activeChannel":{"type":"string","enum":["codex","deepseek","grok","gemini","kiro","aws"],"description":"Last model group that returned output in this process."},"channelError":{"type":"string","description":"Provisioning failure of the optional OpenAI-protocol model group."},"harnessError":{"type":"string","description":"Provisioning failure of the optional Grok Build combination."},"source":{"type":"string","enum":["session","opl"],"description":"Where the account facts came from: this process's own session, or the binding OPL recorded. Absent when neither has one."},"account":{"type":"object","properties":{"availableGroups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"rateMultiplier":{"type":"number"}},"required":["id","label"],"additionalProperties":true}},"displayName":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"email":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"status":{"type":"string"},"balanceAmount":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"balanceCurrency":{"type":"string"},"todayTokens":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"totalTokens":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"todayCost":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"totalCost":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"usageCurrency":{"type":"string"},"keyName":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"Name of the inference key this route uses, when one is known."},"observedAt":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"When the facts were observed, for the freshness line."},"stale":{"type":"boolean","description":"Whether the observation is past its freshness window."}},"required":["displayName","email","status","balanceAmount","balanceCurrency","todayTokens","totalTokens","todayCost","totalCost","usageCurrency","keyName"],"additionalProperties":true},"error":{"type":"object","properties":{"code":{"type":"string"},"message":{"type":"string"}},"required":["code","message"],"additionalProperties":true,"description":"Why the last operation failed, when one did."}},"required":["phase","endpoint","keyReady"],"additionalProperties":true},"createdKey":{"type":"boolean","description":"Whether this attempt minted a new inference key rather than reusing one."},"passwordSaveFailed":{"type":"boolean","description":"Authentication succeeded but optional password storage failed."}},"required":["status","createdKey"],"additionalProperties":true},
+      },
+      sourceLocation: {"file":"src/gateway/host/account-service.ts","line":339,"column":9},
     },
     'oplGatewayAccount/signOut': {
       service: 'oplGatewayAccount',
@@ -5480,7 +5621,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'the signed-out status after this machine\'s session and key are released.',
         jsonSchema: {"type":"object","properties":{"phase":{"type":"string","enum":["unavailable","signed-out","connected"]},"groups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","enum":["codex","deepseek","grok","gemini","kiro","aws"]},"name":{"type":"string"},"enabled":{"type":"boolean"},"authorized":{"type":"boolean"},"rateMultiplier":{"type":"number"},"state":{"type":"string","enum":["ready","unauthorized","unconfigured","error"]},"error":{"type":"string"}},"required":["id","name","state"],"additionalProperties":true}},"endpoint":{"type":"string","description":"Endpoint inference uses for this account."},"keyReady":{"type":"boolean","description":"Whether the credential reference the adapter resolves currently resolves."},"codexKeyReady":{"type":"boolean","description":"Independent OpenAI-protocol key for OpenAI-routed models and search."},"grokKeyReady":{"type":"boolean","description":"Independent Grok-group key for the Grok Build harness."},"activeChannel":{"type":"string","enum":["codex","deepseek","grok","gemini","kiro","aws"],"description":"Last model group that returned output in this process."},"channelError":{"type":"string","description":"Provisioning failure of the optional OpenAI-protocol model group."},"harnessError":{"type":"string","description":"Provisioning failure of the optional Grok Build combination."},"source":{"type":"string","enum":["session","opl"],"description":"Where the account facts came from: this process's own session, or the binding OPL recorded. Absent when neither has one."},"account":{"type":"object","properties":{"availableGroups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"rateMultiplier":{"type":"number"}},"required":["id","label"],"additionalProperties":true}},"displayName":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"email":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"status":{"type":"string"},"balanceAmount":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"balanceCurrency":{"type":"string"},"todayTokens":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"totalTokens":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"todayCost":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"totalCost":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"usageCurrency":{"type":"string"},"keyName":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"Name of the inference key this route uses, when one is known."},"observedAt":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"When the facts were observed, for the freshness line."},"stale":{"type":"boolean","description":"Whether the observation is past its freshness window."}},"required":["displayName","email","status","balanceAmount","balanceCurrency","todayTokens","totalTokens","todayCost","totalCost","usageCurrency","keyName"],"additionalProperties":true},"error":{"type":"object","properties":{"code":{"type":"string"},"message":{"type":"string"}},"required":["code","message"],"additionalProperties":true,"description":"Why the last operation failed, when one did."}},"required":["phase","endpoint","keyReady"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"src/gateway/host/account-service.ts","line":509,"column":9},
+      sourceLocation: {"file":"src/gateway/host/account-service.ts","line":546,"column":9},
     },
     'oplGatewayAccount/status': {
       service: 'oplGatewayAccount',
@@ -5495,7 +5636,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         description: 'the phase, endpoint, group-key state, and account facts the page presents.',
         jsonSchema: {"type":"object","properties":{"phase":{"type":"string","enum":["unavailable","signed-out","connected"]},"groups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","enum":["codex","deepseek","grok","gemini","kiro","aws"]},"name":{"type":"string"},"enabled":{"type":"boolean"},"authorized":{"type":"boolean"},"rateMultiplier":{"type":"number"},"state":{"type":"string","enum":["ready","unauthorized","unconfigured","error"]},"error":{"type":"string"}},"required":["id","name","state"],"additionalProperties":true}},"endpoint":{"type":"string","description":"Endpoint inference uses for this account."},"keyReady":{"type":"boolean","description":"Whether the credential reference the adapter resolves currently resolves."},"codexKeyReady":{"type":"boolean","description":"Independent OpenAI-protocol key for OpenAI-routed models and search."},"grokKeyReady":{"type":"boolean","description":"Independent Grok-group key for the Grok Build harness."},"activeChannel":{"type":"string","enum":["codex","deepseek","grok","gemini","kiro","aws"],"description":"Last model group that returned output in this process."},"channelError":{"type":"string","description":"Provisioning failure of the optional OpenAI-protocol model group."},"harnessError":{"type":"string","description":"Provisioning failure of the optional Grok Build combination."},"source":{"type":"string","enum":["session","opl"],"description":"Where the account facts came from: this process's own session, or the binding OPL recorded. Absent when neither has one."},"account":{"type":"object","properties":{"availableGroups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"rateMultiplier":{"type":"number"}},"required":["id","label"],"additionalProperties":true}},"displayName":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"email":{"oneOf":[{"type":"null","const":null},{"type":"string"}]},"status":{"type":"string"},"balanceAmount":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"balanceCurrency":{"type":"string"},"todayTokens":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"totalTokens":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"todayCost":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"totalCost":{"oneOf":[{"type":"null","const":null},{"type":"number"}]},"usageCurrency":{"type":"string"},"keyName":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"Name of the inference key this route uses, when one is known."},"observedAt":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"When the facts were observed, for the freshness line."},"stale":{"type":"boolean","description":"Whether the observation is past its freshness window."}},"required":["displayName","email","status","balanceAmount","balanceCurrency","todayTokens","totalTokens","todayCost","totalCost","usageCurrency","keyName"],"additionalProperties":true},"error":{"type":"object","properties":{"code":{"type":"string"},"message":{"type":"string"}},"required":["code","message"],"additionalProperties":true,"description":"Why the last operation failed, when one did."}},"required":["phase","endpoint","keyReady"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"src/gateway/host/account-service.ts","line":230,"column":9},
+      sourceLocation: {"file":"src/gateway/host/account-service.ts","line":233,"column":9},
     },
     'oplGatewayModels/activate': {
       service: 'oplGatewayModels',

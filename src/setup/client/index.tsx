@@ -31,7 +31,10 @@ export function apply(
       await call('official-key', key)
     },
     status: () => account()('status'),
-    signIn: (email, password) => account()('signIn', email, password),
+    signIn: (email, password, remember) => account()('signIn', email, password, remember),
+    rememberedLogin: () => account()('rememberedLogin'),
+    signInRemembered: (email) => account()('signInRemembered', email),
+    forgetPassword: () => account()('forgetPassword'),
     refresh: () => account()('refresh'),
     signOut: () => account()('signOut'),
   }

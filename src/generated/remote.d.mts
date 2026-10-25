@@ -4,7 +4,7 @@ import type {
   TypertRemoteInfo,
   TypertRemoteMethod,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, CodexRuntimeRequest, CodexRuntimeResult, ContextBudgetRequest, ContextBudgetSnapshot, CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, ExecutionLimits, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessReasoningPreflight, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, MessageEditSend, MessageEditState, MiniMaxAccountLoginRequest, MiniMaxAccountStatus, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
+import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, CodexRuntimeRequest, CodexRuntimeResult, ContextBudgetRequest, ContextBudgetSnapshot, CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, ExecutionLimits, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewayRememberedLogin, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessReasoningPreflight, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, MessageEditSend, MessageEditState, MiniMaxAccountLoginRequest, MiniMaxAccountStatus, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$6f706c4175746f526576696577 {
@@ -67,8 +67,11 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     wait: (request: { sessionId: string; operationId?: string; }, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
   }
   interface TypertRemoteNamespace$6f706c476174657761794163636f756e74 {
+    forgetPassword: () => Promise<RemoteResult<void>>
     refresh: () => Promise<RemoteResult<GatewayAccountStatus>>
-    signIn: (email: string, password: string) => Promise<RemoteResult<GatewaySignInResult>>
+    rememberedLogin: () => Promise<RemoteResult<GatewayRememberedLogin>>
+    signIn: (email: string, password: string, rememberPassword?: boolean) => Promise<RemoteResult<GatewaySignInResult>>
+    signInRemembered: (email: string) => Promise<RemoteResult<GatewaySignInResult>>
     signOut: () => Promise<RemoteResult<GatewayAccountStatus>>
     status: () => Promise<RemoteResult<GatewayAccountStatus>>
   }
@@ -150,8 +153,11 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/task-summaries': (request: { origin: HarnessOrigin; }) => Promise<RemoteResult<HarnessTaskSummary[]>>
     'oplExecution/tasks': (request: { origin: HarnessOrigin; }) => Promise<RemoteResult<HarnessSnapshot[]>>
     'oplExecution/wait': (request: { sessionId: string; operationId?: string; }, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
+    'oplGatewayAccount/forgetPassword': () => Promise<RemoteResult<void>>
     'oplGatewayAccount/refresh': () => Promise<RemoteResult<GatewayAccountStatus>>
-    'oplGatewayAccount/signIn': (email: string, password: string) => Promise<RemoteResult<GatewaySignInResult>>
+    'oplGatewayAccount/rememberedLogin': () => Promise<RemoteResult<GatewayRememberedLogin>>
+    'oplGatewayAccount/signIn': (email: string, password: string, rememberPassword?: boolean) => Promise<RemoteResult<GatewaySignInResult>>
+    'oplGatewayAccount/signInRemembered': (email: string) => Promise<RemoteResult<GatewaySignInResult>>
     'oplGatewayAccount/signOut': () => Promise<RemoteResult<GatewayAccountStatus>>
     'oplGatewayAccount/status': () => Promise<RemoteResult<GatewayAccountStatus>>
     'oplGatewayModels/activate': (request: { id: string; enabled: boolean; }) => Promise<RemoteResult<GatewayAccountStatus>>
@@ -239,8 +245,11 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'oplExecution/task-summaries': TypertRemoteMethod<{ readonly 'request': { origin: HarnessOrigin; } }, HarnessTaskSummary[]>
   readonly 'oplExecution/tasks': TypertRemoteMethod<{ readonly 'request': { origin: HarnessOrigin; } }, HarnessSnapshot[]>
   readonly 'oplExecution/wait': TypertRemoteMethod<{ readonly 'request': { sessionId: string; operationId?: string; } }, HarnessSnapshot>
+  readonly 'oplGatewayAccount/forgetPassword': TypertRemoteMethod<{  }, void>
   readonly 'oplGatewayAccount/refresh': TypertRemoteMethod<{  }, GatewayAccountStatus>
-  readonly 'oplGatewayAccount/signIn': TypertRemoteMethod<{ readonly 'email': string; readonly 'password': string }, GatewaySignInResult>
+  readonly 'oplGatewayAccount/rememberedLogin': TypertRemoteMethod<{  }, GatewayRememberedLogin>
+  readonly 'oplGatewayAccount/signIn': TypertRemoteMethod<{ readonly 'email': string; readonly 'password': string; readonly 'rememberPassword'?: boolean }, GatewaySignInResult>
+  readonly 'oplGatewayAccount/signInRemembered': TypertRemoteMethod<{ readonly 'email': string }, GatewaySignInResult>
   readonly 'oplGatewayAccount/signOut': TypertRemoteMethod<{  }, GatewayAccountStatus>
   readonly 'oplGatewayAccount/status': TypertRemoteMethod<{  }, GatewayAccountStatus>
   readonly 'oplGatewayModels/activate': TypertRemoteMethod<{ readonly 'request': { id: string; enabled: boolean; } }, GatewayAccountStatus>
