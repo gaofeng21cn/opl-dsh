@@ -273,25 +273,6 @@ function CombinationRow({
             <span className={css.muted}>默认执行组合</span>
           </div>
         )}
-        <label className={css.field}>
-          权限
-          <select
-            className={css.input}
-            value={item.permissionPolicy}
-            disabled={busy}
-            onChange={(e) =>
-              update(item.id, {
-                permissionPolicy: e.target.value as 'workspace' | 'read-only' | 'full-access',
-              })
-            }
-          >
-            <option value="read-only">只读</option>
-            <option value="workspace">工作区内修改（仍需 Harness 授权）</option>
-            {item.harnessRef !== 'antigravity' && (
-              <option value="full-access">完整访问（使用该执行引擎的官方授权）</option>
-            )}
-          </select>
-        </label>
       </div>
     </details>
   )

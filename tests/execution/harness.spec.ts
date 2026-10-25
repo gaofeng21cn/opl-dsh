@@ -484,6 +484,69 @@ describe('native conversation combinations', () => {
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
   }, 10_000)
 
+  it.each(['read-only', 'workspace-write', 'danger-full-access'] as const)(
+    'a saved read-only combination cannot override the conversation preset %s',
+    async (preset) => {
+      const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
+      const { service, root, session } = await nativeSetup(
+        [{ id: ref.model, name: 'Grok' }],
+        [{ id: ref.provider, name: 'OPL Gateway' }],
+        preset,
+      )
+      const adapter = adapterFor('grok-build', ref)!
+      vi.spyOn(adapter, 'available').mockResolvedValue({ available: true })
+      const catalog = await service.executionCatalog()
+      await service.saveExecutionCatalog({
+        ...catalog,
+        combinations: [
+          ...catalog.combinations,
+          {
+            id: 'saved-workspace-combination',
+            name: 'Saved Grok',
+            modelRef: ref,
+            harnessRef: 'grok-build',
+            permissionPolicy: 'read-only',
+            enabled: true,
+            isDefault: false,
+          },
+        ],
+      })
+      await service.selectCombination({
+        sessionId: session.id,
+        combination: 'saved-workspace-combination',
+      })
+      const chunks = await Array.fromAsync(
+        service.conversationStream(
+          {
+            ...ref,
+            sessionId: session.id,
+            messages: [
+              createUserMessage({
+                source: { kind: 'user' },
+                content: [{ type: 'text', text: 'saved-permission' }],
+              }),
+            ],
+          } as GenerateOptions,
+          async function* () {
+            throw Error('direct provider must not receive this model')
+          },
+        ),
+      )
+      const record = (await service.list()).sessions.find(
+        (item) => item.nativeSessionId === session.id,
+      )!
+      expect(record.sandbox).toBe(
+        preset === 'danger-full-access'
+          ? 'full-access'
+          : preset === 'workspace-write'
+            ? 'workspace'
+            : 'read-only',
+      )
+      expect(await readFile(join(root, 'calls.txt'), 'utf8')).toContain('saved-permission')
+      expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    },
+  )
+
   it('hands off tool history through the official conversation stream and sends only new input on continuation', async () => {
     const { service, root, session } = await nativeSetup([{ id: 'grok::grok-4.7', name: 'Grok' }])
     await service.selectCombination({ sessionId: session.id, combination: GROK_COMBINATION })
@@ -808,10 +871,10 @@ describe('native conversation combinations', () => {
     )
     await service.saveExecutionCatalog(catalog)
     await service.selectCombination({ sessionId: session.id, combination: 'review' })
-    expect(setPermission).toHaveBeenCalledExactlyOnceWith(session, 'read-only')
+    expect(setPermission).not.toHaveBeenCalled()
     expect(session.append).not.toHaveBeenCalled()
     await service.selectCombination({ sessionId: session.id, combination: 'work' })
-    expect(setPermission).toHaveBeenCalledTimes(1)
+    expect(setPermission).not.toHaveBeenCalled()
     expect(session.append).not.toHaveBeenCalled()
     await service.dispose()
     const restored = new HarnessService(ctx, options)

@@ -115,11 +115,7 @@ import {
   type MinimaxHistorySource,
   type MinimaxReview,
 } from './stop-edit-minimax.ts'
-import {
-  harnessAllowsFullAccess,
-  harnessPermissionPreset,
-  setHarnessPermissions,
-} from './permissions.ts'
+import { harnessAllowsFullAccess, harnessPermissionPreset } from './permissions.ts'
 import { resolveWriteScope, writerConflicts } from './write-scope.ts'
 import { harnessProxyEnvironment } from './proxy.ts'
 import type {
@@ -483,7 +479,7 @@ export class HarnessService {
     const preset = this.ctx.permissionPresets.current(session)
     const mode = policy?.mode ?? preset
     const sandbox =
-      (definition.permissionPolicy === 'read-only' && !definition.generated) || mode === 'read-only'
+      mode === 'read-only'
         ? 'read-only'
         : mode === 'danger-full-access' && harnessAllowsFullAccess(definition.harnessRef)
           ? 'full-access'
@@ -1026,6 +1022,7 @@ export class HarnessService {
   private async startAdmitted(
     input: HarnessStartRequest,
     deferConnection = false,
+    followConversationPermission = false,
   ): Promise<HarnessSnapshot> {
     await this.ready
     if (this.disposed) throw Error('组合服务已关闭')
@@ -1094,6 +1091,7 @@ export class HarnessService {
     // still has to pass the verified-full-access gate below. A frozen definition has no `generated`
     // flag, so a stored restricted session stays restricted and cannot be widened on resume.
     const declaredReadOnly =
+      !followConversationPermission &&
       definition.permissionPolicy === 'read-only' &&
       !('generated' in definition && definition.generated)
     const sandbox =
@@ -3740,9 +3738,6 @@ export class HarnessService {
     const selection = await this.selectionForModel(session, definition.modelRef)
     if (definition.harnessRef === 'dsh') {
       await this.native('selectModel', { sessionId: session.id, ...selection })
-      // Generated policies default new tasks; they do not override a conversation's selected preset.
-      if (definition.permissionPolicy === 'read-only' && !definition.generated)
-        setHarnessPermissions(this.ctx, session, 'read-only')
       await this.bindSelection(session.id, definition.id)
       return { kind: 'native', sessionId: session.id }
     }
@@ -3826,15 +3821,18 @@ export class HarnessService {
     }
     const started = bound
       ? this.view(bound)
-      : await this.start(
-          {
-            combination: definition.id,
-            cwd: binding.cwd,
-            origin: { kind: 'dsh', sessionId: options.sessionId },
-            taskId: binding.taskId,
-            sandbox: binding.sandbox,
-          },
-          true,
+      : await this.runtimeMaintenance.admit(() =>
+          this.startAdmitted(
+            {
+              combination: definition.id,
+              cwd: binding.cwd,
+              origin: { kind: 'dsh', sessionId: session.id },
+              taskId: binding.taskId,
+              sandbox: binding.sandbox,
+            },
+            true,
+            true,
+          ),
         )
     const record = this.records.get(started.id)!
     await this.connect(record)
