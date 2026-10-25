@@ -106,6 +106,8 @@ test('automatic Chinese release notes retain original commit text and render all
   })
   assert.ok(notes.startsWith('官方 DeepSeek Harness：'))
   assert.ok(notes.includes(changes))
+  assert.ok(notes.includes('本版更新内容见以下提交记录及对应功能文档。'))
+  assert.ok(!notes.includes('自动语言整理不可用'))
   assert.ok(notes.includes('a'.repeat(40)))
   assert.ok(!notes.includes('{{'))
 })
