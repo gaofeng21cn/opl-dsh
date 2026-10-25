@@ -384,7 +384,7 @@ describe('每个外部 Harness 独立的代理设置', () => {
     expect(stored().combinations.at(-1)).toMatchObject({
       name: 'MiniMax-M3.1-Flash-Preview + MiniMax Code',
       enabled: true,
-      permissionPolicy: 'read-only',
+      permissionPolicy: 'workspace',
     })
     const added = walk(view).find(
       (node) => node.getAttribute?.('data-opl-combination') === stored().combinations.at(-1).id,
@@ -491,7 +491,7 @@ describe('每个外部 Harness 独立的代理设置', () => {
     expect(new Set(additions.map((item: { id: string }) => item.id)).size).toBe(2)
     for (const item of additions)
       expect(item).toMatchObject({
-        permissionPolicy: 'read-only',
+        permissionPolicy: 'workspace',
         isDefault: false,
         enabled: true,
         autoEnabled: false,
@@ -581,7 +581,7 @@ describe('每个外部 Harness 独立的代理设置', () => {
     expect(saved.catalog.combinations.at(-1)).toMatchObject({
       name: 'Big Pickle + OpenCode',
       harnessRef: 'opencode',
-      permissionPolicy: 'read-only',
+      permissionPolicy: 'workspace',
     })
     expect(saved.catalog.combinations.at(-1)?.generated).not.toBe(true)
   })

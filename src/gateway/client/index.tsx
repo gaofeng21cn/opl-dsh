@@ -61,7 +61,10 @@ export function apply(ctx: Context, navigation: { openModels?: () => void } = {}
             }
           : {}),
         status: () => call('status'),
-        signIn: (email, password) => call('signIn', email, password),
+        signIn: (email, password, remember) => call('signIn', email, password, remember),
+        rememberedLogin: () => call('rememberedLogin'),
+        signInRemembered: (email) => call('signInRemembered', email),
+        forgetPassword: () => call('forgetPassword'),
         refresh: () => call('refresh'),
         signOut: () => call('signOut'),
       }

@@ -115,11 +115,7 @@ import {
   type MinimaxHistorySource,
   type MinimaxReview,
 } from './stop-edit-minimax.ts'
-import {
-  harnessAllowsFullAccess,
-  harnessPermissionPreset,
-  setHarnessPermissions,
-} from './permissions.ts'
+import { harnessAllowsFullAccess, harnessPermissionPreset } from './permissions.ts'
 import { resolveWriteScope, writerConflicts } from './write-scope.ts'
 import { harnessProxyEnvironment } from './proxy.ts'
 import type {
@@ -330,6 +326,7 @@ export class HarnessService {
   private writeQueue: Promise<void> = Promise.resolve()
   private readonly ready: Promise<void>
   private readonly selectionsReady: Promise<void>
+  private readonly recordsReady: Promise<void>
   private disposed = false
   private pumping = false
   private readonly observed = new Set<string>()
@@ -382,8 +379,9 @@ export class HarnessService {
     this.selectionsReady = Promise.all([this.loadSelections(), this.externalEfforts.ready]).then(
       () => {},
     )
+    this.recordsReady = this.load()
     this.ready = Promise.all([
-      this.load(),
+      this.recordsReady,
       this.selectionsReady,
       // 编辑意图台账必须先恢复，否则一次未完成的编辑会被当成从未发生过。
       this.stopEditIntents.load(),
@@ -483,7 +481,7 @@ export class HarnessService {
     const preset = this.ctx.permissionPresets.current(session)
     const mode = policy?.mode ?? preset
     const sandbox =
-      (definition.permissionPolicy === 'read-only' && !definition.generated) || mode === 'read-only'
+      mode === 'read-only'
         ? 'read-only'
         : mode === 'danger-full-access' && harnessAllowsFullAccess(definition.harnessRef)
           ? 'full-access'
@@ -1026,6 +1024,7 @@ export class HarnessService {
   private async startAdmitted(
     input: HarnessStartRequest,
     deferConnection = false,
+    followConversationPermission = false,
   ): Promise<HarnessSnapshot> {
     await this.ready
     if (this.disposed) throw Error('组合服务已关闭')
@@ -1094,6 +1093,7 @@ export class HarnessService {
     // still has to pass the verified-full-access gate below. A frozen definition has no `generated`
     // flag, so a stored restricted session stays restricted and cannot be widened on resume.
     const declaredReadOnly =
+      !followConversationPermission &&
       definition.permissionPolicy === 'read-only' &&
       !('generated' in definition && definition.generated)
     const sandbox =
@@ -3424,7 +3424,7 @@ export class HarnessService {
     }
   }
   async modelSelection(sessionId: string) {
-    await this.selectionsReady
+    await Promise.all([this.selectionsReady, this.recordsReady])
     const session = this.ctx.sessions.get(asSessionId<SessionId>(required(sessionId, 'sessionId')))
     const catalog = (await invokeHostRemote(this.ctx, {
       namespace: 'session',
@@ -3441,7 +3441,16 @@ export class HarnessService {
     // A cold official Session may not be attached to the in-memory projection
     // yet after Desktop restart. The durable OPL binding is the authoritative
     // selector until the Session supplies its own next-request model.
-    const current = projection?.next ?? projection?.lastUsed ?? bound?.modelRef ?? catalog.default
+    const historical = [...this.records.values()].find(
+      (record) =>
+        record.nativeSessionId === sessionId && record.combination === this.selections[sessionId],
+    )
+    const current =
+      projection?.next ??
+      projection?.lastUsed ??
+      bound?.modelRef ??
+      historical?.modelRef ??
+      catalog.default
     const selected = this.combinationFor(sessionId, executionCatalog, current)
     const adapter =
       selected && adapterFor(selected.harnessRef, selected.modelRef, this.modelSources)
@@ -3458,14 +3467,20 @@ export class HarnessService {
         : catalog.groups
     const choice =
       selected && this.cliOwnsEffort(selected)
-        ? this.externalEfforts.get(sessionId, selected.id)
+        ? this.conversationEffort(sessionId, selected, executionCatalog)
         : undefined
     const { reasoningEffort: _providerEffort, ...ref } = current as ModelSelection
-    const displayed =
-      selected && this.cliOwnsEffort(selected)
-        ? { ...ref, ...(choice ? { reasoningEffort: choice } : {}) }
-        : current
-    return { current: displayed, groups, ...(selected ? { combination: selected.id } : {}) }
+    const harnessOwnsEffort =
+      !!selected && (this.cliOwnsEffort(selected) || adapter?.capabilities.reasoning === 'none')
+    const displayed = harnessOwnsEffort
+      ? { ...ref, ...(choice ? { reasoningEffort: choice } : {}) }
+      : current
+    return {
+      current: displayed,
+      groups,
+      ...(selected ? { combination: selected.id } : {}),
+      ...(harnessOwnsEffort ? { effortSource: 'harness' as const } : {}),
+    }
   }
   /** CLI-advertised controls for third-party sources are not native provider effort IDs. */
   private cliOwnsEffort(definition: CombinationDefinition): boolean {
@@ -3581,9 +3596,11 @@ export class HarnessService {
       return { status: 'known', efforts: reasoning ? [...reasoning.efforts] : [] }
     }
     if (adapter.capabilities.reasoning === 'model-declared') return { status: 'known', efforts: [] }
-    const bound = [...this.records.values()].find(
-      (record) => record.nativeSessionId === session.id && record.combination === definition.id,
-    )
+    const replacement = this.replacementFor(session.id, catalog, definition.modelRef)
+    const bound =
+      [...this.records.values()].find(
+        (record) => record.nativeSessionId === session.id && record.combination === definition.id,
+      ) ?? (replacement?.definition.id === definition.id ? replacement.record : undefined)
     const boundActive = bound ? this.active.get(bound.id) : undefined
     if (boundActive?.acp && !boundActive.acp.closed && boundActive.configOptions !== undefined) {
       const efforts = readHarnessReasoning(bound!, boundActive.configOptions)
@@ -3631,6 +3648,45 @@ export class HarnessService {
     }
   }
 
+  /** Resolve a retired ID only through one saved conversation and one identical live route. */
+  private replacementFor(
+    sessionId: string,
+    catalog: ExecutionCatalog,
+    ref: ModelRef,
+  ): { record: HarnessSession; definition: CombinationDefinition } | undefined {
+    const selectedId = this.selections[sessionId]
+    if (!selectedId || catalog.combinations.some((item) => item.id === selectedId)) return undefined
+    const records = [...this.records.values()].filter(
+      (record) =>
+        record.nativeSessionId === sessionId &&
+        record.combination === selectedId &&
+        modelRefKey(record.modelRef) === modelRefKey(ref),
+    )
+    if (records.length !== 1) return undefined
+    const record = records[0]!
+    const candidates = catalog.combinations.filter(
+      (item) =>
+        item.enabled &&
+        item.harnessRef === record.harnessRef &&
+        modelRefKey(item.modelRef) === modelRefKey(record.modelRef),
+    )
+    return candidates.length === 1 ? { record, definition: candidates[0]! } : undefined
+  }
+
+  /** Preserve the retired combination's effort until the user sets a choice on its replacement. */
+  private conversationEffort(
+    sessionId: string,
+    definition: CombinationDefinition,
+    catalog: ExecutionCatalog,
+  ) {
+    const selected = this.externalEfforts.get(sessionId, definition.id)
+    if (selected !== undefined) return selected
+    const replacement = this.replacementFor(sessionId, catalog, definition.modelRef)
+    return replacement?.definition.id === definition.id
+      ? this.externalEfforts.get(sessionId, replacement.record.combination)
+      : undefined
+  }
+
   /**
    * Resolve the combination bound to a DSH session.
    *
@@ -3651,27 +3707,35 @@ export class HarnessService {
         modelRefKey(item.modelRef) === modelRefKey(ref),
     )
     if (exact) return exact
-    const externalDefault = catalog.combinations.find(
-      (item) =>
-        item.enabled &&
-        item.isDefault &&
-        item.harnessRef !== 'dsh' &&
-        modelRefKey(item.modelRef) === modelRefKey(ref),
+    const replacement = this.replacementFor(sessionId, catalog, ref)
+    if (replacement) return replacement.definition
+    const selected = catalog.combinations.find((item) => item.id === this.selections[sessionId])
+    if (
+      (selected && !selected.enabled && modelRefKey(selected.modelRef) === modelRefKey(ref)) ||
+      (!selected &&
+        [...this.records.values()].some(
+          (record) =>
+            record.nativeSessionId === sessionId &&
+            record.combination === this.selections[sessionId] &&
+            modelRefKey(record.modelRef) === modelRefKey(ref),
+        ))
     )
-    if (externalDefault) return externalDefault
-    if (ref.provider !== MINIMAX_CODE_PROVIDER) return undefined
-    return catalog.combinations.find(
-      (item) =>
-        item.enabled &&
-        item.harnessRef === MINIMAX_CODE_HARNESS &&
-        modelRefKey(item.modelRef) === modelRefKey(ref),
+      return undefined
+    const candidates = catalog.combinations.filter(
+      (item) => item.enabled && modelRefKey(item.modelRef) === modelRefKey(ref),
     )
+    const defaults = candidates.filter((item) => item.isDefault)
+    if (defaults.length === 1) return defaults[0]
+    return candidates.length === 1 ? candidates[0] : undefined
   }
   /** Restore this Session's choice for the exact model, using its live default if absent or retired. */
-  private async selectionForModel(session: Session, ref: ModelRef): Promise<ModelSelection> {
-    const selected = this.combinationFor(session.id, await this.executionCatalog(), ref)
-    const adapter = selected && adapterFor(selected.harnessRef, ref, this.modelSources)
-    if (selected && this.cliOwnsEffort(selected)) return ref
+  private async selectionForModel(
+    session: Session,
+    selected: CombinationDefinition,
+  ): Promise<ModelSelection> {
+    const ref = selected.modelRef
+    const adapter = adapterFor(selected.harnessRef, ref, this.modelSources)
+    if (this.cliOwnsEffort(selected)) return ref
     if (adapter?.capabilities.reasoning === 'none') return ref
     const catalog = (await invokeHostRemote(this.ctx, {
       namespace: 'session',
@@ -3737,12 +3801,9 @@ export class HarnessService {
       this.adapterOptions(harness.command, harness.prefix, harness?.codexRuntime),
     )
     if (!available.available) throw Error(available.reason ?? 'Harness 未就绪')
-    const selection = await this.selectionForModel(session, definition.modelRef)
+    const selection = await this.selectionForModel(session, definition)
     if (definition.harnessRef === 'dsh') {
       await this.native('selectModel', { sessionId: session.id, ...selection })
-      // Generated policies default new tasks; they do not override a conversation's selected preset.
-      if (definition.permissionPolicy === 'read-only' && !definition.generated)
-        setHarnessPermissions(this.ctx, session, 'read-only')
       await this.bindSelection(session.id, definition.id)
       return { kind: 'native', sessionId: session.id }
     }
@@ -3762,9 +3823,47 @@ export class HarnessService {
     next: () => AsyncIterable<StreamChunk>,
   ): AsyncIterable<StreamChunk> {
     await this.ready
-    const definition = options.sessionId
-      ? this.combinationFor(options.sessionId, await this.executionCatalog(), options)
-      : undefined
+    const catalog = options.sessionId ? await this.executionCatalog() : undefined
+    if (options.sessionId && !options.purpose && catalog) {
+      const selectedId = this.selections[options.sessionId]
+      const selected = catalog.combinations.find((item) => item.id === selectedId)
+      const historical = [...this.records.values()].find(
+        (record) =>
+          record.nativeSessionId === options.sessionId &&
+          record.combination === selectedId &&
+          modelRefKey(record.modelRef) === modelRefKey(options),
+      )
+      if (
+        (selected &&
+          !selected.enabled &&
+          modelRefKey(selected.modelRef) === modelRefKey(options)) ||
+        (!selected && historical && !this.replacementFor(options.sessionId, catalog, options))
+      )
+        throw new LlmError(
+          '此对话原先选择的执行组合已移除或停用，请在模型菜单重新选择执行组合后发送；本轮未改用 DSH 或其他 Harness。',
+          'HARNESS_BINDING',
+        )
+    }
+    const definition =
+      options.sessionId && catalog
+        ? this.combinationFor(options.sessionId, catalog, options)
+        : undefined
+    if (options.sessionId && !options.purpose && catalog) {
+      if (
+        !definition &&
+        catalog.combinations.some((item) => modelRefKey(item.modelRef) === modelRefKey(options))
+      )
+        throw new LlmError(
+          '请在模型菜单明确选择一个已启用的执行组合，本轮未发送。',
+          'HARNESS_BINDING',
+        )
+      if (
+        definition &&
+        this.selections[options.sessionId] !== definition.id &&
+        !this.replacementFor(options.sessionId, catalog, options)
+      )
+        await this.bindSelection(options.sessionId, definition.id)
+    }
     if (!options.sessionId || options.purpose || !definition || definition.harnessRef === 'dsh') {
       yield* next()
       return
@@ -3780,10 +3879,12 @@ export class HarnessService {
         'HARNESS_PERMISSION',
       )
     const binding = this.conversationBinding(session, definition)
-    const bound = [...this.records.values()].find(
-      (record) =>
-        record.nativeSessionId === options.sessionId && record.combination === definition.id,
-    )
+    const bound =
+      this.replacementFor(session.id, catalog!, definition.modelRef)?.record ??
+      [...this.records.values()].find(
+        (record) =>
+          record.nativeSessionId === options.sessionId && record.combination === definition.id,
+      )
     if (
       bound &&
       ['codex', 'claude'].includes(bound.harnessRef) &&
@@ -3826,15 +3927,18 @@ export class HarnessService {
     }
     const started = bound
       ? this.view(bound)
-      : await this.start(
-          {
-            combination: definition.id,
-            cwd: binding.cwd,
-            origin: { kind: 'dsh', sessionId: options.sessionId },
-            taskId: binding.taskId,
-            sandbox: binding.sandbox,
-          },
-          true,
+      : await this.runtimeMaintenance.admit(() =>
+          this.startAdmitted(
+            {
+              combination: definition.id,
+              cwd: binding.cwd,
+              origin: { kind: 'dsh', sessionId: session.id },
+              taskId: binding.taskId,
+              sandbox: binding.sandbox,
+            },
+            true,
+            true,
+          ),
         )
     const record = this.records.get(started.id)!
     await this.connect(record)
@@ -3859,7 +3963,7 @@ export class HarnessService {
     const requestEffort = admitted
       ? admitted.reasoningEffort
       : this.cliOwnsEffort(definition)
-        ? (this.externalEfforts.get(session.id, definition.id) ?? undefined)
+        ? (this.conversationEffort(session.id, definition, catalog!) ?? undefined)
         : undefined
     const operationId = admitted?.operationId ?? 'conversation:' + hash(user)
     const previous = record.turns.find((turn) => turn.operationId === operationId)

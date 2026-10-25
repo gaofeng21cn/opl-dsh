@@ -222,6 +222,47 @@ async function mount(props: {
 }
 
 describe('OPL model button selection projection', () => {
+  it.each([undefined, 'retired-id'])(
+    'does not guess a Harness when the Host returns no matching combination: %s',
+    async (id) => {
+      const f = fixture()
+      const call = f.rpc({
+        catalog: () => catalog,
+        combinations: () => [{ id: combination.id, available: true }],
+        'model-selection': () => ({ ...selection, combination: id }),
+      }) as ExecutionCall
+      const view = await mount({ sessionId: 'unresolved', call })
+      expect(view.text()).toContain('DeepSeek Flash')
+      expect(view.text()).not.toContain('DSH(default)')
+      expect(f.calls.some((x) => x.method === 'reasoning-preflight')).toBe(false)
+    },
+  )
+
+  it('keeps CLI effort separate from an automatic native provider effort', async () => {
+    const { ModelSelectionState } = await import(
+      '../../src/execution/client/use-model-selection.ts'
+    )
+    const face = createFace({ next: selection.current, lastUsed: null })
+    let chosen: string | undefined = 'low'
+    const state = new ModelSelectionState(async () => ({
+      ...selection,
+      current: { ...combination.modelRef, ...(chosen ? { reasoningEffort: chosen } : {}) },
+      effortSource: 'harness',
+    }))
+    state.reset('session-1', face.face)
+    await state.refresh('session-1')
+    expect(state.projected()?.current?.reasoningEffort).toBe('low')
+    chosen = undefined
+    await state.refresh('session-1')
+    expect(state.projected()?.current?.reasoningEffort).toBeUndefined()
+    face.push({
+      next: { provider: 'other', model: 'other', reasoningEffort: 'max' },
+      lastUsed: null,
+    })
+    expect(state.projected()?.combination).toBeUndefined()
+    expect(state.projected()?.effortSource).toBeUndefined()
+  })
+
   it('shows the current selection while Harness availability is still pending', async () => {
     const { call, pending } = fixture()
     const held = deferred()
@@ -296,7 +337,9 @@ describe('OPL model button selection projection', () => {
         }
       if (method === 'combinations')
         return [combination, second].map((item) => ({ id: item.id, available: true }))
-      return selection
+      return face.face.getSnapshot()?.next?.model === second.modelRef.model
+        ? { ...selection, current: second.modelRef, combination: second.id }
+        : selection
     }) as unknown as ExecutionCall
     const view = await mount({ sessionId: 'session-1', call, source: () => face.face })
     expect(view.text()).toContain('DeepSeek Flash')

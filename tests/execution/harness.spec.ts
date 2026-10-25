@@ -442,6 +442,216 @@ describe('native conversation combinations', () => {
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
   })
 
+  it.each([
+    'unique',
+    'external-default',
+    'native-default',
+    'ambiguous',
+    'disabled',
+    'foreign-source',
+  ] as const)('uses the same route for display and first send: %s', async (mode) => {
+    const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
+    const { service, ctx, session, root } = await nativeSetup([{ id: ref.model, name: 'Grok' }])
+    ctx.sessionProjections.snapshot = (() => ({
+      values: { modelSelection: { next: ref, lastUsed: null } },
+    })) as typeof ctx.sessionProjections.snapshot
+    const catalog = await service.executionCatalog()
+    const original = catalog.combinations.find((x) => x.id === GROK_COMBINATION)!
+    const external = {
+      ...original,
+      id: 'external',
+      isDefault: mode === 'external-default',
+      enabled: mode !== 'disabled',
+    }
+    const native = {
+      ...original,
+      id: 'native',
+      harnessRef: 'dsh',
+      isDefault: mode === 'native-default',
+    }
+    const combinations =
+      mode === 'unique' || mode === 'disabled'
+        ? [external]
+        : mode === 'foreign-source'
+          ? [{ ...external, modelRef: { ...ref, provider: 'different-source' } }]
+          : [native, external]
+    vi.spyOn(service, 'executionCatalog').mockResolvedValue({ ...catalog, combinations })
+    const selected = await service.modelSelection(session.id)
+    const next = vi.fn(async function* () {})
+    const request = {
+      ...ref,
+      sessionId: session.id,
+      messages: [
+        createUserMessage({
+          source: { kind: 'user' },
+          content: [{ type: 'text', text: 'unique-first-send' }],
+        }),
+      ],
+    } as GenerateOptions
+    if (mode === 'ambiguous' || mode === 'disabled') {
+      expect(selected.combination).toBeUndefined()
+      await expect(
+        Array.fromAsync(service.conversationStream(request, next)),
+      ).rejects.toMatchObject({ code: 'HARNESS_BINDING' })
+      expect(next).not.toHaveBeenCalled()
+      expect((await service.list()).sessions).toHaveLength(0)
+    } else {
+      const externalRoute = mode === 'unique' || mode === 'external-default'
+      expect(selected.combination).toBe(
+        externalRoute ? 'external' : mode === 'native-default' ? 'native' : undefined,
+      )
+      await Array.fromAsync(service.conversationStream(request, next))
+      expect(next).toHaveBeenCalledTimes(externalRoute ? 0 : 1)
+      if (externalRoute) {
+        const records = (await service.list()).sessions
+        expect(records).toHaveLength(1)
+        expect(records[0]).toMatchObject({ combination: 'external', harnessRef: 'grok-build' })
+        expect(await readFile(join(root, 'calls.txt'), 'utf8')).toContain('unique-first-send')
+        vi.mocked(service.executionCatalog).mockResolvedValue({
+          ...catalog,
+          combinations: [{ ...native, isDefault: true }, external],
+        })
+        expect((await service.modelSelection(session.id)).combination).toBe('external')
+      }
+    }
+  })
+
+  it('resumes a uniquely replaced route across restart without replaying history or widening permission', async () => {
+    const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
+    const { service, session, root, ctx, options, setPermission } = await nativeSetup([
+      { id: ref.model, name: 'Grok' },
+    ])
+    vi.spyOn(adapterFor('grok-build', ref)!, 'available').mockResolvedValue({ available: true })
+    const request = (text: string) =>
+      ({
+        ...ref,
+        sessionId: session.id,
+        messages: [
+          createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text }] }),
+        ],
+      }) as GenerateOptions
+    const native = vi.fn(async function* () {})
+    await service.selectCombination({ sessionId: session.id, combination: GROK_COMBINATION })
+    await service.invoke('select-effort', { ...ref, sessionId: session.id, reasoningEffort: 'low' })
+    await Array.fromAsync(service.conversationStream(request('original-once'), native))
+    const before = (await service.list()).sessions[0]!
+    const catalog = await service.executionCatalog()
+    const original = catalog.combinations.find((item) => item.id === GROK_COMBINATION)!
+    const changed = {
+      ...catalog,
+      combinations: [
+        ...catalog.combinations.filter((item) => item.id !== GROK_COMBINATION),
+        { ...original, id: 'replacement', isDefault: false },
+      ],
+    }
+    await service.dispose()
+    const restored = new HarnessService(ctx, options)
+    cleanups.push(() => restored.dispose())
+    const resolveCatalog = vi.spyOn(restored, 'executionCatalog')
+    for (const invalid of [
+      { ...original, modelRef: { ...ref, provider: 'other-source' } },
+      { ...original, modelRef: { ...ref, model: 'other-model' } },
+      { ...original, harnessRef: 'codex' },
+      { ...original, enabled: false },
+    ]) {
+      resolveCatalog.mockResolvedValue({
+        ...catalog,
+        combinations: [{ ...invalid, id: 'replacement' }],
+      })
+      await expect(
+        Array.fromAsync(restored.conversationStream(request('must-not-send'), native)),
+      ).rejects.toMatchObject({ code: 'HARNESS_BINDING' })
+    }
+    resolveCatalog.mockResolvedValue(changed)
+    expect(await restored.modelSelection(session.id)).toMatchObject({
+      combination: 'replacement',
+      current: { reasoningEffort: 'low' },
+    })
+    setPermission('read-only')
+    await expect(
+      Array.fromAsync(restored.conversationStream(request('must-not-send'), native)),
+    ).rejects.toMatchObject({ code: 'HARNESS_PERMISSION' })
+    setPermission('danger-full-access')
+    await Array.fromAsync(restored.conversationStream(request('follow-up-once'), native))
+    const after = (await restored.list()).sessions
+    expect(after).toHaveLength(1)
+    expect(after[0]).toMatchObject({
+      id: before.id,
+      acpSessionId: before.acpSessionId,
+      combination: before.combination,
+      sandbox: before.sandbox,
+    })
+    expect(after[0]!.turns).toHaveLength(2)
+    expect(after[0]!.turns[1]!.reasoningEffort).toBe('low')
+    await restored.invoke('select-effort', { ...ref, sessionId: session.id })
+    expect((await restored.modelSelection(session.id)).current.reasoningEffort).toBeUndefined()
+    const calls = await readFile(join(root, 'calls.txt'), 'utf8')
+    expect(calls.match(/original-once/g)).toHaveLength(1)
+    expect(calls.match(/follow-up-once/g)).toHaveLength(1)
+    expect(calls).not.toContain('must-not-send')
+    expect(await readFile(join(root, 'connections.txt'), 'utf8')).toContain('session/load')
+    expect(native).not.toHaveBeenCalled()
+  }, 15_000)
+
+  it.each(['removed', 'disabled'] as const)(
+    'refuses an ambiguous or %s historical binding instead of changing Harness',
+    async (state) => {
+      const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
+      const { service, session, changeModel } = await nativeSetup([{ id: ref.model, name: 'Grok' }])
+      vi.spyOn(adapterFor('grok-build', ref)!, 'available').mockResolvedValue({ available: true })
+      await service.selectCombination({ sessionId: session.id, combination: GROK_COMBINATION })
+      const request = {
+        ...ref,
+        sessionId: session.id,
+        messages: [
+          createUserMessage({
+            source: { kind: 'user' },
+            content: [{ type: 'text', text: 'binding-original' }],
+          }),
+        ],
+      } as GenerateOptions
+      await Array.fromAsync(
+        service.conversationStream(request, async function* () {
+          throw Error('unexpected native request')
+        }),
+      )
+      const catalog = await service.executionCatalog()
+      const original = catalog.combinations.find((item) => item.id === GROK_COMBINATION)!
+      const changed = {
+        ...catalog,
+        combinations: [
+          ...catalog.combinations.filter((item) => item.id !== GROK_COMBINATION),
+          ...(state === 'disabled'
+            ? [{ ...original, enabled: false }]
+            : [{ ...original, id: 'second-replacement', isDefault: false }]),
+          { ...original, id: 'replacement', isDefault: true },
+        ],
+      }
+      vi.spyOn(service, 'executionCatalog').mockResolvedValue(changed)
+      const native = vi.fn(async function* () {})
+      await expect(
+        Array.fromAsync(service.conversationStream(request, native)),
+      ).rejects.toMatchObject({
+        code: 'HARNESS_BINDING',
+      })
+      expect(native).not.toHaveBeenCalled()
+      expect((await service.list()).sessions).toHaveLength(1)
+      await service.selectCombination({ sessionId: session.id, combination: 'replacement' })
+      expect((await service.modelSelection(session.id)).combination).toBe('replacement')
+      const chunks = await Array.fromAsync(service.conversationStream(request, native))
+      expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+      expect(native).not.toHaveBeenCalled()
+      changeModel()
+      await Array.fromAsync(
+        service.conversationStream(
+          { ...request, provider: 'opl-gateway', model: 'deepseek-flash' },
+          native,
+        ),
+      )
+      expect(native).toHaveBeenCalledOnce()
+    },
+  )
+
   it('uses the permission selected before the first external prompt', async () => {
     const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
     const { service, root, session, setPermission } = await nativeSetup(
@@ -483,6 +693,69 @@ describe('native conversation combinations', () => {
     )
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
   }, 10_000)
+
+  it.each(['read-only', 'workspace-write', 'danger-full-access'] as const)(
+    'a saved read-only combination cannot override the conversation preset %s',
+    async (preset) => {
+      const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
+      const { service, root, session } = await nativeSetup(
+        [{ id: ref.model, name: 'Grok' }],
+        [{ id: ref.provider, name: 'OPL Gateway' }],
+        preset,
+      )
+      const adapter = adapterFor('grok-build', ref)!
+      vi.spyOn(adapter, 'available').mockResolvedValue({ available: true })
+      const catalog = await service.executionCatalog()
+      await service.saveExecutionCatalog({
+        ...catalog,
+        combinations: [
+          ...catalog.combinations,
+          {
+            id: 'saved-workspace-combination',
+            name: 'Saved Grok',
+            modelRef: ref,
+            harnessRef: 'grok-build',
+            permissionPolicy: 'read-only',
+            enabled: true,
+            isDefault: false,
+          },
+        ],
+      })
+      await service.selectCombination({
+        sessionId: session.id,
+        combination: 'saved-workspace-combination',
+      })
+      const chunks = await Array.fromAsync(
+        service.conversationStream(
+          {
+            ...ref,
+            sessionId: session.id,
+            messages: [
+              createUserMessage({
+                source: { kind: 'user' },
+                content: [{ type: 'text', text: 'saved-permission' }],
+              }),
+            ],
+          } as GenerateOptions,
+          async function* () {
+            throw Error('direct provider must not receive this model')
+          },
+        ),
+      )
+      const record = (await service.list()).sessions.find(
+        (item) => item.nativeSessionId === session.id,
+      )!
+      expect(record.sandbox).toBe(
+        preset === 'danger-full-access'
+          ? 'full-access'
+          : preset === 'workspace-write'
+            ? 'workspace'
+            : 'read-only',
+      )
+      expect(await readFile(join(root, 'calls.txt'), 'utf8')).toContain('saved-permission')
+      expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    },
+  )
 
   it('hands off tool history through the official conversation stream and sends only new input on continuation', async () => {
     const { service, root, session } = await nativeSetup([{ id: 'grok::grok-4.7', name: 'Grok' }])
@@ -808,17 +1081,17 @@ describe('native conversation combinations', () => {
     )
     await service.saveExecutionCatalog(catalog)
     await service.selectCombination({ sessionId: session.id, combination: 'review' })
-    expect(setPermission).toHaveBeenCalledExactlyOnceWith(session, 'read-only')
+    expect(setPermission).not.toHaveBeenCalled()
     expect(session.append).not.toHaveBeenCalled()
     await service.selectCombination({ sessionId: session.id, combination: 'work' })
-    expect(setPermission).toHaveBeenCalledTimes(1)
+    expect(setPermission).not.toHaveBeenCalled()
     expect(session.append).not.toHaveBeenCalled()
     await service.dispose()
     const restored = new HarnessService(ctx, options)
     cleanups.push(() => restored.dispose())
     expect((await restored.modelSelection(session.id)).combination).toBe('work')
     changeModel()
-    expect((await restored.modelSelection(session.id)).combination).toBeUndefined()
+    expect((await restored.modelSelection(session.id)).combination).toBe('dsh/deepseek-flash')
   })
   it.each(['read-only', 'workspace-write', 'danger-full-access'])(
     'preserves the selected %s preset when switching to the Grok official combination',

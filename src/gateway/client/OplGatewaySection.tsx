@@ -9,9 +9,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { GatewayAccountStatus, GatewaySignInResult } from '../contracts/account.ts'
+import type {
+  GatewayAccountStatus,
+  GatewaySignInResult,
+  GatewayRememberedLogin,
+} from '../contracts/account.ts'
 import { notifyAccountChanged } from './account-changes.ts'
 import settingsCss from '../../shared/client/SettingsSection.module.css'
+import loginCss from './LoginForm.module.css'
 import setupCss from '../../setup/client/SetupScreen.module.css'
 const css = settingsCss
 
@@ -22,7 +27,14 @@ export interface OplGatewaySectionInjected {
   /** Read the current account status. */
   status: () => Promise<GatewayAccountStatus>
   /** Sign in and make the account's key this machine's inference credential. */
-  signIn: (email: string, password: string) => Promise<GatewaySignInResult>
+  signIn: (
+    email: string,
+    password: string,
+    rememberPassword?: boolean,
+  ) => Promise<GatewaySignInResult>
+  rememberedLogin?: () => Promise<GatewayRememberedLogin>
+  signInRemembered?: (email: string) => Promise<GatewaySignInResult>
+  forgetPassword?: () => Promise<void>
   /** Ask OPL to re-read the account from the gateway. */
   refresh: () => Promise<GatewayAccountStatus>
   /** End this machine's session and release the key it holds. */
@@ -115,6 +127,11 @@ export function OplGatewaySection(
   const [state, setState] = useState<GatewayAccountStatus | undefined>(undefined)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [savedLogin, setSavedLogin] = useState<GatewayRememberedLogin>({ supported: false })
+  const [savedLoginLoaded, setSavedLoginLoaded] = useState(false)
+  const [rememberPassword, setRememberPassword] = useState(false)
+  const canUseSaved =
+    rememberPassword && savedLogin.email === email.trim() && !!props.signInRemembered
   const [busy, setBusy] = useState<'idle' | 'loading' | 'signing-in' | 'signing-out'>('loading')
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -126,18 +143,32 @@ export function OplGatewaySection(
   const load = useCallback(
     async (reload = false): Promise<void> => {
       setBusy('loading')
+      setSavedLoginLoaded(false)
+      const savedRequest = props.rememberedLogin?.().then(
+        (saved) => ({ saved }),
+        (error) => ({ error }),
+      )
       try {
         // A plain open reads what OPL already recorded; the refresh button asks
         // OPL to go and re-read it from the gateway.
         setState(reload ? await refresh() : await readStatus())
+        if (savedRequest) {
+          const result = await savedRequest
+          if ('error' in result) throw result.error
+          const saved = result.saved
+          setSavedLogin(saved)
+          setRememberPassword(!!saved.email)
+          if (saved.email) setEmail((current) => current || saved.email!)
+        }
         setError(null)
       } catch (failure) {
         setError(failure instanceof Error ? failure.message : String(failure))
       } finally {
+        setSavedLoginLoaded(true)
         setBusy('idle')
       }
     },
-    [readStatus, refresh],
+    [readStatus, refresh, props.rememberedLogin],
   )
 
   useEffect(() => {
@@ -150,20 +181,43 @@ export function OplGatewaySection(
     setNotice(null)
     setError(null)
     try {
-      const result = await signIn(email, password)
+      const result =
+        !password && canUseSaved
+          ? await props.signInRemembered!(email)
+          : await signIn(email, password, savedLogin.supported ? rememberPassword : undefined)
       setState(result.status)
-      setNotice(result.createdKey ? t('createdKey') : t('reusedKey'))
+      setNotice(
+        result.passwordSaveFailed
+          ? t('passwordSaveFailed')
+          : result.createdKey
+            ? t('createdKey')
+            : t('reusedKey'),
+      )
       // The password has done its work; keeping it in renderer state would
       // leave a live credential in a component nobody is looking at.
       setPassword('')
-      if (result.status.keyReady && props.onReady) await props.onReady()
+      if (rememberPassword && !result.passwordSaveFailed)
+        setSavedLogin({ supported: true, email: email.trim() })
+      if (result.status.keyReady && props.onReady && !result.passwordSaveFailed)
+        await props.onReady()
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure))
     } finally {
       setBusy('idle')
       props.onBusyChange?.(false)
     }
-  }, [email, password, signIn, t, props.onReady, props.onBusyChange])
+  }, [
+    email,
+    password,
+    rememberPassword,
+    savedLogin.supported,
+    canUseSaved,
+    signIn,
+    t,
+    props.onReady,
+    props.onBusyChange,
+    props.signInRemembered,
+  ])
 
   const leave = useCallback(async (): Promise<void> => {
     setBusy('signing-out')
@@ -188,7 +242,7 @@ export function OplGatewaySection(
       aria-busy={busy !== 'idle'}
       className={`${css.section} ${props.onboarding && !connected ? setupCss.loginSection : ''}`}
     >
-      <header className={css.header}>
+      <header className={`${settingsCss.header} ${props.onboarding ? setupCss.header : ''}`}>
         <div className={css.identity}>
           <h2 className={css.title}>{t(connected ? 'nav' : 'loginTitle')}</h2>
           <p className={css.intro}>{connected ? (account?.email ?? t('connected')) : t('intro')}</p>
@@ -268,20 +322,50 @@ export function OplGatewaySection(
                   <span className={css.label}>{t('password')}</span>
                   <input
                     className={css.input}
-                    required
+                    required={!canUseSaved}
                     disabled={busy !== 'idle'}
                     type="password"
                     autoComplete="current-password"
-                    placeholder={t('passwordPlaceholder')}
+                    placeholder={t(canUseSaved ? 'savedPassword' : 'passwordPlaceholder')}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                   />
                 </label>
+                {(savedLogin.supported || !savedLoginLoaded) &&
+                  props.rememberedLogin &&
+                  props.forgetPassword && (
+                    <label className={loginCss.remember} title={t('rememberPasswordHint')}>
+                      <input
+                        type="checkbox"
+                        checked={rememberPassword}
+                        disabled={busy !== 'idle'}
+                        onChange={(event) => {
+                          if (event.target.checked) {
+                            setRememberPassword(true)
+                            return
+                          }
+                          setBusy('loading')
+                          void props.forgetPassword!()
+                            .then(() => {
+                              setRememberPassword(false)
+                              setSavedLogin({ supported: true })
+                            })
+                            .catch((failure) =>
+                              setError(
+                                failure instanceof Error ? failure.message : String(failure),
+                              ),
+                            )
+                            .finally(() => setBusy('idle'))
+                        }}
+                      />
+                      {t('rememberPassword')}
+                    </label>
+                  )}
                 <Button
                   variant="primary"
                   className={props.onboarding ? setupCss.primaryButton : undefined}
                   type="submit"
-                  disabled={busy !== 'idle' || !email.trim() || !password}
+                  disabled={busy !== 'idle' || !email.trim() || (!password && !canUseSaved)}
                 >
                   {busy === 'signing-in' ? t('signingIn') : t('signIn')}
                 </Button>

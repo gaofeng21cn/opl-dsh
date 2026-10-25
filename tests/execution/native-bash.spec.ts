@@ -43,6 +43,17 @@ async function useUnknownCapabilityHarness(): Promise<string> {
   const id = 'acme-unknown-cli'
   const adapter: HarnessAdapter = {
     id,
+    capabilities: {
+      transport: 'acp',
+      authentication: 'api-source',
+      protocols: ['responses'],
+      customEndpoint: false,
+      permissions: ['read-only', 'workspace'],
+      sessionLoad: true,
+      cancel: true,
+      reasoning: 'none',
+      autoReview: 'unsupported',
+    },
     transport: 'acp',
     matches: () => true,
     available: async () => ({ available: true }),
@@ -619,8 +630,8 @@ describe('ordinary conversation full-access binding', () => {
   ) => {
     const start = vi
       .spyOn(
-        HarnessService.prototype as unknown as { start: (...args: any[]) => Promise<any> },
-        'start',
+        HarnessService.prototype as unknown as { startAdmitted: (...args: any[]) => Promise<any> },
+        'startAdmitted',
       )
       .mockRejectedValue(new Error('captured first-send binding'))
     try {

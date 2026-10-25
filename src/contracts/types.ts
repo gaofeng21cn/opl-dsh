@@ -25,6 +25,8 @@ export interface HarnessSelection {
   current: import('@deepseek-ai/dsh-api-session-controller/types').ModelSelection | null
   groups: import('@deepseek-ai/dsh-api-session-controller/types').ModelCatalog['groups']
   combination?: string
+  /** External CLI effort must not be overwritten by the native provider projection. */
+  effortSource?: 'harness'
 }
 /** Live reasoning values advertised by the selected external Harness. */
 export interface HarnessReasoningPreflight {

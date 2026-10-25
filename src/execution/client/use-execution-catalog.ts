@@ -141,7 +141,7 @@ export function useExecutionCatalog(call: RemoteCallInput<TypertRemoteNamespace<
           name: `${model.name} + ${catalog.harnesses.find((item) => item.id === draft.harness)?.name ?? draft.harness}`,
           modelRef: model.ref,
           harnessRef: draft.harness,
-          permissionPolicy: 'read-only',
+          permissionPolicy: 'workspace',
           isDefault: false,
           enabled: true,
           autoEnabled: false,
@@ -162,7 +162,7 @@ export function useExecutionCatalog(call: RemoteCallInput<TypertRemoteNamespace<
       additions.push({
         ...item,
         id: crypto.randomUUID(),
-        permissionPolicy: 'read-only',
+        permissionPolicy: 'workspace',
         isDefault: false,
         enabled: true,
         autoEnabled: false,

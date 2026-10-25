@@ -308,6 +308,25 @@ describe('CLI effort selection independent of source provider', () => {
     await f.choose(flash)
     return f
   }
+  it('uses the newly chosen Harness when normalizing same-model effort', async () => {
+    const f = await fixture()
+    await f.choose(flash, f.service, provider, false)
+    await f.service.invoke('select-effort', {
+      sessionId: f.session.id,
+      provider,
+      model: flash,
+      reasoningEffort: 'high',
+    })
+    f.select.mockClear()
+    await f.choose(flash)
+    expect(f.select.mock.calls.at(-1)?.[0]).not.toHaveProperty('reasoningEffort')
+    expect(await f.service.modelSelection(f.session.id)).toMatchObject({
+      combination: 'minimax-code/' + flash,
+      effortSource: 'harness',
+    })
+    expect((await f.service.modelSelection(f.session.id)).current.reasoningEffort).toBeUndefined()
+  })
+
   it('stores advertised balanced without submitting it to the provider controller', async () => {
     const f = await fixture()
     await f.service.invoke('select-effort', {

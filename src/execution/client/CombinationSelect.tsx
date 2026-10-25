@@ -221,14 +221,12 @@ export function CombinationSelect({
     })
   }, [choices])
 
-  const selected =
-    choices.find((choice) => choice.combination.id === selection.combination) ??
-    choices.find(
-      (choice) =>
-        selection.current &&
-        choice.combination.modelRef.provider === selection.current.provider &&
-        choice.combination.modelRef.model === selection.current.model,
-    )
+  const selected = choices.find(
+    (choice) =>
+      choice.combination.id === selection.combination &&
+      choice.combination.modelRef.provider === selection.current?.provider &&
+      choice.combination.modelRef.model === selection.current?.model,
+  )
   const currentModel = selection.current
     ? selection.groups
         .find((group) => group.id === selection.current?.provider)
@@ -286,11 +284,20 @@ export function CombinationSelect({
           displayedReasoning?.efforts.find((effort) => effort.id === effectiveEffort)?.name ??
             effectiveEffort,
         ))
+  const unresolvedCombination =
+    !selected &&
+    !loadingSelection &&
+    choices.some(
+      (choice) =>
+        choice.combination.modelRef.provider === selection.current?.provider &&
+        choice.combination.modelRef.model === selection.current?.model,
+    )
   const modelLabel = selected
     ? choiceLabel(selected)
     : (currentModel?.name ??
-      selection.current?.model ??
-      (loadingSelection ? loadingLabel : '请选择模型'))
+        selection.current?.model ??
+        (loadingSelection ? loadingLabel : '请选择模型')) +
+      (unresolvedCombination ? ' · 请选择执行组合' : '')
   /** The row title differs by control kind: a switch is not a strength level. */
   const effortTitle = effortSwitch === undefined ? '推理强度' : '思考'
   const effortChoices =

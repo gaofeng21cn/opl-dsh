@@ -25,7 +25,11 @@ import {
   MINIMAX_CODE_HARNESS,
   MINIMAX_CODE_PROVIDER,
 } from './adapters/minimax.ts'
-import { isHiddenOfmSelection, officialOpenCodeModel } from './ofm-source/selection-policy.ts'
+import {
+  isHiddenOfmSelection,
+  officialOpenCodeModel,
+  OFM_INACTIVE_DEFAULT_HARNESSES,
+} from './ofm-source/selection-policy.ts'
 import { OFM_PROVIDERS, isExcludedOfmModel } from './ofm-source/provider.ts'
 import { ofmModelReadiness, type OfmModelReadiness } from './ofm-source/readiness.ts'
 import { BAMBOO_STARTLUX_MODEL } from './adapters/bamboo.ts'
@@ -371,6 +375,7 @@ export class ExecutionModelResolver {
       const declaredOfficial = officialHarnessFor(model.ref)
       const official =
         declaredOfficial &&
+        !OFM_INACTIVE_DEFAULT_HARNESSES.includes(declaredOfficial) &&
         catalog.harnesses.some(
           (harness) =>
             harness.id === declaredOfficial && adapterFor(harness.id, model.ref) !== undefined,
@@ -382,7 +387,11 @@ export class ExecutionModelResolver {
         .filter((harness) => adapterFor(harness.id, model.ref) !== undefined)
         .map((harness) => harness.id)
       const status = isExcludedOfmModel(model.ref.model)
-        ? { kind: 'excluded' as const, reason: '已明确排除', label: '已排除' }
+        ? {
+            kind: 'excluded' as const,
+            reason: '决策或内容安全用途，不加入对话组合',
+            label: '非对话模型',
+          }
         : official
           ? {
               kind: 'official' as const,

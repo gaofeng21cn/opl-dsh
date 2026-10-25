@@ -12,7 +12,7 @@ export function dailyReleaseNotes({
 }) {
   return `官方 DeepSeek Harness：\`{{OFFICIAL_VERSION}}\` · OPL 增强：\`{{VERSION}}\`
 
-${overview ?? '本版收录以下尚未交付的增强层主线改动。自动语言整理不可用，以下保留原始提交说明；具体行为以对应提交和功能文档为准。'}
+${overview ?? '本版更新内容见以下提交记录及对应功能文档。'}
 
 ### 变更
 
