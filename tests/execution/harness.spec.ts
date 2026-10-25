@@ -442,6 +442,63 @@ describe('native conversation combinations', () => {
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
   })
 
+  it.each(['removed', 'disabled'] as const)(
+    'refuses a %s historical binding instead of changing Harness',
+    async (state) => {
+      const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
+      const { service, session, changeModel } = await nativeSetup([{ id: ref.model, name: 'Grok' }])
+      vi.spyOn(adapterFor('grok-build', ref)!, 'available').mockResolvedValue({ available: true })
+      await service.selectCombination({ sessionId: session.id, combination: GROK_COMBINATION })
+      const request = {
+        ...ref,
+        sessionId: session.id,
+        messages: [
+          createUserMessage({
+            source: { kind: 'user' },
+            content: [{ type: 'text', text: 'binding-original' }],
+          }),
+        ],
+      } as GenerateOptions
+      await Array.fromAsync(
+        service.conversationStream(request, async function* () {
+          throw Error('unexpected native request')
+        }),
+      )
+      const catalog = await service.executionCatalog()
+      const original = catalog.combinations.find((item) => item.id === GROK_COMBINATION)!
+      const changed = {
+        ...catalog,
+        combinations: [
+          ...catalog.combinations.filter((item) => item.id !== GROK_COMBINATION),
+          ...(state === 'disabled' ? [{ ...original, enabled: false }] : []),
+          { ...original, id: 'replacement', isDefault: true },
+        ],
+      }
+      vi.spyOn(service, 'executionCatalog').mockResolvedValue(changed)
+      const native = vi.fn(async function* () {})
+      await expect(
+        Array.fromAsync(service.conversationStream(request, native)),
+      ).rejects.toMatchObject({
+        code: 'HARNESS_BINDING',
+      })
+      expect(native).not.toHaveBeenCalled()
+      expect((await service.list()).sessions).toHaveLength(1)
+      await service.selectCombination({ sessionId: session.id, combination: 'replacement' })
+      expect((await service.modelSelection(session.id)).combination).toBe('replacement')
+      const chunks = await Array.fromAsync(service.conversationStream(request, native))
+      expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+      expect(native).not.toHaveBeenCalled()
+      changeModel()
+      await Array.fromAsync(
+        service.conversationStream(
+          { ...request, provider: 'opl-gateway', model: 'deepseek-flash' },
+          native,
+        ),
+      )
+      expect(native).toHaveBeenCalledOnce()
+    },
+  )
+
   it('uses the permission selected before the first external prompt', async () => {
     const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
     const { service, root, session, setPermission } = await nativeSetup(

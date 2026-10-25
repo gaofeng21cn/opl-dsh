@@ -619,8 +619,8 @@ describe('ordinary conversation full-access binding', () => {
   ) => {
     const start = vi
       .spyOn(
-        HarnessService.prototype as unknown as { start: (...args: any[]) => Promise<any> },
-        'start',
+        HarnessService.prototype as unknown as { startAdmitted: (...args: any[]) => Promise<any> },
+        'startAdmitted',
       )
       .mockRejectedValue(new Error('captured first-send binding'))
     try {

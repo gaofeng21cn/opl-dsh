@@ -3757,9 +3757,31 @@ export class HarnessService {
     next: () => AsyncIterable<StreamChunk>,
   ): AsyncIterable<StreamChunk> {
     await this.ready
-    const definition = options.sessionId
-      ? this.combinationFor(options.sessionId, await this.executionCatalog(), options)
-      : undefined
+    const catalog = options.sessionId ? await this.executionCatalog() : undefined
+    if (options.sessionId && !options.purpose && catalog) {
+      const selectedId = this.selections[options.sessionId]
+      const selected = catalog.combinations.find((item) => item.id === selectedId)
+      const historical = [...this.records.values()].find(
+        (record) =>
+          record.nativeSessionId === options.sessionId &&
+          record.combination === selectedId &&
+          modelRefKey(record.modelRef) === modelRefKey(options),
+      )
+      if (
+        (selected &&
+          !selected.enabled &&
+          modelRefKey(selected.modelRef) === modelRefKey(options)) ||
+        (!selected && historical)
+      )
+        throw new LlmError(
+          '此对话原先选择的执行组合已移除或停用，请在模型菜单重新选择执行组合后发送；本轮未改用 DSH 或其他 Harness。',
+          'HARNESS_BINDING',
+        )
+    }
+    const definition =
+      options.sessionId && catalog
+        ? this.combinationFor(options.sessionId, catalog, options)
+        : undefined
     if (!options.sessionId || options.purpose || !definition || definition.harnessRef === 'dsh') {
       yield* next()
       return
