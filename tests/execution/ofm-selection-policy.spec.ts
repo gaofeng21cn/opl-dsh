@@ -681,6 +681,12 @@ it('omits empty default harness setups but retains an explicitly configured exis
 
 it('offers an OpenCode-only MiMo lane without generating a vendor CLI combination', async () => {
   const catalog = defaultExecutionCatalog()
+  catalog.harnesses.push({
+    id: 'mimo-code',
+    name: 'MiMo Code',
+    kind: 'acp',
+    command: 'mimo',
+  })
   const ctx = {
     get: () => undefined,
     llm: {
@@ -693,6 +699,12 @@ it('offers an OpenCode-only MiMo lane without generating a vendor CLI combinatio
     ctx as never,
     { get: async () => catalog } as never,
   ).resolve()
+  expect(resolved.ofmDiscovery).toContainEqual(
+    expect.objectContaining({
+      modelRef: { provider: 'our-free-model', model: 'mimo-v2.6-flash-free' },
+      status: { kind: 'recommended', harness: 'opencode', label: '推荐 OpenCode' },
+    }),
+  )
   expect(resolved.combinations.some((item) => item.modelRef.model === 'mimo-v2.6-flash-free')).toBe(
     false,
   )

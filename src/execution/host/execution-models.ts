@@ -25,7 +25,11 @@ import {
   MINIMAX_CODE_HARNESS,
   MINIMAX_CODE_PROVIDER,
 } from './adapters/minimax.ts'
-import { isHiddenOfmSelection, officialOpenCodeModel } from './ofm-source/selection-policy.ts'
+import {
+  isHiddenOfmSelection,
+  officialOpenCodeModel,
+  OFM_INACTIVE_DEFAULT_HARNESSES,
+} from './ofm-source/selection-policy.ts'
 import { OFM_PROVIDERS, isExcludedOfmModel } from './ofm-source/provider.ts'
 import { ofmModelReadiness, type OfmModelReadiness } from './ofm-source/readiness.ts'
 import { BAMBOO_STARTLUX_MODEL } from './adapters/bamboo.ts'
@@ -371,6 +375,7 @@ export class ExecutionModelResolver {
       const declaredOfficial = officialHarnessFor(model.ref)
       const official =
         declaredOfficial &&
+        !OFM_INACTIVE_DEFAULT_HARNESSES.includes(declaredOfficial) &&
         catalog.harnesses.some(
           (harness) =>
             harness.id === declaredOfficial && adapterFor(harness.id, model.ref) !== undefined,
