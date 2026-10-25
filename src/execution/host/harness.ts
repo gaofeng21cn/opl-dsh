@@ -326,6 +326,7 @@ export class HarnessService {
   private writeQueue: Promise<void> = Promise.resolve()
   private readonly ready: Promise<void>
   private readonly selectionsReady: Promise<void>
+  private readonly recordsReady: Promise<void>
   private disposed = false
   private pumping = false
   private readonly observed = new Set<string>()
@@ -378,8 +379,9 @@ export class HarnessService {
     this.selectionsReady = Promise.all([this.loadSelections(), this.externalEfforts.ready]).then(
       () => {},
     )
+    this.recordsReady = this.load()
     this.ready = Promise.all([
-      this.load(),
+      this.recordsReady,
       this.selectionsReady,
       // 编辑意图台账必须先恢复，否则一次未完成的编辑会被当成从未发生过。
       this.stopEditIntents.load(),
@@ -3422,7 +3424,7 @@ export class HarnessService {
     }
   }
   async modelSelection(sessionId: string) {
-    await this.selectionsReady
+    await Promise.all([this.selectionsReady, this.recordsReady])
     const session = this.ctx.sessions.get(asSessionId<SessionId>(required(sessionId, 'sessionId')))
     const catalog = (await invokeHostRemote(this.ctx, {
       namespace: 'session',
@@ -3439,7 +3441,16 @@ export class HarnessService {
     // A cold official Session may not be attached to the in-memory projection
     // yet after Desktop restart. The durable OPL binding is the authoritative
     // selector until the Session supplies its own next-request model.
-    const current = projection?.next ?? projection?.lastUsed ?? bound?.modelRef ?? catalog.default
+    const historical = [...this.records.values()].find(
+      (record) =>
+        record.nativeSessionId === sessionId && record.combination === this.selections[sessionId],
+    )
+    const current =
+      projection?.next ??
+      projection?.lastUsed ??
+      bound?.modelRef ??
+      historical?.modelRef ??
+      catalog.default
     const selected = this.combinationFor(sessionId, executionCatalog, current)
     const adapter =
       selected && adapterFor(selected.harnessRef, selected.modelRef, this.modelSources)
@@ -3456,7 +3467,7 @@ export class HarnessService {
         : catalog.groups
     const choice =
       selected && this.cliOwnsEffort(selected)
-        ? this.externalEfforts.get(sessionId, selected.id)
+        ? this.conversationEffort(sessionId, selected, executionCatalog)
         : undefined
     const { reasoningEffort: _providerEffort, ...ref } = current as ModelSelection
     const displayed =
@@ -3579,9 +3590,11 @@ export class HarnessService {
       return { status: 'known', efforts: reasoning ? [...reasoning.efforts] : [] }
     }
     if (adapter.capabilities.reasoning === 'model-declared') return { status: 'known', efforts: [] }
-    const bound = [...this.records.values()].find(
-      (record) => record.nativeSessionId === session.id && record.combination === definition.id,
-    )
+    const replacement = this.replacementFor(session.id, catalog, definition.modelRef)
+    const bound =
+      [...this.records.values()].find(
+        (record) => record.nativeSessionId === session.id && record.combination === definition.id,
+      ) ?? (replacement?.definition.id === definition.id ? replacement.record : undefined)
     const boundActive = bound ? this.active.get(bound.id) : undefined
     if (boundActive?.acp && !boundActive.acp.closed && boundActive.configOptions !== undefined) {
       const efforts = readHarnessReasoning(bound!, boundActive.configOptions)
@@ -3629,6 +3642,45 @@ export class HarnessService {
     }
   }
 
+  /** Resolve a retired ID only through one saved conversation and one identical live route. */
+  private replacementFor(
+    sessionId: string,
+    catalog: ExecutionCatalog,
+    ref: ModelRef,
+  ): { record: HarnessSession; definition: CombinationDefinition } | undefined {
+    const selectedId = this.selections[sessionId]
+    if (!selectedId || catalog.combinations.some((item) => item.id === selectedId)) return undefined
+    const records = [...this.records.values()].filter(
+      (record) =>
+        record.nativeSessionId === sessionId &&
+        record.combination === selectedId &&
+        modelRefKey(record.modelRef) === modelRefKey(ref),
+    )
+    if (records.length !== 1) return undefined
+    const record = records[0]!
+    const candidates = catalog.combinations.filter(
+      (item) =>
+        item.enabled &&
+        item.harnessRef === record.harnessRef &&
+        modelRefKey(item.modelRef) === modelRefKey(record.modelRef),
+    )
+    return candidates.length === 1 ? { record, definition: candidates[0]! } : undefined
+  }
+
+  /** Preserve the retired combination's effort until the user sets a choice on its replacement. */
+  private conversationEffort(
+    sessionId: string,
+    definition: CombinationDefinition,
+    catalog: ExecutionCatalog,
+  ) {
+    const selected = this.externalEfforts.get(sessionId, definition.id)
+    if (selected !== undefined) return selected
+    const replacement = this.replacementFor(sessionId, catalog, definition.modelRef)
+    return replacement?.definition.id === definition.id
+      ? this.externalEfforts.get(sessionId, replacement.record.combination)
+      : undefined
+  }
+
   /**
    * Resolve the combination bound to a DSH session.
    *
@@ -3649,6 +3701,20 @@ export class HarnessService {
         modelRefKey(item.modelRef) === modelRefKey(ref),
     )
     if (exact) return exact
+    const replacement = this.replacementFor(sessionId, catalog, ref)
+    if (replacement) return replacement.definition
+    const selected = catalog.combinations.find((item) => item.id === this.selections[sessionId])
+    if (
+      (selected && !selected.enabled && modelRefKey(selected.modelRef) === modelRefKey(ref)) ||
+      (!selected &&
+        [...this.records.values()].some(
+          (record) =>
+            record.nativeSessionId === sessionId &&
+            record.combination === this.selections[sessionId] &&
+            modelRefKey(record.modelRef) === modelRefKey(ref),
+        ))
+    )
+      return undefined
     const externalDefault = catalog.combinations.find(
       (item) =>
         item.enabled &&
@@ -3771,7 +3837,7 @@ export class HarnessService {
         (selected &&
           !selected.enabled &&
           modelRefKey(selected.modelRef) === modelRefKey(options)) ||
-        (!selected && historical)
+        (!selected && historical && !this.replacementFor(options.sessionId, catalog, options))
       )
         throw new LlmError(
           '此对话原先选择的执行组合已移除或停用，请在模型菜单重新选择执行组合后发送；本轮未改用 DSH 或其他 Harness。',
@@ -3797,10 +3863,12 @@ export class HarnessService {
         'HARNESS_PERMISSION',
       )
     const binding = this.conversationBinding(session, definition)
-    const bound = [...this.records.values()].find(
-      (record) =>
-        record.nativeSessionId === options.sessionId && record.combination === definition.id,
-    )
+    const bound =
+      this.replacementFor(session.id, catalog!, definition.modelRef)?.record ??
+      [...this.records.values()].find(
+        (record) =>
+          record.nativeSessionId === options.sessionId && record.combination === definition.id,
+      )
     if (
       bound &&
       ['codex', 'claude'].includes(bound.harnessRef) &&
@@ -3879,7 +3947,7 @@ export class HarnessService {
     const requestEffort = admitted
       ? admitted.reasoningEffort
       : this.cliOwnsEffort(definition)
-        ? (this.externalEfforts.get(session.id, definition.id) ?? undefined)
+        ? (this.conversationEffort(session.id, definition, catalog!) ?? undefined)
         : undefined
     const operationId = admitted?.operationId ?? 'conversation:' + hash(user)
     const previous = record.turns.find((turn) => turn.operationId === operationId)

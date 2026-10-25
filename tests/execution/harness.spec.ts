@@ -442,8 +442,85 @@ describe('native conversation combinations', () => {
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
   })
 
+  it('resumes a uniquely replaced route across restart without replaying history or widening permission', async () => {
+    const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
+    const { service, session, root, ctx, options, setPermission } = await nativeSetup([
+      { id: ref.model, name: 'Grok' },
+    ])
+    vi.spyOn(adapterFor('grok-build', ref)!, 'available').mockResolvedValue({ available: true })
+    const request = (text: string) =>
+      ({
+        ...ref,
+        sessionId: session.id,
+        messages: [
+          createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text }] }),
+        ],
+      }) as GenerateOptions
+    const native = vi.fn(async function* () {})
+    await service.selectCombination({ sessionId: session.id, combination: GROK_COMBINATION })
+    await service.invoke('select-effort', { ...ref, sessionId: session.id, reasoningEffort: 'low' })
+    await Array.fromAsync(service.conversationStream(request('original-once'), native))
+    const before = (await service.list()).sessions[0]!
+    const catalog = await service.executionCatalog()
+    const original = catalog.combinations.find((item) => item.id === GROK_COMBINATION)!
+    const changed = {
+      ...catalog,
+      combinations: [
+        ...catalog.combinations.filter((item) => item.id !== GROK_COMBINATION),
+        { ...original, id: 'replacement', isDefault: false },
+      ],
+    }
+    await service.dispose()
+    const restored = new HarnessService(ctx, options)
+    cleanups.push(() => restored.dispose())
+    const resolveCatalog = vi.spyOn(restored, 'executionCatalog')
+    for (const invalid of [
+      { ...original, modelRef: { ...ref, provider: 'other-source' } },
+      { ...original, modelRef: { ...ref, model: 'other-model' } },
+      { ...original, harnessRef: 'codex' },
+      { ...original, enabled: false },
+    ]) {
+      resolveCatalog.mockResolvedValue({
+        ...catalog,
+        combinations: [{ ...invalid, id: 'replacement' }],
+      })
+      await expect(
+        Array.fromAsync(restored.conversationStream(request('must-not-send'), native)),
+      ).rejects.toMatchObject({ code: 'HARNESS_BINDING' })
+    }
+    resolveCatalog.mockResolvedValue(changed)
+    expect(await restored.modelSelection(session.id)).toMatchObject({
+      combination: 'replacement',
+      current: { reasoningEffort: 'low' },
+    })
+    setPermission('read-only')
+    await expect(
+      Array.fromAsync(restored.conversationStream(request('must-not-send'), native)),
+    ).rejects.toMatchObject({ code: 'HARNESS_PERMISSION' })
+    setPermission('danger-full-access')
+    await Array.fromAsync(restored.conversationStream(request('follow-up-once'), native))
+    const after = (await restored.list()).sessions
+    expect(after).toHaveLength(1)
+    expect(after[0]).toMatchObject({
+      id: before.id,
+      acpSessionId: before.acpSessionId,
+      combination: before.combination,
+      sandbox: before.sandbox,
+    })
+    expect(after[0]!.turns).toHaveLength(2)
+    expect(after[0]!.turns[1]!.reasoningEffort).toBe('low')
+    await restored.invoke('select-effort', { ...ref, sessionId: session.id })
+    expect((await restored.modelSelection(session.id)).current.reasoningEffort).toBeUndefined()
+    const calls = await readFile(join(root, 'calls.txt'), 'utf8')
+    expect(calls.match(/original-once/g)).toHaveLength(1)
+    expect(calls.match(/follow-up-once/g)).toHaveLength(1)
+    expect(calls).not.toContain('must-not-send')
+    expect(await readFile(join(root, 'connections.txt'), 'utf8')).toContain('session/load')
+    expect(native).not.toHaveBeenCalled()
+  })
+
   it.each(['removed', 'disabled'] as const)(
-    'refuses a %s historical binding instead of changing Harness',
+    'refuses an ambiguous or %s historical binding instead of changing Harness',
     async (state) => {
       const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
       const { service, session, changeModel } = await nativeSetup([{ id: ref.model, name: 'Grok' }])
@@ -470,7 +547,9 @@ describe('native conversation combinations', () => {
         ...catalog,
         combinations: [
           ...catalog.combinations.filter((item) => item.id !== GROK_COMBINATION),
-          ...(state === 'disabled' ? [{ ...original, enabled: false }] : []),
+          ...(state === 'disabled'
+            ? [{ ...original, enabled: false }]
+            : [{ ...original, id: 'second-replacement', isDefault: false }]),
           { ...original, id: 'replacement', isDefault: true },
         ],
       }
