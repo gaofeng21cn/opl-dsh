@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, watch } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -10,8 +11,7 @@ import { createKiloMessageEditDriver } from '../../../src/execution/host/message
 
 const FIXTURE = fileURLToPath(new URL('./fixtures/fake-serve.mjs', import.meta.url))
 const TMP_ROOT =
-  process.env.OPL_MESSAGE_EDIT_TMP ??
-  'C:/Users/root/Documents/Codex/repair-20261026/harness-message-edit/opencode-kilo/implementation-tmp'
+  process.env.OPL_MESSAGE_EDIT_TMP ?? join(tmpdir(), 'opl-message-edit-opencode-kilo')
 mkdirSync(TMP_ROOT, { recursive: true })
 
 type Kind = 'opencode' | 'kilo'

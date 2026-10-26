@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { promisify } from 'node:util'
@@ -11,8 +12,7 @@ import { createOpenCodeMessageEditDriver } from '../../../src/execution/host/mes
 import { createKiloMessageEditDriver } from '../../../src/execution/host/message-edit-kilo.ts'
 
 const TMP_ROOT =
-  process.env.OPL_MESSAGE_EDIT_TMP ??
-  'C:/Users/root/Documents/Codex/repair-20261026/harness-message-edit/opencode-kilo/implementation-tmp'
+  process.env.OPL_MESSAGE_EDIT_TMP ?? join(tmpdir(), 'opl-message-edit-opencode-kilo')
 mkdirSync(TMP_ROOT, { recursive: true })
 const BASH = 'C:/Program Files/Git/bin/bash.exe'
 const exec = promisify(execFile)
