@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { defaultHarness, adapterFor } from '../../src/execution/host/adapters/index.ts'
 import { createHuaweiNativeAdapter } from '../../src/execution/host/adapters/huawei-native.ts'
 import {
@@ -8,6 +9,16 @@ import {
 import { startKimiErrorRelay } from '../../src/execution/host/adapters/kimi/kimi-error-relay.ts'
 
 describe('Huawei verified model routes', () => {
+  it('hides Huawei Kimi controls while retaining other sources CLI controls', () => {
+    expect(
+      adapterFor('kimi-code', { provider: 'huawei-maas', model: 'kimi-k2.6' })?.capabilities
+        .reasoning,
+    ).toBe('none')
+    expect(
+      adapterFor('kimi-code', { provider: 'our-free-model', model: 'moonshotai/kimi-k2.6' })
+        ?.capabilities.reasoning,
+    ).toBe('cli-advertised')
+  })
   it.each([
     ['deepseek-v4-flash', 'dsh'],
     ['kimi-k2.6', 'kimi-code'],
@@ -45,44 +56,56 @@ describe('Huawei verified model routes', () => {
       }
     }).rejects.toThrow('执行组合')
   })
-  it('passes keyring auth through the official model collection before streaming', async () => {
-    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
-        'data: ' +
-          JSON.stringify({
-            id: 'fixture',
-            choices: [
-              { index: 0, delta: { role: 'assistant', content: 'DONE' }, finish_reason: null },
-            ],
-          }) +
-          '\n\n' +
+  it.each([undefined, 'high', 'max'])(
+    'sends Huawei effort %s through the official adapter',
+    async (effort) => {
+      const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(
           'data: ' +
-          JSON.stringify({
-            id: 'fixture',
-            choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
-          }) +
-          '\n\ndata: [DONE]\n\n',
-        { headers: { 'content-type': 'text/event-stream' } },
-      ),
-    )
-    try {
-      const adapter = createHuaweiNativeAdapter(async () => 'synthetic-key')
-      const chunks = []
-      for await (const chunk of adapter.stream({
-        provider: 'huawei-maas',
-        model: 'deepseek-v4-flash',
-        messages: [{ role: 'user', content: [{ type: 'text', text: 'Say DONE' }] }],
-      }))
-        chunks.push(chunk)
-      expect(fetch).toHaveBeenCalledOnce()
-      expect(chunks).toContainEqual(
-        expect.objectContaining({ type: 'finish', reason: { kind: 'stop' } }),
+            JSON.stringify({
+              id: 'fixture',
+              choices: [
+                { index: 0, delta: { role: 'assistant', content: 'DONE' }, finish_reason: null },
+              ],
+            }) +
+            '\n\n' +
+            'data: ' +
+            JSON.stringify({
+              id: 'fixture',
+              choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+            }) +
+            '\n\ndata: [DONE]\n\n',
+          { headers: { 'content-type': 'text/event-stream' } },
+        ),
       )
-      expect(chunks).toContainEqual(expect.objectContaining({ type: 'text-delta', text: 'DONE' }))
-    } finally {
-      fetch.mockRestore()
-    }
-  })
+      try {
+        const adapter = createHuaweiNativeAdapter(async () => 'synthetic-key')
+        const catalog = new HuaweiZcodeModelAdapter(() => HUAWEI_MODELS, adapter)
+        const info = await catalog.resolveModel('huawei-maas', 'deepseek-v4-flash')
+        expect(info.reasoning?.efforts.map((value) => value.id)).toEqual(['high', 'max'])
+        expect(info.reasoning?.defaultEffort).toBe('high')
+        const chunks = []
+        for await (const chunk of adapter.stream({
+          provider: 'huawei-maas',
+          model: 'deepseek-v4-flash',
+          ...(effort ? { reasoningEffort: ReasoningEffortId(effort) } : {}),
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'Say DONE' }] }],
+        }))
+          chunks.push(chunk)
+        expect(fetch).toHaveBeenCalledOnce()
+        const [url, options] = fetch.mock.calls[0]!
+        const body =
+          typeof options?.body === 'string' ? options.body : await (url as Request).clone().text()
+        expect(JSON.parse(body).reasoning_effort).toBe(effort ?? 'high')
+        expect(chunks).toContainEqual(
+          expect.objectContaining({ type: 'finish', reason: { kind: 'stop' } }),
+        )
+        expect(chunks).toContainEqual(expect.objectContaining({ type: 'text-delta', text: 'DONE' }))
+      } finally {
+        fetch.mockRestore()
+      }
+    },
+  )
   it('permits only the exact Huawei Kimi endpoint and model for remote forwarding', async () => {
     for (const baseURL of [
       'https://example.com/openai/v1',

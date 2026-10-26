@@ -29,6 +29,8 @@ export class HuaweiZcodeModelAdapter extends LlmAdapter {
   override async resolveModel(provider: string, model: string) {
     if (!(this.models() ?? []).some((item) => item.id === model))
       throw new LlmError('华为云未登记该模型', 'UNKNOWN_MODEL')
+    if (model === 'deepseek-v4-flash' && this.native)
+      return this.native.resolveModel(provider, model)
     return { provider, ...this.models()!.find((item) => item.id === model)! }
   }
   override async prepareCall(provider: string, model: string) {

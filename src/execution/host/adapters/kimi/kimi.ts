@@ -240,7 +240,10 @@ export const kimiCodeAdapter: HarnessAdapter = {
   async configureSession(acp, record, snapshot): Promise<AcpSessionConfigureResult> {
     assertKimiAcpVersion(snapshot)
     const sessionId = kimiSessionId(record, snapshot)
-    const thinking = kimiThinkingValue(record.reasoningEffort)
+    const thinking =
+      record.modelRef.provider === 'huawei-maas'
+        ? undefined
+        : kimiThinkingValue(record.reasoningEffort)
     const { mode } = kimiPermissionPlan(record.sandbox)
     const pinned: { configId: string; value: string }[] = [
       { configId: KIMI_MODEL_OPTION, value: KIMI_ENV_MODEL_ALIAS },
@@ -287,7 +290,10 @@ export const kimiCodeAdapter: HarnessAdapter = {
     // a skipped check.
     if (snapshot.configOptions === undefined)
       throw kimiFailure('会话缺少 configOptions 广告，无法确认模型与权限，已停止。')
-    const thinking = kimiThinkingValue(record.reasoningEffort)
+    const thinking =
+      record.modelRef.provider === 'huawei-maas'
+        ? undefined
+        : kimiThinkingValue(record.reasoningEffort)
     const { mode } = kimiPermissionPlan(record.sandbox)
     assertAllPinned(
       [
@@ -298,4 +304,11 @@ export const kimiCodeAdapter: HarnessAdapter = {
       snapshot.configOptions,
     )
   },
+}
+
+/** Huawei K2.6 keeps the CLI's default thinking mode without advertising a selector. */
+export const huaweiKimiCodeAdapter: HarnessAdapter = {
+  ...kimiCodeAdapter,
+  capabilities: { ...kimiCodeAdapter.capabilities, customEndpoint: false, reasoning: 'none' },
+  matches: (ref) => ref.provider === 'huawei-maas' && ref.model === 'kimi-k2.6',
 }

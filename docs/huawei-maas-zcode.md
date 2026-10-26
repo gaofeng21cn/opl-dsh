@@ -32,4 +32,4 @@ ZCode 不是原生 ACP；转换桥复用 OPL 的 ACP 会话传输与反馈。已
 
 ## 新增模型协议
 
-Kimi Code 使用 Huawei Chat Completions 路线，转发仅接受固定端点、精确模型与 completions 路径，保留上游错误分类；OFM 的 Kimi 仍使用原有 Messages 路线。CLI 通过现有 Git Bash 配置运行，仅使用用户已经授权的权限。DeepSeek 复用官方 pi-ai 消息与工具回放适配器，凭据按请求从现有 keyring 服务获取，思考内容按真实响应显示，不额外广告未经验证的推理档位。
+Kimi Code 使用 Huawei Chat Completions 路线，转发仅接受固定端点、精确模型与 completions 路径，保留上游错误分类；OFM 的 Kimi 仍使用原有 Messages 路线。CLI 通过现有 Git Bash 配置运行，仅使用用户已经授权的权限。DeepSeek 复用官方 pi-ai 消息与工具回放适配器，凭据按请求从现有 keyring 服务获取，思考内容按真实响应显示。DeepSeek V4 Flash 提供 `high`、`max` 两档，默认 `high`，通过 `reasoning_effort` 原值发送；不提供额外思考开关。Kimi K2.6 没有已确认的强度档位，不增加该选项。档位依据[华为云 OpenAI 兼容接口](https://support.huaweicloud.com/model-call-maas/model-call-021.html)，不是照搬 DeepSeek 自家 API 的取值。
