@@ -117,7 +117,10 @@ async function stopOwnedChild(child: ChildProcess): Promise<void> {
  * `launch.command` is the suite's ACP bridge, not the CLI, so the CLI path and its argument
  * prefix come from `OPL_KIMI_COMMAND` / `OPL_KIMI_ARGS` exactly as the adapter set them.
  */
-function deriveWebLaunch(launch: AdapterLaunch, port: number): {
+function deriveWebLaunch(
+  launch: AdapterLaunch,
+  port: number,
+): {
   command: string
   args: string[]
   windowsVerbatimArguments: boolean
@@ -205,8 +208,7 @@ function asUserMessages(value: unknown): KimiUserMessage[] {
   const data = object(body.data)
   const agents = Array.isArray(data.agents) ? data.agents : undefined
   if (!agents) throw failure('protocol')
-  const main =
-    agents.find((agent) => string(object(agent).agent_id) === 'main') ?? agents[0]
+  const main = agents.find((agent) => string(object(agent).agent_id) === 'main') ?? agents[0]
   if (!main) return []
   const messages = Array.isArray(object(main).messages) ? object(main).messages : undefined
   if (!messages) throw failure('protocol')
@@ -285,7 +287,10 @@ export async function startKimiControl(context: {
         ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-      signal: AbortSignal.any([context.signal, AbortSignal.timeout(init.timeoutMs ?? HTTP_TIMEOUT_MS)]),
+      signal: AbortSignal.any([
+        context.signal,
+        AbortSignal.timeout(init.timeoutMs ?? HTTP_TIMEOUT_MS),
+      ]),
     })
     const text = await response.text()
     let json: unknown
@@ -316,10 +321,11 @@ export async function startKimiControl(context: {
     },
     async undo(sessionId: string, count: number): Promise<KimiUndoResponse> {
       try {
-        const result = await request(
-          `/api/v1/sessions/${encodeURIComponent(sessionId)}:undo`,
-          { method: 'POST', body: { count }, timeoutMs: 30_000 },
-        )
+        const result = await request(`/api/v1/sessions/${encodeURIComponent(sessionId)}:undo`, {
+          method: 'POST',
+          body: { count },
+          timeoutMs: 30_000,
+        })
         return { status: result.status, body: result.json }
       } catch (error) {
         if (context.signal.aborted) throw failure('aborted')
