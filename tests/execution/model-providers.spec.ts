@@ -1,3 +1,4 @@
+import { HUAWEI_MODELS } from '../../src/execution/host/adapters/zcode-models.ts'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { Context } from '@deepseek-ai/cordis'
 import { updateVolatile } from '@deepseek-ai/cosmokit'
@@ -365,16 +366,16 @@ describe('native Huawei provider profile', () => {
       const migrationReads = keyring.read.mock.calls.length
       const fetch = vi.spyOn(globalThis, 'fetch')
       try {
-        expect(await ctx.llm.discoverModels('llm-pi-ai', { provider: 'huawei-maas' })).toEqual([
-          { id: 'glm-5.2', name: 'GLM-5.2' },
-        ])
+        expect(await ctx.llm.discoverModels('llm-pi-ai', { provider: 'huawei-maas' })).toEqual(
+          HUAWEI_MODELS,
+        )
         expect(
           await ctx.llm.remoteDiscoverModels(
             'llm-pi-ai',
             { provider: 'huawei-maas' },
             new AbortController().signal,
           ),
-        ).toEqual([{ id: 'glm-5.2', name: 'GLM-5.2' }])
+        ).toEqual(HUAWEI_MODELS)
         expect(await ctx.llm.discoverModels('llm-pi-ai', { provider: 'openai' })).not.toHaveLength(
           0,
         )
@@ -400,9 +401,9 @@ describe('native Huawei provider profile', () => {
       expect(added.huaweiProviders.get()['huawei-maas'].apiKeyEnv).toBe('HUAWEI_MAAS_API_KEY')
       updateVolatile(active.huaweiProviders, added.huaweiProviders)
       ctx.emit('loader/volatile-update', [['huaweiProviders']])
-      expect(await ctx.llm.listModels('huawei-maas')).toEqual([
-        { provider: 'huawei-maas', id: 'glm-5.2', name: 'GLM-5.2' },
-      ])
+      expect(await ctx.llm.listModels('huawei-maas')).toEqual(
+        HUAWEI_MODELS.map((model) => ({ provider: 'huawei-maas', ...model })),
+      )
       expect(() =>
         schema({ huaweiProviders: { 'huawei-maas': { apiKeyEnv: 'UNSAFE_FILE_REF' } } }),
       ).toThrow()
