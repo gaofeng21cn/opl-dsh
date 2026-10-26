@@ -205,7 +205,7 @@ class Bridge {
           '..',
           'provider-personal.json',
         ),
-        OPL_ZCODE_REASONING_LEVEL: 'enabled',
+        OPL_ZCODE_REASONING_LEVEL: 'max',
         OPL_ZCODE_MODE: 'yolo',
         OPL_ZCODE_PREFIX: JSON.stringify([]),
         OPL_ZCODE_DIAGNOSTICS: '1',
@@ -433,13 +433,13 @@ describe('official ZCode Protocol wire contract', () => {
     )
     expect(model.config.optionSpecs.maxOutputTokens.max).toBe(128000)
     expect(model.config.optionSpecs.reasoningLevel.map).toBe(
-      "{'chat_template_kwargs': {'thinking': reasoningLevel == 'enabled'}}",
+      "{'chat_template_kwargs': {'thinking': true}, 'reasoning_effort': reasoningLevel}",
     )
-    expect(model.config.optionSpecs.reasoningLevel.values).toEqual(['disabled', 'enabled'])
+    expect(model.config.optionSpecs.reasoningLevel.values).toEqual(['high', 'max'])
     expect(config.config.defaultModelSelection).toEqual({
       providerId: 'huawei-maas',
       modelId: 'glm-5.2',
-      options: { reasoningLevel: 'enabled' },
+      options: { reasoningLevel: 'max' },
     })
     expect(JSON.stringify(config)).not.toContain(API_KEY)
   })
@@ -461,12 +461,10 @@ describe('official ZCode Protocol wire contract', () => {
     expect(modelSelection('huawei-maas', 'glm-5.2')).toEqual({
       providerId: 'huawei-maas',
       modelId: 'glm-5.2',
-      options: { reasoningLevel: 'enabled' },
+      options: { reasoningLevel: 'max' },
     })
-    expect(modelSelection('huawei-maas', 'glm-5.2', 'enabled').options?.reasoningLevel).toBe(
-      'enabled',
-    )
-    expect(HUAWEI_DEFAULT_REASONING_LEVEL).toBe('enabled')
+    expect(modelSelection('huawei-maas', 'glm-5.2', 'max').options?.reasoningLevel).toBe('max')
+    expect(HUAWEI_DEFAULT_REASONING_LEVEL).toBe('max')
   })
 
   test('verifies protocol identity from the session snapshot', () => {
@@ -766,6 +764,22 @@ describe('bridge against a fake official app-server', () => {
 
       const created = await bridge.request('session/new', { cwd: WORKSPACE })
       expect(created.sessionId).toBe('sess-new')
+      expect(
+        created.configOptions[0].options.map((entry: { value: string }) => entry.value),
+      ).toEqual(['high', 'max'])
+      const changed = await bridge.request('session/set_config_option', {
+        sessionId: created.sessionId,
+        configId: 'reasoning_effort',
+        value: 'high',
+      })
+      expect(changed.configOptions[0].currentValue).toBe('high')
+      await expect(
+        bridge.request('session/set_config_option', {
+          sessionId: created.sessionId,
+          configId: 'reasoning_effort',
+          value: 'low',
+        }),
+      ).rejects.toThrow()
 
       const result = await bridge.request('session/prompt', {
         sessionId: created.sessionId,
@@ -795,7 +809,7 @@ describe('bridge against a fake official app-server', () => {
       expect(createdTrace.params.model).toEqual({
         providerId: 'huawei-maas',
         modelId: 'glm-5.2',
-        options: { reasoningLevel: 'enabled' },
+        options: { reasoningLevel: 'max' },
       })
 
       const sends = traced.filter((r) => r.method === ZCODE_METHODS.sessionSend)
@@ -804,7 +818,7 @@ describe('bridge against a fake official app-server', () => {
       expect(sends[0].params.modelSelection).toEqual({
         providerId: 'huawei-maas',
         modelId: 'glm-5.2',
-        options: { reasoningLevel: 'enabled' },
+        options: { reasoningLevel: 'high' },
       })
       // The credential is NOT sent through the protocol; a plain api-key provider
       // ignores requestAuth (runner.ts), so nothing secret may appear here.

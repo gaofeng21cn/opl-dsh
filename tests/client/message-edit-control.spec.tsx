@@ -156,3 +156,52 @@ it('selects one message in shared state without opening a second message list', 
   expect(await session.select(3, '已有草稿')).toBe(false)
   expect(session.getSnapshot().error).toContain('草稿')
 })
+
+it('hides recovery during a running edit and clears a stale read after a session change', async () => {
+  const recovery = {
+    prompt: { sessionId: 'race', requestId: 'edit' },
+    targetSeq: 1,
+    head: 2,
+  } as MessageEditSend
+  const state = {
+    sessionId: 'race',
+    supported: true,
+    busy: true,
+    pending: true,
+    head: 3,
+    choices: [],
+    recovery,
+  }
+  let resolveRead!: (value: typeof state) => void
+  const call = vi
+    .fn()
+    .mockResolvedValueOnce(state)
+    .mockImplementationOnce(
+      () =>
+        new Promise<typeof state>((resolve) => {
+          resolveRead = resolve
+        }),
+    )
+    .mockResolvedValueOnce({ ...state, busy: false, pending: false, recovery: undefined })
+  const session = new MessageEditSession('race', call as ExecutionCall)
+  const container = dom.container()
+  root = createRoot(container as unknown as HTMLElement)
+  await act(async () =>
+    root.render(
+      createElement(MessageEditControl, { session, inputActions: { setDraft: vi.fn() } }),
+    ),
+  )
+  expect(container.textContent).not.toContain('重试未确认的编辑')
+  const seen: unknown[] = []
+  session.subscribe(() => seen.push(session.getSnapshot().state?.recovery))
+  await act(async () => {
+    const first = session.load()
+    const changed = session.load()
+    resolveRead({ ...state, busy: false })
+    await Promise.all([first, changed])
+  })
+  expect(call).toHaveBeenCalledTimes(3)
+  expect(seen).not.toContain(recovery)
+  expect(session.getSnapshot().state?.pending).toBe(false)
+  expect(container.textContent).not.toContain('重试未确认的编辑')
+})

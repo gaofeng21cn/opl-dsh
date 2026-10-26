@@ -299,6 +299,8 @@ export const openCodeAdapter: HarnessAdapter = {
       env: {
         ...binding.env,
         ...openCodeProfileRoots(options.home),
+        OPL_CHAT_EDIT_COMMAND: path,
+        OPL_CHAT_EDIT_ARGS: JSON.stringify(options.prefix ?? []),
         OPENCODE_CONFIG_CONTENT: withOpenCodeShell(fullAccessCliConfig(config.content), binding),
         // The suite owns this CLI's updates through the execution engine; a child that
         // replaced itself mid-session would invalidate the pinned version.

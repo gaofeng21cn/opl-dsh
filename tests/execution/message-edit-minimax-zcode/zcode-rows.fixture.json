@@ -1,0 +1,180 @@
+{
+  "parent": [
+    {
+      "rowId": 1,
+      "turnId": "msg_mvp687rp_def3ca20-27b6-4112-b5bb-af97a9f924de",
+      "entityId": "msg_mvp687rp_def3ca20-27b6-4112-b5bb-af97a9f924de",
+      "productTurnId": "msg_mvp687rp_def3ca20-27b6-4112-b5bb-af97a9f924de",
+      "visibility": "visible",
+      "createdAt": 1793013977952,
+      "createdAtSeq": 3,
+      "kind": "turnHeader",
+      "origin": "userInput",
+      "executionKind": "agent",
+      "sourceCommandId": "e6accdb6-5082-41d5-8d1e-565dcb248d93",
+      "state": "completedSuccess",
+      "startedAt": 1793013977952,
+      "endedAt": 1793013979017,
+      "activeMs": 1065,
+      "historyRoundCount": 1
+    },
+    {
+      "rowId": 2,
+      "turnId": "msg_mvp687rp_def3ca20-27b6-4112-b5bb-af97a9f924de",
+      "entityId": "msg_mvp687rp_def3ca20-27b6-4112-b5bb-af97a9f924de",
+      "productTurnId": "msg_mvp687rp_def3ca20-27b6-4112-b5bb-af97a9f924de",
+      "visibility": "visible",
+      "createdAt": 1793013977952,
+      "createdAtSeq": 3,
+      "kind": "userInput",
+      "text": "FIXTURE_FIRST",
+      "origin": "realUser",
+      "sourceCommandId": "e6accdb6-5082-41d5-8d1e-565dcb248d93",
+      "rootSourceCommandId": "e6accdb6-5082-41d5-8d1e-565dcb248d93",
+      "clientId": "legacy-session-send"
+    },
+    {
+      "rowId": 3,
+      "turnId": "msg_mvp687rp_def3ca20-27b6-4112-b5bb-af97a9f924de",
+      "entityId": "msg_mvp688it_5f8d8df4-2aae-482f-a1c2-33a765845d53",
+      "productTurnId": "msg_mvp687rp_def3ca20-27b6-4112-b5bb-af97a9f924de",
+      "visibility": "visible",
+      "createdAt": 1793013978917,
+      "createdAtSeq": 4,
+      "kind": "assistantText",
+      "assistantResponseId": "msg_mvp688it_5f8d8df4-2aae-482f-a1c2-33a765845d53",
+      "text": "FIXTURE_REPLY_FIRST",
+      "state": "complete",
+      "actions": {
+        "canFork": true
+      }
+    },
+    {
+      "rowId": 4,
+      "turnId": "msg_mvp688nf_5833c4bc-8bdb-401c-979f-c2db5945b239",
+      "entityId": "msg_mvp688nf_5833c4bc-8bdb-401c-979f-c2db5945b239",
+      "productTurnId": "msg_mvp688nf_5833c4bc-8bdb-401c-979f-c2db5945b239",
+      "visibility": "visible",
+      "createdAt": 1793013979083,
+      "createdAtSeq": 16,
+      "kind": "turnHeader",
+      "origin": "userInput",
+      "executionKind": "agent",
+      "sourceCommandId": "43d887c9-9c3a-4c04-8ba9-c3a61fe52649",
+      "state": "completedSuccess",
+      "startedAt": 1793013979083,
+      "endedAt": 1793013979129,
+      "activeMs": 51,
+      "historyRoundCount": 1
+    },
+    {
+      "rowId": 5,
+      "turnId": "msg_mvp688nf_5833c4bc-8bdb-401c-979f-c2db5945b239",
+      "entityId": "msg_mvp688nf_5833c4bc-8bdb-401c-979f-c2db5945b239",
+      "productTurnId": "msg_mvp688nf_5833c4bc-8bdb-401c-979f-c2db5945b239",
+      "visibility": "visible",
+      "createdAt": 1793013979083,
+      "createdAtSeq": 16,
+      "kind": "userInput",
+      "text": "FIXTURE_SECOND",
+      "origin": "realUser",
+      "sourceCommandId": "43d887c9-9c3a-4c04-8ba9-c3a61fe52649",
+      "rootSourceCommandId": "43d887c9-9c3a-4c04-8ba9-c3a61fe52649",
+      "clientId": "legacy-session-send",
+      "actions": {
+        "canEdit": true,
+        "editDisposition": "rewind"
+      }
+    },
+    {
+      "rowId": 6,
+      "turnId": "msg_mvp688nf_5833c4bc-8bdb-401c-979f-c2db5945b239",
+      "entityId": "msg_mvp688nm_9f41f619-22b0-4eb2-a379-3e3cd5f3f8e6",
+      "productTurnId": "msg_mvp688nf_5833c4bc-8bdb-401c-979f-c2db5945b239",
+      "visibility": "visible",
+      "createdAt": 1793013979105,
+      "createdAtSeq": 21,
+      "kind": "assistantText",
+      "assistantResponseId": "msg_mvp688nm_9f41f619-22b0-4eb2-a379-3e3cd5f3f8e6",
+      "text": "FIXTURE_REPLY_SECOND",
+      "state": "complete",
+      "actions": {
+        "canFork": true,
+        "canRetry": true
+      }
+    }
+  ],
+  "child": [
+    {
+      "rowId": 1,
+      "turnId": "msg_mvp688ut_c4ee6c6b-f206-4fac-bb7e-83e8bf2664d3",
+      "entityId": "msg_mvp688ut_c4ee6c6b-f206-4fac-bb7e-83e8bf2664d3",
+      "productTurnId": "msg_mvp688ut_c4ee6c6b-f206-4fac-bb7e-83e8bf2664d3",
+      "visibility": "visible",
+      "createdAt": 1793013977952,
+      "createdAtSeq": 3,
+      "kind": "turnHeader",
+      "origin": "userInput",
+      "executionKind": "agent",
+      "sourceCommandId": "e6accdb6-5082-41d5-8d1e-565dcb248d93",
+      "state": "completedSuccess",
+      "startedAt": 1793013977952,
+      "endedAt": 1793013979017,
+      "activeMs": 1065,
+      "historyRoundCount": 1
+    },
+    {
+      "rowId": 2,
+      "turnId": "msg_mvp688ut_c4ee6c6b-f206-4fac-bb7e-83e8bf2664d3",
+      "entityId": "msg_mvp688ut_c4ee6c6b-f206-4fac-bb7e-83e8bf2664d3",
+      "productTurnId": "msg_mvp688ut_c4ee6c6b-f206-4fac-bb7e-83e8bf2664d3",
+      "visibility": "visible",
+      "createdAt": 1793013977952,
+      "createdAtSeq": 3,
+      "kind": "userInput",
+      "text": "FIXTURE_FIRST",
+      "origin": "realUser",
+      "sourceCommandId": "e6accdb6-5082-41d5-8d1e-565dcb248d93",
+      "rootSourceCommandId": "e6accdb6-5082-41d5-8d1e-565dcb248d93",
+      "clientId": "legacy-session-send",
+      "actions": {
+        "canEdit": true,
+        "editDisposition": "rewind"
+      }
+    },
+    {
+      "rowId": 3,
+      "turnId": "msg_mvp688ut_c4ee6c6b-f206-4fac-bb7e-83e8bf2664d3",
+      "entityId": "msg_mvp688ut_114f8c1e-ec82-45d7-ba52-09dbfb432f06",
+      "productTurnId": "msg_mvp688ut_c4ee6c6b-f206-4fac-bb7e-83e8bf2664d3",
+      "visibility": "visible",
+      "createdAt": 1793013978917,
+      "createdAtSeq": 4,
+      "kind": "assistantText",
+      "assistantResponseId": "msg_mvp688ut_114f8c1e-ec82-45d7-ba52-09dbfb432f06",
+      "text": "FIXTURE_REPLY_FIRST",
+      "state": "complete",
+      "actions": {
+        "canFork": true,
+        "canRetry": true
+      }
+    },
+    {
+      "rowId": 4,
+      "turnId": "msg_mvp688ut_c4ee6c6b-f206-4fac-bb7e-83e8bf2664d3",
+      "entityId": "fork:sess_48945f82-e031-40c8-ad30-336525eaf534:msg_mvp688it_5f8d8df4-2aae-482f-a1c2-33a765845d53",
+      "productTurnId": "msg_mvp688ut_c4ee6c6b-f206-4fac-bb7e-83e8bf2664d3",
+      "visibility": "visible",
+      "createdAt": 1793013977953,
+      "createdAtSeq": 7,
+      "kind": "timelineMarker",
+      "lane": "turnTailBoundary",
+      "marker": {
+        "type": "forkNotice",
+        "parentSessionId": "sess_48945f82-e031-40c8-ad30-336525eaf534",
+        "parentRowId": 0
+      }
+    }
+  ],
+  "targetId": "msg_mvp688nf_5833c4bc-8bdb-401c-979f-c2db5945b239"
+}

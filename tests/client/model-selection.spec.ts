@@ -238,6 +238,44 @@ describe('OPL model button selection projection', () => {
     },
   )
 
+  it('shows provider-owned effort for an external Harness without a CLI-store marker', async () => {
+    const f = fixture()
+    const held = deferred()
+    f.pending.set('reasoning-preflight', held)
+    const call = f.rpc({
+      catalog: () => ({ ...catalog, combinations: [{ ...combination, harnessRef: 'codex' }] }),
+      combinations: () => [{ id: combination.id, available: true }],
+      'model-selection': () => selection,
+      'reasoning-preflight': () => ({
+        status: 'known',
+        efforts: groups[0]!.models[0]!.reasoning.efforts,
+      }),
+    }) as ExecutionCall
+    const view = await mount({ sessionId: 'provider-effort', call })
+    expect(view.text()).toContain('高')
+    await act(async () => {
+      held.settle({ status: 'known', efforts: groups[0]!.models[0]!.reasoning.efforts })
+    })
+    expect(view.text()).toContain('高')
+  })
+
+  it('keeps the Host-confirmed effort visible while CLI controls are pending', async () => {
+    const f = fixture()
+    const held = deferred()
+    f.pending.set('reasoning-preflight', held)
+    const call = f.rpc({
+      catalog: () => ({ ...catalog, combinations: [{ ...combination, harnessRef: 'codex' }] }),
+      combinations: () => [{ id: combination.id, available: true }],
+      'model-selection': () => ({ ...selection, effortSource: 'harness' }),
+    }) as ExecutionCall
+    const view = await mount({ sessionId: 'pending-effort', call })
+    expect(view.text()).toContain('高')
+    await act(async () => {
+      held.settle({ status: 'unavailable', efforts: [] })
+    })
+    expect(view.text()).toContain('高')
+  })
+
   it('keeps CLI effort separate from an automatic native provider effort', async () => {
     const { ModelSelectionState } = await import(
       '../../src/execution/client/use-model-selection.ts'

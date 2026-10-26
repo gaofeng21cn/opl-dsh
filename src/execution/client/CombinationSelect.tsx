@@ -249,18 +249,34 @@ export function CombinationSelect({
       : undefined
   const effortSwitch =
     displayedReasoning === undefined ? undefined : thinkingSwitch(displayedReasoning)
+  const providerOwnsEffort =
+    selected !== undefined &&
+    ['codex', 'claude', 'minimax-code'].includes(selected.combination.harnessRef)
+  const providerEffort =
+    selection.current?.reasoningEffort ?? modelDefaultEffort(currentModel?.id ?? '', reasoning)
   const requestedEffort = externalCliControlsEffort
-    ? livePreflight?.status === 'known' &&
-      selection.current?.reasoningEffort !== undefined &&
-      livePreflight.efforts.some((effort) => effort.id === selection.current?.reasoningEffort)
-      ? selection.current.reasoningEffort
-      : undefined
+    ? selection.effortSource === 'harness'
+      ? selection.current?.reasoningEffort
+      : providerOwnsEffort && reasoning?.efforts.some((effort) => effort.id === providerEffort)
+        ? providerEffort
+        : livePreflight?.status === 'known' &&
+            livePreflight.efforts.some((effort) => effort.id === selection.current?.reasoningEffort)
+          ? selection.current?.reasoningEffort
+          : undefined
     : (selection.current?.reasoningEffort ?? modelDefaultEffort(currentModel?.id ?? '', reasoning))
-  const effectiveEffort = displayedReasoning?.efforts.some(
-    (effort) => effort.id === requestedEffort,
-  )
-    ? requestedEffort
-    : undefined
+  const effectiveEffort =
+    externalCliControlsEffort && livePreflight?.status === 'known'
+      ? livePreflight.efforts.some((effort) => effort.id === requestedEffort)
+        ? requestedEffort
+        : undefined
+      : externalCliControlsEffort &&
+          (selection.effortSource === 'harness' ||
+            (providerOwnsEffort &&
+              (preflight?.key !== preflightKey || preflight.state === 'loading')))
+        ? requestedEffort
+        : displayedReasoning?.efforts.some((effort) => effort.id === requestedEffort)
+          ? requestedEffort
+          : undefined
   /**
    * A thinking switch reads as one state, not as a ladder: the trigger and the
    * drill-down cell both say 开启思考 / 关闭思考, so the top summary always names

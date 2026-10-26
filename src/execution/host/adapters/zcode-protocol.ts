@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { Socket } from 'node:net'
 
 /** Official ZCode Protocol constants and the pure projection onto ACP updates.
@@ -350,10 +351,15 @@ export const HUAWEI_MODEL_PROPERTIES = {
   supportsMidConversationSystem: false,
 } as const
 
-export const HUAWEI_REASONING_LEVELS = ['disabled', 'enabled'] as const
+export const HUAWEI_REASONING_LEVELS = ['high', 'max'] as const
 
-/** Huawei documents thinking enabled by default; no user-facing effort tiers are invented. */
-export const HUAWEI_DEFAULT_REASONING_LEVEL = 'enabled'
+/** Huawei GLM-5.2 defaults to max; enabled is the previous default-only representation. */
+export const HUAWEI_DEFAULT_REASONING_LEVEL = 'max'
+export function huaweiReasoningLevel(value?: string): 'high' | 'max' {
+  if (value === undefined || value === 'enabled') return HUAWEI_DEFAULT_REASONING_LEVEL
+  if (value === 'high' || value === 'max') return value
+  throw Error('华为云 GLM-5.2 只支持 high/max 推理档位')
+}
 
 /**
  * Personal provider config.
@@ -417,7 +423,7 @@ export function buildPersonalProviderConfig(input: {
               optionSpecs: {
                 reasoningLevel: {
                   values: [...HUAWEI_REASONING_LEVELS],
-                  map: "{'chat_template_kwargs': {'thinking': reasoningLevel == 'enabled'}}",
+                  map: "{'chat_template_kwargs': {'thinking': true}, 'reasoning_effort': reasoningLevel}",
                 },
                 maxOutputTokens: { max: 128000, map: "{'max_completion_tokens': maxOutputTokens}" },
               },
@@ -429,7 +435,7 @@ export function buildPersonalProviderConfig(input: {
       defaultModelSelection: {
         providerId: input.providerId,
         modelId: input.modelId,
-        options: { reasoningLevel: input.reasoningLevel ?? HUAWEI_DEFAULT_REASONING_LEVEL },
+        options: { reasoningLevel: huaweiReasoningLevel(input.reasoningLevel) },
       },
     },
   }
@@ -514,7 +520,7 @@ export function modelSelection(providerId: string, modelId: string, reasoningLev
   return {
     providerId,
     modelId,
-    options: { reasoningLevel: reasoningLevel ?? HUAWEI_DEFAULT_REASONING_LEVEL },
+    options: { reasoningLevel: huaweiReasoningLevel(reasoningLevel) },
   }
 }
 
@@ -711,4 +717,243 @@ export async function startHuaweiRelay(
       agent.destroy()
     },
   }
+}
+
+// ── Same-conversation edit driver surface (v4) ──────────────────────────────────────
+//
+// The bridge exposes two private ACP requests to the OPL host. They are not official
+// ZCode methods; they are the smallest projection of the official v4 command surface
+// that the shared edit transaction needs. A driver never sends a replacement prompt:
+// `fork` only creates a conversation prefix and returns the child identity.
+
+/** Official v4 methods used by the bridge. */
+export const ZCODE_V4_EDIT_METHODS = {
+  rowsRange: 'v4/conversation/rowsRange',
+  command: 'v4/command',
+} as const
+
+/** Private ACP requests exposed by the ZCode bridge to the OPL host. */
+export const ZCODE_EDIT_METHODS = {
+  read: 'opl/zcode/edit/read',
+  fork: 'opl/zcode/edit/fork',
+  abort: 'opl/zcode/edit/abort',
+} as const
+
+/** Initialize `_meta` key announcing the bridge's edit surface. */
+export const ZCODE_EDIT_CAPABILITY = 'opl/zcode/edit'
+
+/** Fixed, provider-content-free failure codes shared by bridge and driver. */
+export const ZCODE_EDIT_CODES = {
+  badRequest: 'OPL_EDIT_BAD_REQUEST',
+  unsupported: 'OPL_EDIT_UNSUPPORTED',
+  targetUnknown: 'OPL_EDIT_TARGET_UNKNOWN',
+  historyChanged: 'OPL_EDIT_HISTORY_CHANGED',
+  forkMismatch: 'OPL_EDIT_FORK_MISMATCH',
+  vendorRejected: 'OPL_EDIT_VENDOR_REJECTED',
+  vendorUncertain: 'OPL_EDIT_VENDOR_UNCERTAIN',
+  aborted: 'OPL_EDIT_ABORTED',
+} as const
+
+export type ZcodeEditCode = (typeof ZCODE_EDIT_CODES)[keyof typeof ZCODE_EDIT_CODES]
+
+/** A fixed-code edit refusal; its message is the code, never provider text. */
+export class ZcodeEditError extends Error {
+  readonly code: ZcodeEditCode
+  constructor(code: ZcodeEditCode) {
+    super(code)
+    this.code = code
+    this.name = 'ZcodeEditError'
+  }
+}
+
+/** The subset of a v4 conversation row the edit bridge relies on. */
+export interface ZcodeConversationRow {
+  rowId: number
+  kind: string
+  origin?: string
+  entityId?: string
+  turnId?: string
+  text?: string
+  sourceCommandId?: string
+  rootSourceCommandId?: string
+  toolCallId?: string
+  toolName?: string
+  status?: string
+  visibility?: string
+  [key: string]: unknown
+}
+
+export interface ZcodeEditBoundary {
+  id: string
+  text: string
+}
+
+export interface ZcodeEditReadResult {
+  ok: true
+  sessionId: string
+  token: string
+  boundaries: ZcodeEditBoundary[]
+}
+
+export interface ZcodeEditRefusal {
+  ok: false
+  code: ZcodeEditCode
+}
+
+export interface ZcodeEditForkResult {
+  ok: true
+  sessionId: string
+  retained: { previousId: string; nextId: string }[]
+}
+
+/**
+ * Canonical JSON: object keys sorted recursively, so a token or comparison never
+ * depends on wire key order. Arrays keep their order.
+ */
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson)
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    return Object.fromEntries(
+      Object.keys(record)
+        .sort()
+        .map((key) => [key, canonicalJson(record[key])]),
+    )
+  }
+  return value
+}
+
+/**
+ * Identity fields a fork is allowed to re-key. Everything else — including unknown
+ * future fields — is compared verbatim, never silently dropped.
+ */
+const ZCODE_FORK_REKEYED_FIELDS = new Set([
+  'rowId',
+  'entityId',
+  'turnId',
+  'productTurnId',
+  'createdAt',
+  'createdAtSeq',
+  'actions',
+  'assistantResponseId',
+])
+
+function zcodeSemanticRow(row: ZcodeConversationRow, rekeyedTool = false): string {
+  const semantic: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(row)) {
+    if (ZCODE_FORK_REKEYED_FIELDS.has(key)) continue
+    if (rekeyedTool && key === 'toolCallId') continue
+    semantic[key] = value
+  }
+  return JSON.stringify(canonicalJson(semantic))
+}
+
+/** Opaque token covering every canonical row field, revision and log epoch. */
+export function zcodeHistoryToken(
+  sessionId: string,
+  rows: readonly ZcodeConversationRow[],
+  atRevision: number,
+  atLogEpoch: string,
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify(
+        canonicalJson({
+          sessionId,
+          atRevision,
+          atLogEpoch,
+          rows,
+        }),
+      ),
+      'utf8',
+    )
+    .digest('hex')
+}
+
+/** Official canFork stable final assistant, not an arbitrary earlier assistantText. */
+export function isZcodeForkableAssistant(row: ZcodeConversationRow | undefined): boolean {
+  if (!row || row.kind !== 'assistantText') return false
+  const actions = row.actions as { canFork?: unknown } | undefined
+  return actions?.canFork === true && (row.state === 'complete' || row.status === 'complete')
+}
+
+/** Real user boundaries in row order; only rows with an exact text qualify. */
+export function zcodeUserBoundaries(rows: readonly ZcodeConversationRow[]): ZcodeEditBoundary[] {
+  return rows
+    .filter(
+      (row) =>
+        row.kind === 'userInput' &&
+        row.origin === 'realUser' &&
+        typeof row.entityId === 'string' &&
+        row.entityId.length > 0 &&
+        typeof row.text === 'string',
+    )
+    .map((row) => ({ id: row.entityId!, text: row.text! }))
+}
+
+/**
+ * Validate a fork's retained prefix against the parent's full row semantics and
+ * sourceCommandId lineage, and return the old/new boundary identity mapping.
+ *
+ * The fork point is the assistant row immediately before the target user row. A
+ * first-message target has no predecessor and therefore an empty prefix. The child
+ * may contain only explicitly validated, non-model-visible fork markers after the
+ * exact prefix; any extra user/assistant/tool row is a mismatch.
+ */
+export function verifyZcodeForkPrefix(
+  parentRows: readonly ZcodeConversationRow[],
+  childRows: readonly ZcodeConversationRow[],
+  targetId: string,
+): { retained: { previousId: string; nextId: string }[] } {
+  const targetIndex = parentRows.findIndex(
+    (row) => row.entityId === targetId && row.kind === 'userInput' && row.origin === 'realUser',
+  )
+  if (targetIndex < 0) throw new ZcodeEditError(ZCODE_EDIT_CODES.targetUnknown)
+  let predecessorIndex = -1
+  for (let index = targetIndex - 1; index >= 0; index -= 1) {
+    if (parentRows[index]?.kind === 'assistantText') {
+      predecessorIndex = index
+      break
+    }
+  }
+  const prefix = predecessorIndex < 0 ? [] : parentRows.slice(0, predecessorIndex + 1)
+  if (childRows.length < prefix.length) throw new ZcodeEditError(ZCODE_EDIT_CODES.forkMismatch)
+  for (let index = 0; index < prefix.length; index += 1) {
+    const parent = prefix[index]!,
+      child = childRows[index]!
+    // ZCode gives copied tool rows a new entityId and uses that same id for toolCallId.
+    const rekeyedTool =
+      parent.kind === 'toolCall' &&
+      child.kind === 'toolCall' &&
+      typeof parent.entityId === 'string' &&
+      !!parent.entityId &&
+      typeof child.entityId === 'string' &&
+      !!child.entityId &&
+      parent.toolCallId === parent.entityId &&
+      child.toolCallId === child.entityId
+    if (zcodeSemanticRow(parent, rekeyedTool) !== zcodeSemanticRow(child, rekeyedTool))
+      throw new ZcodeEditError(ZCODE_EDIT_CODES.forkMismatch)
+  }
+  for (const extra of childRows.slice(prefix.length)) {
+    const marker = extra.marker as { type?: unknown } | undefined
+    const validMarker =
+      extra.kind === 'timelineMarker' &&
+      extra.lane === 'turnTailBoundary' &&
+      marker?.type === 'forkNotice' &&
+      typeof extra.entityId === 'string' &&
+      extra.entityId.startsWith('fork:') &&
+      extra.entityId.split(':').length >= 3 &&
+      extra.text === undefined
+    if (!validMarker) throw new ZcodeEditError(ZCODE_EDIT_CODES.forkMismatch)
+  }
+  const parentBoundaries = zcodeUserBoundaries(prefix)
+  const childBoundaries = zcodeUserBoundaries(childRows.slice(0, prefix.length))
+  if (parentBoundaries.length !== childBoundaries.length)
+    throw new ZcodeEditError(ZCODE_EDIT_CODES.forkMismatch)
+  const retained = parentBoundaries.map((boundary, index) => {
+    const child = childBoundaries[index]!
+    if (boundary.text !== child.text) throw new ZcodeEditError(ZCODE_EDIT_CODES.forkMismatch)
+    return { previousId: boundary.id, nextId: child.id }
+  })
+  return { retained }
 }

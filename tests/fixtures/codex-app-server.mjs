@@ -3,7 +3,8 @@ import { createInterface } from 'node:readline'
 const send = (x) => process.stdout.write(JSON.stringify(x) + '\n')
 let threadId = 'native-test',
   turn = 'turn-1',
-  receivedSandbox = null
+  receivedSandbox = null,
+  probePending = false
 // `FIXTURE_EXPECT_SANDBOX` and `FIXTURE_REPORT` let a test drive the fixture into reporting the
 // configuration it actually received, without changing the default behaviour other tests rely on.
 // `FIXTURE_SHELL_PROBE` selects what the fake shell actually reports, so the bridge's real-shell
@@ -29,6 +30,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   // Model-free shell probe: the official entry point a client uses to learn which shell the
   // process really executes commands with. The fixture answers as bash or as PowerShell.
   if (m.method === 'thread/shellCommand') {
+    probePending = true
     send({ id: m.id, result: {} })
     const bash = shellProbe === 'bash'
     send({
@@ -60,9 +62,17 @@ createInterface({ input: process.stdin }).on('line', (line) => {
         item: { id: 'probe', type: 'commandExecution', status: 'completed', exitCode: 0 },
       },
     })
+    setTimeout(() => {
+      probePending = false
+      send({
+        method: 'turn/completed',
+        params: { threadId, turn: { id: 'probe-turn', status: 'completed', items: [] } },
+      })
+    }, 100)
     return
   }
   if (m.method === 'turn/start') {
+    if (probePending) throw Error('user turn started before shell probe completed')
     if (m.params.effort !== (process.env.OPL_FIXTURE_EFFORT ?? 'high'))
       throw Error('reasoning effort was not forwarded')
     send({ id: m.id, result: { turn: { id: turn } } })

@@ -52,6 +52,7 @@
  * scrubbed against it before anything returns to the host.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { StringDecoder } from 'node:string_decoder'
 import { join } from 'node:path'
@@ -91,6 +92,7 @@ class PiBridgeError extends Error {
   constructor(
     message: string,
     readonly code: string,
+    readonly turnSettled = false,
   ) {
     super(message)
   }
@@ -149,6 +151,12 @@ const pending = new Map<
 >()
 
 let sessionId = ''
+/**
+ * A first-message fork allocates a session file lazily. Until the replacement prompt
+ * appends its user message the file does not exist, so the identity is reported as
+ * ephemeral and its index entry is written only after the file appears.
+ */
+let ephemeralFile = ''
 // Turn-scoped cancellation, plus a latch for a cancel that arrives before the turn has
 // registered its resolver. `session/cancel` is a notification, so it can be dispatched
 // while `session/prompt` is still awaiting its own model read-back; without the latch that
@@ -387,6 +395,7 @@ function answerPermission(id: string, outcome: any): void {
 
 // ── Official events → ACP updates ──────────────────────────────────────────────────
 function handleEvent(event: any): void {
+  persistEphemeral()
   switch (event.type) {
     case 'message_update': {
       const delta = event.assistantMessageEvent ?? {}
@@ -448,7 +457,7 @@ function handleEvent(event: any): void {
       const failure = turnOutcome.failure
       turnOutcome.reset()
       if (!cancelled && failure)
-        rejectTurn?.(new PiBridgeError('官方渠道报告本轮请求失败', failure))
+        rejectTurn?.(new PiBridgeError('官方渠道报告本轮请求失败', failure, true))
       else resolveTurn?.({ stopReason: cancelled ? 'cancelled' : 'end_turn' })
       resolveTurn = undefined
       rejectTurn = undefined
@@ -559,6 +568,13 @@ function rememberSessionFile(file: string): void {
   }
 }
 
+/** Once a lazy first-fork file appears, publish its index entry exactly once. */
+function persistEphemeral(): void {
+  if (!ephemeralFile || !existsSync(ephemeralFile)) return
+  rememberSessionFile(ephemeralFile)
+  ephemeralFile = ''
+}
+
 /** Write the credential-blind files the official CLI loads from its agent directory. */
 function writeProviderConfig(): void {
   mkdirSync(agentDir, { recursive: true })
@@ -606,6 +622,215 @@ async function replayHistory(): Promise<void> {
   }
 }
 
+// ── Private edit protocol over the official RPC ────────────────────────────────────
+// The host's Pi driver calls these two ACP extension methods. Both answer a structured
+// `{ok:false, code}` for an expected refusal and throw only for a transport failure, so
+// the driver never parses bridge text. No method here sends a replacement prompt, writes a
+// HarnessSession, edits a DSH log, reverts files or deletes an old branch.
+
+class EditRefusal extends Error {
+  constructor(readonly code: string) {
+    super(code)
+  }
+}
+
+const refuse = (code: string): never => {
+  throw new EditRefusal(code)
+}
+
+const object = (value: unknown): Record<string, any> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : {}
+
+function canonical(value: unknown): string {
+  const sort = (input: unknown): unknown => {
+    if (Array.isArray(input)) return input.map(sort)
+    if (input && typeof input === 'object') {
+      const result: Record<string, unknown> = {}
+      for (const key of Object.keys(input as Record<string, unknown>).sort()) {
+        const next = (input as Record<string, unknown>)[key]
+        if (next !== undefined) result[key] = sort(next)
+      }
+      return result
+    }
+    return input
+  }
+  return JSON.stringify(sort(value))
+}
+
+/** Exact user text from one persisted message; never a summary or a synthesized label. */
+function userText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .filter((part) => object(part).type === 'text' && typeof object(part).text === 'string')
+    .map((part) => String(object(part).text))
+    .join('')
+}
+
+/**
+ * The active branch, root → leaf. `get_entries` returns the whole append-ordered tree, so
+ * the active history must be reconstructed from `leafId`/`parentId`; a global fork list is
+ * never used as a conversation order.
+ */
+function activeEntries(entries: readonly any[], leafId: string | null): any[] {
+  const byId = new Map<string, any>()
+  for (const entry of entries) {
+    const id = typeof entry?.id === 'string' ? entry.id : ''
+    if (id) byId.set(id, entry)
+  }
+  const chain: any[] = []
+  const seen = new Set<string>()
+  let current: string | undefined = leafId ?? undefined
+  while (current !== undefined) {
+    if (seen.has(current)) refuse('protocol')
+    seen.add(current)
+    const entry = byId.get(current)
+    if (!entry) refuse('protocol')
+    chain.push(entry)
+    const parent = entry.parentId
+    if (parent === undefined || parent === null) current = undefined
+    else if (typeof parent === 'string' && parent) current = parent
+    else refuse('protocol')
+  }
+  chain.reverse()
+  return chain
+}
+
+interface PiEditHistory {
+  sessionId: string
+  token: string
+  boundaries: { id: string; text?: string }[]
+  ephemeral: boolean
+  settledInputId?: string
+}
+
+/**
+ * Observe the live active history. The token covers the exact facts a fork depends on:
+ * session identity, active leaf, boundary ids/text, pinned model/effort and the session
+ * file. A tool result or compaction that moves the leaf changes the token.
+ */
+async function editHistory(): Promise<PiEditHistory> {
+  const state = await readState()
+  const id = typeof state?.sessionId === 'string' ? state.sessionId : ''
+  if (!id) refuse('protocol')
+  const response = await piRequest('get_entries')
+  if (response?.success !== true) refuse('protocol')
+  const entries = Array.isArray(response.data?.entries) ? response.data.entries : undefined
+  const leafId = response.data?.leafId
+  if (!entries || (leafId !== null && (typeof leafId !== 'string' || !leafId))) refuse('protocol')
+  const branch = activeEntries(entries, leafId)
+  const boundaries: { id: string; text?: string }[] = []
+  for (const entry of branch) {
+    if (entry?.type !== 'message' || entry.message?.role !== 'user') continue
+    const text = userText(entry.message.content)
+    boundaries.push({ id: entry.id, ...(text.length > 0 ? { text } : {}) })
+  }
+  const file = typeof state?.sessionFile === 'string' ? state.sessionFile : ''
+  const ephemeral = !file || !existsSync(file)
+  // A non-empty history without a file cannot be restored; refuse it rather than report a
+  // boundary set the shared owner could persist as loadable.
+  if (ephemeral && boundaries.length > 0) refuse('stale')
+  const token = `sha256:${createHash('sha256')
+    .update(
+      canonical({
+        version: 1,
+        sessionId: id,
+        leafId,
+        boundaries,
+        model: typeof state?.model?.id === 'string' ? state.model.id : '',
+        thinking: typeof state?.thinkingLevel === 'string' ? state.thinkingLevel : '',
+        file,
+        ephemeral,
+      }),
+    )
+    .digest('hex')}`
+  const leaf = branch.at(-1)
+  const settledInputId =
+    state.isStreaming === false &&
+    state.isCompacting === false &&
+    leaf?.type === 'message' &&
+    leaf.message?.role === 'assistant' &&
+    ['stop', 'error', 'aborted', 'length'].includes(leaf.message.stopReason)
+      ? boundaries.at(-1)?.id
+      : undefined
+  return {
+    sessionId: id,
+    token,
+    boundaries,
+    ephemeral,
+    ...(settledInputId ? { settledInputId } : {}),
+  }
+}
+
+/**
+ * Fork before `targetId`, re-pin the original model/effort and prove the retained prefix.
+ *
+ * A successful fork already changed vendor history, so any later failure is `uncertain`:
+ * the caller must not retry automatically and must block sends until it re-reads history.
+ */
+async function editRewind(
+  targetId: string,
+  expectedToken: string,
+): Promise<{
+  ok: true
+  sessionId: string
+  retained: { previousId: string; nextId: string }[]
+  ephemeral: boolean
+}> {
+  if (!targetId || !expectedToken) refuse('target-unknown')
+  if (resolveTurn !== undefined || asks.size > 0) refuse('busy')
+  const before = await editHistory()
+  if (before.token !== expectedToken) refuse('history-changed')
+  const targetIndex = before.boundaries.findIndex((boundary) => boundary.id === targetId)
+  if (targetIndex < 0) refuse('target-unknown')
+
+  const fork = await piRequest('fork', { entryId: targetId })
+  if (fork?.success !== true || fork.data?.cancelled === true) refuse('fork-rejected')
+  const state = await readState()
+  const newId = typeof state?.sessionId === 'string' ? state.sessionId : ''
+  if (!newId || newId === before.sessionId) refuse('uncertain')
+  // From this point the bridge is on the new identity even if a later read-back fails.
+  sessionId = newId
+  const newFile = typeof state?.sessionFile === 'string' ? state.sessionFile : ''
+  try {
+    // Pi does not carry a model/thinking entry that sits after the fork boundary.
+    await piCommand('set_model', { provider, modelId: model })
+    await assertModel()
+    if (thinking) await applyThinking(thinking)
+  } catch {
+    refuse('uncertain')
+  }
+  const after = await editHistory()
+  if (after.sessionId !== newId) refuse('uncertain')
+  const retained: { previousId: string; nextId: string }[] = []
+  for (const boundary of before.boundaries.slice(0, targetIndex)) {
+    const next = after.boundaries.find((item) => item.id === boundary.id)
+    if (!next) throw new EditRefusal('uncertain')
+    if ((boundary.text ?? '') !== (next.text ?? '')) refuse('uncertain')
+    retained.push({ previousId: boundary.id, nextId: next.id })
+  }
+  // The target and every later boundary must be gone; a longer prefix means the fork kept
+  // history it promised to exclude.
+  if (after.boundaries.length !== targetIndex) refuse('uncertain')
+  const ephemeral = !newFile || !existsSync(newFile)
+  if (ephemeral) ephemeralFile = newFile
+  else rememberSessionFile(newFile)
+  return { ok: true, sessionId: newId, retained, ephemeral }
+}
+
+/** One lifecycle at a time: a prompt cannot interleave with a fork/read. */
+let lifecycle: Promise<unknown> = Promise.resolve()
+function serialize<T>(run: () => Promise<T>): Promise<T> {
+  const next = lifecycle.then(run, run)
+  lifecycle = next.then(
+    () => undefined,
+    () => undefined,
+  )
+  return next
+}
+
 // ── ACP request handling ───────────────────────────────────────────────────────────
 async function invoke(method: string, params: any): Promise<unknown> {
   if (method === 'initialize') {
@@ -618,7 +843,17 @@ async function invoke(method: string, params: any): Promise<unknown> {
     if (!state) throw configuration('官方 Pi 未返回会话状态，无法确认 RPC 接口')
     return {
       protocolVersion: 1,
-      agentCapabilities: { loadSession: true },
+      agentCapabilities: {
+        loadSession: true,
+        // Advertised only because the bridge itself implements both methods below.
+        _meta: {
+          'opl/message-edit': {
+            version: 1,
+            methods: ['opl/edit/read', 'opl/edit/rewind'],
+            ephemeralFirstFork: true,
+          },
+        },
+      },
       agentInfo: { name: 'pi-coding-agent', version: `pi-rpc ${api}`, model, provider },
     }
   }
@@ -654,6 +889,7 @@ async function invoke(method: string, params: any): Promise<unknown> {
           `官方 Pi 恢复的会话身份不一致（实际 ${String(liveId ?? '未知')}，要求 ${wanted}）；已停止，未发送任务。`,
         )
       sessionId = wanted
+      ephemeralFile = ''
       await piCommand('set_model', { provider, modelId: model })
       await assertModel()
       const pinned = await applyThinking(thinking)
@@ -669,6 +905,7 @@ async function invoke(method: string, params: any): Promise<unknown> {
     const id = String(state?.sessionId ?? '')
     if (!id) throw configuration('官方 Pi 未返回会话标识')
     sessionId = id
+    ephemeralFile = ''
     rememberSessionFile(String(state?.sessionFile ?? ''))
     // Model first: the tier is only meaningful once the model that owns it is selected.
     await piCommand('set_model', { provider, modelId: model })
@@ -679,6 +916,41 @@ async function invoke(method: string, params: any): Promise<unknown> {
       models: { currentModelId: model },
       configOptions: await configOptions(pinned),
     }
+  }
+
+  if (method === 'opl/edit/read') {
+    return serialize(async () => {
+      try {
+        const requested = typeof params?.sessionId === 'string' ? params.sessionId : ''
+        if (requested && requested !== sessionId) refuse('stale')
+        const history = await editHistory()
+        return {
+          ok: true,
+          sessionId: history.sessionId,
+          token: history.token,
+          boundaries: history.boundaries,
+          ...(history.settledInputId ? { settledInputId: history.settledInputId } : {}),
+        }
+      } catch (error) {
+        if (error instanceof EditRefusal) return { ok: false, code: error.code }
+        throw error
+      }
+    })
+  }
+
+  if (method === 'opl/edit/rewind') {
+    return serialize(async () => {
+      try {
+        const requested = typeof params?.sessionId === 'string' ? params.sessionId : ''
+        if (!requested || requested !== sessionId) refuse('stale')
+        const targetId = typeof params?.targetId === 'string' ? params.targetId : ''
+        const expectedToken = typeof params?.expectedToken === 'string' ? params.expectedToken : ''
+        return await editRewind(targetId, expectedToken)
+      } catch (error) {
+        if (error instanceof EditRefusal) return { ok: false, code: error.code }
+        throw error
+      }
+    })
   }
 
   if (method === 'session/cancel') {
@@ -717,36 +989,41 @@ async function invoke(method: string, params: any): Promise<unknown> {
   }
 
   if (method === 'session/prompt') {
-    const text = (Array.isArray(params?.prompt) ? params.prompt : [])
-      .filter((part: any) => part?.type === 'text')
-      .map((part: any) => part.text)
-      .join('\n')
-    // Re-read the live identity before every send, so a session that drifted cannot run.
-    await assertModel()
-    turnOutcome.reset()
-    const done = new Promise<unknown>((resolve, reject) => {
-      resolveTurn = resolve
-      rejectTurn = reject
-    })
-    void done.catch(() => undefined)
-    // Adopt any cancel that arrived while this turn was being dispatched.
-    if (cancelLatched) cancelled = true
-    cancelLatched = false
-    const accepted = await piCommand('prompt', { message: text })
-    // The official docs are explicit that `success: true` means the prompt was accepted,
-    // queued or handled — not that work finished — and that `disposition: "handled"` means
-    // no run started, so waiting for `agent_settled` would hang forever.
-    if (accepted?.disposition === 'handled') {
-      resolveTurn = undefined
-      rejectTurn = undefined
-      return { stopReason: cancelled ? 'cancelled' : 'end_turn' }
-    }
-    try {
-      return await done
-    } finally {
-      cancelled = false
+    return serialize(async () => {
+      const text = (Array.isArray(params?.prompt) ? params.prompt : [])
+        .filter((part: any) => part?.type === 'text')
+        .map((part: any) => part.text)
+        .join('\n')
+      // Re-read the live identity before every send, so a session that drifted cannot run.
+      await assertModel()
       turnOutcome.reset()
-    }
+      const done = new Promise<unknown>((resolve, reject) => {
+        resolveTurn = resolve
+        rejectTurn = reject
+      })
+      void done.catch(() => undefined)
+      // Adopt any cancel that arrived while this turn was being dispatched.
+      if (cancelLatched) cancelled = true
+      cancelLatched = false
+      const accepted = await piCommand('prompt', { message: text })
+      // A first-message fork allocates its file lazily. The replacement prompt is what
+      // makes it durable; the event stream also retries this once the file appears.
+      persistEphemeral()
+      // The official docs are explicit that `success: true` means the prompt was accepted,
+      // queued or handled — not that work finished — and that `disposition: "handled"` means
+      // no run started, so waiting for `agent_settled` would hang forever.
+      if (accepted?.disposition === 'handled') {
+        resolveTurn = undefined
+        rejectTurn = undefined
+        return { stopReason: cancelled ? 'cancelled' : 'end_turn' }
+      }
+      try {
+        return await done
+      } finally {
+        cancelled = false
+        turnOutcome.reset()
+      }
+    })
   }
 
   throw configuration(`不支持的调用：${method}`)
@@ -786,6 +1063,9 @@ const handleAcpLine = (line: string) => {
           error: {
             code,
             message: redact(error instanceof Error ? error.message : '官方 Pi 调用未完成'),
+            ...(error instanceof PiBridgeError && error.turnSettled
+              ? { data: { oplTurnSettled: true } }
+              : {}),
           },
         })
       if (process.env.OPL_PI_DIAGNOSTICS === '1')

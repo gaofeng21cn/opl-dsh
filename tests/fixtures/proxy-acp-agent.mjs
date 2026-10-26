@@ -76,6 +76,8 @@ const selfReport = () => ({
 createInterface({ input: process.stdin })
   .on('line', async (line) => {
     const m = JSON.parse(line)
+    if (m.method?.startsWith('_x.ai/rewind/'))
+      return send({ id: m.id, error: { code: -32601, message: 'unsupported fixture' } })
     if (m.method === 'initialize') {
       await record({ event: 'initialize', loadSession: true })
       answer(m.id, { protocolVersion: 1, agentCapabilities: { loadSession: true } })

@@ -33,3 +33,7 @@ ZCode 不是原生 ACP；转换桥复用 OPL 的 ACP 会话传输与反馈。已
 ## 新增模型协议
 
 Kimi Code 使用 Huawei Chat Completions 路线，转发仅接受固定端点、精确模型与 completions 路径，保留上游错误分类；OFM 的 Kimi 仍使用原有 Messages 路线。CLI 通过现有 Git Bash 配置运行，仅使用用户已经授权的权限。DeepSeek 复用官方 pi-ai 消息与工具回放适配器，凭据按请求从现有 keyring 服务获取，思考内容按真实响应显示。DeepSeek V4 Flash 提供 `high`、`max` 两档，默认 `high`，通过 `reasoning_effort` 原值发送；不提供额外思考开关。Kimi K2.6 没有已确认的强度档位，不增加该选项。档位依据[华为云 OpenAI 兼容接口](https://support.huaweicloud.com/model-call-maas/model-call-021.html)，不是照搬 DeepSeek 自家 API 的取值。
+
+GLM-5.2 · ZCode 提供 `high`、`max` 两档，默认 `max`。官方个人模型配置将档位映射为 `reasoning_effort` 并保持思考开启，桥接器在新建、恢复和每次发送前确认所选档位；旧的 `enabled` 默认表示兼容为 `max`，其他未知值拒绝发送。
+
+GLM-5.2 的 high/max 来自套件固定的官方配置映射，菜单无需启动 CLI 探测才显示。未另选档位时显示 max；已保存档位由 Host 回读，能力列表刷新不将其替换为“默认”。发送前仍执行 ZCode 档位设置与回读。

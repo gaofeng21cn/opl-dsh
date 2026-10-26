@@ -25,7 +25,7 @@ export function MessageEditControl({
 }: MessageEditProps) {
   const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot)
   const selection = snapshot.selection
-  const recovery = snapshot.state?.recovery
+  const recovery = !locked && !snapshot.state?.busy ? snapshot.state?.recovery : undefined
   const visible = selection !== undefined || recovery !== undefined || snapshot.error !== undefined
 
   useEffect(() => {
