@@ -440,3 +440,37 @@ test(
     assert.deepEqual(models, ['deepseek-flash', 'gpt-6-luna'])
   },
 )
+
+test('large or unavailable diffs still reach the writer with bounded, explicit evidence', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'opl-note-evidence-'))
+  const old = process.env.OPL_RELEASE_NOTES_WRITER_MODULE
+  t.after(async () => {
+    if (old === undefined) delete process.env.OPL_RELEASE_NOTES_WRITER_MODULE
+    else process.env.OPL_RELEASE_NOTES_WRITER_MODULE = old
+    await rm(root, { recursive: true, force: true })
+  })
+  const writer = join(root, 'writer.mjs')
+  await writeFile(
+    writer,
+    `export async function writeWithReleaseNoteFallback(messages, validate) {
+    const evidence = JSON.parse(messages[1].content);
+    if (evidence.diff.length > 100100 || !evidence.commitDetails.includes('Preserve draft')) throw Error('bad evidence');
+    if (!/incomplete|unavailable/.test(evidence.evidenceNotice)) throw Error('missing limitation');
+    return {value: validate(JSON.stringify({overview:'保留草稿。',changes:['编辑时保留草稿。'],limitations:[]}), 'fixture', []),writer:{attempts:[{status:'passed'}]}};
+  }`,
+  )
+  process.env.OPL_RELEASE_NOTES_WRITER_MODULE = writer
+  for (const evidence of [
+    { diff: 'diff --git a/src/a.ts b/src/a.ts\n' + 'x'.repeat(600000), diffComplete: true },
+    { diff: '', diffComplete: false },
+  ]) {
+    const result = await writeDailyReleaseNotes({
+      ...notesEvidence,
+      ...evidence,
+      commitDetails: 'Preserve draft when editing',
+    })
+    assert.equal(result.mode, 'online-ai')
+    assert.match(result.notes, /编辑时保留草稿/)
+    assert.equal(result.attempts.length, 1)
+  }
+})

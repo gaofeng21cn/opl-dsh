@@ -69,6 +69,35 @@ function onlineResult(content, model, secrets) {
   }
 }
 
+/** Bound excerpts without discarding commit evidence; omissions are explicit model input. */
+export function prepareWriterEvidence(evidence) {
+  const { diff = '', ...metadata } = evidence
+  const sections = diff.split(/(?=^diff --git )/m).filter(Boolean)
+  const excerpts = []
+  let remaining = 100000
+  let omitted = 0
+  for (const section of sections) {
+    const size = Math.min(section.length, 12000, remaining)
+    if (size) excerpts.push(section.slice(0, size))
+    remaining -= size
+    omitted += section.length - size
+  }
+  return {
+    ...metadata,
+    commitsMarkdown: (evidence.commitsMarkdown ?? '').slice(0, 24000),
+    commitDetails: (evidence.commitDetails ?? '').slice(0, 24000),
+    diff: excerpts.join('\n'),
+    evidenceNotice:
+      evidence.diffComplete === false
+        ? 'Diff unavailable. Describe only changes supported by commit details and file names; do not infer implementation or validation.'
+        : omitted
+          ? 'Diff excerpts are incomplete; omitted characters: ' +
+            omitted +
+            '. Do not infer omitted behavior.'
+          : 'Diff complete within the selected paths.',
+  }
+}
+
 export async function writeDailyReleaseNotes(evidence, options = {}) {
   const fallback = (reason) => ({
     notes: dailyReleaseNotes({ changes: evidence.commitsMarkdown }),
@@ -76,8 +105,7 @@ export async function writeDailyReleaseNotes(evidence, options = {}) {
     reason,
     attempts: [],
   })
-  if (evidence.diffComplete === false) return fallback('git_diff_unavailable')
-  if (evidence.diff.length > 160000) return fallback('diff_exceeds_writer_budget')
+  const prepared = prepareWriterEvidence(evidence)
   let shared
   try {
     const file = process.env.OPL_RELEASE_NOTES_WRITER_MODULE
@@ -92,7 +120,7 @@ export async function writeDailyReleaseNotes(evidence, options = {}) {
     const { value, writer } = await shared.writeWithReleaseNoteFallback(
       [
         { role: 'system', content: writerInstruction },
-        { role: 'user', content: JSON.stringify(evidence) },
+        { role: 'user', content: JSON.stringify(prepared) },
       ],
       (content, model) => onlineResult(content, model, [options.apiKey, options.copilotToken]),
       () => ({ notes: dailyReleaseNotes({ changes: evidence.commitsMarkdown }) }),

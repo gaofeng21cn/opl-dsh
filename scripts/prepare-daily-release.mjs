@@ -139,13 +139,20 @@ export async function prepareDailyRelease(root) {
         await readFile(notesFile)
       } catch (error) {
         if (error.code !== 'ENOENT') throw error
-        // A huge or unreadable diff is a notes fallback, not a release failure.
+        const evidencePaths = [
+          ...productPaths,
+          'README.md',
+          'docs',
+          ':!package-lock.json',
+          ':!src/generated',
+          ':!docs/release-notes-*.md',
+        ]
         const diff = spawnSync(
           'git',
           candidate.baseline
-            ? ['diff', candidate.baseline, 'HEAD', '--', ...productPaths, 'README.md', 'docs']
-            : ['show', '--format=', 'HEAD', '--', ...productPaths, 'README.md', 'docs'],
-          { cwd: root, encoding: 'utf8', maxBuffer: 512 * 1024 },
+            ? ['diff', candidate.baseline, 'HEAD', '--', ...evidencePaths]
+            : ['show', '--format=', 'HEAD', '--', ...evidencePaths],
+          { cwd: root, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 },
         )
         const result = await writeDailyReleaseNotes(
           {
@@ -153,6 +160,14 @@ export async function prepareDailyRelease(root) {
             baseline: candidate.baseline ?? null,
             sourceCommit: git(root, ['rev-parse', 'HEAD']),
             commitsMarkdown: changes,
+            commitDetails: git(root, [
+              'log',
+              '--no-merges',
+              '--format=%h %s%n%b',
+              candidate.baseline ? candidate.baseline + '..HEAD' : 'HEAD',
+              '--',
+              ...productPaths,
+            ]),
             diff: diff.status === 0 ? diff.stdout : '',
             diffComplete: diff.status === 0,
           },
