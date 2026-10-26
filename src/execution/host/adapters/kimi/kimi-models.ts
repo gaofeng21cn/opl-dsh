@@ -57,7 +57,7 @@ export function kimiProviderType(protocol: ExternalWireProtocol): string | undef
 }
 
 /** Protocols this harness can express to the official CLI. */
-export const KIMI_PROTOCOLS: readonly ExternalWireProtocol[] = [KIMI_PROTOCOL]
+export const KIMI_PROTOCOLS: readonly ExternalWireProtocol[] = [KIMI_PROTOCOL, 'chat']
 
 /**
  * Return the caller's requested thinking value without inventing one.
@@ -82,7 +82,10 @@ export const KIMI_MODELS: readonly string[] = ['moonshotai/kimi-k2.6', 'moonshot
  * claiming them here would hand this harness traffic it has no admission for.
  */
 export function isKimiCodeModel(ref: ModelRef): boolean {
-  return ref.provider === KIMI_PROVIDER && KIMI_MODELS.includes(ref.model)
+  return (
+    (ref.provider === KIMI_PROVIDER && KIMI_MODELS.includes(ref.model)) ||
+    (ref.provider === 'huawei-maas' && ref.model === 'kimi-k2.6')
+  )
 }
 
 /** Environment the official CLI reads for a route supplied by the suite. */

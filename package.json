@@ -90,5 +90,8 @@
   "exports": {
     ".": "./src/suite/host.ts",
     "./types": "./src/contracts/types.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "^1.1.0"
   }
 }

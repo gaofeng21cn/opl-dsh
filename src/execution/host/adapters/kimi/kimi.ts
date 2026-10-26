@@ -122,7 +122,7 @@ function assertAllPinned(
 async function assertRouteStillCurrent(
   sources: ExternalModelSources,
   ref: ModelRef,
-  protocol: typeof KIMI_PROTOCOL,
+  protocol: 'chat' | typeof KIMI_PROTOCOL,
   expected: { model: string; baseURL: string; apiKey: string },
 ): Promise<void> {
   let current
@@ -194,7 +194,8 @@ export const kimiCodeAdapter: HarnessAdapter = {
     // Captured before any await, so an unregister/re-register of the same source object
     // during preparation invalidates this request instead of being accepted.
     const lease = sources.lease(KIMI_HARNESS, ref)
-    const route = await sources.resolve(KIMI_HARNESS, ref, KIMI_PROTOCOL)
+    const protocol = ref.provider === 'huawei-maas' ? 'chat' : KIMI_PROTOCOL
+    const route = await sources.resolve(KIMI_HARNESS, ref, protocol)
     // The source authorizes this combination; it may not redirect it to another model.
     if (!route.model || route.model !== ref.model)
       throw kimiFailure('模型来源解析出的模型与所选组合不一致，未改用该模型，已停止。')
@@ -207,12 +208,12 @@ export const kimiCodeAdapter: HarnessAdapter = {
     if (!path) throw Error('未找到官方 Kimi Code CLI（kimi），无法启动此组合')
 
     assertLeaseCurrent(lease.assertCurrent)
-    await assertRouteStillCurrent(sources, ref, KIMI_PROTOCOL, route)
+    await assertRouteStillCurrent(sources, ref, protocol, route)
 
     const env = await kimiBashEnvironment(systemEnvironment())
     // Final gate, after the last await that can outlive the registration.
     assertLeaseCurrent(lease.assertCurrent)
-    await assertRouteStillCurrent(sources, ref, KIMI_PROTOCOL, route)
+    await assertRouteStillCurrent(sources, ref, protocol, route)
 
     const bridge = fileURLToPath(new URL('./kimi-error-bridge.mjs', import.meta.url))
     return {

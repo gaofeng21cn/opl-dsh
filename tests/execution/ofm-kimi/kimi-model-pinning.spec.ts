@@ -107,7 +107,7 @@ describe('Kimi Code route identity', () => {
   it('advertises the surfaces the real binary was measured to provide', () => {
     expect(kimiCodeAdapter.capabilities.authentication).toBe('api-source')
     expect(kimiCodeAdapter.capabilities.customEndpoint).toBe(true)
-    expect(kimiCodeAdapter.capabilities.protocols).toEqual(['messages'])
+    expect(kimiCodeAdapter.capabilities.protocols).toEqual(['messages', 'chat'])
     expect(kimiCodeAdapter.capabilities.permissions).toEqual(['read-only', 'full-access'])
     expect(kimiCodeAdapter.capabilities.autoReview).toBe('unsupported')
   })

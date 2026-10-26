@@ -1,6 +1,6 @@
-# 华为云 MaaS 与 ZCode 本机测试候选
+# 华为云 MaaS 模型与执行引擎
 
-此接入使用华为云 MaaS 的 `glm-5.2` 模型，API 地址为 `https://api.modelarts-maas.com/openai/v1`，Harness 使用官方 ZCode。Huawei Key 不由 OPL Gateway 提供。
+华为云 MaaS 使用独立保存的 Key 与 `https://api.modelarts-maas.com/openai/v1`。`deepseek-v4-flash` 使用官方 DSH（Chat Completions），`kimi-k2.6` 使用官方 Kimi Code，已有 `glm-5.2` 继续使用 ZCode。不会借用 OFM 或 OPL Gateway 的线路。模型权限以华为云实际响应为准，未开放的 `glm-5.3`、`deepseek-v4.1-flash` 和未识别的 `deepseek-v4-pro` 不加入此目录。
 
 ## 本机配置 Key
 
@@ -8,7 +8,7 @@
 
 Windows 上的 API Key 保存在 Credential Manager，不写入 `.credentials.yaml`、`.env` 或模型设置。升级时会把旧版本明文凭据迁移到固定的 Windows Keyring 目标，并在精确读回成功后删除明文；读回缺失或不一致时保留原件并停止迁移。旧 Windows 条目仍使用相同的固定目标，不会产生第二份副本。首次迁移完成后才开放华为云添加入口，避免后台写入与正在编辑的表单发生版本冲突。迁移完成后，手动删除的提供商不会在重启时自动恢复。
 
-GLM-5.2 与自动 ZCode 组合跟随原生提供商配置；删除提供商后停止自动投影和凭据探测。已有用户保存的组合保留为不可用引用。目录读取只检查凭据存在性，API Key 值仅在实际请求中读取。
+华为云模型与对应自动组合跟随原生提供商配置；删除提供商后停止自动投影和凭据探测。已有用户保存的组合保留为不可用引用。目录读取只检查凭据存在性，API Key 值仅在实际请求中读取。
 
 Windows 使用固定目标 `OPLDSH:HuaweiMaaS:ApiKey`。Keyring 不可用时保存直接失败，不回退到明文文件。macOS 保留官方凭据服务的存储、来源优先级与更新事件，Windows Keyring 代理不会接管它。
 
@@ -29,3 +29,7 @@ ZCode 不是原生 ACP；转换桥复用 OPL 的 ACP 会话传输与反馈。已
 恢复会话使用官方默认工具集合并回读原会话权限；不传 `toolAllowlist: ["*"]`，因为该接口按精确工具名称筛选，星号会排除所有内置工具。实机验收须包含跨进程恢复后的真实工具结果，不能只检查新建会话。
 
 首次真实模型验收需要用户先在本机配置 MaaS Key。华为云的端点、模型与区域要求见[快速体验 GLM-5.2 模型](https://support.huaweicloud.com/bestpractice-maas/bestpractice_maas_0013_01.html)。官方 Harness 源码见[ZCode](https://github.com/zai-org/ZCode)。
+
+## 新增模型协议
+
+Kimi Code 使用 Huawei Chat Completions 路线，转发仅接受固定端点、精确模型与 completions 路径，保留上游错误分类；OFM 的 Kimi 仍使用原有 Messages 路线。CLI 通过现有 Git Bash 配置运行，仅使用用户已经授权的权限。DeepSeek 复用官方 pi-ai 消息与工具回放适配器，凭据按请求从现有 keyring 服务获取，思考内容按真实响应显示，不额外广告未经验证的推理档位。

@@ -1,3 +1,4 @@
+import { createHuaweiNativeAdapter } from '../../execution/host/adapters/huawei-native.ts'
 /** Extend the official provider configuration, retaining its editor and adapter. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
@@ -15,6 +16,7 @@ import { installProviderKeyringOverlay } from '../../credentials/host/keyring-ov
 import {
   HuaweiZcodeModelAdapter,
   HUAWEI_ZCODE_MODEL,
+  HUAWEI_MODELS,
 } from '../../execution/host/adapters/zcode-models.ts'
 import { migrateHuaweiCredential } from '../../credentials/host/provider.ts'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
@@ -37,10 +39,12 @@ const huaweiProfile = z.object({
   baseURL: z.const(HUAWEI_MAAS_ENDPOINT).default(HUAWEI_MAAS_ENDPOINT),
   api: z.const('openai-completions').default('openai-completions'),
   models: z
-    .array(z.object({ id: z.const('glm-5.2'), name: z.string().default('GLM-5.2') }))
+    .array(
+      z.object({ id: z.union(['glm-5.2', 'deepseek-v4-flash', 'kimi-k2.6']), name: z.string() }),
+    )
     .min(1)
-    .max(1)
-    .default([{ id: 'glm-5.2', name: 'GLM-5.2' }]),
+    .max(3)
+    .default(HUAWEI_MODELS),
 })
 const bambooProfile = z.object({
   apiKeyEnv: z.const(BAMBOO_STARTLUX_CREDENTIAL_REF).default(BAMBOO_STARTLUX_CREDENTIAL_REF),
@@ -217,7 +221,13 @@ export async function apply(ctx: Context): Promise<void> {
     },
   ])
   const huaweiAdapter = new HuaweiZcodeModelAdapter(
-    () => configuration().huaweiProviders.get()[HUAWEI_ZCODE_MODEL.provider]?.models,
+    () =>
+      configuration().huaweiProviders.get()[HUAWEI_ZCODE_MODEL.provider]
+        ? HUAWEI_MODELS
+        : undefined,
+    createHuaweiNativeAdapter(
+      async () => (await ctx.credentials.resolve(credentialRef(HUAWEI_MAAS_CREDENTIAL_REF)))?.value,
+    ),
   )
   const bambooAdapter = new BambooStartLuxAdapter(
     async () =>

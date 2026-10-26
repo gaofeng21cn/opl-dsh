@@ -7,7 +7,10 @@ import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { ExecutionCatalogStore } from '../../src/execution/host/catalog.ts'
 import { ExecutionModelResolver } from '../../src/execution/host/execution-models.ts'
 import { defaultHarness } from '../../src/execution/host/adapters/index.ts'
-import { HuaweiZcodeModelAdapter } from '../../src/execution/host/adapters/zcode-models.ts'
+import {
+  HuaweiZcodeModelAdapter,
+  HUAWEI_MODELS,
+} from '../../src/execution/host/adapters/zcode-models.ts'
 import { withZcodePermissions } from '../../src/execution/host/adapters/zcode-permissions.ts'
 import type { HarnessAdapter } from '../../src/execution/host/adapters/types.ts'
 import type { HarnessSession } from '../../src/execution/contracts/sessions.ts'
@@ -56,9 +59,9 @@ describe('Huawei ZCode model selection', () => {
     await ctx.plugin(LlmRuntime)
     const release = ctx.llm.registerAdapter(['huawei-maas'], new HuaweiZcodeModelAdapter())
     try {
-      expect(await ctx.llm.listModels('huawei-maas')).toEqual([
-        expect.objectContaining({ id: 'glm-5.2', name: 'GLM-5.2' }),
-      ])
+      expect(await ctx.llm.listModels('huawei-maas')).toEqual(
+        HUAWEI_MODELS.map((model) => ({ provider: 'huawei-maas', ...model })),
+      )
       expect(await ctx.llm.resolveModelInfo('huawei-maas', 'glm-5.2')).toMatchObject({
         provider: 'huawei-maas',
         id: 'glm-5.2',
@@ -116,7 +119,11 @@ describe('Huawei ZCode model selection', () => {
         ref: { provider: 'huawei-maas', model: 'glm-5.2' },
         available,
       })
-      expect(catalog.combinations.filter((c) => c.modelRef.provider === 'huawei-maas')).toEqual([
+      expect(
+        catalog.combinations.filter(
+          (c) => c.modelRef.provider === 'huawei-maas' && c.harnessRef === 'zcode',
+        ),
+      ).toEqual([
         expect.objectContaining({
           id: 'zcode/glm-5.2',
           harnessRef: 'zcode',
