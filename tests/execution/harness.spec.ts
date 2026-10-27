@@ -31,6 +31,8 @@ import type {
   ExternalEditHistory,
   ExternalMessageEditDriver,
 } from '../../src/execution/host/message-edit-driver.ts'
+import type { ExternalMessageEditTransactions } from '../../src/execution/host/message-edit-external.ts'
+import type { HarnessSession } from '../../src/execution/contracts/sessions.ts'
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
   vi.unstubAllEnvs()
@@ -2452,7 +2454,47 @@ it.each([false, true, 'quota', 'unsent', 'ephemeral-unsent'] as const)(
         })
         .mockImplementation((...args) => pin(...args))
     }
+    const quotaSettlement = Promise.withResolvers<void>()
+    const releaseQuotaSettlement = Promise.withResolvers<void>()
+    const owner = f.service as unknown as {
+      externalMessageEdits: ExternalMessageEditTransactions
+      records: Map<string, HarnessSession>
+      changed(record: HarnessSession): void
+    }
+    if (mode === 'quota') {
+      const settle = owner.externalMessageEdits.settle.bind(owner.externalMessageEdits)
+      vi.spyOn(owner.externalMessageEdits, 'settle').mockImplementationOnce(async (...args) => {
+        await settle(...args)
+        quotaSettlement.resolve()
+        await releaseQuotaSettlement.promise
+      })
+    }
     expect(await f.service.messageEditSend(input)).toEqual({ accepted: true })
+    if (mode === 'quota') {
+      await quotaSettlement.promise
+      let streamCompleted = false
+      const terminal = completion.then(() => {
+        streamCompleted = true
+      })
+      let editStateRead = false
+      const read = f.service.messageEditState({ sessionId: real.id }).then((state) => {
+        editStateRead = true
+        return state
+      })
+      try {
+        // Metadata can wake subscribers while the terminal error's journal is
+        // still settling. Neither completion nor edit eligibility may escape it.
+        const record = [...owner.records.values()].find((row) => row.nativeSessionId === real.id)!
+        owner.changed(record)
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        expect(streamCompleted).toBe(false)
+        expect(editStateRead).toBe(false)
+      } finally {
+        releaseQuotaSettlement.resolve()
+      }
+      await terminal
+      expect((await read).choices.map((choice) => choice.text)).toEqual(['replacement'])
+    }
     await completion
     if (rejected) {
       if (mode === 'ephemeral-unsent') {

@@ -2126,6 +2126,7 @@ export class HarnessService {
   }
 
   private async run(record: HarnessSession, active: Active, turn: HarnessTurn) {
+    const settled = Promise.withResolvers<void>()
     let editBefore: Pick<ExternalEditHistory, 'sessionId' | 'boundaries'> | undefined
     try {
       delete active.deadlineError
@@ -2343,6 +2344,9 @@ export class HarnessService {
         }
       }
     } catch (error) {
+      // A matched error can still need a durable edit-journal write. Register
+      // the barrier before exposing terminal state to stream/state readers.
+      this.finalizing.set(record.id, settled.promise)
       turn.state = active.cancelled ? 'cancelled' : 'failed'
       if (error instanceof HarnessRequestError && error.promptSettled)
         turn.stopReason = 'error_response'
@@ -2361,7 +2365,6 @@ export class HarnessService {
           ? error.message
           : '执行未完成，请检查 Harness 安装、所选渠道和模型。原任务未自动重发。')
     } finally {
-      const settled = Promise.withResolvers<void>()
       this.finalizing.set(record.id, settled.promise)
       try {
         await this.finishTurn(record, active, turn, editBefore)
@@ -4871,6 +4874,7 @@ export class HarnessService {
             turn.state,
           )
         ) {
+          await this.finalizing.get(record.id)
           if (turn.state !== 'completed')
             throw new LlmError(turn.error ?? 'Harness 执行已取消或中断', 'HARNESS_FAILED')
           if (opened) yield { type: 'block-end', index, block: { ...content[index]! } }
