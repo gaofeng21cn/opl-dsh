@@ -303,7 +303,7 @@ describe('OpenCode 声明面', () => {
     expect(OPENCODE_OFM_MODELS).toContain('inclusionai/ling-3.1-flash')
     expect(OPENCODE_OFM_MODELS).toContain('cat-jam-free')
     expect(OPENCODE_OFM_MODELS).toContain('nvidia/nemotron-3-ultra-550b-a55b:free')
-    expect(OPENCODE_OFM_MODELS).toContain('nvidia/nemotron-3-super-120b-a12b:free')
+    expect(OPENCODE_OFM_MODELS).not.toContain('nvidia/nemotron-3-super-120b-a12b:free')
     expect(OPENCODE_OFM_MODELS).toContain('nvidia/nemotron-3.5-super-vl:free')
     expect(OPENCODE_OFM_MODELS).not.toContain('nvidia/nemotron-3.5-ultra-550b-a55b:free')
     expect(OPENCODE_OFM_MODELS).not.toContain('nvidia/nemotron-3.5-super-120b-a12b:free')

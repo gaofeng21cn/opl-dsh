@@ -79,6 +79,7 @@ export const KILO_OFM_MODELS: readonly string[] = [
   'dots-studio/dots-3-note-preview:free',
   'stealth/glyph-cluster',
   'kilo-auto/free',
+  'nvidia/nemotron-3-super-120b-a12b:free',
   'nvidia/nemotron-3.5-super-vl:free',
   'reflection/beam-free',
   'xingchen-agi/xing4.0-29b-a4b:free',
