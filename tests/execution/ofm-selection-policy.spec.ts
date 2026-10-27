@@ -130,6 +130,16 @@ it('requires the OFM lane to be enabled before its listed model can enable a com
   expect(ofmModelReadiness(summary({ enabled: true, running: true }), ref, true)).toEqual({
     available: true,
   })
+  expect(
+    ofmModelReadiness(
+      {
+        ...summary({ enabled: true, running: true }),
+        membership: { 'our-free-model': ['other-model'] },
+      },
+      ref,
+      true,
+    ),
+  ).toMatchObject({ available: false, reason: 'OFM 当前可用目录未包含此模型' })
   // A model carried by DSH itself does not require the external-forward listener.
   expect(ofmModelReadiness(summary({ enabled: false, running: false }), ref, false)).toEqual({
     available: true,
@@ -264,6 +274,40 @@ it('keeps Kilo-channel Nemotron 3 Super on Kilo instead of OpenCode', () => {
   expect(defaultHarness(ref)).toBe('kilo')
   expect(adapterFor('kilo', ref)?.id).toBe('kilo')
   expect(adapterFor('opencode', ref)).toBeUndefined()
+})
+
+it('migrates a saved Nemotron OpenCode pairing to Kilo', async () => {
+  const catalog = defaultExecutionCatalog()
+  catalog.combinations.push({
+    id: 'legacy-nemotron-opencode',
+    name: 'Nemotron 3 Super + OpenCode',
+    modelRef: { provider: 'our-free-model', model: 'nvidia/nemotron-3-super-120b-a12b:free' },
+    harnessRef: 'opencode',
+    permissionPolicy: 'workspace',
+    isDefault: false,
+    enabled: true,
+  })
+  const store = {
+    get: async () => catalog,
+    cleanLegacyCombinations: async () => catalog,
+    set: async (next: typeof catalog) => next,
+  }
+  const ctx = {
+    get: () => undefined,
+    llm: {
+      listProviders: () => [{ id: 'our-free-model', name: 'OFM' }],
+      listConfigurableProviders: () => [],
+      listModels: async () => [{ id: 'nvidia/nemotron-3-super-120b-a12b:free' }],
+    },
+  }
+  const resolved = await new ExecutionModelResolver(ctx as never, store as never).resolve()
+  expect(resolved.combinations).toContainEqual(
+    expect.objectContaining({
+      id: 'legacy-nemotron-opencode',
+      name: 'Kilo Nemotron 3 Super + Kilo Code',
+      harnessRef: 'kilo',
+    }),
+  )
 })
 const QUALIFICATION_AUTO = 'auto:["our-free-model","opl-qualification-free"]'
 
@@ -741,4 +785,102 @@ it('offers an OpenCode-only MiMo lane without generating a vendor CLI combinatio
   ).resolve()
   expect(saved.recommendations).toContainEqual(expect.objectContaining({ harnessRef: 'opencode' }))
   expect(saved.combinations.filter((item) => item.id === 'saved-mimo')).toHaveLength(1)
+})
+
+it('projects a newly discovered OFM model into recommendations and selection names', async () => {
+  const catalog = defaultExecutionCatalog()
+  const ref = { provider: 'our-free-model', model: 'nvidia/nemotron-3-super-120b-a12b:free' }
+  const ctx = {
+    get: () => undefined,
+    llm: {
+      listProviders: () => [{ id: 'our-free-model', name: 'OFM' }],
+      listConfigurableProviders: () => [],
+      listModels: async () => [{ id: 'known-model' }],
+    },
+  }
+  const resolver = new ExecutionModelResolver(
+    ctx as never,
+    { get: async () => catalog } as never,
+    undefined,
+    async () => ({
+      catalog: [{ id: ref.model, name: 'Kilo Nemotron 3 Super', route: 'our-free-model' }],
+      settings: { enabled: true, forward: { enabled: true, running: true } },
+    }),
+  )
+  const resolved = await resolver.resolve()
+  expect(resolved.models).toContainEqual(
+    expect.objectContaining({ ref, name: 'Kilo Nemotron 3 Super', available: true }),
+  )
+  expect(resolved.recommendations).toContainEqual(
+    expect.objectContaining({
+      modelRef: ref,
+      harnessRef: 'kilo',
+      name: 'Kilo Nemotron 3 Super + Kilo Code',
+    }),
+  )
+  expect(resolved.ofmDiscovery).toContainEqual(
+    expect.objectContaining({
+      modelRef: ref,
+      name: 'Kilo Nemotron 3 Super',
+      status: { kind: 'recommended', harness: 'kilo', label: '推荐 Kilo Code' },
+    }),
+  )
+})
+
+it('removes generated OFM combinations only after a successful catalog omits them', async () => {
+  const stale = { provider: 'our-free-model', model: 'nvidia/nemotron-3-super-120b-a12b:free' }
+  const kept = { provider: 'our-free-model', model: 'user/kept-model' }
+  const catalog = defaultExecutionCatalog()
+  catalog.combinations.push(
+    {
+      id: 'auto:' + JSON.stringify([stale.provider, stale.model]),
+      name: 'Kilo Nemotron 3 Super + Kilo Code',
+      modelRef: stale,
+      harnessRef: 'kilo',
+      permissionPolicy: 'read-only',
+      isDefault: true,
+      enabled: true,
+    },
+    {
+      id: 'user-kept-stale-ofm',
+      name: 'User kept model',
+      modelRef: kept,
+      harnessRef: 'kilo',
+      permissionPolicy: 'read-only',
+      isDefault: true,
+      enabled: true,
+    },
+  )
+  const store = {
+    get: async () => catalog,
+    cleanLegacyCombinations: async (
+      predicate: (item: (typeof catalog.combinations)[number]) => boolean,
+    ) => {
+      catalog.combinations = catalog.combinations.filter((item) => !predicate(item))
+      return catalog
+    },
+  }
+  const ctx = {
+    get: () => undefined,
+    llm: {
+      listProviders: () => [{ id: 'our-free-model', name: 'OFM' }],
+      listConfigurableProviders: () => [],
+      listModels: async () => [],
+    },
+  }
+  const resolved = await new ExecutionModelResolver(
+    ctx as never,
+    store as never,
+    undefined,
+    async () => ({
+      catalog: [
+        { id: stale.model, route: 'our-free-model' },
+        { id: kept.model, route: 'our-free-model' },
+      ],
+      membership: { 'our-free-model': [kept.model] },
+      settings: { enabled: true, forward: { enabled: true, running: true } },
+    }),
+  ).resolve()
+  expect(resolved.combinations.some((item) => item.modelRef.model === stale.model)).toBe(false)
+  expect(resolved.combinations.some((item) => item.modelRef.model === kept.model)).toBe(true)
 })

@@ -71,13 +71,11 @@ export function ExecutionCatalogSection({
               {catalog.ofmDiscovery.map((item) => (
                 <div className={listCss.discoveryRow} key={modelRefKey(item.modelRef)}>
                   <span className={listCss.discoveryName}>{item.name}</span>
-                  <span
-                    className={
-                      item.available ? listCss.discoveryStatus : listCss.discoveryUnavailable
-                    }
-                    title={item.modelRef.model}
-                  >
-                    {item.status.label}
+                  <span className={listCss.discoveryMetadata} title={item.modelRef.model}>
+                    {!item.available && (
+                      <span className={listCss.discoveryUnavailable}>当前不可用</span>
+                    )}
+                    <span className={listCss.discoveryStatus}>{item.status.label}</span>
                   </span>
                 </div>
               ))}

@@ -39,6 +39,7 @@ export function displayModelName(ref: ModelRef, name?: string): string {
   if (ref.provider === 'our-free-model') {
     if (id === 'minimax-m3.1-flash-free') return 'MiniMax M3.1 Flash Free'
     if (id === 'minimax/minimax-m3.1-flash:free') return 'Kilo MiniMax M3.1 Flash'
+    if (id === 'nvidia/nemotron-3-super-120b-a12b:free') return 'Kilo Nemotron 3 Super'
     if (id === 'flint-40b-free') return 'Flint 40B Free'
     if (id === 'recursive/flint-v1.0:free') return 'Flint v1.0 Free'
   }

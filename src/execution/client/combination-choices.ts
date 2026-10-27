@@ -16,14 +16,20 @@ export const recommendationChoiceKey = (item: Pairing): string =>
 
 /** All saved configurations plus recommendations without a saved pairing. */
 export function combinationChoices(catalog: ExecutionCatalog) {
-  const existing = new Set(catalog.combinations.map(pairingKey))
+  const availableSaved = catalog.combinations.filter((item) => {
+    const model = catalog.models.find(
+      (candidate) => modelRefKey(candidate.ref) === modelRefKey(item.modelRef),
+    )
+    return model?.available !== false
+  })
+  const existing = new Set(availableSaved.map(pairingKey))
   const recommendations = new Map(
     (catalog.recommendations ?? [])
       .filter((item) => !existing.has(pairingKey(item)))
       .map((item) => [pairingKey(item), item]),
   )
   return [
-    ...catalog.combinations.map((item) => ({
+    ...availableSaved.map((item) => ({
       ...item,
       key: savedChoiceKey(item.id),
     })),
