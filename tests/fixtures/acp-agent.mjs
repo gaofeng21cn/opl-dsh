@@ -5,16 +5,19 @@ let sessionId = 'test-native',
   running,
   completeOnCancel = false
 let effort = 'high'
+const efforts =
+  process.env.OPL_FIXTURE_MODEL === 'glm-5.2' ? ['high', 'max'] : ['low', 'medium', 'high', 'xhigh']
 const configOptions = () => [
   {
     id: 'reasoning_effort',
     type: 'select',
     name: 'Reasoning Effort',
     currentValue: effort,
-    options: ['low', 'medium', 'high', 'xhigh'].map((value) => ({ value, name: value })),
+    options: efforts.map((value) => ({ value, name: value })),
   },
 ]
 const approvals = new Map()
+const editHistory = []
 const send = (v) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...v }) + '\n')
 const update = (u) => send({ method: 'session/update', params: { sessionId, update: u } })
 const chunk = (t) =>
@@ -22,6 +25,27 @@ const chunk = (t) =>
 const answer = (id, r) => send({ id, result: r })
 createInterface({ input: process.stdin }).on('line', async (line) => {
   const m = JSON.parse(line)
+  if (m.method?.startsWith('_x.ai/rewind/')) {
+    if (process.env.OPL_FIXTURE_EDIT !== '1')
+      return send({ id: m.id, error: { code: -32601, message: 'unsupported fixture' } })
+    if (m.method === '_x.ai/rewind/points')
+      return answer(m.id, {
+        rewind_points: editHistory.map((text, prompt_index) => ({
+          prompt_index,
+          prompt_preview: text,
+          has_file_changes: false,
+        })),
+      })
+    const index = m.params.targetPromptIndex
+    const text = editHistory[index]
+    editHistory.splice(index)
+    return answer(m.id, {
+      success: true,
+      target_prompt_index: index,
+      mode: 'conversation_only',
+      prompt_text: text,
+    })
+  }
   if (m.method === 'initialize')
     answer(m.id, { protocolVersion: 1, agentCapabilities: { loadSession: true } })
   else if (m.method === 'session/new' || m.method === 'session/load') {
@@ -42,10 +66,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       configOptions: configOptions(),
     })
   } else if (m.method === 'session/set_config_option') {
-    if (
-      m.params.configId !== 'reasoning_effort' ||
-      !['low', 'medium', 'high', 'xhigh'].includes(m.params.value)
-    )
+    if (m.params.configId !== 'reasoning_effort' || !efforts.includes(m.params.value))
       return send({ id: m.id, error: { code: -32602, message: 'Unsupported effort' } })
     effort = m.params.value
     answer(m.id, { configOptions: configOptions() })
@@ -53,6 +74,14 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     running = m.id
     await appendFile(join(process.cwd(), 'calls.txt'), m.params.prompt[0].text + '\n')
     const text = m.params.prompt[0].text
+    if (
+      (process.env.OPL_FIXTURE_EDIT_FAILURE === 'quota' && text === 'user: replacement') ||
+      (process.env.OPL_FIXTURE_EDIT_FAILURE === 'ui-quota' && text.includes('EDIT_UI_RATE_LIMIT'))
+    ) {
+      running = undefined
+      return send({ id: m.id, error: { code: 'HARNESS_PROVIDER_RATE_LIMIT' } })
+    }
+    if (process.env.OPL_FIXTURE_EDIT === '1') editHistory.push(text)
     if (text.startsWith('以下是先前会话记录'))
       update({
         sessionUpdate: 'session_info_update',
@@ -91,6 +120,54 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       answer(m.id, {
         stopReason: 'end_turn',
         usage: { totalTokens: 0, inputTokens: 0, outputTokens: 0 },
+      })
+      running = undefined
+      return
+    }
+    if (text.endsWith('usage-stats')) {
+      chunk('usage answer')
+      update({ sessionUpdate: 'usage_update', used: 42, size: 100 })
+      answer(m.id, {
+        stopReason: 'end_turn',
+        usage: {
+          totalTokens: 42,
+          inputTokens: 40,
+          outputTokens: 2,
+          _meta: { 'opl/usageSemantics': 'per-prompt' },
+        },
+      })
+      running = undefined
+      return
+    }
+    if (text.endsWith('owned-usage')) {
+      chunk('owned usage answer')
+      answer(m.id, {
+        stopReason: 'end_turn',
+        _meta: {
+          'opl/turnUsage': {
+            version: 1,
+            usage: {
+              inputTokens: 30,
+              cacheReadTokens: 10,
+              cacheWriteTokens: 5,
+              outputTokens: 4,
+              reasoningTokens: 2,
+              totalTokens: 49,
+            },
+          },
+          'opl/contextUsage': { used: 49, size: 100, estimated: true },
+        },
+      })
+      running = undefined
+      return
+    }
+    if (text.endsWith('usage-cumulative')) {
+      chunk('cumulative answer')
+      update({ sessionUpdate: 'usage_update', used: 84, size: 100 })
+      answer(m.id, {
+        stopReason: 'end_turn',
+        // ACP v1 does not identify whether these fields are per-prompt or cumulative.
+        usage: { totalTokens: 84, inputTokens: 80, outputTokens: 4 },
       })
       running = undefined
       return

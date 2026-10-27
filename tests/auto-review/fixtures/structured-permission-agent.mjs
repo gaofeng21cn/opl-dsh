@@ -26,13 +26,14 @@ const chunk = (text) =>
     },
   })
 
+let effort = 'high'
 const configOptions = () => [
   {
     id: 'reasoning_effort',
     type: 'select',
     name: 'Reasoning Effort',
-    currentValue: 'high',
-    options: ['low', 'medium', 'high', 'xhigh'].map((value) => ({ value, name: value })),
+    currentValue: effort,
+    options: ['high', 'max'].map((value) => ({ value, name: value })),
   },
 ]
 
@@ -53,8 +54,12 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       configOptions: configOptions(),
     })
   }
-  if (m.method === 'session/set_config_option')
+  if (m.method === 'session/set_config_option') {
+    if (m.params.configId !== 'reasoning_effort' || !['high', 'max'].includes(m.params.value))
+      return send({ id: m.id, error: { code: -32602, message: 'Unsupported effort' } })
+    effort = m.params.value
     return answer(m.id, { configOptions: configOptions() })
+  }
   if (m.method === 'session/cancel') {
     if (running !== undefined) answer(running, { stopReason: 'cancelled' })
     running = undefined

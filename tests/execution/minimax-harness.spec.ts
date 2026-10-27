@@ -278,9 +278,15 @@ describe('official MiniMax Code ACP combination', () => {
         sessionId: 'native-session',
         provider: MINIMAX_CODE_PROVIDER,
         model,
+        reasoningEffort: model === 'MiniMax-M3' ? 'off' : 'high',
         messages: [first, reminder('injected-catalog')],
       } as GenerateOptions
       await Array.fromAsync(service.conversationStream(options, next))
+      expect(
+        (await service.list()).sessions
+          .find((row) => row.nativeSessionId === 'native-session')
+          ?.turns.at(-1)?.reasoningEffort,
+      ).toBe(options.reasoningEffort)
       expect((await prompts()).join('\n')).toContain('当前用户请求：')
       expect((await prompts()).join('\n')).toContain('user: explicit-first')
       const second = createUserMessage({

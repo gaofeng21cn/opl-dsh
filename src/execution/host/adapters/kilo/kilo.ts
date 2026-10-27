@@ -272,6 +272,8 @@ export const kiloAdapter: HarnessAdapter = {
         env: {
           ...binding.env,
           ...kiloProfileRoots(options.home),
+          OPL_CHAT_EDIT_COMMAND: path,
+          OPL_CHAT_EDIT_ARGS: JSON.stringify(options.prefix ?? []),
           // One merged document: the root `shell` the bash tool actually reads, and the
           // provider namespace the model is pinned from.
           KILO_CONFIG_CONTENT: withKiloShell(fullAccessCliConfig(config.content), binding),

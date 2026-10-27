@@ -27,6 +27,7 @@
 | EAC GLM 5.3 Flash Free（opencode/glm-5.3-flash-free）                      | OpenCode，经 OFM 转发  | Chat      |
 | EAC DeepSeek V4.1 Flash Free（opencode/deepseek-v4.1-flash-free）          | OpenCode，经 OFM 转发  | Chat      |
 | Big Pickle（big-pickle）                                                   | OpenCode，官方免费通道 | Chat      |
+| Nemotron 3 Super 120B（nvidia/nemotron-3-super-120b-a12b:free）            | Kilo Code，经 OFM 转发 | Chat      |
 | Flint v1.0 Free（recursive/flint-v1.0:free）                               | Kilo Code，经 OFM 转发 | Chat      |
 | Flint 40B Free（flint-40b-free）                                           | OpenCode，经 OFM 转发  | Chat      |
 | GPT-OSS 20B                                                                | Codex CLI              | Responses |
@@ -36,7 +37,9 @@
 | Nemotron Nano Omni、LFM、Inkling Small                                     | Pi Coding Agent        | Chat      |
 | Dots、Glyph、Kilo Auto Free、Kilo Beam、Xing 4.0                           | Kilo Code              | Chat      |
 
-表格描述适配器配对，不是当前在线可用性承诺；模型必须仍在来源目录中且通过启动前检查。Cat Jam、MiMo v2.6 Flash、Muse Spark 1.3、Longcat 2.5、OpenCode 的 DeepSeek/GLM/Beam/Nemotron 免费条目、Space Bunny 和 Big Pickle 的精确裸 ID 使用 OpenCode 官方免费通道。Flint 的 `flint-40b-free` 使用 OpenCode 执行器并经 OFM Chat 转发；它与 OpenCode 自己的 `opencode/flint-40b-free` 服务是不同线路。`recursive/flint-v1.0:free` 由 Kilo 执行并经 OFM 转发。带 EAC/Kilo 前缀的同名模型仍是独立 OFM 转发车道，不互相替换。
+表格描述适配器配对，不是当前在线可用性承诺；模型必须仍在来源目录中且通过启动前检查。Cat Jam、MiMo v2.6 Flash、Muse Spark 1.3、Longcat 2.5、OpenCode 的 DeepSeek/GLM/Beam/Nemotron 免费条目、Space Bunny 和 Big Pickle 的精确裸 ID 使用 OpenCode 官方免费通道。Kilo 频道的 Nemotron 3 Super 120B 使用 Kilo 执行器并经 OFM Chat 转发，不折叠成 OpenCode 路线。Flint 的 `flint-40b-free` 使用 OpenCode 执行器并经 OFM Chat 转发；它与 OpenCode 自己的 `opencode/flint-40b-free` 服务是不同线路。`recursive/flint-v1.0:free` 由 Kilo 执行并经 OFM 转发。带 EAC/Kilo 前缀的同名模型仍是独立 OFM 转发车道，不互相替换。
+
+外部 Harness 只有在本轮边界和 Token buckets 都能由官方协议确认时才接入 DSH 的 Token 统计；缓存、输入、输出和思考字段缺失时保持缺失，不按上下文占用推算。OpenCode/Kilo 使用同一官方消息图的父级链和 `step-finish` 记录汇总，Pi、Codex、Claude、ZCode 使用各自桥接器的已验证字段；Kimi 只有 transcript steps 能拆出独立 cache buckets 时才记账。ACP `usage_update` 的 `used/size` 是上下文占用事实，和累计 Token 账单分开保存；没有精确 usage 响应时不显示账单统计，也不把上下文占用伪装成 Token 账单。外部 Harness 的上下文占用在官方统计栏下方以独立的上下文读数显示，未知数据保持不显示。
 
 `step-5-preview-free` 与 `muse-spark-1.2-contributor-free` 当前从 OPL 选择器隐藏；Jev 与 Content Safety 不作为编码组合提供。MiMo Code、Muse Code 没有可用默认组合，不默认登记或提示安装，已有程序与显式配置保留。
 
@@ -73,6 +76,8 @@ OpenCode/Kilo 的结构化错误类型可区分模型接口请求失败、上下
 接入具体来源时依次验证：来源与协议负例、真实登录或 Key、真实模型工具调用、新建与恢复、取消、权限与人工审批、Auto Review、失败与卸载。不同 Harness 的协议适配仍需实现，通用注册和验收步骤不能代替这些证据。
 Kimi Code 的 OFM 组合通过官方 `KIMI_LOOP_MAX_ATTEMPTS_PER_STEP=1` 限制每步仅发起一次请求，避免将来源层恢复叠加为 CLI 默认的十次尝试。请求失败后由用户决定是否重发；该设置不改变权限或模型。
 
+Kimi 的消息编辑边界读取需要临时断开 ACP 并恢复同一原生会话。轮次完成等待、后续发送和编辑入口读取都会等待该收尾结束，再使用恢复后的连接；收尾期间不能切换执行程序。读取编辑边界失败不会丢弃已经完成的回答，也不会自动重发提示词。
+
 Pi 在 Windows 通过官方 `--append-system-prompt` 明示真实 Git Bash 语法与路径形式；该说明进入官方 CLI 的系统请求，不切换 Shell、不转换模型命令，也不承诺模型不会写错命令。
 
 OpenCode 内置免费端点启用官方 `--print-logs`。Host 仅将当前在途会话的主推理 `AI_APICallError` 转换为固定失败提示；额度耗尽明确显示，不等待首次进展超时。标题任务、其他会话与普通日志不触发终止，原始诊断不回显。没有错误信号时仍保留无进展保护。
@@ -88,3 +93,9 @@ OpenCode 内置免费端点启用官方 `--print-logs`。Host 仅将当前在途
 旧组合编号被移除后，若当前目录中只有一个启用的组合与原记录的模型来源、模型 ID 和 Harness 完全相同，旧对话自动接续该组合并恢复原外部会话，保留历史、权限和推理档位。原组合明确停用、匹配不唯一或来源发生变化时，提示用户重新选择，不自动改走 DSH。
 
 普通对话的模型菜单与发送共用 Host 组合选择：优先保留明确绑定，其次使用同来源、同模型的唯一默认组合（包括 DSH）；没有默认项但只有一个启用组合时使用该组合。多个启用组合且无唯一默认项、或仅有停用组合时，发送前要求明确选择。首次发送固定已解析组合，后续修改默认项不改变该会话。菜单不根据模型名称猜测 Harness；外部 CLI 的推理档位不被原生模型投影覆盖。
+
+模型切换与后续发送按同一官方会话串行执行：请求先等最新一次选择落定，再由官方请求流程生成模型参数。切换失败后，后续发送仍会被拒绝，直到用户重新选择成功；切换期间已经生成的旧模型请求也会被拒绝，需明确重新发送，不会自动改用旧模型或重发。
+
+模型选择的官方目录与执行组合目录并行读取；同一目录快照的重叠可用性检查合并为一次。检查完成或失败即释放共享结果，后续刷新仍读取当前状态，不增加目录有效期。CLI 推理能力仍以当前连接或实际预检为准。
+
+外部模型菜单区分官方模型选择保存的档位与 CLI 独立保存的档位。Codex、Claude 和 MiniMax 普通对话将当前官方请求的档位传入真实外部轮次；CLI 档位继续使用会话与组合的独立选择。能力预检等待或失败不清除 Host 已确认的 CLI 档位显示，发送前仍校验实际能力。

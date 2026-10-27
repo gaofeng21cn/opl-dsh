@@ -104,13 +104,20 @@ it('routes candidate selection to the execution owner without granting arbitrary
   }
 })
 
-it('allows only read and catalog-save operations for the execution namespace', async () => {
+it('allows catalog and conversation editing through authenticated execution control', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'opl-execution-control-'))
   const invoke = vi.fn(async () => ({ ok: true }))
   const stop = await startBridge({ invoke } as unknown as TypertGateway, join(dir, 'control.json'))
   try {
     const binding = readBinding(join(dir, 'control.json'))
-    for (const method of ['catalog', 'combinations', 'harness-installations', 'save-catalog']) {
+    for (const method of [
+      'catalog',
+      'combinations',
+      'harness-installations',
+      'save-catalog',
+      'message-edit-state',
+      'message-edit-send',
+    ]) {
       expect(await rpc(binding, { namespace: 'oplExecution', method, args: {} })).toMatchObject({
         status: 200,
         json: { ok: true },
@@ -119,7 +126,7 @@ it('allows only read and catalog-save operations for the execution namespace', a
     expect(
       (await rpc(binding, { namespace: 'oplExecution', method: 'start', args: {} })).status,
     ).toBe(403)
-    expect(invoke).toHaveBeenCalledTimes(4)
+    expect(invoke).toHaveBeenCalledTimes(6)
   } finally {
     await stop()
     rmSync(dir, { recursive: true, force: true })

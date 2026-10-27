@@ -39,6 +39,7 @@ import type {
   ReportRequest,
 } from '../../contracts/types.ts'
 import type { ExecutionLimits } from '../contracts/limits.ts'
+import type { HarnessContextReading } from '../contracts/usage.ts'
 declare module '@deepseek-ai/cordis' {
   interface Context {
     oplExecution: ExecutionService
@@ -154,6 +155,11 @@ export class ExecutionService extends TypertRemoteService {
   @Remote('snapshot')
   snapshot(request: SessionRequest): Promise<HarnessSnapshot> {
     return this.execution.snapshot(request)
+  }
+  /** Read the latest completed external context observation for a native Session. */
+  @Remote('context-usage')
+  contextUsage(request: { sessionId: string }): Promise<HarnessContextReading | null> {
+    return this.execution.contextUsage(request)
   }
   @Remote('wait')
   wait(

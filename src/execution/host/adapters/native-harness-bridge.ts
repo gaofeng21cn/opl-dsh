@@ -3,10 +3,11 @@
  */
 import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
 import { dirname, resolve, sep } from 'node:path'
 import {
+  forkSession,
   getSessionMessages,
   query,
   type Query,
@@ -21,6 +22,16 @@ import {
 } from './native-bash.ts'
 import { acpUpdatesForClaudeEvent } from './claude-transcript.ts'
 import { bridgeFailure, HarnessReportedError } from './failure-diagnostics.ts'
+import {
+  CodexTurnUsageTracker,
+  claudeContextCapacity,
+  nativeContextUpdate,
+  nativeContextUsageMeta,
+  nativeTurnUsageMeta,
+  normalizeClaudeTurnUsage,
+  normalizeNativeContextUsage,
+  type NativeContextUsage,
+} from './native-usage.ts'
 const kind = process.env.OPL_NATIVE_HARNESS!,
   command = process.env.OPL_NATIVE_COMMAND!
 // The permission profile is a three-way authorization, not a boolean. Treating anything that
@@ -57,6 +68,16 @@ let sessionId = '',
   cancelled = false,
   claude: Query | undefined,
   turnId = ''
+const codexUsage = new CodexTurnUsageTracker()
+let codexOpeningSession = false
+const codexOpeningUsage: unknown[] = []
+let contextUsage: NativeContextUsage | undefined
+function recordContext(context: NativeContextUsage | undefined): void {
+  if (!context) return
+  contextUsage = context
+  const update = nativeContextUpdate(context)
+  if (update) emit(update)
+}
 let servers: Record<string, McpServerConfig> = {}
 let seq = 0
 const asks = new Map<string, (allowed: boolean) => void>()
@@ -114,6 +135,8 @@ function completedCodexMessage(item: any) {
   }
 }
 function codexRequest(method: string, params: object): Promise<any> {
+  if (!child || child.killed || child.exitCode !== null)
+    return Promise.reject(new HarnessReportedError('codex', { type: 'processExited' }))
   const id = ++seq
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject })
@@ -160,7 +183,12 @@ async function openCodex() {
         const p = pending.get(m.id)
         if (p) {
           pending.delete(m.id)
-          m.error ? p.reject(new HarnessReportedError('codex', m.error)) : p.resolve(m.result)
+          if (m.error) {
+            const error = new HarnessReportedError('codex', m.error)
+            if (typeof m.error?.message === 'string')
+              Object.defineProperty(error, 'bridgeRawMessage', { value: m.error.message })
+            p.reject(error)
+          } else p.resolve(m.result)
         }
         return
       }
@@ -187,13 +215,29 @@ async function openCodex() {
         child!.stdin!.write(JSON.stringify({ id: m.id, result }) + '\n')
         return
       }
+      if (
+        m.method === 'thread/tokenUsage/updated' &&
+        p.threadId !== sessionId &&
+        codexOpeningSession
+      ) {
+        if (codexOpeningUsage.length < 16) codexOpeningUsage.push(p)
+        return
+      }
       if (p.threadId !== sessionId) return
+      if (m.method === 'turn/started' && resolveTurn && typeof p.turn?.id === 'string')
+        codexUsage.bindTurn(p.turn.id)
+      if (m.method === 'thread/tokenUsage/updated') {
+        recordContext(codexUsage.accept(p)?.context)
+        return
+      }
       // The shell probe borrows this thread's command stream; it is kept out of the tool
       // call stream so it never surfaces as task activity.
       if (shellProbe) {
         if (m.method === 'item/commandExecution/outputDelta') shellProbe.output += p.delta ?? ''
-        else if (m.method === 'item/completed' && p.item?.type === 'commandExecution')
+        else if (m.method === 'turn/completed') {
           shellProbe.done?.()
+          return
+        }
         // The probe is internal bookkeeping and is never surfaced as task activity.
         if (m.method === 'item/started' || m.method === 'item/completed') return
       }
@@ -224,9 +268,16 @@ async function openCodex() {
         for (const item of p.turn.items ?? []) completedCodexMessage(item)
         if (p.turn.status === 'failed')
           rejectTurn?.(new HarnessReportedError('codex', p.turn.error, 'failed'))
-        else if (p.turn.status === 'completed' || p.turn.status === 'interrupted')
-          resolveTurn?.({ stopReason: p.turn.status === 'interrupted' ? 'cancelled' : 'end_turn' })
-        else rejectTurn?.(new HarnessReportedError('codex', { type: 'protocolError' }))
+        else if (p.turn.status === 'completed' || p.turn.status === 'interrupted') {
+          const meta = {
+            ...nativeTurnUsageMeta(codexUsage.current()),
+            ...nativeContextUsageMeta(contextUsage),
+          }
+          resolveTurn?.({
+            stopReason: p.turn.status === 'interrupted' ? 'cancelled' : 'end_turn',
+            ...(Object.keys(meta).length ? { _meta: meta } : {}),
+          })
+        } else rejectTurn?.(new HarnessReportedError('codex', { type: 'protocolError' }))
         resolveTurn = undefined
         rejectTurn = undefined
       }
@@ -250,9 +301,13 @@ async function openCodex() {
 async function probeCodexShell(threadId: string): Promise<string> {
   const probe: { output: string; done?: () => void } = { output: '' }
   shellProbe = probe
+  let expired = false
   // The timeout still bounds the wait, but the timer is cleared on every exit path so a
   // finished probe never keeps the event loop alive or fires into a later session.
-  const timer = setTimeout(() => probe.done?.(), 30000)
+  const timer = setTimeout(() => {
+    expired = true
+    probe.done?.()
+  }, 30000)
   try {
     const finished = new Promise<void>((resolve) => {
       probe.done = resolve
@@ -268,6 +323,7 @@ async function probeCodexShell(threadId: string): Promise<string> {
     delete probe.done
     shellProbe = null
   }
+  if (expired) throw Error('Codex shell 校验轮次未结束，未发送用户请求')
   return probe.output
 }
 
@@ -443,6 +499,8 @@ async function claudePrompt(text: string, effort?: string) {
     },
   })
   let result: any
+  let mainAssistantModel = model
+  let reportedContext: NativeContextUsage | undefined
   // The CLI's own `system`/`init` message reports the permission mode it really took, so an
   // Auto session is never trusted on the strength of the request alone.
   let reportedPermissionMode: unknown
@@ -463,11 +521,42 @@ async function claudePrompt(text: string, effort?: string) {
       }
       if (event.type === 'system' && event.subtype === 'api_retry' && event.error_status === null)
         networkRetry = true
+      if (event.type === 'assistant' && event.parent_tool_use_id === null) {
+        if (typeof event.message.model === 'string') mainAssistantModel = event.message.model
+        const context = event.context_usage
+        if (context)
+          reportedContext = normalizeNativeContextUsage({
+            used: context.total_tokens,
+            size: context.raw_max_tokens,
+            estimated: true,
+          })
+      }
       if (event.type === 'assistant' || event.type === 'result' || event.type === 'stream_event')
         receivedResponse()
       // Complete assistant text blocks are not replayed after their streamed deltas.
       for (const update of acpUpdatesForClaudeEvent(event)) emit(update)
-      if (event.type === 'result') result = event
+      if (event.type === 'result') {
+        result = event
+        let contextTimer: ReturnType<typeof setTimeout> | undefined
+        try {
+          const contextRequest = claude.getContextUsage({ detail: 'summary' })
+          const contextTimeout = new Promise<never>((_, reject) => {
+            contextTimer = setTimeout(() => reject(Error('Claude context read timed out')), 1000)
+          })
+          const usage = await Promise.race([contextRequest, contextTimeout])
+          reportedContext = normalizeNativeContextUsage({
+            used: usage.totalTokens,
+            size: usage.rawMaxTokens,
+            estimated: true,
+          })
+          recordContext(reportedContext)
+        } catch (contextError) {
+          // Context reporting is advisory and must not replace the completed model result.
+          void contextError
+        } finally {
+          if (contextTimer) clearTimeout(contextTimer)
+        }
+      }
     }
   } catch (error) {
     if (responseTimedOut) throw Error(networkRetry ? 'HARNESS_NETWORK' : 'HARNESS_TIMEOUT')
@@ -484,7 +573,15 @@ async function claudePrompt(text: string, effort?: string) {
     throw Error(
       '已请求 Claude Code 官方 Auto Review，但当前进程没有回报 permission mode；拒绝在无法确认时继续。',
     )
-  if (cancelled) return { stopReason: 'cancelled' }
+  const resultMeta = {
+    ...nativeTurnUsageMeta(normalizeClaudeTurnUsage(result)),
+    ...nativeContextUsageMeta(reportedContext ?? claudeContextCapacity(result, mainAssistantModel)),
+  }
+  if (cancelled)
+    return {
+      stopReason: 'cancelled',
+      ...(Object.keys(resultMeta).length ? { _meta: resultMeta } : {}),
+    }
   if (!result || result.is_error || result.subtype !== 'success') {
     const status = result?.api_error_status
     if (status === 401 || status === 403) throw Error('HARNESS_AUTH')
@@ -493,8 +590,310 @@ async function claudePrompt(text: string, effort?: string) {
     throw Error('HARNESS_EXECUTION')
   }
   hasHistory = true
-  return { stopReason: 'end_turn' }
+  return {
+    stopReason: 'end_turn',
+    ...(Object.keys(resultMeta).length ? { _meta: resultMeta } : {}),
+  }
 }
+const OPL_EDIT_META = 'opl/message-edit'
+const OPL_EDIT_READ = 'opl/message-edit/read'
+const OPL_EDIT_REWIND = 'opl/message-edit/rewind'
+
+type EditBoundary = { id: string; text?: string; unavailableReason?: string }
+type EditHistory = {
+  sessionId: string
+  token: string
+  boundaries: EditBoundary[]
+  /** Private prefix digests (including tool items); never parsed by the driver. */
+  prefixDigests?: string[]
+}
+type EditResult = {
+  sessionId: string
+  retained: { previousId: string; nextId: string }[]
+  ephemeral?: boolean
+}
+
+const editDigest = (value: unknown) =>
+  createHash('sha256').update(JSON.stringify(value)).digest('hex')
+
+function editIdle(): void {
+  if (resolveTurn || rejectTurn || claude || turnId || asks.size > 0)
+    editFailure('busy', '会话正在执行或等待审批，不能编辑历史')
+}
+
+function editFailure(reason: string, message: string): never {
+  const error = new Error(message)
+  ;(error as { code?: string }).code = reason
+  throw error
+}
+
+function codexTurnUser(turn: any): EditBoundary {
+  if (typeof turn?.id !== 'string' || !turn.id)
+    editFailure('history-unreadable', 'Codex turn 缺少稳定身份')
+  const items = Array.isArray(turn?.items) ? turn.items : []
+  const users = items.filter((item: any) => item?.type === 'userMessage')
+  if (users.length !== 1)
+    return {
+      id: String(turn?.id ?? ''),
+      unavailableReason: '这条 turn 含有多个用户输入，无法精确定位单条边界',
+    }
+  const content = Array.isArray(users[0]?.content) ? users[0].content : []
+  const texts: string[] = []
+  let nonText = false
+  for (const part of content) {
+    if (part?.type === 'text' && typeof part.text === 'string') texts.push(part.text)
+    else nonText = true
+  }
+  return {
+    id: String(turn?.id ?? ''),
+    ...(nonText
+      ? { unavailableReason: '这条消息带有附件或非文本内容，无法回填' }
+      : { text: texts.join('') }),
+  }
+}
+
+async function codexTurns(threadId: string): Promise<any[]> {
+  const turns: any[] = []
+  let cursor: string | null = null
+  const seen = new Set<string>()
+  for (;;) {
+    let page: any
+    try {
+      page = await codexRequest('thread/turns/list', {
+        threadId,
+        cursor,
+        limit: 100,
+        itemsView: 'full',
+        sortDirection: 'asc',
+      })
+    } catch (error) {
+      const raw = (error as { bridgeRawMessage?: unknown })?.bridgeRawMessage
+      if (
+        typeof raw === 'string' &&
+        /not materialized yet|unavailable before first user message/i.test(raw)
+      )
+        return []
+      editFailure('history-unreadable', 'Codex 历史读取失败，未做任何改动')
+    }
+    if (!Array.isArray(page?.data))
+      editFailure('history-unreadable', 'Codex 历史返回的 turn 列表无效')
+    const data = page.data
+    turns.push(...data)
+    if (
+      page.nextCursor !== undefined &&
+      page.nextCursor !== null &&
+      typeof page.nextCursor !== 'string'
+    )
+      editFailure('history-unreadable', 'Codex 历史分页游标无效')
+    const next = typeof page?.nextCursor === 'string' ? page.nextCursor : null
+    if (!next) return turns
+    if (seen.has(next)) editFailure('history-unreadable', 'Codex 历史分页游标重复，已拒绝继续')
+    seen.add(next)
+    cursor = next
+  }
+}
+
+async function codexHistory(threadId: string): Promise<EditHistory> {
+  const turns = await codexTurns(threadId)
+  const userTurns = turns.filter(
+    (turn: any) =>
+      !Array.isArray(turn.items) ||
+      !turn.items.length ||
+      !turn.items.every(
+        (item: any) => item.type === 'commandExecution' && item.source === 'userShell',
+      ),
+  )
+  const boundaries = userTurns.map(codexTurnUser)
+  const token = editDigest({
+    kind: 'codex',
+    threadId,
+    turns: turns.map((turn: any) => ({
+      id: String(turn?.id ?? ''),
+      status: typeof turn?.status === 'string' ? turn.status : '',
+      items: editDigest(turn?.items ?? []),
+    })),
+  })
+  return {
+    sessionId: threadId,
+    token,
+    boundaries,
+    prefixDigests: [
+      ...userTurns.map((turn: any) => editDigest(turns.slice(0, turns.indexOf(turn)))),
+      editDigest(turns),
+    ],
+  }
+}
+
+function codexPrefixDigest(history: EditHistory, count: number) {
+  return history.prefixDigests?.[count]
+}
+
+async function codexRewind(
+  threadId: string,
+  targetId: string,
+  expectedToken: string,
+): Promise<EditResult> {
+  const before = await codexHistory(threadId)
+  if (before.token !== expectedToken)
+    editFailure('history-changed', 'Codex 历史在读取后发生变化，已拒绝回退')
+  const index = before.boundaries.findIndex((item) => item.id === targetId)
+  if (index < 0) editFailure('unknown-target', '目标 turn 不在当前 Codex 历史中')
+  if (before.boundaries[index]?.unavailableReason)
+    editFailure('target-unavailable', '目标消息无法精确回退')
+  const prefix = codexPrefixDigest(before, index)
+  const response: any = await codexRequest('thread/revert', {
+    threadId,
+    beforeTurnId: targetId,
+  })
+  if (response?.thread?.id !== threadId)
+    editFailure('rewind-failed', 'Codex 未确认同一 thread 的回退结果')
+  codexUsage.reset()
+  contextUsage = undefined
+  const after = await codexHistory(threadId)
+  if (after.boundaries.length !== index || codexPrefixDigest(after, index) !== prefix)
+    editFailure('rewind-failed', 'Codex 回退后的保留前缀与预期不一致')
+  const retained = before.boundaries.slice(0, index).map((item, position) => ({
+    previousId: item.id,
+    nextId: after.boundaries[position]!.id,
+  }))
+  return { sessionId: threadId, retained }
+}
+
+function claudeContent(
+  message: any,
+): { kind: 'human'; text?: string; unavailableReason?: string } | { kind: 'tool' } {
+  const content = message?.message?.content
+  if (typeof content === 'string') return { kind: 'human', text: content }
+  if (!Array.isArray(content))
+    return { kind: 'human', unavailableReason: '这条消息的内容形状无法回填' }
+  if (content.some((part: any) => part?.type === 'tool_result')) return { kind: 'tool' }
+  const texts: string[] = []
+  let nonText = false
+  for (const part of content) {
+    if (part?.type === 'text' && typeof part.text === 'string') texts.push(part.text)
+    else nonText = true
+  }
+  return nonText
+    ? { kind: 'human', unavailableReason: '这条消息带有附件或非文本内容，无法回填' }
+    : { kind: 'human', text: texts.join('') }
+}
+
+async function claudeMessages(sessionId: string): Promise<any[]> {
+  try {
+    return await getSessionMessages(sessionId, { includeSystemMessages: true })
+  } catch {
+    editFailure('history-unreadable', 'Claude 历史读取失败，未做任何改动')
+  }
+}
+
+function claudeBoundaries(messages: any[]): EditBoundary[] {
+  const boundaries: EditBoundary[] = []
+  for (const message of messages) {
+    if (message?.type !== 'user') continue
+    const content = claudeContent(message)
+    if (content.kind === 'tool') continue
+    boundaries.push({
+      id: String(message.uuid),
+      ...(content.unavailableReason
+        ? { unavailableReason: content.unavailableReason }
+        : { text: content.text ?? '' }),
+    })
+  }
+  return boundaries
+}
+
+function claudeToken(sessionId: string, messages: any[]): string {
+  return editDigest({
+    kind: 'claude',
+    sessionId,
+    messages: messages.map((message) => ({
+      type: message?.type,
+      uuid: String(message?.uuid ?? ''),
+      parentToolUseId: message?.parent_tool_use_id ?? null,
+      parentAgentId: message?.parent_agent_id ?? null,
+      content: editDigest(message?.message ?? null),
+    })),
+  })
+}
+
+async function claudeSnapshot(sessionId: string): Promise<{
+  messages: any[]
+  history: EditHistory
+}> {
+  const messages = await claudeMessages(sessionId)
+  const boundaries = claudeBoundaries(messages)
+  return {
+    messages,
+    history: {
+      sessionId,
+      token: claudeToken(sessionId, messages),
+      boundaries,
+    },
+  }
+}
+
+async function claudeHistory(sessionId: string): Promise<EditHistory> {
+  return (await claudeSnapshot(sessionId)).history
+}
+
+async function claudeRewind(
+  sourceSessionId: string,
+  targetId: string,
+  expectedToken: string,
+): Promise<EditResult> {
+  const snapshot = await claudeSnapshot(sourceSessionId)
+  const beforeMessages = snapshot.messages
+  const before = snapshot.history
+  if (before.token !== expectedToken)
+    editFailure('history-changed', 'Claude 历史在读取后发生变化，已拒绝回退')
+  const userIndex = before.boundaries.findIndex((item) => item.id === targetId)
+  if (userIndex < 0) editFailure('unknown-target', '目标消息不在当前 Claude 历史中')
+  if (before.boundaries[userIndex]?.unavailableReason)
+    editFailure('target-unavailable', '目标消息无法精确回退')
+  if (userIndex === 0) {
+    // The driver binds this identity through the explicit session/load reconnect path;
+    // the live global is not switched before that binding is validated.
+    return { sessionId: randomUUID(), retained: [], ephemeral: true }
+  }
+  const targetIndex = beforeMessages.findIndex((message) => String(message.uuid) === targetId)
+  if (targetIndex <= 0) editFailure('unknown-target', '目标消息缺少可保留的前缀')
+  const previous = beforeMessages[targetIndex - 1]
+  if (!previous || typeof previous.uuid !== 'string')
+    editFailure('rewind-failed', '目标消息前一条历史不可用')
+  let forked: { sessionId: string }
+  try {
+    forked = await forkSession(sourceSessionId, { upToMessageId: previous.uuid })
+  } catch {
+    editFailure('rewind-failed', 'Claude 分支未完成')
+  }
+  const afterSnapshot = await claudeSnapshot(forked.sessionId)
+  const afterMessages = afterSnapshot.messages
+  if (afterMessages.length !== targetIndex)
+    editFailure('rewind-failed', 'Claude 分支的保留前缀长度与预期不一致')
+  for (let index = 0; index < targetIndex; index++) {
+    const oldMessage = beforeMessages[index]
+    const newMessage = afterMessages[index]
+    if (
+      oldMessage?.type !== newMessage?.type ||
+      (oldMessage?.parent_tool_use_id ?? null) !== (newMessage?.parent_tool_use_id ?? null) ||
+      (oldMessage?.parent_agent_id ?? null) !== (newMessage?.parent_agent_id ?? null) ||
+      editDigest(oldMessage?.message ?? null) !== editDigest(newMessage?.message ?? null)
+    )
+      editFailure('rewind-failed', 'Claude 分支的保留前缀内容或父关系与预期不一致')
+  }
+  const after = afterSnapshot.history
+  if (after.boundaries.length !== userIndex)
+    editFailure('rewind-failed', 'Claude 分支的保留边界数量与预期不一致')
+  const retained = before.boundaries.slice(0, userIndex).map((item, position) => ({
+    previousId: item.id,
+    nextId: after.boundaries[position]!.id,
+  }))
+  // Switch the live bridge identity only after every retained prefix check passed.
+  sessionId = forked.sessionId
+  hasHistory = true
+  return { sessionId: forked.sessionId, retained }
+}
+
 async function invoke(method: string, p: any) {
   if (method === 'initialize') {
     // Refused before any process is spawned: an unreadable Auto opt-in must not resolve to
@@ -504,12 +903,18 @@ async function invoke(method: string, p: any) {
     if (kind === 'codex') await openCodex()
     return {
       protocolVersion: 1,
-      agentCapabilities: { loadSession: true },
+      agentCapabilities: {
+        loadSession: true,
+        _meta: {
+          [OPL_EDIT_META]: { version: 1, methods: [OPL_EDIT_READ, OPL_EDIT_REWIND] },
+        },
+      },
       agentInfo: { name: kind, version: 'native' },
     }
   }
   if (method === 'session/new' || method === 'session/load') {
     if (p.cwd !== cwd) throw Error('不能改变已绑定项目')
+    contextUsage = undefined
     servers = Object.fromEntries(
       (p.mcpServers ?? []).map((s: any) => [
         s.name,
@@ -521,6 +926,8 @@ async function invoke(method: string, p: any) {
       ]),
     )
     if (kind === 'codex') {
+      codexUsage.reset(method === 'session/new')
+      sessionId = method === 'session/load' ? p.sessionId : ''
       const config = {
         model_provider: 'opl-gateway',
         model_providers: {
@@ -556,11 +963,25 @@ async function invoke(method: string, p: any) {
         ...(autoReview ? { approvalsReviewer: 'auto_review' } : {}),
         config,
       }
-      const r = await codexRequest(method === 'session/load' ? 'thread/resume' : 'thread/start', {
-        ...params,
-        ...(p.sessionId ? { threadId: p.sessionId } : {}),
-      })
+      codexOpeningUsage.length = 0
+      codexOpeningSession = true
+      let r: any
+      try {
+        r = await codexRequest(method === 'session/load' ? 'thread/resume' : 'thread/start', {
+          ...params,
+          ...(p.sessionId ? { threadId: p.sessionId } : {}),
+        })
+      } finally {
+        codexOpeningSession = false
+      }
       sessionId = r.thread.id
+      for (const notification of codexOpeningUsage.splice(0)) {
+        const pending =
+          notification && typeof notification === 'object' && !Array.isArray(notification)
+            ? (notification as { threadId?: unknown })
+            : {}
+        if (pending.threadId === sessionId) recordContext(codexUsage.accept(notification)?.context)
+      }
       if (r.model && r.model !== model) throw Error('Codex 返回不同模型')
       // Verified after the thread exists but before any turn, so a thread that did not take
       // the official reviewer is refused instead of being used.
@@ -570,9 +991,27 @@ async function invoke(method: string, p: any) {
       sessionId = p.sessionId ?? randomUUID()
       hasHistory = false
     }
-    return { sessionId, models: { currentModelId: model } }
+    return {
+      sessionId,
+      models: { currentModelId: model },
+      _meta: nativeContextUsageMeta(contextUsage),
+    }
   }
   if (p.sessionId !== sessionId) throw Error('会话身份不匹配')
+  if (method === OPL_EDIT_READ) {
+    editIdle()
+    if (kind === 'codex') return codexHistory(sessionId)
+    if (kind === 'claude') return claudeHistory(sessionId)
+    editFailure('capability-missing', '当前原生桥接不支持消息编辑历史')
+  }
+  if (method === OPL_EDIT_REWIND) {
+    editIdle()
+    if (typeof p.targetId !== 'string' || typeof p.expectedToken !== 'string')
+      editFailure('invalid-request', '消息编辑回退参数不完整')
+    if (kind === 'codex') return codexRewind(sessionId, p.targetId, p.expectedToken)
+    if (kind === 'claude') return claudeRewind(sessionId, p.targetId, p.expectedToken)
+    editFailure('capability-missing', '当前原生桥接不支持消息编辑回退')
+  }
   if (method === 'session/cancel') {
     cancelled = true
     for (const resolve of asks.values()) resolve(false)
@@ -590,6 +1029,7 @@ async function invoke(method: string, p: any) {
     const effort = p._meta?.reasoningEffort ?? undefined
     if (kind === 'claude') return claudePrompt(text, effort)
     codexMessageText.clear()
+    codexUsage.beginTurn()
     const done = new Promise((resolve, reject) => {
       resolveTurn = resolve
       rejectTurn = reject
@@ -604,8 +1044,10 @@ async function invoke(method: string, p: any) {
         effort: effort ?? null,
       })
       turnId = r.turn.id
+      recordContext(codexUsage.bindTurn(turnId)?.context)
       return await done
     } finally {
+      codexUsage.endTurn()
       resolveTurn = undefined
       rejectTurn = undefined
       turnId = ''

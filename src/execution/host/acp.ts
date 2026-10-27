@@ -103,6 +103,26 @@ function requestStage(method: string): string {
   }
 }
 export class HarnessTransportError extends Error {}
+/** A matched ACP error response; transport loss never creates this observation. */
+export class HarnessRequestError extends HarnessTransportError {
+  readonly promptSettled: boolean
+  constructor(message: string, method: string, code: unknown, data?: unknown) {
+    super(message)
+    this.promptSettled =
+      method === 'session/prompt' &&
+      (object(data).oplTurnSettled === true ||
+        safeFailureDetails(data).terminalState === 'failed' ||
+        (typeof code === 'string' &&
+          [
+            'HARNESS_PROVIDER_RATE_LIMIT',
+            'HARNESS_PROVIDER_AUTH',
+            'HARNESS_PROVIDER_MODEL',
+            'HARNESS_PROVIDER_CLIENT_REQUIRED',
+            'HARNESS_PROVIDER_RETIRED',
+            'HARNESS_PROVIDER_ROUTE',
+          ].includes(code)))
+  }
+}
 /** Options for refusing an ACP prompt that never reports visible progress. */
 export interface AcpRequestOptions {
   /** Maximum time to wait for the first useful update; disabled when omitted. */
@@ -203,8 +223,11 @@ export class AcpProcess {
         this.stderrObservers.delete(m.id)
         if (m.error) {
           p.reject(
-            new HarnessTransportError(
+            new HarnessRequestError(
               `${harnessFailure(object(m.error).code, object(m.error).data)}（${requestStage(p.method)}）`,
+              p.method,
+              object(m.error).code,
+              object(m.error).data,
             ),
           )
         } else p.resolve(m.result)

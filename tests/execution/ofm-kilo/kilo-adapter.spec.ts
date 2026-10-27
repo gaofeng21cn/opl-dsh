@@ -194,6 +194,7 @@ describe('Kilo 声明面', () => {
       'dots-studio/dots-3-note-preview:free',
       'stealth/glyph-cluster',
       'kilo-auto/free',
+      'nvidia/nemotron-3-super-120b-a12b:free',
       'nvidia/nemotron-3.5-super-vl:free',
       'reflection/beam-free',
       'xingchen-agi/xing4.0-29b-a4b:free',
@@ -205,6 +206,7 @@ describe('Kilo 声明面', () => {
     expect(KILO_OFM_MODELS).toContain('stealth/glyph-cluster')
     // free/auto 路由条目按路由条目保留，不被替换成某个具体底层模型。
     expect(KILO_OFM_MODELS).toContain('kilo-auto/free')
+    expect(KILO_OFM_MODELS).toContain('nvidia/nemotron-3-super-120b-a12b:free')
     expect(KILO_OFM_MODELS).toContain('nvidia/nemotron-3.5-super-vl:free')
     expect(KILO_OFM_MODELS).toContain('reflection/beam-free')
     expect(KILO_OFM_MODELS).toContain('xingchen-agi/xing4.0-29b-a4b:free')

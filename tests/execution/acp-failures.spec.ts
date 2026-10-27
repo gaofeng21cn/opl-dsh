@@ -1,5 +1,9 @@
 import { afterEach, expect, it } from 'vitest'
-import { AcpProcess, HarnessTransportError } from '../../src/execution/host/acp.ts'
+import {
+  AcpProcess,
+  HarnessTransportError,
+  HarnessRequestError,
+} from '../../src/execution/host/acp.ts'
 
 let transport: AcpProcess | undefined
 afterEach(async () => {
@@ -18,6 +22,23 @@ function connect(script: string): AcpProcess {
     () => {},
   ))
 }
+
+it.each([
+  ['HARNESS_PROVIDER_RATE_LIMIT', {}, true],
+  ['HARNESS_PROVIDER', { oplTurnSettled: true }, true],
+  ['HARNESS_PROVIDER_NETWORK', {}, false],
+  [-32603, {}, false],
+  [{ toString: 'untrusted' }, {}, false],
+])('distinguishes terminal rejection %s from an unknown execution', async (code, data, settled) => {
+  const instance =
+    connect(`require('node:readline').createInterface({input:process.stdin}).on('line', line => {
+    const request=JSON.parse(line);
+    process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:request.id,error:{code:${JSON.stringify(code)},data:${JSON.stringify(data)}}})+String.fromCharCode(10));
+  })`)
+  const failure = await instance.request('session/prompt', {}).catch((error) => error)
+  expect(failure).toBeInstanceOf(HarnessRequestError)
+  expect(failure.promptSettled).toBe(settled)
+})
 
 it('keeps internal failures inconclusive and does not reflect provider diagnostics', async () => {
   const instance = connect(`

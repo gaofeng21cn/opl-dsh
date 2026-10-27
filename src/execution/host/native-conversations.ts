@@ -240,6 +240,15 @@ export class NativeHarnessConversations {
     if (
       !current.some((event) => event.type === 'assistant/message' && event.data.turn === number)
     ) {
+      if (
+        turn.contextUsage?.size !== undefined &&
+        session.requestContext?.()?.contextWindow !== turn.contextUsage.size
+      )
+        session.append('request/context', {
+          provider: record.modelRef.provider,
+          model: record.modelRef.model,
+          contextWindow: turn.contextUsage.size,
+        })
       const summary = turn.tools.length
         ? '\n\n历史工具记录（原记录只保存名称和状态）：\n' +
           turn.tools.map((tool) => `${tool.title} · ${tool.status}`).join('\n')
@@ -264,6 +273,7 @@ export class NativeHarnessConversations {
               content,
             }),
             stream: [],
+            ...(turn.usage ? { usage: turn.usage } : {}),
           },
           { surfaceOp: 'append' },
         )

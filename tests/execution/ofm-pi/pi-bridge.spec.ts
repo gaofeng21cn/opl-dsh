@@ -128,12 +128,31 @@ describe('Pi bridge: initialization and pinning over the official CLI', () => {
         cwd: run.cwd,
         mcpServers: [],
       })) as { sessionId: string }
-      await expect(
-        run.agent.acp.request('session/prompt', {
+      const failure = await run.agent.acp
+        .request('session/prompt', {
           sessionId: session.sessionId,
           prompt: [{ type: 'text', text: 'Reply OK.' }],
-        }),
-      ).rejects.toThrow('官方渠道限流或配额已达上限')
+        })
+        .catch((error) => error)
+      expect(String(failure)).toContain('官方渠道限流或配额已达上限')
+      expect(failure.promptSettled).toBe(true)
+      const history = (await run.agent.acp.request('opl/edit/read', {
+        sessionId: session.sessionId,
+      })) as any
+      expect(history.ok).toBe(true)
+      expect(history.settledInputId).toBe(history.boundaries[0].id)
+      const fork = (await run.agent.acp.request('opl/edit/rewind', {
+        sessionId: session.sessionId,
+        operationId: 'edit-rate-limit',
+        targetId: history.boundaries[0].id,
+        expectedToken: history.token,
+      })) as any
+      expect(fork.ok).toBe(true)
+      expect(fork.sessionId).not.toBe(session.sessionId)
+      const pending = (await run.agent.acp.request('opl/edit/read', {
+        sessionId: fork.sessionId,
+      })) as any
+      expect(pending.boundaries).toEqual([])
     } finally {
       await run.agent.dispose()
       await run.provider.close()

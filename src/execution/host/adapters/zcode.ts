@@ -18,6 +18,7 @@ import {
   HUAWEI_MAAS_MODEL,
   HUAWEI_MAAS_PROVIDER_ID,
   HUAWEI_DEFAULT_REASONING_LEVEL,
+  huaweiReasoningLevel,
   ZCODE_FULL_ACCESS_MODE,
   ZCODE_HARNESS,
   HUAWEI_CREDENTIAL_REQUESTS,
@@ -109,7 +110,7 @@ async function prepareZcodeLaunch(
       OPL_ZCODE_PROVIDER_CONFIG_FILE: join(home, 'provider-builtin.json'),
       OPL_ZCODE_PERSONAL_PROVIDER_CONFIG_FILE: join(home, 'provider-personal.json'),
       OPL_ZCODE_MODE: mode,
-      OPL_ZCODE_REASONING_LEVEL: HUAWEI_DEFAULT_REASONING_LEVEL,
+      OPL_ZCODE_REASONING_LEVEL: huaweiReasoningLevel(record.reasoningEffort),
       OPL_ZCODE_UPSTREAM: HUAWEI_MAAS_BASE_URL,
       ...isolated,
     },
@@ -139,4 +140,19 @@ export const zcodeAdapter: HarnessAdapter = {
         : { available: false, reason: '未找到官方 ZCode CLI，请在 Harness 页检查安装' },
     ),
   prepare: prepareZcodeLaunch,
+  async configureSession(acp, record) {
+    const value = huaweiReasoningLevel(record.reasoningEffort)
+    const response = (await acp.request('session/set_config_option', {
+      sessionId: record.acpSessionId,
+      configId: 'reasoning_effort',
+      value,
+    })) as { configOptions?: { id: string; currentValue: string }[] }
+    if (
+      !response.configOptions?.some(
+        (option) => option.id === 'reasoning_effort' && option.currentValue === value,
+      )
+    )
+      throw Error('ZCode 未确认华为云推理档位，未发送请求')
+    return { configOptions: response.configOptions }
+  },
 }

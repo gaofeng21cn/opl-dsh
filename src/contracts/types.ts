@@ -2,6 +2,7 @@
 export type * from '../gateway/contracts/account.ts'
 export type * from '../gateway/contracts/models.ts'
 export type * from '../execution/contracts/sessions.ts'
+export type * from '../execution/contracts/usage.ts'
 export type * from '../execution/contracts/stop-edit.ts'
 export type * from '../execution/contracts/message-edit.ts'
 export type * from '../execution/contracts/catalog.ts'

@@ -100,7 +100,7 @@ describe('OPL Gateway composition', () => {
       )
       const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
       expect(url).toBe('https://gateway.medopl.com/v1/responses')
-      expect(JSON.parse(String(init.body)).model).toBe('gpt-6-luna')
+      expect(JSON.parse(String(init.body)).model).toBe('gpt-6.1-sol')
       expect(new Headers(init.headers).get('authorization')).toBe('Bearer search-group-key')
       expect((await ctx.web.fetch({ url: 'https://example.org' })).body).toEqual({
         kind: 'text',
@@ -108,6 +108,11 @@ describe('OPL Gateway composition', () => {
       })
       expect(fetchPage).toHaveBeenCalledOnce()
       expect(fetchMock).toHaveBeenCalledOnce()
+      fetchMock.mockImplementationOnce(
+        async () => new Response('service unavailable', { status: 503 }),
+      )
+      await expect(ctx.web.search({ query: 'Unavailable search' })).rejects.toThrow()
+      expect(fetchMock).toHaveBeenCalledTimes(2)
     } finally {
       await ctx.fiber.dispose()
     }

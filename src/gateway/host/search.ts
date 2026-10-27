@@ -27,10 +27,10 @@ import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 export const OPL_GATEWAY_SEARCH_PROVIDER_ID = 'opl-gateway'
 
 /** Internal auxiliary search model, independent of the conversation model. */
-export const OPL_GATEWAY_SEARCH_DEFAULT_MODEL = 'gpt-6-luna'
+export const OPL_GATEWAY_SEARCH_DEFAULT_MODEL = 'gpt-6.1-sol'
 
-/** Search-capable fallback used when the primary auxiliary model is unavailable. */
-export const OPL_GATEWAY_SEARCH_FALLBACK_MODELS = ['gpt-6.1-sol'] as const
+/** Search failures stay on the selected auxiliary model without switching models. */
+export const OPL_GATEWAY_SEARCH_FALLBACK_MODELS = [] as const
 
 /** Default upper bound on generated tokens for the search turn. */
 export const OPL_GATEWAY_SEARCH_DEFAULT_MAX_OUTPUT_TOKENS = 1024

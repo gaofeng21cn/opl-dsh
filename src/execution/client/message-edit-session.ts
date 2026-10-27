@@ -64,6 +64,7 @@ export class MessageEditSession {
   private readonly listeners = new Set<() => void>()
   private loadFlight: Promise<void> | undefined
   private loadGeneration = 0
+  private loadAgain = false
 
   constructor(
     readonly sessionId: string,
@@ -84,11 +85,14 @@ export class MessageEditSession {
   }
 
   async load(): Promise<void> {
-    if (this.loadFlight) return this.loadFlight
+    if (this.loadFlight) {
+      this.loadAgain = true
+      return this.loadFlight
+    }
     const generation = ++this.loadGeneration
     const flight = this.call('message-edit-state', { sessionId: this.sessionId })
       .then((state) => {
-        if (generation !== this.loadGeneration) return
+        if (generation !== this.loadGeneration || this.loadAgain) return
         const selection = this.snapshot.selection
         if (
           selection &&
@@ -99,11 +103,15 @@ export class MessageEditSession {
         this.publish({ ...this.snapshot, state, error: undefined })
       })
       .catch(() => {
-        if (generation === this.loadGeneration)
+        if (generation === this.loadGeneration && !this.loadAgain)
           this.publish({ ...this.snapshot, error: messageEditCopy.failed })
       })
       .finally(() => {
         if (this.loadFlight === flight) this.loadFlight = undefined
+        if (this.loadAgain) {
+          this.loadAgain = false
+          return this.load()
+        }
       })
     this.loadFlight = flight
     return flight
@@ -159,6 +167,7 @@ export class MessageEditSession {
     try {
       await this.call('message-edit-send', recovery)
       this.publish({ ...this.snapshot, error: undefined })
+      await this.load()
       return true
     } catch {
       this.publish({ ...this.snapshot, error: messageEditCopy.failed })
