@@ -22,6 +22,16 @@ import {
 } from './native-bash.ts'
 import { acpUpdatesForClaudeEvent } from './claude-transcript.ts'
 import { bridgeFailure, HarnessReportedError } from './failure-diagnostics.ts'
+import {
+  CodexTurnUsageTracker,
+  claudeContextCapacity,
+  nativeContextUpdate,
+  nativeContextUsageMeta,
+  nativeTurnUsageMeta,
+  normalizeClaudeTurnUsage,
+  normalizeNativeContextUsage,
+  type NativeContextUsage,
+} from './native-usage.ts'
 const kind = process.env.OPL_NATIVE_HARNESS!,
   command = process.env.OPL_NATIVE_COMMAND!
 // The permission profile is a three-way authorization, not a boolean. Treating anything that
@@ -58,6 +68,16 @@ let sessionId = '',
   cancelled = false,
   claude: Query | undefined,
   turnId = ''
+const codexUsage = new CodexTurnUsageTracker()
+let codexOpeningSession = false
+const codexOpeningUsage: unknown[] = []
+let contextUsage: NativeContextUsage | undefined
+function recordContext(context: NativeContextUsage | undefined): void {
+  if (!context) return
+  contextUsage = context
+  const update = nativeContextUpdate(context)
+  if (update) emit(update)
+}
 let servers: Record<string, McpServerConfig> = {}
 let seq = 0
 const asks = new Map<string, (allowed: boolean) => void>()
@@ -195,7 +215,21 @@ async function openCodex() {
         child!.stdin!.write(JSON.stringify({ id: m.id, result }) + '\n')
         return
       }
+      if (
+        m.method === 'thread/tokenUsage/updated' &&
+        p.threadId !== sessionId &&
+        codexOpeningSession
+      ) {
+        if (codexOpeningUsage.length < 16) codexOpeningUsage.push(p)
+        return
+      }
       if (p.threadId !== sessionId) return
+      if (m.method === 'turn/started' && resolveTurn && typeof p.turn?.id === 'string')
+        codexUsage.bindTurn(p.turn.id)
+      if (m.method === 'thread/tokenUsage/updated') {
+        recordContext(codexUsage.accept(p)?.context)
+        return
+      }
       // The shell probe borrows this thread's command stream; it is kept out of the tool
       // call stream so it never surfaces as task activity.
       if (shellProbe) {
@@ -234,9 +268,16 @@ async function openCodex() {
         for (const item of p.turn.items ?? []) completedCodexMessage(item)
         if (p.turn.status === 'failed')
           rejectTurn?.(new HarnessReportedError('codex', p.turn.error, 'failed'))
-        else if (p.turn.status === 'completed' || p.turn.status === 'interrupted')
-          resolveTurn?.({ stopReason: p.turn.status === 'interrupted' ? 'cancelled' : 'end_turn' })
-        else rejectTurn?.(new HarnessReportedError('codex', { type: 'protocolError' }))
+        else if (p.turn.status === 'completed' || p.turn.status === 'interrupted') {
+          const meta = {
+            ...nativeTurnUsageMeta(codexUsage.current()),
+            ...nativeContextUsageMeta(contextUsage),
+          }
+          resolveTurn?.({
+            stopReason: p.turn.status === 'interrupted' ? 'cancelled' : 'end_turn',
+            ...(Object.keys(meta).length ? { _meta: meta } : {}),
+          })
+        } else rejectTurn?.(new HarnessReportedError('codex', { type: 'protocolError' }))
         resolveTurn = undefined
         rejectTurn = undefined
       }
@@ -458,6 +499,8 @@ async function claudePrompt(text: string, effort?: string) {
     },
   })
   let result: any
+  let mainAssistantModel = model
+  let reportedContext: NativeContextUsage | undefined
   // The CLI's own `system`/`init` message reports the permission mode it really took, so an
   // Auto session is never trusted on the strength of the request alone.
   let reportedPermissionMode: unknown
@@ -478,11 +521,42 @@ async function claudePrompt(text: string, effort?: string) {
       }
       if (event.type === 'system' && event.subtype === 'api_retry' && event.error_status === null)
         networkRetry = true
+      if (event.type === 'assistant' && event.parent_tool_use_id === null) {
+        if (typeof event.message.model === 'string') mainAssistantModel = event.message.model
+        const context = event.context_usage
+        if (context)
+          reportedContext = normalizeNativeContextUsage({
+            used: context.total_tokens,
+            size: context.raw_max_tokens,
+            estimated: true,
+          })
+      }
       if (event.type === 'assistant' || event.type === 'result' || event.type === 'stream_event')
         receivedResponse()
       // Complete assistant text blocks are not replayed after their streamed deltas.
       for (const update of acpUpdatesForClaudeEvent(event)) emit(update)
-      if (event.type === 'result') result = event
+      if (event.type === 'result') {
+        result = event
+        let contextTimer: ReturnType<typeof setTimeout> | undefined
+        try {
+          const contextRequest = claude.getContextUsage({ detail: 'summary' })
+          const contextTimeout = new Promise<never>((_, reject) => {
+            contextTimer = setTimeout(() => reject(Error('Claude context read timed out')), 1000)
+          })
+          const usage = await Promise.race([contextRequest, contextTimeout])
+          reportedContext = normalizeNativeContextUsage({
+            used: usage.totalTokens,
+            size: usage.rawMaxTokens,
+            estimated: true,
+          })
+          recordContext(reportedContext)
+        } catch (contextError) {
+          // Context reporting is advisory and must not replace the completed model result.
+          void contextError
+        } finally {
+          if (contextTimer) clearTimeout(contextTimer)
+        }
+      }
     }
   } catch (error) {
     if (responseTimedOut) throw Error(networkRetry ? 'HARNESS_NETWORK' : 'HARNESS_TIMEOUT')
@@ -499,7 +573,15 @@ async function claudePrompt(text: string, effort?: string) {
     throw Error(
       '已请求 Claude Code 官方 Auto Review，但当前进程没有回报 permission mode；拒绝在无法确认时继续。',
     )
-  if (cancelled) return { stopReason: 'cancelled' }
+  const resultMeta = {
+    ...nativeTurnUsageMeta(normalizeClaudeTurnUsage(result)),
+    ...nativeContextUsageMeta(reportedContext ?? claudeContextCapacity(result, mainAssistantModel)),
+  }
+  if (cancelled)
+    return {
+      stopReason: 'cancelled',
+      ...(Object.keys(resultMeta).length ? { _meta: resultMeta } : {}),
+    }
   if (!result || result.is_error || result.subtype !== 'success') {
     const status = result?.api_error_status
     if (status === 401 || status === 403) throw Error('HARNESS_AUTH')
@@ -508,7 +590,10 @@ async function claudePrompt(text: string, effort?: string) {
     throw Error('HARNESS_EXECUTION')
   }
   hasHistory = true
-  return { stopReason: 'end_turn' }
+  return {
+    stopReason: 'end_turn',
+    ...(Object.keys(resultMeta).length ? { _meta: resultMeta } : {}),
+  }
 }
 const OPL_EDIT_META = 'opl/message-edit'
 const OPL_EDIT_READ = 'opl/message-edit/read'
@@ -662,6 +747,8 @@ async function codexRewind(
   })
   if (response?.thread?.id !== threadId)
     editFailure('rewind-failed', 'Codex 未确认同一 thread 的回退结果')
+  codexUsage.reset()
+  contextUsage = undefined
   const after = await codexHistory(threadId)
   if (after.boundaries.length !== index || codexPrefixDigest(after, index) !== prefix)
     editFailure('rewind-failed', 'Codex 回退后的保留前缀与预期不一致')
@@ -827,6 +914,7 @@ async function invoke(method: string, p: any) {
   }
   if (method === 'session/new' || method === 'session/load') {
     if (p.cwd !== cwd) throw Error('不能改变已绑定项目')
+    contextUsage = undefined
     servers = Object.fromEntries(
       (p.mcpServers ?? []).map((s: any) => [
         s.name,
@@ -838,6 +926,8 @@ async function invoke(method: string, p: any) {
       ]),
     )
     if (kind === 'codex') {
+      codexUsage.reset(method === 'session/new')
+      sessionId = method === 'session/load' ? p.sessionId : ''
       const config = {
         model_provider: 'opl-gateway',
         model_providers: {
@@ -873,11 +963,25 @@ async function invoke(method: string, p: any) {
         ...(autoReview ? { approvalsReviewer: 'auto_review' } : {}),
         config,
       }
-      const r = await codexRequest(method === 'session/load' ? 'thread/resume' : 'thread/start', {
-        ...params,
-        ...(p.sessionId ? { threadId: p.sessionId } : {}),
-      })
+      codexOpeningUsage.length = 0
+      codexOpeningSession = true
+      let r: any
+      try {
+        r = await codexRequest(method === 'session/load' ? 'thread/resume' : 'thread/start', {
+          ...params,
+          ...(p.sessionId ? { threadId: p.sessionId } : {}),
+        })
+      } finally {
+        codexOpeningSession = false
+      }
       sessionId = r.thread.id
+      for (const notification of codexOpeningUsage.splice(0)) {
+        const pending =
+          notification && typeof notification === 'object' && !Array.isArray(notification)
+            ? (notification as { threadId?: unknown })
+            : {}
+        if (pending.threadId === sessionId) recordContext(codexUsage.accept(notification)?.context)
+      }
       if (r.model && r.model !== model) throw Error('Codex 返回不同模型')
       // Verified after the thread exists but before any turn, so a thread that did not take
       // the official reviewer is refused instead of being used.
@@ -887,7 +991,11 @@ async function invoke(method: string, p: any) {
       sessionId = p.sessionId ?? randomUUID()
       hasHistory = false
     }
-    return { sessionId, models: { currentModelId: model } }
+    return {
+      sessionId,
+      models: { currentModelId: model },
+      _meta: nativeContextUsageMeta(contextUsage),
+    }
   }
   if (p.sessionId !== sessionId) throw Error('会话身份不匹配')
   if (method === OPL_EDIT_READ) {
@@ -921,6 +1029,7 @@ async function invoke(method: string, p: any) {
     const effort = p._meta?.reasoningEffort ?? undefined
     if (kind === 'claude') return claudePrompt(text, effort)
     codexMessageText.clear()
+    codexUsage.beginTurn()
     const done = new Promise((resolve, reject) => {
       resolveTurn = resolve
       rejectTurn = reject
@@ -935,8 +1044,10 @@ async function invoke(method: string, p: any) {
         effort: effort ?? null,
       })
       turnId = r.turn.id
+      recordContext(codexUsage.bindTurn(turnId)?.context)
       return await done
     } finally {
+      codexUsage.endTurn()
       resolveTurn = undefined
       rejectTurn = undefined
       turnId = ''

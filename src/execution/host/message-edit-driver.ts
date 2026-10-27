@@ -1,10 +1,13 @@
 /** Vendor history operations used by the shared same-conversation edit transaction. */
 import type { HarnessSession } from '../contracts/sessions.ts'
 import type { AcpRequestSurface, AcpSessionSnapshot, AdapterLaunch } from './adapters/types.ts'
+import type { HarnessStatistics } from '../contracts/usage.ts'
 
 /** A real user input in the active vendor history, never a text-derived identity. */
 export interface ExternalEditBoundary {
   id: string
+  /** Optional statistics for this exact native user input, read in the same control lifecycle. */
+  statistics?: HarnessStatistics
   /** Exact text when supplied by the public protocol; summaries must not populate this. */
   text?: string
   /** Vendor-specific restriction for this boundary. */

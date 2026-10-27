@@ -950,7 +950,8 @@ describe('bridge against a fake official app-server', () => {
         .filter(
           (r) => r.method === ZCODE_METHODS.sessionSubscribe && r.params.includeSnapshot === true,
         )
-      expect(probes).toHaveLength(1)
+      // One model/mode admission snapshot and one post-turn context snapshot.
+      expect(probes).toHaveLength(2)
     })
   })
 

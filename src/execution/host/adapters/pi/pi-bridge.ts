@@ -59,6 +59,7 @@ import { join } from 'node:path'
 import { commandLaunch } from '../../harness-registry.ts'
 import { RpcTurnOutcome } from '../rpc-turn-outcome.ts'
 import { PI_CREDENTIAL_ENV, buildPiModelsConfig, buildPiSettings } from './pi-config.ts'
+import { PiTurnUsage, piContextUsage, piSessionStatsUsage } from './pi-usage.ts'
 
 // ── Launch contract ────────────────────────────────────────────────────────────────
 // Bound by `./pi.ts`. Everything here is non-secret except the credential, which is read
@@ -166,6 +167,7 @@ let cancelLatched = false
 let resolveTurn: ((value: unknown) => void) | undefined
 let rejectTurn: ((error: Error) => void) | undefined
 const turnOutcome = new RpcTurnOutcome()
+const turnUsage = new PiTurnUsage(provider, model)
 /** Permission asks currently with the host, keyed by the ACP request id. */
 const asks = new Map<string, (optionId: string | undefined) => void>()
 
@@ -396,6 +398,7 @@ function answerPermission(id: string, outcome: any): void {
 // ── Official events → ACP updates ──────────────────────────────────────────────────
 function handleEvent(event: any): void {
   persistEphemeral()
+  if (event.type === 'message_start' || event.type === 'message_end') turnUsage.accept(event)
   switch (event.type) {
     case 'message_update': {
       const delta = event.assistantMessageEvent ?? {}
@@ -472,6 +475,33 @@ async function readState(): Promise<any> {
   const state = await piRequest('get_state')
   if (state?.success !== true) throw configuration('官方 Pi 未返回会话状态')
   return state.data
+}
+
+/** Read the installed RPC's cumulative statistics without making them required for a turn. */
+async function readSessionStats(): Promise<any | undefined> {
+  try {
+    const response = await piRequest('get_session_stats')
+    return response?.success === true ? response.data : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Attach only validated usage metadata; provider-controlled fields never cross this bridge. */
+async function settleMetadata(): Promise<Record<string, unknown>> {
+  let usage = turnUsage.snapshot()
+  let contextUsage: { used?: number; size?: number; estimated?: boolean } | undefined
+  try {
+    const [state, stats] = await Promise.all([readState(), readSessionStats()])
+    usage ??= piSessionStatsUsage(stats, { provider, model })
+    contextUsage = piContextUsage(state, stats, { sessionId, provider, model })
+  } catch {
+    contextUsage = undefined
+  }
+  const metadata: Record<string, unknown> = {}
+  if (usage) metadata['opl/turnUsage'] = { version: 1, usage }
+  if (contextUsage) metadata['opl/contextUsage'] = contextUsage
+  return metadata
 }
 
 /**
@@ -997,6 +1027,7 @@ async function invoke(method: string, params: any): Promise<unknown> {
       // Re-read the live identity before every send, so a session that drifted cannot run.
       await assertModel()
       turnOutcome.reset()
+      turnUsage.reset()
       const done = new Promise<unknown>((resolve, reject) => {
         resolveTurn = resolve
         rejectTurn = reject
@@ -1018,7 +1049,10 @@ async function invoke(method: string, params: any): Promise<unknown> {
         return { stopReason: cancelled ? 'cancelled' : 'end_turn' }
       }
       try {
-        return await done
+        const settled = (await done) as Record<string, unknown>
+        const metadata =
+          settled.stopReason === 'end_turn' && !cancelled ? await settleMetadata() : {}
+        return Object.keys(metadata).length > 0 ? { ...settled, _meta: metadata } : settled
       } finally {
         cancelled = false
         turnOutcome.reset()

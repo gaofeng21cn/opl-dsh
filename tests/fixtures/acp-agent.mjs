@@ -124,6 +124,54 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       running = undefined
       return
     }
+    if (text.endsWith('usage-stats')) {
+      chunk('usage answer')
+      update({ sessionUpdate: 'usage_update', used: 42, size: 100 })
+      answer(m.id, {
+        stopReason: 'end_turn',
+        usage: {
+          totalTokens: 42,
+          inputTokens: 40,
+          outputTokens: 2,
+          _meta: { 'opl/usageSemantics': 'per-prompt' },
+        },
+      })
+      running = undefined
+      return
+    }
+    if (text.endsWith('owned-usage')) {
+      chunk('owned usage answer')
+      answer(m.id, {
+        stopReason: 'end_turn',
+        _meta: {
+          'opl/turnUsage': {
+            version: 1,
+            usage: {
+              inputTokens: 30,
+              cacheReadTokens: 10,
+              cacheWriteTokens: 5,
+              outputTokens: 4,
+              reasoningTokens: 2,
+              totalTokens: 49,
+            },
+          },
+          'opl/contextUsage': { used: 49, size: 100, estimated: true },
+        },
+      })
+      running = undefined
+      return
+    }
+    if (text.endsWith('usage-cumulative')) {
+      chunk('cumulative answer')
+      update({ sessionUpdate: 'usage_update', used: 84, size: 100 })
+      answer(m.id, {
+        stopReason: 'end_turn',
+        // ACP v1 does not identify whether these fields are per-prompt or cumulative.
+        usage: { totalTokens: 84, inputTokens: 80, outputTokens: 4 },
+      })
+      running = undefined
+      return
+    }
     if (
       [
         'thought-only',

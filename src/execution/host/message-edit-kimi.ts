@@ -25,6 +25,7 @@ import {
   type KimiControl,
   type KimiUserMessage,
 } from './adapters/kimi/kimi-edit-control.ts'
+import type { KimiTurnStatistics } from './adapters/kimi/kimi-edit-control.ts'
 import type { HarnessSession } from '../contracts/sessions.ts'
 import {
   ExternalMessageEditError,
@@ -132,6 +133,16 @@ function boundaryOf(message: KimiUserMessage): ExternalEditBoundary {
   }
 }
 
+function boundariesOf(
+  messages: readonly KimiUserMessage[],
+  statistics: ReadonlyMap<string, KimiTurnStatistics> = new Map(),
+): ExternalEditBoundary[] {
+  return messages.map((message) => {
+    const value = statistics.get(message.turnId)
+    return { ...boundaryOf(message), ...(value === undefined ? {} : { statistics: value }) }
+  })
+}
+
 /**
  * One sequential control lifecycle. `reconnect` is always attempted; a reconnect failure
  * after a mutation is uncertain, never a clean failure.
@@ -155,7 +166,11 @@ async function withControl<T>(
   } catch (error) {
     primary = error
   } finally {
-    await control?.close()
+    try {
+      await control?.close()
+    } catch (error) {
+      if (!primary) primary = error
+    }
     try {
       await context.reconnect(sessionId)
     } catch {
@@ -180,11 +195,23 @@ export function kimiMessageEditDriver(): ExternalMessageEditDriver {
         const messages = await control.readUserMessages(sessionId)
         const anchors = anchorsOf(sessionId, messages)
         for (const anchor of anchors.all) if (BUSY_STATES.has(anchor.state)) throw failure('busy')
+        let statistics: Map<string, KimiTurnStatistics> | undefined
+        try {
+          const latestMessage = messages.at(-1)
+          const latestAnchor = anchors.all.at(-1)
+          const currentTurnId =
+            latestAnchor && latestMessage?.turnId === latestAnchor.turnId
+              ? latestAnchor.turnId
+              : undefined
+          statistics = await control.readTurnStatistics(sessionId, currentTurnId)
+        } catch {
+          // Usage is optional. A version without the transcript endpoint must still expose edit history.
+        }
         ensureActive(context.signal)
         return {
           sessionId,
           token: anchors.token,
-          boundaries: anchors.all.map(boundaryOf),
+          boundaries: boundariesOf(anchors.all, statistics),
         }
       })
     },

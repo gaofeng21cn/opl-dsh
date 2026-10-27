@@ -26,7 +26,11 @@ import { GROK_API_KEY_REF } from '../../src/gateway/host/config.ts'
 import { testPeerConnection } from '../test-peer.ts'
 import { AcpProcess, HarnessConfigurationError } from '../../src/execution/host/acp.ts'
 import { createGrokMessageEditDriver } from '../../src/execution/host/message-edit-grok.ts'
-import type { ExternalMessageEditDriver } from '../../src/execution/host/message-edit-driver.ts'
+import type {
+  ExternalEditContext,
+  ExternalEditHistory,
+  ExternalMessageEditDriver,
+} from '../../src/execution/host/message-edit-driver.ts'
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
   vi.unstubAllEnvs()
@@ -196,6 +200,138 @@ it('starts execution catalog while the official model catalog is still pending',
 })
 
 describe('external completion observations', () => {
+  it.each([false, true])(
+    'finishes history reconnection before completion (history read fails=%s)',
+    async (fails) => {
+      const { service, root } = await setup()
+      const entered = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      let historyComplete = false
+      let reads = 0
+      const owner = service as unknown as {
+        observeEditHistory(
+          record: Parameters<ExternalMessageEditDriver['read']>[0]['record'],
+        ): Promise<ExternalEditHistory>
+        externalContext(
+          record: Parameters<ExternalMessageEditDriver['read']>[0]['record'],
+          signal: AbortSignal,
+        ): ExternalEditContext
+      }
+      vi.spyOn(owner, 'observeEditHistory').mockImplementation(async (record) => {
+        if (++reads === 1) {
+          const context = owner.externalContext(record, new AbortController().signal)
+          await context.disconnect()
+          await context.reconnect(record.acpSessionId)
+          entered.resolve()
+          await release.promise
+          historyComplete = true
+          if (fails) throw Error('history unavailable after reconnect')
+        }
+        return {
+          sessionId: record.acpSessionId,
+          token: 'fixture-history',
+          boundaries: record.turns.map((turn) => ({ id: turn.operationId })),
+        }
+      })
+      const session = await start(service, root)
+      await service.prompt({ sessionId: session.id, text: 'first-once', operationId: 'first' })
+      const completed = wait(service, session.id).then((snapshot) => ({
+        snapshot,
+        historyCompleteAtCompletion: historyComplete,
+      }))
+      try {
+        await entered.promise
+      } finally {
+        release.resolve()
+      }
+      const first = await completed
+      expect(first.historyCompleteAtCompletion).toBe(true)
+      expect(first.snapshot.state).toBe('completed')
+      await service.prompt({ sessionId: session.id, text: 'second-once', operationId: 'second' })
+      expect((await wait(service, session.id)).turns.map((turn) => turn.state)).toEqual([
+        'completed',
+        'completed',
+      ])
+      const calls = await readFile(join(root, 'calls.txt'), 'utf8')
+      expect(calls.match(/first-once/g)).toHaveLength(1)
+      expect(calls.match(/second-once/g)).toHaveLength(1)
+    },
+    15_000,
+  )
+
+  it('holds an immediate follow-up until the preceding history connection is released', async () => {
+    const { service, root } = await setup()
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    let historyComplete = false
+    let reads = 0
+    const owner = service as unknown as {
+      observeEditHistory(
+        record: Parameters<ExternalMessageEditDriver['read']>[0]['record'],
+      ): Promise<ExternalEditHistory>
+      externalContext(
+        record: Parameters<ExternalMessageEditDriver['read']>[0]['record'],
+        signal: AbortSignal,
+      ): ExternalEditContext
+      ensureConversation(
+        record: Parameters<ExternalMessageEditDriver['read']>[0]['record'],
+      ): Promise<void>
+      connect(record: Parameters<ExternalMessageEditDriver['read']>[0]['record']): Promise<void>
+    }
+    vi.spyOn(owner, 'observeEditHistory').mockImplementation(async (record) => {
+      if (++reads === 1) {
+        const context = owner.externalContext(record, new AbortController().signal)
+        await context.disconnect()
+        await context.reconnect(record.acpSessionId)
+        entered.resolve()
+        await release.promise
+        historyComplete = true
+      }
+      return {
+        sessionId: record.acpSessionId,
+        token: 'history',
+        boundaries: record.turns.map((turn) => ({ id: turn.operationId })),
+      }
+    })
+    const session = await start(service, root)
+    await service.prompt({ sessionId: session.id, text: 'first-once', operationId: 'first' })
+    await entered.promise
+    const admission = Promise.withResolvers<void>()
+    const proceed = Promise.withResolvers<void>()
+    const ensure = owner.ensureConversation.bind(owner)
+    vi.spyOn(owner, 'ensureConversation').mockImplementation(async (record) => {
+      await ensure(record)
+      admission.resolve()
+      await proceed.promise
+    })
+    const connect = owner.connect.bind(owner)
+    const readsAtConnection: boolean[] = []
+    vi.spyOn(owner, 'connect').mockImplementation(async (record) => {
+      readsAtConnection.push(historyComplete)
+      return connect(record)
+    })
+    const next = service.prompt({
+      sessionId: session.id,
+      text: 'second-once',
+      operationId: 'second',
+    })
+    try {
+      await admission.promise
+      proceed.resolve()
+      // The admission barrier has no I/O before connection selection; give its
+      // continuation one event-loop turn while the vendor read stays blocked.
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    } finally {
+      proceed.resolve()
+      release.resolve()
+    }
+    await next
+    expect((await wait(service, session.id)).state).toBe('completed')
+    expect(readsAtConnection).toEqual([true])
+    const calls = await readFile(join(root, 'calls.txt'), 'utf8')
+    expect(calls.match(/second-once/g)).toHaveLength(1)
+  }, 15_000)
+
   it('reads Huawei GLM default and saved effort without launching a capability probe', async () => {
     const ref = { provider: 'huawei-maas', model: 'glm-5.2' }
     const { service, session } = await nativeSetup(
@@ -551,6 +687,116 @@ describe('native conversation combinations', () => {
     expect(next).not.toHaveBeenCalled()
     expect(await readFile(join(root, 'calls.txt'), 'utf8')).toContain('first-send')
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('projects explicitly per-prompt ACP usage and context capacity', async () => {
+    const { service, session } = await nativeSetup([{ id: 'grok::grok-4.7', name: 'Grok' }])
+    const chunks = await Array.fromAsync(
+      service.conversationStream(
+        {
+          sessionId: session.id,
+          provider: 'opl-gateway',
+          model: 'grok::grok-4.7',
+          messages: [
+            createUserMessage({
+              source: { kind: 'user' },
+              content: [{ type: 'text', text: 'usage-stats' }],
+            }),
+          ],
+        } as GenerateOptions,
+        async function* () {
+          throw Error('external route must own this request')
+        },
+      ),
+    )
+    expect(chunks).toContainEqual({
+      type: 'usage',
+      usage: { totalTokens: 42, inputTokens: 40, outputTokens: 2 },
+    })
+    expect(session.append).toHaveBeenCalledWith('request/context', {
+      provider: 'opl-gateway',
+      model: 'grok::grok-4.7',
+      contextWindow: 100,
+    })
+    const record = (await service.list()).sessions.find(
+      (item) => item.nativeSessionId === session.id,
+    )!
+    expect(record.turns.at(-1)).toMatchObject({
+      usage: { totalTokens: 42, inputTokens: 40, outputTokens: 2 },
+      contextUsage: { used: 42, size: 100 },
+    })
+  })
+
+  it('projects an owned bridge aggregate with disjoint cache buckets', async () => {
+    const { service, session } = await nativeSetup([{ id: 'grok::grok-4.7', name: 'Grok' }])
+    const chunks = await Array.fromAsync(
+      service.conversationStream(
+        {
+          sessionId: session.id,
+          provider: 'opl-gateway',
+          model: 'grok::grok-4.7',
+          messages: [
+            createUserMessage({
+              source: { kind: 'user' },
+              content: [{ type: 'text', text: 'owned-usage' }],
+            }),
+          ],
+        } as GenerateOptions,
+        async function* () {
+          throw Error('external route must own this request')
+        },
+      ),
+    )
+    expect(chunks).toContainEqual({
+      type: 'usage',
+      usage: {
+        inputTokens: 30,
+        cacheReadTokens: 10,
+        cacheWriteTokens: 5,
+        outputTokens: 4,
+        reasoningTokens: 2,
+        totalTokens: 49,
+      },
+    })
+    const record = (await service.list()).sessions.find(
+      (item) => item.nativeSessionId === session.id,
+    )!
+    expect(record.turns.at(-1)).toMatchObject({
+      usage: { inputTokens: 30, outputTokens: 4, cacheReadTokens: 10, cacheWriteTokens: 5 },
+      contextUsage: { used: 49, size: 100, estimated: true },
+    })
+  })
+
+  it('withholds ambiguous cumulative ACP usage while retaining context occupancy', async () => {
+    const { service, session } = await nativeSetup([{ id: 'grok::grok-4.7', name: 'Grok' }])
+    const request = (text: string) =>
+      Array.fromAsync(
+        service.conversationStream(
+          {
+            sessionId: session.id,
+            provider: 'opl-gateway',
+            model: 'grok::grok-4.7',
+            messages: [
+              createUserMessage({
+                source: { kind: 'user' },
+                content: [{ type: 'text', text }],
+              }),
+            ],
+          } as GenerateOptions,
+          async function* () {
+            throw Error('external route must own this request')
+          },
+        ),
+      )
+    const first = await request('usage-cumulative')
+    const second = await request('second usage-cumulative')
+    expect([...first, ...second].some((chunk) => chunk.type === 'usage')).toBe(false)
+    const record = (await service.list()).sessions.find(
+      (item) => item.nativeSessionId === session.id,
+    )!
+    expect(record.turns.at(-1)).toMatchObject({ contextUsage: { used: 84, size: 100 } })
+    expect(record.turns.at(-1)).not.toHaveProperty('usage')
+    expect(session.append.mock.calls.filter(([type]) => type === 'request/context')).toHaveLength(1)
   })
 
   it.each([

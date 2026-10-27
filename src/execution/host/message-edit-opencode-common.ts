@@ -23,6 +23,7 @@ import type {
   ExternalEditResult,
   ExternalMessageEditDriver,
 } from './message-edit-driver.ts'
+import { summarizeOpenCodeKiloUsage } from './usage-opencode-kilo.ts'
 
 const exec = promisify(execFile)
 
@@ -74,6 +75,8 @@ export interface VendorMessage {
 /** Temporary authenticated control surface. Only read/fork/close are exposed. */
 export interface VendorControl {
   readMessages(sessionId: string): Promise<VendorMessage[]>
+  /** Optional public route metadata from the same local server lifecycle. */
+  readProviders?(): Promise<unknown>
   fork(sessionId: string, messageID: string): Promise<{ sessionId: string }>
   close(): Promise<void>
 }
@@ -546,6 +549,11 @@ export async function startAuthenticatedControl(
         throw failure('protocol')
       return messages
     },
+    async readProviders(): Promise<unknown> {
+      const result = await request('/provider')
+      if (result.status < 200 || result.status >= 300) throw failure('control-unavailable')
+      return result.json
+    },
     async fork(sessionId: string, messageID: string): Promise<{ sessionId: string }> {
       let result: { status: number; json: unknown }
       try {
@@ -586,13 +594,33 @@ async function readHistory(
     const messages = await control.readMessages(context.record.acpSessionId)
     ensureActive(context.signal)
     assertSettled(messages)
+    const modelId =
+      typeof context.snapshot === 'function'
+        ? string(object(context.snapshot().session.models).currentModelId)
+        : ''
+    let statistics = new Map<string, import('./usage-opencode-kilo.ts').ExternalUsageStatistics>()
+    try {
+      if (modelId && control.readProviders)
+        statistics = summarizeOpenCodeKiloUsage(
+          messages,
+          context.record.acpSessionId,
+          modelId,
+          await control.readProviders(),
+        )
+    } catch {
+      // Optional statistics never make a successfully read edit history unavailable.
+    }
+    const boundaries = boundariesOf(messages).map((boundary) => {
+      const value = statistics.get(boundary.id)
+      return value ? { ...boundary, statistics: value } : boundary
+    })
     return {
       control,
       messages,
       history: {
         sessionId: context.record.acpSessionId,
         token: historyToken(context.record.acpSessionId, messages),
-        boundaries: boundariesOf(messages),
+        boundaries,
       },
     }
   } catch (error) {

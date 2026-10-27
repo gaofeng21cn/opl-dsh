@@ -153,6 +153,36 @@ function parseRecord(raw: unknown): HarnessSession {
     )
       throw Error('组合会话写入范围无效，原文件已保留')
     if (
+      turn.usage !== undefined &&
+      (!turn.usage ||
+        !Number.isSafeInteger(turn.usage.inputTokens) ||
+        turn.usage.inputTokens < 0 ||
+        !Number.isSafeInteger(turn.usage.outputTokens) ||
+        turn.usage.outputTokens < 0 ||
+        (turn.usage.totalTokens !== undefined &&
+          (!Number.isSafeInteger(turn.usage.totalTokens) || turn.usage.totalTokens < 0)) ||
+        ['cacheReadTokens', 'cacheWriteTokens', 'reasoningTokens'].some(
+          (key) =>
+            turn.usage[key] !== undefined &&
+            (!Number.isSafeInteger(turn.usage[key]) || turn.usage[key] < 0),
+        ))
+    )
+      throw Error('组合会话 Token 用量记录无效，原文件已保留')
+    if (
+      turn.contextUsage !== undefined &&
+      (!turn.contextUsage ||
+        (turn.contextUsage.used !== undefined &&
+          (!Number.isSafeInteger(turn.contextUsage.used) || turn.contextUsage.used < 0)) ||
+        (turn.contextUsage.size !== undefined &&
+          (!Number.isSafeInteger(turn.contextUsage.size) || turn.contextUsage.size <= 0)) ||
+        (turn.contextUsage.used !== undefined &&
+          turn.contextUsage.size !== undefined &&
+          turn.contextUsage.used > turn.contextUsage.size) ||
+        (turn.contextUsage.estimated !== undefined &&
+          typeof turn.contextUsage.estimated !== 'boolean'))
+    )
+      throw Error('组合会话上下文用量记录无效，原文件已保留')
+    if (
       !states.includes(turn.state) ||
       typeof turn.prompt !== 'string' ||
       typeof turn.text !== 'string' ||

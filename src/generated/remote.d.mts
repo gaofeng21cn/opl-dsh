@@ -4,7 +4,7 @@ import type {
   TypertRemoteInfo,
   TypertRemoteMethod,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, CodexRuntimeRequest, CodexRuntimeResult, ContextBudgetRequest, ContextBudgetSnapshot, CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, ExecutionLimits, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewayRememberedLogin, GatewaySignInResult, HarnessCatalog, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessReasoningPreflight, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, MessageEditSend, MessageEditState, MiniMaxAccountLoginRequest, MiniMaxAccountStatus, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
+import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, CodexRuntimeRequest, CodexRuntimeResult, ContextBudgetRequest, ContextBudgetSnapshot, CooperationSettings, CoordinationStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, ExecutionLimits, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewayRememberedLogin, GatewaySignInResult, HarnessCatalog, HarnessContextReading, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessReasoningPreflight, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, MessageEditSend, MessageEditState, MiniMaxAccountLoginRequest, MiniMaxAccountStatus, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, ReportRequest, ReviewRequest, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$6f706c4175746f526576696577 {
@@ -26,6 +26,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'cancel-task': (request: { origin: HarnessOrigin; sessionId: string; }) => Promise<RemoteResult<HarnessSnapshot>>
     catalog: () => Promise<RemoteResult<ExecutionCatalog>>
     combinations: (request: { includeDisabled?: boolean; }) => Promise<RemoteResult<HarnessCatalog['combinations']>>
+    'context-usage': (request: { sessionId: string; }) => Promise<RemoteResult<HarnessContextReading | null>>
     'cooperation-settings': () => Promise<RemoteResult<CooperationSettings>>
     delegate: (request: DelegateRequest, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
     detail: (request: HarnessDetailRequest) => Promise<RemoteResult<HarnessDetailPage>>
@@ -114,6 +115,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/cancel-task': (request: { origin: HarnessOrigin; sessionId: string; }) => Promise<RemoteResult<HarnessSnapshot>>
     'oplExecution/catalog': () => Promise<RemoteResult<ExecutionCatalog>>
     'oplExecution/combinations': (request: { includeDisabled?: boolean; }) => Promise<RemoteResult<HarnessCatalog['combinations']>>
+    'oplExecution/context-usage': (request: { sessionId: string; }) => Promise<RemoteResult<HarnessContextReading | null>>
     'oplExecution/cooperation-settings': () => Promise<RemoteResult<CooperationSettings>>
     'oplExecution/delegate': (request: DelegateRequest, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
     'oplExecution/detail': (request: HarnessDetailRequest) => Promise<RemoteResult<HarnessDetailPage>>
@@ -206,6 +208,7 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'oplExecution/cancel-task': TypertRemoteMethod<{ readonly 'request': { origin: HarnessOrigin; sessionId: string; } }, HarnessSnapshot>
   readonly 'oplExecution/catalog': TypertRemoteMethod<{  }, ExecutionCatalog>
   readonly 'oplExecution/combinations': TypertRemoteMethod<{ readonly 'request': { includeDisabled?: boolean; } }, HarnessCatalog['combinations']>
+  readonly 'oplExecution/context-usage': TypertRemoteMethod<{ readonly 'request': { sessionId: string; } }, HarnessContextReading | null>
   readonly 'oplExecution/cooperation-settings': TypertRemoteMethod<{  }, CooperationSettings>
   readonly 'oplExecution/delegate': TypertRemoteMethod<{ readonly 'request': DelegateRequest }, HarnessSnapshot>
   readonly 'oplExecution/detail': TypertRemoteMethod<{ readonly 'request': HarnessDetailRequest }, HarnessDetailPage>

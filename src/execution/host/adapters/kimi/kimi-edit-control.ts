@@ -29,6 +29,8 @@ import {
   ExternalMessageEditError,
   type ExternalMessageEditFailure,
 } from '../../message-edit-opencode-common.ts'
+import { parseKimiContextUsage, readKimiTranscriptUsages } from '../../usage-account.ts'
+import type { HarnessContextUsage, HarnessStatistics } from '../../../contracts/usage.ts'
 
 const exec = promisify(execFile)
 
@@ -68,8 +70,15 @@ export interface KimiUndoResponse {
   readonly body: unknown
 }
 
+/** Exact statistics keyed by the official Kimi transcript turn id. */
+export type KimiTurnStatistics = HarnessStatistics
+
 export interface KimiControl {
   readUserMessages(sessionId: string): Promise<KimiUserMessage[]>
+  readTurnStatistics(
+    sessionId: string,
+    latestTurnId?: string,
+  ): Promise<Map<string, KimiTurnStatistics>>
   undo(sessionId: string, count: number): Promise<KimiUndoResponse>
   close(): Promise<void>
 }
@@ -332,6 +341,41 @@ export async function startKimiControl(context: {
         if (error instanceof ExternalMessageEditError) throw error
         throw failure('uncertain')
       }
+    },
+    async readTurnStatistics(
+      sessionId: string,
+      latestTurnId?: string,
+    ): Promise<Map<string, KimiTurnStatistics>> {
+      const usages = await readKimiTranscriptUsages(async (beforeTurn) => {
+        const query = new URLSearchParams({ agent_id: 'main', page_size: '100' })
+        if (beforeTurn) query.set('before_turn', beforeTurn)
+        const result = await request(
+          `/api/v1/sessions/${encodeURIComponent(sessionId)}/transcript?${query.toString()}`,
+        )
+        if (result.status === 401 || result.status === 403) throw failure('control-unavailable')
+        if (result.status === 404) throw failure('stale')
+        if (result.status < 200 || result.status >= 300) throw failure('control-unavailable')
+        return result.json
+      })
+      let contextUsage: HarnessContextUsage | undefined
+      try {
+        const status = await request(`/api/v1/sessions/${encodeURIComponent(sessionId)}/status`)
+        if (status.status >= 200 && status.status < 300)
+          contextUsage = parseKimiContextUsage(status.json)
+      } catch (error) {
+        if (context.signal.aborted) throw failure('aborted')
+        if (error instanceof ExternalMessageEditError && error.code === 'stale') throw error
+        // A missing status endpoint does not invalidate transcript turn usage.
+      }
+      const statistics = new Map<string, KimiTurnStatistics>()
+      for (const [turnId, usage] of usages) statistics.set(turnId, { usage })
+      if (contextUsage && latestTurnId) {
+        const current = statistics.get(latestTurnId) ?? {}
+        statistics.set(latestTurnId, { ...current, contextUsage })
+      }
+      return new Map(
+        [...statistics.entries()].filter(([, value]) => value.usage || value.contextUsage),
+      )
     },
     async close(): Promise<void> {
       await stopOwnedChild(child)

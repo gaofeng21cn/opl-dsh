@@ -21,6 +21,15 @@ import { commandLaunch } from '../harness-registry.ts'
 import { EXTERNAL_TOOL_NAME_META } from '../external-binding.ts'
 import { bridgeFailure, HarnessReportedError } from './failure-diagnostics.ts'
 import {
+  nativeContextUpdate,
+  nativeContextUsageMeta,
+  nativeTurnUsageMeta,
+  normalizeZcodeTurnUsage,
+  zcodeSnapshotContext,
+  type NativeContextUsage,
+  type NativeTokenUsage,
+} from './native-usage.ts'
+import {
   HUAWEI_RELAY_TICKET_HEADER,
   HUAWEI_REASONING_LEVELS,
   huaweiReasoningLevel,
@@ -107,6 +116,43 @@ const hostPending = new Map<
 >()
 let resolveTurn: ((value: unknown) => void) | undefined,
   rejectTurn: ((e: Error) => void) | undefined
+let currentTurnUsage: NativeTokenUsage | undefined
+let currentContextUsage: NativeContextUsage | undefined
+let currentTurnId: string | undefined
+let contextReadGeneration = 0
+
+function refreshCompletedContext(generation: number, expectedSessionId: string): void {
+  void zcodeRequest(
+    ZCODE_METHODS.sessionSubscribe,
+    {
+      sessionId: expectedSessionId,
+      deliveryKind: 'desktop-continuous',
+      includeSnapshot: true,
+    },
+    5000,
+  )
+    .then((value: unknown) => {
+      if (generation !== contextReadGeneration || sessionId !== expectedSessionId) return
+      const wrapped =
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? (value as { snapshot?: unknown })
+          : {}
+      currentContextUsage = zcodeSnapshotContext(wrapped.snapshot ?? value)
+      const update = nativeContextUpdate(currentContextUsage)
+      if (update) emit(update)
+    })
+    .catch((snapshotError) => {
+      // A terminal snapshot is advisory; the completed turn already has its result usage.
+      void snapshotError
+    })
+}
+
+function resetCurrentUsage(): void {
+  currentTurnUsage = undefined
+  currentContextUsage = undefined
+  currentTurnId = undefined
+  contextReadGeneration += 1
+}
 
 /** Release the child process, the relay and every in-flight request together. */
 let relay: HuaweiRelay | undefined
@@ -351,7 +397,11 @@ function writeProviderConfig(relayBaseUrl: string, ticket: string) {
 
 function handleEvent(event: ZcodeEvent) {
   if (!event || event.sessionId !== sessionId) return
+  if (event.type === 'turn.started' && resolveTurn && typeof event.turnId === 'string')
+    currentTurnId = event.turnId
   if (event.type === 'turn.completed') {
+    if (resolveTurn && (!currentTurnId || event.turnId === currentTurnId))
+      currentTurnUsage = normalizeZcodeTurnUsage(event)
     const resultType = event.payload?.resultType
     if (typeof resultType === 'string' && resultType.startsWith('error_')) {
       rejectTurn?.(new HarnessReportedError('zcode', {}, 'failed'))
@@ -363,6 +413,9 @@ function handleEvent(event: ZcodeEvent) {
     // requested is what distinguishes the two stop reasons.
     resolveTurn?.({
       stopReason: cancelled || resultType === 'cancelled' ? 'cancelled' : 'end_turn',
+      _meta: {
+        ...nativeTurnUsageMeta(currentTurnUsage),
+      },
     })
     resolveTurn = undefined
     rejectTurn = undefined
@@ -547,6 +600,7 @@ async function forkEditHistory(p: any) {
         deliveryKind: 'desktop-continuous',
         includeSnapshot: false,
       })
+      resetCurrentUsage()
       return { ok: true as const, sessionId: childSessionId, retained: [] }
     }
     const predecessor = parent.rows[predecessorIndex]!
@@ -589,6 +643,7 @@ async function forkEditHistory(p: any) {
         row.entityId.startsWith(`fork:${sessionId}:`),
     )
     if (!marker) throw new ZcodeEditError(ZCODE_EDIT_CODES.forkMismatch)
+    resetCurrentUsage()
     return { ok: true as const, sessionId: childSessionId, retained }
   } catch (error) {
     return editRefusal(error)
@@ -660,17 +715,25 @@ async function invoke(method: string, p: any) {
           })
     sessionId = snapshot?.session?.sessionId
     if (!sessionId) throw Error('ZCode 未返回会话标识')
+    contextReadGeneration += 1
     // Confirm the live session really is on the requested model and mode before it is
     // ever driven. A silent downgrade to another model or mode is not acceptable.
     assertProtocolIdentity(snapshot)
     assertModelSelection(snapshot, providerId, model)
     assertSessionMode(snapshot, mode)
+    currentContextUsage = zcodeSnapshotContext(snapshot)
+    currentTurnUsage = undefined
     await zcodeRequest(ZCODE_METHODS.sessionSubscribe, {
       sessionId,
       deliveryKind: 'desktop-continuous',
       includeSnapshot: false,
     })
-    return { sessionId, models: { currentModelId: model }, configOptions: reasoningOptions() }
+    return {
+      sessionId,
+      models: { currentModelId: model },
+      configOptions: reasoningOptions(),
+      ...nativeContextUsageMeta(currentContextUsage),
+    }
   }
   if (method === ZCODE_EDIT_METHODS.abort) {
     const operationId = typeof p.operationId === 'string' ? p.operationId.trim() : ''
@@ -704,6 +767,7 @@ async function invoke(method: string, p: any) {
       .map((v: any) => v.text)
       .join('\n')
     cancelled = false
+    const generation = ++contextReadGeneration
     // Re-read the live session state before every send. `session/subscribe` accepts
     // `includeSnapshot`, and the subscribe result carries the same official session
     // snapshot, so both the model and the permission mode are confirmed against server
@@ -717,10 +781,16 @@ async function invoke(method: string, p: any) {
     assertSessionMode(live, mode)
     assertProtocolIdentity(live)
     assertModelSelection(live, providerId, model)
+    const promptContextUsage = zcodeSnapshotContext(live)
+    currentContextUsage = promptContextUsage
+    const contextUpdate = nativeContextUpdate(promptContextUsage)
+    if (contextUpdate) emit(contextUpdate)
     const done = new Promise((resolve, reject) => {
       resolveTurn = resolve
       rejectTurn = reject
     })
+    currentTurnId = undefined
+    currentTurnUsage = undefined
     void done.catch(() => {})
     try {
       await zcodeRequest(ZCODE_METHODS.sessionSend, {
@@ -728,7 +798,14 @@ async function invoke(method: string, p: any) {
         content: text,
         modelSelection: modelSelection(providerId, model, reasoningLevel),
       })
-      return await done
+      const result = await done
+      refreshCompletedContext(generation, sessionId)
+      return {
+        ...(result && typeof result === 'object' ? result : {}),
+        _meta: {
+          ...nativeTurnUsageMeta(currentTurnUsage),
+        },
+      }
     } finally {
       resolveTurn = undefined
       rejectTurn = undefined

@@ -1,3 +1,6 @@
+import type { TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { HarnessContextUsage } from './usage.ts'
+
 /** OPL projections over native Harness sessions. No provider secrets cross this face. */
 export const GROK_COMBINATION = 'grok-build/grok-4.7'
 export const DSH_COMBINATION = 'dsh/deepseek-flash'
@@ -30,6 +33,10 @@ export interface HarnessTurn {
   text: string
   /** Provider-supplied text and reasoning in arrival order; absent on older records. */
   content?: { type: 'text' | 'reasoning'; text: string }[]
+  /** Whole-turn accounting normalized to disjoint input/cache and inclusive output buckets. */
+  usage?: TokenUsage
+  /** Context occupancy reported by the external ACP session, when supplied. */
+  contextUsage?: HarnessContextUsage
   state: HarnessState
   stopReason?: string
   error?: string

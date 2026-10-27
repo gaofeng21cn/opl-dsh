@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import { createUserMessage, type GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type { ModelCatalog, ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
 import { HarnessService } from '../../src/execution/host/harness.ts'
 import { adapterFor } from '../../src/execution/host/adapters/index.ts'
@@ -290,6 +291,52 @@ describe('per-model reasoning in the conversation picker', () => {
       provider: 'other-channel',
       model: 'optional',
     })
+  })
+
+  it('waits for a pending model switch before admitting the next prompt', async () => {
+    const { service, session, select, choose } = await setup()
+    let release!: () => void
+    let applied = false
+    let nextCalled = false
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    select.mockImplementationOnce(async (request: ModelSelection) => {
+      await gate
+      applied = true
+      session.append('model/selection', request)
+      return { selected: request }
+    })
+
+    const switching = choose('plain', service, 'other-channel', false)
+    await Promise.resolve()
+    const prompt = Array.fromAsync(
+      service.conversationStream(
+        {
+          sessionId: session.id,
+          provider: 'other-channel',
+          model: 'plain',
+          messages: [
+            createUserMessage({
+              source: { kind: 'user' },
+              content: [{ type: 'text', text: 'after-switch' }],
+            }),
+          ],
+        } as GenerateOptions,
+        async function* () {
+          nextCalled = true
+          yield { type: 'finish', reason: { kind: 'stop' } }
+        },
+      ),
+    )
+
+    await Promise.resolve()
+    expect(applied).toBe(false)
+    expect(nextCalled).toBe(false)
+    release()
+    await Promise.all([switching, prompt])
+    expect(applied).toBe(true)
+    expect(nextCalled).toBe(true)
   })
 })
 
