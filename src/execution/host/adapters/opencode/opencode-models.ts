@@ -80,7 +80,6 @@ export const OPENCODE_OFM_MODELS: readonly string[] = [
   'nemotron-3.5-lightning-free',
   'nvidia/nemotron-3.5-lightning:free',
   'nvidia/nemotron-3-ultra-550b-a55b:free',
-  'nvidia/nemotron-3-super-120b-a12b:free',
   'nvidia/nemotron-3.5-super-vl:free',
   'deepseek-v4.1-flash-free',
   'space-bunny-free',

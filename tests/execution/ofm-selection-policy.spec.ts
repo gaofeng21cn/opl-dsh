@@ -255,6 +255,16 @@ it('pins MiniMax Flash free to OpenCode without folding its Kilo lane into the d
     expect(OFM_PINNED_HARNESS_MODELS.opencode).toContain(model)
   }
 })
+
+it('keeps Kilo-channel Nemotron 3 Super on Kilo instead of OpenCode', () => {
+  const ref = { provider: 'our-free-model', model: 'nvidia/nemotron-3-super-120b-a12b:free' }
+  expect(OPENCODE_OFM_MODELS).not.toContain(ref.model)
+  expect(OFM_PINNED_HARNESS_MODELS.opencode).not.toContain(ref.model)
+  expect(OFM_PINNED_HARNESS_MODELS.kilo).toContain(ref.model)
+  expect(defaultHarness(ref)).toBe('kilo')
+  expect(adapterFor('kilo', ref)?.id).toBe('kilo')
+  expect(adapterFor('opencode', ref)).toBeUndefined()
+})
 const QUALIFICATION_AUTO = 'auto:["our-free-model","opl-qualification-free"]'
 
 it('hides rejected OFM lanes and saved combinations after legacy cleanup, without hiding other sources', async () => {

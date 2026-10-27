@@ -27,6 +27,7 @@
 | EAC GLM 5.3 Flash Free（opencode/glm-5.3-flash-free）                      | OpenCode，经 OFM 转发  | Chat      |
 | EAC DeepSeek V4.1 Flash Free（opencode/deepseek-v4.1-flash-free）          | OpenCode，经 OFM 转发  | Chat      |
 | Big Pickle（big-pickle）                                                   | OpenCode，官方免费通道 | Chat      |
+| Nemotron 3 Super 120B（nvidia/nemotron-3-super-120b-a12b:free）            | Kilo Code，经 OFM 转发 | Chat      |
 | Flint v1.0 Free（recursive/flint-v1.0:free）                               | Kilo Code，经 OFM 转发 | Chat      |
 | Flint 40B Free（flint-40b-free）                                           | OpenCode，经 OFM 转发  | Chat      |
 | GPT-OSS 20B                                                                | Codex CLI              | Responses |
@@ -36,7 +37,7 @@
 | Nemotron Nano Omni、LFM、Inkling Small                                     | Pi Coding Agent        | Chat      |
 | Dots、Glyph、Kilo Auto Free、Kilo Beam、Xing 4.0                           | Kilo Code              | Chat      |
 
-表格描述适配器配对，不是当前在线可用性承诺；模型必须仍在来源目录中且通过启动前检查。Cat Jam、MiMo v2.6 Flash、Muse Spark 1.3、Longcat 2.5、OpenCode 的 DeepSeek/GLM/Beam/Nemotron 免费条目、Space Bunny 和 Big Pickle 的精确裸 ID 使用 OpenCode 官方免费通道。Flint 的 `flint-40b-free` 使用 OpenCode 执行器并经 OFM Chat 转发；它与 OpenCode 自己的 `opencode/flint-40b-free` 服务是不同线路。`recursive/flint-v1.0:free` 由 Kilo 执行并经 OFM 转发。带 EAC/Kilo 前缀的同名模型仍是独立 OFM 转发车道，不互相替换。
+表格描述适配器配对，不是当前在线可用性承诺；模型必须仍在来源目录中且通过启动前检查。Cat Jam、MiMo v2.6 Flash、Muse Spark 1.3、Longcat 2.5、OpenCode 的 DeepSeek/GLM/Beam/Nemotron 免费条目、Space Bunny 和 Big Pickle 的精确裸 ID 使用 OpenCode 官方免费通道。Kilo 频道的 Nemotron 3 Super 120B 使用 Kilo 执行器并经 OFM Chat 转发，不折叠成 OpenCode 路线。Flint 的 `flint-40b-free` 使用 OpenCode 执行器并经 OFM Chat 转发；它与 OpenCode 自己的 `opencode/flint-40b-free` 服务是不同线路。`recursive/flint-v1.0:free` 由 Kilo 执行并经 OFM 转发。带 EAC/Kilo 前缀的同名模型仍是独立 OFM 转发车道，不互相替换。
 
 外部 Harness 只有在本轮边界和 Token buckets 都能由官方协议确认时才接入 DSH 的 Token 统计；缓存、输入、输出和思考字段缺失时保持缺失，不按上下文占用推算。OpenCode/Kilo 使用同一官方消息图的父级链和 `step-finish` 记录汇总，Pi、Codex、Claude、ZCode 使用各自桥接器的已验证字段；Kimi 只有 transcript steps 能拆出独立 cache buckets 时才记账。ACP `usage_update` 的 `used/size` 是上下文占用事实，和累计 Token 账单分开保存；没有精确 usage 响应时不显示账单统计，也不把上下文占用伪装成 Token 账单。外部 Harness 的上下文占用在官方统计栏下方以独立的上下文读数显示，未知数据保持不显示。
 
