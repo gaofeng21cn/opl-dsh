@@ -945,13 +945,16 @@ describe('bridge against a fake official app-server', () => {
         prompt: [{ type: 'text', text: 'again' }],
       })
       expect(result.stopReason).toBe('end_turn')
-      const probes = bridge
-        .traced()
-        .filter(
-          (r) => r.method === ZCODE_METHODS.sessionSubscribe && r.params.includeSnapshot === true,
-        )
       // One model/mode admission snapshot and one post-turn context snapshot.
-      expect(probes).toHaveLength(2)
+      // The advisory post-turn read crosses a separate process after the prompt reply.
+      await vi.waitFor(() => {
+        const probes = bridge
+          .traced()
+          .filter(
+            (r) => r.method === ZCODE_METHODS.sessionSubscribe && r.params.includeSnapshot === true,
+          )
+        expect(probes).toHaveLength(2)
+      })
     })
   })
 

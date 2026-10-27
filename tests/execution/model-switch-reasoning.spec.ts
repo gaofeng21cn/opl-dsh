@@ -338,6 +338,96 @@ describe('per-model reasoning in the conversation picker', () => {
     expect(applied).toBe(true)
     expect(nextCalled).toBe(true)
   })
+
+  it('keeps a rejected picker write blocking later sends until an explicit selection succeeds', async () => {
+    const { service, session, select, choose } = await setup()
+    await choose('optional', service, 'other-channel', false)
+    select.mockRejectedValueOnce(Error('selection write failed'))
+    await expect(choose('plain', service, 'other-channel', false)).rejects.toThrow(
+      'selection write failed',
+    )
+
+    await expect(service.assertConversationEditable(session.id)).rejects.toThrow('模型切换尚未完成')
+    await choose('plain', service, 'other-channel', false)
+    await expect(service.assertConversationEditable(session.id)).resolves.toBeUndefined()
+  })
+
+  it('refuses options frozen for the old model while a picker write was pending', async () => {
+    const { service, session, select, choose } = await setup()
+    await choose('optional', service, 'other-channel', false)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    select.mockImplementationOnce(async (request: ModelSelection) => {
+      await gate
+      session.append('model/selection', request)
+      return { selected: request }
+    })
+    const switching = choose('plain', service, 'other-channel', false)
+    const next = vi.fn(async function* () {
+      yield { type: 'finish' as const, reason: { kind: 'stop' as const } }
+    })
+    const prompt = Array.fromAsync(
+      service.conversationStream(
+        {
+          sessionId: session.id,
+          provider: 'other-channel',
+          model: 'optional',
+          messages: [
+            createUserMessage({
+              source: { kind: 'user' },
+              content: [{ type: 'text', text: 'must not use old model' }],
+            }),
+          ],
+        } as GenerateOptions,
+        next,
+      ),
+    )
+    const refused = expect(prompt).rejects.toThrow('模型选择已改变')
+    await Promise.resolve()
+    release()
+    await Promise.all([switching, refused])
+    expect(next).not.toHaveBeenCalled()
+    expect(service.start).not.toHaveBeenCalled()
+  })
+
+  it('waits for a newer picker write queued while the first write is completing', async () => {
+    const { service, session, select, choose } = await setup()
+    let releaseFirst!: () => void
+    let releaseSecond!: () => void
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const secondGate = new Promise<void>((resolve) => {
+      releaseSecond = resolve
+    })
+    select.mockImplementationOnce(async (request: ModelSelection) => {
+      await firstGate
+      session.append('model/selection', request)
+      return { selected: request }
+    })
+    select.mockImplementationOnce(async (request: ModelSelection) => {
+      await secondGate
+      session.append('model/selection', request)
+      return { selected: request }
+    })
+    const first = choose('plain', service, 'other-channel', false)
+    await vi.waitFor(() => expect(select).toHaveBeenCalledTimes(1))
+    let admitted = false
+    const admission = service.assertConversationEditable(session.id).then(() => {
+      admitted = true
+    })
+    await Promise.resolve()
+    const second = choose('optional', service, 'other-channel', false)
+    releaseFirst()
+    await vi.waitFor(() => expect(select).toHaveBeenCalledTimes(2))
+    expect(admitted).toBe(false)
+    releaseSecond()
+    await Promise.all([first, second, admission])
+    expect(admitted).toBe(true)
+    expect((await service.modelSelection(session.id)).current.model).toBe('optional')
+  })
 })
 
 describe('CLI effort selection independent of source provider', () => {

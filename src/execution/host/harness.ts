@@ -589,12 +589,19 @@ export class HarnessService {
     await write
   }
   /** Wait for a model picker write that began before this prompt. */
-  private async waitForSelectionChange(sessionId: string): Promise<void> {
-    const pending = this.selectionChanges.get(sessionId)
-    if (!pending) return
-    await pending.promise
-    if (pending.failed)
-      throw new LlmError('模型切换尚未完成，请重新选择后发送；本轮未发送。', 'HARNESS_BINDING')
+  private async waitForSelectionChange(sessionId: string): Promise<boolean> {
+    let waited = false
+    for (;;) {
+      const pending = this.selectionChanges.get(sessionId)
+      if (!pending) return waited
+      waited = true
+      await pending.promise
+      const current = this.selectionChanges.get(sessionId)
+      if (current && current !== pending) continue
+      if (pending.failed)
+        throw new LlmError('模型切换尚未完成，请重新选择后发送；本轮未发送。', 'HARNESS_BINDING')
+      return waited
+    }
   }
 
   /** Run one picker write after the previous write and expose its completion to prompts. */
@@ -620,7 +627,10 @@ export class HarnessService {
       if (state.failed) throw state.error
       return result
     } finally {
-      if (this.selectionChanges.get(sessionId) === state) this.selectionChanges.delete(sessionId)
+      // A failed picker write must keep blocking later sends, including sends begun
+      // after its RPC rejected. A successful explicit selection clears that refusal.
+      if (!state.failed && this.selectionChanges.get(sessionId) === state)
+        this.selectionChanges.delete(sessionId)
     }
   }
   private async ensureConversation(record: HarnessSession) {
@@ -2507,6 +2517,8 @@ export class HarnessService {
   /** Reject model requests while the addressed conversation's history is being changed or unresolved. */
   async assertConversationEditable(sessionId: string, admittedEdit = false): Promise<void> {
     await this.ready
+    // Resolve the picker before the official request hook derives its model options.
+    await this.waitForSelectionChange(sessionId)
     const session = this.ctx.sessions.get(asSessionId<SessionId>(sessionId))
     if (
       !admittedEdit &&
@@ -4606,7 +4618,18 @@ export class HarnessService {
     next: () => AsyncIterable<StreamChunk>,
   ): AsyncIterable<StreamChunk> {
     await this.ready
-    if (options.sessionId && !options.purpose) await this.waitForSelectionChange(options.sessionId)
+    if (options.sessionId && !options.purpose) {
+      const waited = await this.waitForSelectionChange(options.sessionId)
+      if (waited) {
+        const session = this.ctx.sessions.get(asSessionId<SessionId>(options.sessionId))
+        const projection = session
+          ? this.ctx.sessionProjections.snapshot(session, ['modelSelection']).values.modelSelection
+          : undefined
+        const selected = projection?.next ?? projection?.lastUsed
+        if (selected && modelRefKey(selected) !== modelRefKey(options))
+          throw new LlmError('模型选择已改变，请重新发送；本轮未使用旧模型。', 'HARNESS_BINDING')
+      }
+    }
     const catalog = options.sessionId ? await this.executionCatalog() : undefined
     if (options.sessionId && !options.purpose && catalog) {
       const selectedId = this.selections[options.sessionId]
