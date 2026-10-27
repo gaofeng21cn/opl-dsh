@@ -14,7 +14,10 @@ export async function startModelPluginFixture() {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(
         JSON.stringify({
-          data: req.url === '/zen/v1/models' ? [{ id: MODEL_PLUGIN_FIXTURE }] : [],
+          data:
+            req.url === '/inference/v1/models' || req.url === '/zen/v1/models'
+              ? [{ id: MODEL_PLUGIN_FIXTURE }]
+              : [],
         }),
       )
       return
@@ -194,9 +197,6 @@ export async function verifyModelPlugins({ root, origin, cookie, wire, harness }
   }
   const providers = await wire('llm/listProviders')
   const channelProviders = [
-    'codearts',
-    'buddy',
-    'workbuddy',
     'lobsterai',
     'qoder',
     'qodercn',
@@ -213,11 +213,18 @@ export async function verifyModelPlugins({ root, origin, cookie, wire, harness }
       providers.some((item) => item.id === provider),
       'Original channel provider missing: ' + provider,
     )
+  const removedChannelProviders = ['codearts', 'buddy', 'workbuddy']
+  for (const provider of removedChannelProviders)
+    assert(
+      !providers.some((item) => item.id === provider),
+      'Removed OFM channel provider returned: ' + provider,
+    )
   return {
     package: pkg.name,
     version: pkg.version,
     originalBundle: true,
     accountChannelProviders: channelProviders,
+    removedAccountChannelProviders: removedChannelProviders,
     nativeModel: true,
     virtualModel: true,
     manualPairings: true,
