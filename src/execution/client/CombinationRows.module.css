@@ -78,13 +78,18 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.discoveryStatus,
-.discoveryUnavailable {
+.discoveryMetadata {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex-shrink: 0;
+}
+.discoveryStatus {
   color: var(--dsw-alias-label-secondary);
 }
 .discoveryUnavailable {
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-state-error-primary);
+  font-weight: 500;
 }
 .editor {
   padding: 8px 0 14px;

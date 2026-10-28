@@ -1,18 +1,53 @@
 /** Install upstream model plugins once; their own managers retain update ownership. */
-const { existsSync, readFileSync, mkdtempSync, cpSync, rmSync } = require('node:fs')
+const {
+  existsSync,
+  readFileSync,
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  renameSync,
+  cpSync,
+  rmSync,
+} = require('node:fs')
 const { join } = require('node:path')
+const { createHash, randomUUID } = require('node:crypto')
 
 const MODEL_PLUGINS = [
   {
     name: 'dsh-our-free-model',
-    // Upstream v2.1.0, without repacking or changing its configuration/code.
+    version: '2.7.2',
     source:
-      'https://codeload.github.com/Ebony-Vinyl/dsh-our-free-model/tar.gz/7e3a1da5407a4206b2c672f6845ada3244fb300e',
+      'https://github.com/Ebony-Vinyl/dsh-our-free-model/releases/download/v2.7.2/dsh-our-free-model-2.7.2.tgz',
+    sha256: 'a167f743e8e05217f7b11e8f807fffeeb22e77e020a8318d4b5ff1d331f692a1',
   },
 ]
 
-async function installModelPlugins({ dir, install }) {
-  for (const plugin of MODEL_PLUGINS) {
+/** Keep a verified original release archive in the profile for later repair. */
+async function prepareModelPlugin({ dir, plugin, fetchImpl = fetch }) {
+  const archive = join(dir, 'vendor', `${plugin.name}-${plugin.version}.tgz`)
+  const digest = (bytes) => createHash('sha256').update(bytes).digest('hex')
+  if (existsSync(archive)) {
+    if (digest(readFileSync(archive)) !== plugin.sha256)
+      throw Error(`模型插件归档校验失败：${plugin.name}`)
+    return archive
+  }
+  const response = await fetchImpl(plugin.source, { signal: AbortSignal.timeout(120_000) })
+  if (!response.ok) throw Error(`模型插件下载失败：${plugin.name}（HTTP ${response.status}）`)
+  const bytes = Buffer.from(await response.arrayBuffer())
+  if (digest(bytes) !== plugin.sha256) throw Error(`模型插件归档校验失败：${plugin.name}`)
+  mkdirSync(join(dir, 'vendor'), { recursive: true, mode: 0o700 })
+  const temporary = `${archive}.${randomUUID()}`
+  try {
+    writeFileSync(temporary, bytes, { mode: 0o600, flag: 'wx' })
+    renameSync(temporary, archive)
+  } finally {
+    rmSync(temporary, { force: true })
+  }
+  return archive
+}
+
+async function installModelPlugins({ dir, install, plugins = MODEL_PLUGINS, fetchImpl = fetch }) {
+  for (const plugin of plugins) {
     const profile = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
     if (Object.hasOwn(profile.dependencies ?? {}, plugin.name)) {
       // Preserve user versions, sources and disabled bundles. Repair a missing
@@ -21,7 +56,8 @@ async function installModelPlugins({ dir, install }) {
         await install(['install'])
       continue
     }
-    await install(['add', plugin.source])
+    const archive = await prepareModelPlugin({ dir, plugin, fetchImpl })
+    await install(['add', archive])
   }
 }
 
@@ -49,4 +85,4 @@ async function preserveModelPlugins({ dir, install }) {
   }
 }
 
-module.exports = { MODEL_PLUGINS, installModelPlugins, preserveModelPlugins }
+module.exports = { MODEL_PLUGINS, prepareModelPlugin, installModelPlugins, preserveModelPlugins }

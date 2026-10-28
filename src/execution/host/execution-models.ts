@@ -30,7 +30,7 @@ import {
   officialOpenCodeModel,
   OFM_INACTIVE_DEFAULT_HARNESSES,
 } from './ofm-source/selection-policy.ts'
-import { OFM_PROVIDERS, isExcludedOfmModel } from './ofm-source/provider.ts'
+import { OFM_PROVIDER, OFM_PROVIDERS, isExcludedOfmModel } from './ofm-source/provider.ts'
 import { ofmModelReadiness, type OfmModelReadiness } from './ofm-source/readiness.ts'
 import { BAMBOO_STARTLUX_MODEL } from './adapters/bamboo.ts'
 import { JEV_DECISION_MODEL, JEV_TYPESAFE_MODEL } from './adapters/jev.ts'
@@ -60,6 +60,10 @@ export class ExecutionModelResolver {
     )
     const userEdited = (item: CombinationDefinition) =>
       item.autoEnabled === false && item.autoEnabledDisabled === true
+    const legacyNemotronKiloRoute = (item: CombinationDefinition) =>
+      item.modelRef.provider === OFM_PROVIDER &&
+      item.modelRef.model === 'nvidia/nemotron-3-super-120b-a12b:free' &&
+      item.harnessRef === 'opencode'
     const staleAutomatic = (item: CombinationDefinition) =>
       item.id.startsWith('auto:') &&
       !userEdited(item) &&
@@ -67,6 +71,20 @@ export class ExecutionModelResolver {
         automaticHarness(item.modelRef) !== item.harnessRef)
     if (retired.length || legacyDefault || catalog.combinations.some(staleAutomatic)) {
       catalog = await this.store.cleanLegacyCombinations(staleAutomatic)
+    }
+    if (catalog.combinations.some(legacyNemotronKiloRoute)) {
+      catalog = await this.store.set({
+        ...catalog,
+        combinations: catalog.combinations.map((item) =>
+          legacyNemotronKiloRoute(item)
+            ? {
+                ...item,
+                name: 'Kilo Nemotron 3 Super + Kilo Code',
+                harnessRef: 'kilo',
+              }
+            : item,
+        ),
+      })
     }
     catalog.combinations = catalog.combinations.filter((item) => !staleAutomatic(item))
     for (const item of catalog.combinations) {
@@ -197,6 +215,82 @@ export class ExecutionModelResolver {
       }),
     )
     for (const models of providerModels) catalog.models.push(...models)
+    const rawSummary = ofmSummary ? await ofmSummary : undefined
+    const rawCatalog =
+      rawSummary !== null && typeof rawSummary === 'object' && rawSummary !== undefined
+        ? (rawSummary as { catalog?: unknown }).catalog
+        : undefined
+    // A successful OFM snapshot with a live membership route is authoritative for
+    // generated external routes. Remove generated rows whose model disappeared
+    // from that live route, while retaining user-created rows so a transient
+    // upstream change cannot destroy an explicit choice. A failed, cached-only,
+    // or incomplete summary never prunes.
+    const rawSettings =
+      rawSummary !== null && typeof rawSummary === 'object' && rawSummary !== undefined
+        ? (rawSummary as { settings?: unknown }).settings
+        : undefined
+    const rawMembership =
+      rawSummary !== null && typeof rawSummary === 'object' && rawSummary !== undefined
+        ? (rawSummary as { membership?: unknown }).membership
+        : undefined
+    const membershipModels =
+      rawMembership !== null && typeof rawMembership === 'object' && rawMembership !== undefined
+        ? Object.values(rawMembership as Record<string, unknown>).flatMap((value) =>
+            Array.isArray(value)
+              ? value.filter((model): model is string => typeof model === 'string')
+              : [],
+          )
+        : []
+    const hasLiveMembership = membershipModels.length > 0
+    if (
+      Array.isArray(rawCatalog) &&
+      rawSettings !== null &&
+      typeof rawSettings === 'object' &&
+      (rawSettings as { enabled?: unknown }).enabled === true &&
+      hasLiveMembership
+    ) {
+      const liveOfmModels = new Set(
+        rawCatalog.flatMap((entry) => {
+          if (entry === null || typeof entry !== 'object' || !('id' in entry)) return []
+          const id = (entry as { id?: unknown }).id
+          return typeof id === 'string' && id ? [id] : []
+        }),
+      )
+      const staleOfmAutomatic = (item: CombinationDefinition) =>
+        item.id.startsWith('auto:') &&
+        !userEdited(item) &&
+        OFM_PROVIDERS.includes(item.modelRef.provider) &&
+        (!liveOfmModels.has(item.modelRef.model) || !membershipModels.includes(item.modelRef.model))
+      if (catalog.combinations.some(staleOfmAutomatic)) {
+        catalog = await this.store.cleanLegacyCombinations(staleOfmAutomatic)
+      }
+    }
+    if (Array.isArray(rawCatalog))
+      for (const entry of rawCatalog) {
+        if (entry === null || typeof entry !== 'object' || !('id' in entry)) continue
+        const id = (entry as { id?: unknown }).id
+        if (typeof id !== 'string' || !id) continue
+        const ref = { provider: OFM_PROVIDER, model: id }
+        if (isHiddenOfmSelection(ref) || isRetiredModel(ref)) continue
+        const readiness = ofmModelReadiness(rawSummary, ref, automaticHarness(ref) !== 'dsh')
+        const entryName = (entry as { name?: unknown }).name
+        const name = displayModelName(ref, typeof entryName === 'string' ? entryName : undefined)
+        const existing = catalog.models.find((model) => modelRefKey(model.ref) === modelRefKey(ref))
+        if (existing) {
+          existing.name = name
+          existing.available = readiness.available
+          if (readiness.available) delete existing.reason
+          else existing.reason = readiness.reason ?? 'OFM 模型尚未就绪'
+        } else {
+          catalog.models.push({
+            ref,
+            name,
+            source: 'Our Free Model',
+            available: readiness.available,
+            ...(readiness.available ? {} : { reason: readiness.reason ?? 'OFM 模型尚未就绪' }),
+          })
+        }
+      }
     if (this.ctx.get('settings')) {
       const configured = await gatewayModelSettings(this.ctx)
       for (const group of configured.groups)
@@ -351,26 +445,6 @@ export class ExecutionModelResolver {
     for (const model of catalog.models)
       if (OFM_PROVIDERS.includes(model.ref.provider))
         ofmDiscovery.set(modelRefKey(model.ref), model)
-    const rawSummary = ofmSummary ? await ofmSummary : undefined
-    const rawCatalog =
-      rawSummary !== null && typeof rawSummary === 'object' && rawSummary !== undefined
-        ? (rawSummary as { catalog?: unknown }).catalog
-        : undefined
-    if (Array.isArray(rawCatalog))
-      for (const entry of rawCatalog) {
-        if (entry === null || typeof entry !== 'object' || !('id' in entry)) continue
-        const id = (entry as { id?: unknown }).id
-        if (typeof id !== 'string' || !id) continue
-        const ref = { provider: 'our-free-model', model: id }
-        if (!ofmDiscovery.has(modelRefKey(ref)))
-          ofmDiscovery.set(modelRefKey(ref), {
-            ref,
-            name: id,
-            source: 'Our Free Model',
-            available: ofmModelReadiness(rawSummary, ref, automaticHarness(ref) !== 'dsh')
-              .available,
-          })
-      }
     catalog.ofmDiscovery = [...ofmDiscovery.values()].map((model) => {
       const declaredOfficial = officialHarnessFor(model.ref)
       const official =

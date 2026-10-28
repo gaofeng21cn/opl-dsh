@@ -35,6 +35,12 @@ export function ofmModelReadiness(
     return { available: false, reason: 'OFM 当前目录未提供此模型' }
   if (entry && record(entry).route === null)
     return { available: false, reason: 'OFM 未启用此模型，对应组合保持停用' }
+  if (externalHarness) {
+    const membership = record(root.membership)
+    const routes = Object.values(membership).filter(Array.isArray)
+    if (routes.length > 0 && !routes.some((models) => models.includes(ref.model)))
+      return { available: false, reason: 'OFM 当前可用目录未包含此模型' }
+  }
 
   return { available: true }
 }
