@@ -245,9 +245,9 @@ async function assertNoLinks(path, { allowMissing = false } = {}) {
   for (;;) {
     try {
       const item = await lstat(current, { bigint: false })
-      if (item.isSymbolicLink())
-        throw new Error(`symbolic link or reparse point is not allowed: ${current}`)
       const canonical = await realpath(current)
+      if (item.isSymbolicLink() && !isMacSystemAlias(current, canonical))
+        throw new Error(`symbolic link or reparse point is not allowed: ${current}`)
       const same =
         process.platform === 'win32'
           ? canonical.toLowerCase() === resolve(current).toLowerCase()
@@ -328,7 +328,9 @@ async function ensureSafeEntry(parent, entry, blockers) {
     const [parentReal, entryReal] = await Promise.all([realpath(parent), realpath(entryPath)])
     if (
       !isWithin(parentReal, entryReal) ||
-      (entry.isDirectory() && entryReal.toLowerCase() !== resolve(entryPath).toLowerCase())
+      (entry.isDirectory() &&
+        entryReal.toLowerCase() !== resolve(entryPath).toLowerCase() &&
+        !isMacSystemAlias(entryPath, entryReal))
     ) {
       blockers.push({
         code: 'reparse-entry',

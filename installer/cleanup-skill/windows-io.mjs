@@ -262,7 +262,19 @@ function assertNoReparseAncestors(path) {
     .filter(Boolean)
   for (const piece of pieces) {
     current = api.join ? api.join(current, piece) : join(current, piece)
-    checkEntry(current, { allowMissing: true })
+    if (!isMacSystemAliasPath(current)) checkEntry(current, { allowMissing: true })
+  }
+}
+
+function isMacSystemAliasPath(path) {
+  if (process.platform !== 'darwin') return false
+  const current = resolve(path)
+  if (!['/etc', '/tmp', '/var'].some((prefix) => current === prefix || current.startsWith(prefix + '/')))
+    return false
+  try {
+    return realpathSync.native(current) === '/private' + current
+  } catch {
+    return false
   }
 }
 
@@ -291,11 +303,23 @@ export function assertSafePath(path, root) {
   const rootStat = checkEntry(canonicalRoot)
   if (!rootStat.isDirectory()) fail('安全路径根必须是目录')
   const api = hostPathApi()
+  const comparablePath = (value) => {
+    const normalized = normalizedPath(value)
+    if (
+      process.platform === 'darwin' &&
+      ['/etc', '/tmp', '/var'].some(
+        (prefix) => normalized === prefix || normalized.startsWith(prefix + '/'),
+      )
+    )
+      return '/private' + normalized
+    return normalized
+  }
   const isDescendant = (candidate) => {
-    const rootForRelative =
-      process.platform === 'win32' ? canonicalRoot.toLowerCase() : canonicalRoot
-    const targetForRelative = process.platform === 'win32' ? candidate.toLowerCase() : candidate
-    const descendant = api.relative(rootForRelative, targetForRelative)
+    const rootForRelative = comparablePath(canonicalRoot)
+    const targetForRelative = comparablePath(candidate)
+    const rootValue = process.platform === 'win32' ? rootForRelative.toLowerCase() : rootForRelative
+    const targetValue = process.platform === 'win32' ? targetForRelative.toLowerCase() : targetForRelative
+    const descendant = api.relative(rootValue, targetValue)
     return (
       descendant !== '' &&
       descendant !== '..' &&
@@ -305,13 +329,11 @@ export function assertSafePath(path, root) {
   }
   const normalizedTarget = normalizedPath(path)
   if (isPathRoot(normalizedTarget)) fail('不能操作文件系统根目录')
-  if (!isDescendant(normalizedTarget)) {
-    fail('目标路径必须位于安全根目录内')
-  }
+  if (!isDescendant(normalizedTarget)) fail('目标路径必须位于安全根目录内')
   const canonicalTarget = canonicalExistingPath(normalizedTarget)
   if (!isDescendant(canonicalTarget)) fail('目标路径必须位于安全根目录内')
   assertNativePathSafety([canonicalRoot, canonicalTarget], [canonicalRoot, canonicalTarget])
-  return canonicalTarget
+  return normalizedTarget
 }
 
 function hashBytes(bytes) {
