@@ -1,4 +1,4 @@
-import { installSkill, verifySkill } from './skill-install.mjs'
+import { installCleanupSkill, installSkill, verifySkill } from './skill-install.mjs'
 import { isLocalCandidateInstall } from './update.mjs'
 import { installKimiCu } from './kimi-cu.mjs'
 import { installWindowsKimiCu } from './kimi-cu-windows.mjs'
@@ -198,6 +198,7 @@ foreach ($folder in @('Programs', 'Desktop')) {
   }
 }
 const skillDir = installSkill({ executable, home, launcher, root, release, codexHome })
+const cleanupSkillDir = installCleanupSkill({ release, codexHome })
 const computerUse = await (process.platform === 'win32' ? installWindowsKimiCu : installKimiCu)({
   suiteRoot: root,
   log: (message) => process.stdout.write(`${message}\n`),
@@ -233,6 +234,7 @@ const installation = {
   launcher,
   compatibilityLauncher,
   skillDir,
+  cleanupSkillDir,
   computerUse,
   installedAt: new Date().toISOString(),
 }

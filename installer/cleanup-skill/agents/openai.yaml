@@ -1,0 +1,4 @@
+interface:
+  display_name: "DSH 会话清理"
+  short_description: "精确核对指定 DSH 会话及关联记录，再回收或安全删除"
+  default_prompt: "使用 $opl-dsh-session-cleanup 核对我指定的 DSH 清理范围，先列出关联对象，再按我授权的方式处理。"
