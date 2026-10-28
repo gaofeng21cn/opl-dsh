@@ -251,7 +251,7 @@ async function assertNoLinks(path, { allowMissing = false } = {}) {
       const same =
         process.platform === 'win32'
           ? canonical.toLowerCase() === resolve(current).toLowerCase()
-          : canonical === resolve(current)
+          : canonical === resolve(current) || isMacSystemAlias(current, canonical)
       if (!same) throw new Error(`reparse point is not allowed: ${current}`)
     } catch (error) {
       if (allowMissing && error?.code === 'ENOENT') {
@@ -263,6 +263,16 @@ async function assertNoLinks(path, { allowMissing = false } = {}) {
     if (parent === current) break
     current = parent
   }
+}
+
+function isMacSystemAlias(path, canonical) {
+  if (process.platform !== 'darwin') return false
+  const current = resolve(path)
+  const resolved = resolve(canonical)
+  return ['/etc', '/tmp', '/var'].some(
+    (prefix) =>
+      (current === prefix || current.startsWith(prefix + '/')) && resolved === '/private' + current,
+  )
 }
 
 function validateSelectorIds(selector) {
