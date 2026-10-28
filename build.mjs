@@ -190,6 +190,13 @@ for (const file of [
   'skill/control.mjs',
   'skill/windows-acl.mjs',
   'skill/harness-mcp.mjs',
+  'cleanup-skill/SKILL.md',
+  'cleanup-skill/cleanup.mjs',
+  'cleanup-skill/snapshot.mjs',
+  'cleanup-skill/windows-io.mjs',
+  'cleanup-skill/agents/openai.yaml',
+  'cleanup-skill/references/windows-recycling.md',
+  'cleanup-skill/references/provider-contract.md',
   'windows-lifecycle.mjs',
   name,
 ]) {
