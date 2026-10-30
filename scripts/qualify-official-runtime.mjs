@@ -509,7 +509,7 @@ try {
   await writeFile(
     join(profile, 'cordis.patch.yml'),
     // A fresh test profile must not import the operator's legacy keyring.
-    '- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n- id: llm-pi-ai\n  config:\n    huaweiKeyringMigrated: true\n    huaweiCredentialsMigrated: true\n',
+    '- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n',
     { mode: 0o600 },
   )
   if (suppliedApp)
@@ -558,7 +558,7 @@ try {
     (progress) => {
       evidence.checks.client = progress
     },
-    async (expected, ref = 'HUAWEI_MAAS_API_KEY') => {
+    async (expected, ref = 'BAMBOO_STARTLUX_API_KEY') => {
       const stored = parseYaml(await readFile(join(root, '.credentials.yaml'), 'utf8'))
       if (stored.refs?.[ref] !== expected) throw new Error('原生表单与隔离测试凭据存储回读不一致')
     },

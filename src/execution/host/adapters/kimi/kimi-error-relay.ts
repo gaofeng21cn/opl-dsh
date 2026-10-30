@@ -2,8 +2,6 @@
 import { createServer, request, type ClientRequest } from 'node:http'
 import { randomBytes } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
-import { request as httpsRequest, Agent } from 'node:https'
-import { HUAWEI_MAAS_ENDPOINT } from '../../../../credentials/contracts/huawei-maas.ts'
 
 /** Fixed diagnostics only; provider text and account identifiers never leave the relay. */
 export function kimiProviderFailure(status: number, payload: unknown): string | undefined {
@@ -53,19 +51,16 @@ export async function startKimiErrorRelay(target: {
   model: string
 }): Promise<KimiErrorRelay> {
   const upstream = new URL(target.baseURL)
-  const huawei = target.baseURL === HUAWEI_MAAS_ENDPOINT && target.model === 'kimi-k2.6'
   if (
-    !huawei &&
-    (upstream.protocol !== 'http:' ||
-      !['127.0.0.1', 'localhost'].includes(upstream.hostname) ||
-      !upstream.port ||
-      upstream.username ||
-      upstream.password ||
-      upstream.search ||
-      upstream.hash)
+    upstream.protocol !== 'http:' ||
+    !['127.0.0.1', 'localhost'].includes(upstream.hostname) ||
+    !upstream.port ||
+    upstream.username ||
+    upstream.password ||
+    upstream.search ||
+    upstream.hash
   )
     throw Error('Kimi OFM relay requires its published loopback endpoint')
-  const agent = huawei ? new Agent({ proxyEnv: process.env, keepAlive: true }) : undefined
   const prefix = upstream.pathname.replace(/\/$/, '')
   const key = randomBytes(32).toString('hex')
   let current: Turn | undefined
@@ -80,11 +75,7 @@ export async function startKimiErrorRelay(target: {
       turn.cancelled ||
       req.method !== 'POST' ||
       presented !== key ||
-      !(
-        huawei
-          ? ['/chat/completions']
-          : ['/messages', '/messages/count_tokens', '/v1/messages', '/v1/messages/count_tokens']
-      )
+      !['/messages', '/messages/count_tokens', '/v1/messages', '/v1/messages/count_tokens']
         .map((value) => prefix + value)
         .includes(path?.split('?')[0] ?? '')
     ) {
@@ -121,19 +112,16 @@ export async function startKimiErrorRelay(target: {
         turn.failure = 'HARNESS_PROVIDER'
         return
       }
-      const forward = (huawei ? httpsRequest : request)(
+      const forward = request(
         {
           hostname: upstream.hostname,
-          port: upstream.port || (huawei ? 443 : 80),
-          ...(agent ? { agent } : {}),
+          port: upstream.port,
           path,
           method: 'POST',
           headers: {
             'content-type': 'application/json',
             'content-length': body.length,
-            ...(huawei
-              ? { authorization: `Bearer ${target.apiKey}` }
-              : { 'x-api-key': target.apiKey }),
+            'x-api-key': target.apiKey,
             'anthropic-version':
               typeof req.headers['anthropic-version'] === 'string'
                 ? req.headers['anthropic-version']
@@ -244,7 +232,6 @@ export async function startKimiErrorRelay(target: {
       if (closed) return
       closed = true
       end()
-      agent?.destroy()
       const done = new Promise<void>((resolve) => server.close(() => resolve()))
       server.closeAllConnections()
       await done

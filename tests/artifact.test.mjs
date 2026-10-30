@@ -17,9 +17,9 @@ test('tarball checksum and contents bind the installer to an external plugin', a
     encoding: 'utf8',
   })
   assert.doesNotMatch(files, /node_modules|app\.asar|credentials|\/\.env/)
+  assert.ok(!files.includes('package/lib/zcode-harness-bridge.mjs'))
   for (const bridge of [
     'native-harness-bridge.mjs',
-    'zcode-harness-bridge.mjs',
     'step-bridge.mjs',
     'pi-bridge.mjs',
     'zcode-ofm-bridge.mjs',
@@ -34,6 +34,7 @@ test('tarball checksum and contents bind the installer to an external plugin', a
   assert.equal(manifest.version, manifest.officialVersion)
   assert.equal(manifest.enhancementVersion, pkg.version)
   const code = await readFile(new URL('package/lib/index.js', output), 'utf8')
+  assert.doesNotMatch(code, /api\.modelarts-maas\.com|HUAWEI_MAAS_API_KEY|oplContextBudget/)
   assert.match(code, /from "@deepseek-ai\/dsh-llm-deepseek"/)
   assert.doesNotMatch(
     code,

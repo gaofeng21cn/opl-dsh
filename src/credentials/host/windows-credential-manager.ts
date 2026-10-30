@@ -31,7 +31,7 @@
 
 import { spawn } from 'node:child_process'
 import {
-  HUAWEI_MAAS_KEYRING_TARGET,
+  BAMBOO_STARTLUX_KEYRING_TARGET,
   KeyringError,
   KEYRING_TARGET_PREFIX,
   MAX_KEYRING_BLOB_BYTES,
@@ -630,7 +630,10 @@ export async function wincredDelete(
  * The marshalled size of `CREDENTIAL` on this host: 80 on x64, 52 on x86.
  */
 export async function wincredStructSize(options: WincredBridgeOptions = {}): Promise<number> {
-  const payload = await invoke({ op: 'structsize', target: HUAWEI_MAAS_KEYRING_TARGET }, options)
+  const payload = await invoke(
+    { op: 'structsize', target: BAMBOO_STARTLUX_KEYRING_TARGET },
+    options,
+  )
   return Number(payload)
 }
 
@@ -647,7 +650,7 @@ export async function wincredArgvScan(
 ): Promise<{ readonly inArgv: boolean; readonly inEnv: boolean }> {
   assertKeyringPlatform()
   const payload = await invoke(
-    { op: 'argvscan', target: HUAWEI_MAAS_KEYRING_TARGET, secretB64: toBase64Wide(secret) },
+    { op: 'argvscan', target: BAMBOO_STARTLUX_KEYRING_TARGET, secretB64: toBase64Wide(secret) },
     options,
   )
   const [argv, env] = payload.split('|')

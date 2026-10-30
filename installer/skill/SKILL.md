@@ -119,12 +119,6 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' del
 
 保存不打断当前轮次；下一轮在新 CLI 进程中恢复同一会话并应用当前代理。临时启动器仍连接着的旧进程不能作为代理生效证据。网络失败先读原 operation，修正配置后同 Session/task、新 operation 续作；不重发原 operation。验证代理须包含真实 Harness 请求结果，端口监听、公开网站连通或环境变量回读不足以宣称账号/模型可用。
 
-## Huawei MaaS 与官方 ZCode
-
-Huawei MaaS 的 `glm-5.2` 只通过官方 ZCode Harness 组合执行，端点固定为 `https://api.modelarts-maas.com/openai/v1`。Key 由设置页写入当前 Windows 用户的 Credential Manager（目标 `OPLDSH:HuaweiMaaS:ApiKey`）；配置文件只保存引用和 loopback 转发占位值，不回退到 `.env`、`credentials.yml` 或命令行参数。真实模型调用前必须由用户在本机配置 Key；没有 Key 时只允许运行不联网的协议和配置检查。
-
-ZCode 进程使用独立 loopback 转发按请求读取 Key，并由 Node.js 24.5 或更高版本的 `https.Agent({ proxyEnv })` 继承该 Harness 的代理；不得修改 Desktop 全局代理。GLM-5.2 的默认思考开关为启用，映射到 `chat_template_kwargs.thinking`；模型目录不添加未经华为官方文档确认的推理档位。ZCode 只接受用户明确授权的 full-access；完整权限映射官方 `yolo`，原生会话显式选择 Auto 时新建官方 `build` 对话并通过精确权限询问绑定调用 codex-auto-review。模式创建后固定，切换模式需要新对话；任何受限权限在启动前拒绝。
-
 ## 外部 Harness 的 Windows Bash 派发
 
 Shell 配置按实际 Harness 分别确认：Claude 使用官方 `CLAUDE_CODE_GIT_BASH_PATH`；Grok 使用官方 `GROK_SHELL=bash` 并核对 CLI 首个命中的 Git 安装。Grok 在 Windows 上只接受已授权的显式 `--sandbox full-access`，映射为官方 off/bypassPermissions；受限请求在启动前拒绝，不能自动提权。Claude 的 full-access 同样对齐内置 danger-full-access 与 bypassPermissions，允许工作目录外访问，不宣称受 cwd 约束。

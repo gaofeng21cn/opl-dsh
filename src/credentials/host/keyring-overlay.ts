@@ -5,17 +5,14 @@ import {
   BAMBOO_STARTLUX_CREDENTIAL_REF,
   JEV_TYPESAFE_CREDENTIAL_REF,
 } from '../contracts/windows-keyring.ts'
-import { HUAWEI_MAAS_CREDENTIAL_REF } from '../contracts/huawei-maas.ts'
 import {
   bambooStartLuxKeyring,
   jevTypeSafeKeyring,
-  huaweiMaaSKeyring,
   type SuiteKeyringCredential,
 } from './windows-keyring.ts'
 
 const TARGETS = new Map<string, SuiteKeyringCredential>([
   [JEV_TYPESAFE_CREDENTIAL_REF, jevTypeSafeKeyring],
-  [HUAWEI_MAAS_CREDENTIAL_REF, huaweiMaaSKeyring],
   [BAMBOO_STARTLUX_CREDENTIAL_REF, bambooStartLuxKeyring],
 ])
 
@@ -23,7 +20,6 @@ const TARGETS = new Map<string, SuiteKeyringCredential>([
  * Install a narrow credential seam for the provider keys owned by this
  * suite. The official local provider remains the owner for every other key;
  * on Windows these references never fall back to its YAML document.
- * Huawei keeps the official provider on other platforms.
  *
  * @param ctx - Host context containing the official credential service.
  * @returns a disposer and the unwrapped methods used for one-time migration.
@@ -48,7 +44,6 @@ export function installProviderKeyringOverlay(ctx: Context): {
     unset: descriptorOf('unset'),
   }
   const target = (ref: CredentialRef) => {
-    if (String(ref) === HUAWEI_MAAS_CREDENTIAL_REF && process.platform !== 'win32') return undefined
     return TARGETS.get(String(ref))
   }
   const emit = (ref: CredentialRef): void => {

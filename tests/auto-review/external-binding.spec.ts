@@ -59,7 +59,7 @@ afterEach(async () => {
 
 const FIXTURE = resolve('tests/auto-review/fixtures/structured-permission-agent.mjs')
 /** The combination the fixture catalog declares for the ZCode adapter. */
-const ZCODE_COMBINATION = 'zcode/glm-5.2'
+const ZCODE_COMBINATION = 'zcode/z-ai/glm-5.3'
 const LOW_ALLOW = '{"risk":"low","decision":"allow"}'
 const HIGH_DENY = '{"risk":"high","decision":"deny","reason":"irreversible"}'
 
@@ -86,13 +86,13 @@ function createReviewer(): ReviewerStub {
     {
       listProviders: () => [
         { id: 'opl-gateway', name: 'OPL Gateway' },
-        { id: 'huawei-maas', name: '华为云 MaaS' },
+        { id: 'our-free-model', name: 'Our Free Model' },
       ],
       listConfigurableProviders: () => [],
       listModels: async (provider: string) =>
         provider === 'opl-gateway'
           ? [{ id: 'codex::codex-auto-review', name: 'Codex Auto Review' }]
-          : [{ id: 'glm-5.2', name: 'GLM-5.2' }],
+          : [{ id: 'z-ai/glm-5.3', name: 'GLM-5.3' }],
       resolveModelInfo: async () => ({}),
       prepareCall: async (config: Record<string, unknown>) => {
         prepares.push({ ...config })
@@ -261,7 +261,8 @@ async function mount(options: { enabled?: boolean } = {}): Promise<Mounted> {
     bind: (agent: Agent, request: { callId?: string }) =>
       service.externalApprovalBinding(String(agent.session.id), request.callId),
   })
-  const adapter = adapterFor('zcode', { provider: 'huawei-maas', model: 'glm-5.2' })!
+  const adapter = adapterFor('zcode', { provider: 'our-free-model', model: 'z-ai/glm-5.3' })!
+  vi.spyOn(adapter, 'available').mockResolvedValue({ available: true })
   vi.spyOn(adapter, 'prepare').mockImplementation(async (_ctx, record, adapterOptions) => {
     if (adapterOptions.prefix?.[0] !== FIXTURE) throw Error('the fixture launch is the only one')
     const home = join(adapterOptions.home, 'harnesses', 'zcode', record.id)
@@ -270,7 +271,7 @@ async function mount(options: { enabled?: boolean } = {}): Promise<Mounted> {
       home,
       command: process.execPath,
       args: [FIXTURE],
-      env: { ...systemEnvironment(), OPL_FIXTURE_MODEL: 'glm-5.2' },
+      env: { ...systemEnvironment(), OPL_FIXTURE_MODEL: 'z-ai/glm-5.3' },
     }
   })
   // The ZCode combination is generated from the Gateway account catalog in the
@@ -285,8 +286,8 @@ async function mount(options: { enabled?: boolean } = {}): Promise<Mounted> {
     combinations: [
       {
         id: ZCODE_COMBINATION,
-        name: 'GLM-5.2 + ZCode',
-        modelRef: { provider: 'huawei-maas', model: 'glm-5.2' },
+        name: 'GLM-5.3 + ZCode',
+        modelRef: { provider: 'our-free-model', model: 'z-ai/glm-5.3' },
         harnessRef: 'zcode',
         permissionPolicy: 'full-access',
         enabled: true,

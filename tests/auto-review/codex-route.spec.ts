@@ -168,8 +168,12 @@ describe('reviewer route policy', () => {
       diagnosticOf(() =>
         resolveReviewerRoute({
           selection: { mode: 'current' },
-          sessionRoute: { provider: 'huawei-maas', model: 'glm-5.2', reasoningEffort: null },
-          routes: [...ADVERTISED, option('huawei-maas', 'glm-5.2')],
+          sessionRoute: {
+            provider: 'minimax-official',
+            model: 'MiniMax-M3',
+            reasoningEffort: null,
+          },
+          routes: [...ADVERTISED, option('minimax-official', 'MiniMax-M3')],
         }),
       ),
     ).toBe('route-excluded')
@@ -224,7 +228,7 @@ describe('reviewer route policy', () => {
     expect(
       resolveExternalReviewerRoute({
         selection: { mode: 'current' },
-        routes: [...ADVERTISED, option('huawei-maas', 'glm-5.2')],
+        routes: [...ADVERTISED, option('minimax-official', 'MiniMax-M3')],
       }),
     ).toEqual({
       provider: GATEWAY,
@@ -259,7 +263,6 @@ describe('reviewer route policy', () => {
         { id: GATEWAY, name: 'OPL Gateway' },
         { id: 'bamboo-startlux', name: 'BambooNode · StartLux' },
         { id: 'minimax-official', name: 'MiniMax Code' },
-        { id: 'huawei-maas', name: '华为云 MaaS' },
       ],
       listModels: async (provider: string) =>
         provider === GATEWAY
@@ -310,7 +313,7 @@ function binding(overrides: Partial<ExternalReviewBinding> = {}): ExternalReview
       sessionId: 'session-1',
       preset: 'auto',
       sandbox: 'full-access',
-      combination: 'huawei-zcode-glm',
+      combination: 'ofm-zcode-glm',
     },
     ...overrides,
   }
@@ -456,7 +459,7 @@ describe('external permission bridge contract', () => {
     expect(text).toContain('"generation": 2')
     expect(text).toContain('"turn": 4')
     expect(text).toContain('turn-op-4')
-    expect(text).toContain('"combination": "huawei-zcode-glm"')
+    expect(text).toContain('"combination": "ofm-zcode-glm"')
     expect(text).toContain('rm -rf build')
     expect(text).toContain('harnessReportedReason')
   })

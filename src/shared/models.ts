@@ -70,7 +70,6 @@ export function displayModelName(ref: ModelRef, name?: string): string {
 export function displayModelSource(ref: ModelRef, source?: string): string {
   if (ref.provider === 'opl-gateway') return 'OPL Gateway'
   if (ref.provider === 'minimax-official') return 'MiniMax 官方账号（mcode）'
-  if (ref.provider === 'huawei-maas') return '华为云 MaaS'
   if (ref.provider === 'deepseek-account' || ref.provider === 'deepseek-official')
     return 'DeepSeek 官方'
   return source?.trim() || ref.provider

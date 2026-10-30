@@ -1,4 +1,3 @@
-import { createHuaweiNativeAdapter } from '../../execution/host/adapters/huawei-native.ts'
 /** Extend the official provider configuration, retaining its editor and adapter. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
@@ -8,17 +7,7 @@ import {
   BAMBOO_STARTLUX_CREDENTIAL_REF,
   JEV_TYPESAFE_CREDENTIAL_REF,
 } from '../../credentials/contracts/windows-keyring.ts'
-import {
-  HUAWEI_MAAS_CREDENTIAL_REF,
-  HUAWEI_MAAS_ENDPOINT,
-} from '../../credentials/contracts/huawei-maas.ts'
 import { installProviderKeyringOverlay } from '../../credentials/host/keyring-overlay.ts'
-import {
-  HuaweiZcodeModelAdapter,
-  HUAWEI_ZCODE_MODEL,
-  HUAWEI_MODELS,
-} from '../../execution/host/adapters/zcode-models.ts'
-import { migrateHuaweiCredential } from '../../credentials/host/provider.ts'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import {
   BambooStartLuxAdapter,
@@ -34,18 +23,6 @@ import {
 import type {} from '@deepseek-ai/dsh-settings'
 
 export const inject = ['loader', 'llm', 'settings', 'credentials']
-const huaweiProfile = z.object({
-  apiKeyEnv: z.const(HUAWEI_MAAS_CREDENTIAL_REF).default(HUAWEI_MAAS_CREDENTIAL_REF),
-  baseURL: z.const(HUAWEI_MAAS_ENDPOINT).default(HUAWEI_MAAS_ENDPOINT),
-  api: z.const('openai-completions').default('openai-completions'),
-  models: z
-    .array(
-      z.object({ id: z.union(['glm-5.2', 'deepseek-v4-flash', 'kimi-k2.6']), name: z.string() }),
-    )
-    .min(1)
-    .max(3)
-    .default(HUAWEI_MODELS),
-})
 const bambooProfile = z.object({
   apiKeyEnv: z.const(BAMBOO_STARTLUX_CREDENTIAL_REF).default(BAMBOO_STARTLUX_CREDENTIAL_REF),
   baseURL: z
@@ -77,19 +54,10 @@ const jevProfile = z.object({
 })
 const extraFields = {
   jevProviders: z.dict(jevProfile, z.const(JEV_TYPESAFE_MODEL.provider)).default({}).volatile(),
-  huaweiProviders: z
-    .dict(huaweiProfile, z.const(HUAWEI_ZCODE_MODEL.provider))
-    .default({})
-    .volatile(),
-  huaweiKeyringMigrated: z.boolean().default(false).volatile(),
-  huaweiCredentialsMigrated: z.boolean().default(false).volatile(),
   bambooProviders: z.dict(bambooProfile, z.const('bamboo-startlux')).default({}).volatile(),
   providerKeyringMigration: z.number().default(0).volatile(),
 }
 type ExtraConfig = {
-  huaweiProviders: Volatile<Record<string, { models: { id: string; name: string }[] }>>
-  huaweiKeyringMigrated: Volatile<boolean>
-  huaweiCredentialsMigrated: Volatile<boolean>
   bambooProviders: Volatile<
     Record<string, { baseURL: string; models: { id: string; name: string }[] }>
   >
@@ -125,12 +93,11 @@ export async function apply(ctx: Context): Promise<void> {
   // references before settings reads them. No config or package bytes are rewritten.
   await entry.fiber.restart()
   // The official editor probes by namespace and provider, without an endpoint.
-  // pi-ai owns this namespace but has no Huawei catalog or per-provider hook.
+  // The native editor recognizes the pi-ai namespace; Jev uses its own wire API.
   ctx.effect(() => {
     const llm = ctx.llm
     const previous = Object.getOwnPropertyDescriptor(llm, 'discoverModels')
     const discover = llm.discoverModels
-    const catalog = new HuaweiZcodeModelAdapter()
     const adapted: typeof discover = async function (
       this: Context['llm'],
       settingsNs,
@@ -141,12 +108,7 @@ export async function apply(ctx: Context): Promise<void> {
         signal?.throwIfAborted()
         return [{ id: JEV_TYPESAFE_MODEL.model, name: 'Jev 1.13' }]
       }
-      if (settingsNs !== ns || request.provider !== HUAWEI_ZCODE_MODEL.provider)
-        return discover.call(this, settingsNs, request, signal)
-      signal?.throwIfAborted()
-      const models = await catalog.listModels(HUAWEI_ZCODE_MODEL.provider)
-      signal?.throwIfAborted()
-      return models.map(({ id, name }) => ({ id, name }))
+      return discover.call(this, settingsNs, request, signal)
     }
     Object.defineProperty(llm, 'discoverModels', {
       configurable: true,
@@ -161,37 +123,8 @@ export async function apply(ctx: Context): Promise<void> {
   })
   const configuration = () => entry.fiber!.config as ExtraConfig
   const keyringMigrationNeeded = configuration().providerKeyringMigration.get() < 1
-  if (keyringMigrationNeeded) await keyringOverlay.migratePlaintext()
-  // Finish the one-time owner write before exposing an editor. Otherwise a
-  // slower Windows probe can change the namespace revision under an open draft.
-  if (!configuration().huaweiCredentialsMigrated.get()) {
-    const oldMigration = configuration().huaweiKeyringMigrated.get()
-    const hasProvider = !!configuration().huaweiProviders.get()[HUAWEI_ZCODE_MODEL.provider]
-    const imported = await migrateHuaweiCredential(ctx, !oldMigration || hasProvider)
-    const view = ctx.settings.describe().find((item) => item.ns === ns)
-    if (!view) throw new Error('官方模型供应商设置不可用，凭据迁移状态未保存')
-    await ctx.settings.mutate(
-      ns,
-      [
-        ...(imported && !hasProvider
-          ? [
-              {
-                op: 'set' as const,
-                path: ['huaweiProviders', HUAWEI_ZCODE_MODEL.provider],
-                value: {},
-              },
-            ]
-          : []),
-        { op: 'set', path: ['huaweiKeyringMigrated'], value: true },
-        { op: 'set', path: ['huaweiCredentialsMigrated'], value: true },
-        ...(keyringMigrationNeeded
-          ? [{ op: 'set' as const, path: ['providerKeyringMigration'], value: 1 }]
-          : []),
-      ],
-      view.revision,
-    )
-  }
-  if (keyringMigrationNeeded && configuration().huaweiCredentialsMigrated.get()) {
+  if (keyringMigrationNeeded) {
+    await keyringOverlay.migratePlaintext()
     const view = ctx.settings.describe().find((item) => item.ns === ns)
     if (!view) throw new Error('官方模型供应商设置不可用，Bamboo 凭据迁移状态未保存')
     await ctx.settings.mutate(
@@ -208,27 +141,12 @@ export async function apply(ctx: Context): Promise<void> {
       settingsPath: ['jevProviders', JEV_TYPESAFE_MODEL.provider],
     },
     {
-      provider: HUAWEI_ZCODE_MODEL.provider,
-      displayName: '华为云 MaaS',
-      settingsNs: ns,
-      settingsPath: ['huaweiProviders', HUAWEI_ZCODE_MODEL.provider],
-    },
-    {
       provider: 'bamboo-startlux',
       displayName: 'BambooNode · StartLux',
       settingsNs: ns,
       settingsPath: ['bambooProviders', 'bamboo-startlux'],
     },
   ])
-  const huaweiAdapter = new HuaweiZcodeModelAdapter(
-    () =>
-      configuration().huaweiProviders.get()[HUAWEI_ZCODE_MODEL.provider]
-        ? HUAWEI_MODELS
-        : undefined,
-    createHuaweiNativeAdapter(
-      async () => (await ctx.credentials.resolve(credentialRef(HUAWEI_MAAS_CREDENTIAL_REF)))?.value,
-    ),
-  )
   const bambooAdapter = new BambooStartLuxAdapter(
     async () =>
       (await ctx.credentials.resolve(credentialRef(BAMBOO_STARTLUX_CREDENTIAL_REF)))?.value,
@@ -238,7 +156,6 @@ export async function apply(ctx: Context): Promise<void> {
     async () => (await ctx.credentials.resolve(credentialRef(JEV_TYPESAFE_CREDENTIAL_REF)))?.value,
   )
   let jevRegistration: ReturnType<typeof ctx.llm.registerAdapter> | undefined
-  let huaweiRegistration: ReturnType<typeof ctx.llm.registerAdapter> | undefined
   let bambooRegistration: ReturnType<typeof ctx.llm.registerAdapter> | undefined
   let disposed = false
   let refreshEpoch = 0
@@ -249,12 +166,6 @@ export async function apply(ctx: Context): Promise<void> {
   const refresh = async (): Promise<void> => {
     if (disposed) return
     const epoch = ++refreshEpoch
-    const huaweiRoutes = configuration().huaweiProviders.get()[HUAWEI_ZCODE_MODEL.provider]
-      ? [HUAWEI_ZCODE_MODEL.provider]
-      : []
-    if (huaweiRegistration) huaweiRegistration.replace(huaweiRoutes)
-    else if (huaweiRoutes.length)
-      huaweiRegistration = ctx.llm.registerAdapter(huaweiRoutes, huaweiAdapter)
     let bambooConfigured = false
     try {
       bambooConfigured = (

@@ -1,7 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import { adapterFor, defaultHarness } from '../../src/execution/host/adapters/index.ts'
-import { HUAWEI_ZCODE_MODEL } from '../../src/execution/host/adapters/zcode-models.ts'
 import { defaultExecutionCatalog, normalizeCatalog } from '../../src/execution/host/catalog.ts'
 import { ExternalModelSources } from '../../src/execution/host/model-sources.ts'
 import { harnessAllowsFullAccess } from '../../src/execution/host/permissions.ts'
@@ -97,20 +96,6 @@ describe('central OFM wiring', () => {
       ).rejects.toThrow('尚未适配')
     })
   }
-
-  it('keeps the existing Huawei ZCode route independent from the OFM route', () => {
-    const test = fixture()
-    const huawei = adapterFor('zcode', HUAWEI_ZCODE_MODEL, test.sources)!
-    const ofm = adapterFor(
-      'zcode',
-      { provider: OFM_PROVIDER, model: 'z-ai/glm-5.3' },
-      test.sources,
-    )!
-    expect(huawei).not.toBe(ofm)
-    expect(huawei.capabilities.customEndpoint).toBe(false)
-    expect(ofm.capabilities.customEndpoint).toBe(true)
-    test.dispose()
-  })
 
   it('refuses account-channel models before reading the anonymous connection', async () => {
     let calls = 0

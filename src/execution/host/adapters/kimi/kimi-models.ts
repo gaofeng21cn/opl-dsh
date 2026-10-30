@@ -82,10 +82,7 @@ export const KIMI_MODELS: readonly string[] = ['moonshotai/kimi-k2.6', 'moonshot
  * claiming them here would hand this harness traffic it has no admission for.
  */
 export function isKimiCodeModel(ref: ModelRef): boolean {
-  return (
-    (ref.provider === KIMI_PROVIDER && KIMI_MODELS.includes(ref.model)) ||
-    (ref.provider === 'huawei-maas' && ref.model === 'kimi-k2.6')
-  )
+  return ref.provider === KIMI_PROVIDER && KIMI_MODELS.includes(ref.model)
 }
 
 /** Environment the official CLI reads for a route supplied by the suite. */

@@ -199,7 +199,7 @@ describe('ZCode · Our Free Model claims only its exact models', () => {
     for (const ref of refused) expect(zcodeOfmAdapter.matches(ref)).toBe(false)
   })
 
-  test('declares the same engine capabilities as the Huawei route, with a custom endpoint', () => {
+  test('declares the official engine capabilities with an OFM endpoint', () => {
     expect(zcodeOfmAdapter.id).toBe('zcode')
     expect(zcodeOfmAdapter.transport).toBe('acp')
     expect(zcodeOfmAdapter.capabilities.customEndpoint).toBe(true)

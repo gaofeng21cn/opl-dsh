@@ -1,28 +1,3 @@
-/** ACP transport over the official ZCode CLI, carrying the Our Free Model route.
- *
- * This file owns no agent loop, model request, tool execution or session format. It
- * launches the same official CLI in the same `app-server` mode the Huawei route uses
- * and translates the official ZCode Protocol (newline delimited JSON-RPC over stdio)
- * onto the ACP surface the Host already drives. Every piece of official protocol
- * knowledge — the method names, the event projection, the permission mapping and the
- * session identity assertions — is imported from `../zcode-protocol.ts` rather than
- * restated, so this route cannot drift away from the protocol it claims to speak.
- *
- * What is route-specific and lives here:
- *
- * - the credential is read through the owner's resolved route, not through the
- *   official credential service, so the Huawei key is never in scope;
- * - the relay is pinned to the owner's published loopback endpoint;
- * - the model and reasoning level asserted after create/resume are this route's.
- *
- * Credential handling: the OFM key is resolved on demand from the Host over private
- * stdio and held only in memory. It is not passed through the adapter's environment,
- * argv, a file, a log or the ZCode protocol. The provider config the official CLI
- * reads contains a fixed non-secret placeholder, and the loopback relay swaps in the
- * real value on the wire.
- *
- * @module zcode-ofm/zcode-ofm-bridge
- */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'

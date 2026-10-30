@@ -1,7 +1,7 @@
 /**
- * Client-safe vocabulary for the Huawei MaaS keyring.
+ * Client-safe vocabulary for suite credentials in Windows Credential Manager.
  *
- * Names one credential, its target, the failure codes a caller branches on, and
+ * Names fixed credentials, their targets, the failure codes a caller branches on, and
  * the UI-safe view. Types only: nothing here reaches a Host-only symbol, so a
  * settings surface compiles against this without the transport.
  *
@@ -10,7 +10,7 @@
  * @module @one-person-lab/dsh-opl/credentials/types
  */
 
-/** Where a stored Huawei MaaS key lives. */
+/** Credential source reported to settings. */
 export const WINDOWS_KEYRING_SOURCE = 'windows-credential-manager'
 
 /**
@@ -21,14 +21,6 @@ export const WINDOWS_KEYRING_SOURCE = 'windows-credential-manager'
  * any WinCred call.
  */
 export const KEYRING_TARGET_PREFIX = 'OPLDSH:'
-
-/**
- * The one credential this suite stores: Huawei MaaS, for the GLM-5.2 route
- * and the official ZCode integration.
- *
- * WinCred matches target names case-insensitively.
- */
-export const HUAWEI_MAAS_KEYRING_TARGET = 'OPLDSH:HuaweiMaaS:ApiKey'
 
 /** Reference and Credential Manager target for Bamboo StartLux. */
 export const BAMBOO_STARTLUX_CREDENTIAL_REF = 'BAMBOO_STARTLUX_API_KEY'

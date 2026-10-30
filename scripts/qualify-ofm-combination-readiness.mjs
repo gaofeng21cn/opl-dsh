@@ -143,7 +143,7 @@ try {
   await mkdir(profile, { recursive: true })
   await writeFile(
     join(profile, 'cordis.patch.yml'),
-    '- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n- id: llm-pi-ai\n  config:\n    huaweiKeyringMigrated: true\n    huaweiCredentialsMigrated: true\n',
+    '- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n',
     { mode: 0o600 },
   )
   await run(executable, [join(payload, 'install.mjs'), app, suite, payload, '--no-launch'], {

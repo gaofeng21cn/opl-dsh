@@ -1,20 +1,3 @@
-/** Our Free Model route on the official ZCode CLI: adapter and shell guard.
- *
- * One engine, two routes. This adapter keeps the `zcode` harness id, the official CLI
- * launch vector and the official ZCode Protocol, and changes only which endpoint and
- * which model the session runs. The Huawei MaaS route is untouched: this file never
- * imports its credential reference, never resolves a Huawei key, and never offers the
- * Huawei model. A combination that cannot run its own route fails instead of falling
- * back to the other one.
- *
- * Credentials belong to the model source. This adapter asks the public
- * `ExternalModelSources` registry for the exact route, hands the key to the bridge over
- * the private stdio channel only, and keeps it out of the environment, the argument
- * vector, every file and every log.
- *
- * @module zcode-ofm/zcode-ofm
- */
-
 import { mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { execFile } from 'node:child_process'
@@ -29,7 +12,6 @@ import type { HarnessSession } from '../../../contracts/sessions.ts'
 import type { AdapterOptions, AdapterLaunch, HarnessAdapter } from '../types.ts'
 import { systemEnvironment } from '../environment.ts'
 import { ZCODE_FULL_ACCESS_MODE, ZCODE_HARNESS } from '../zcode-protocol.ts'
-import { zcodeModeForSandbox } from '../zcode.ts'
 import {
   ZCODE_OFM_HARNESS,
   ZCODE_OFM_WIRE_PROTOCOL,
@@ -46,22 +28,6 @@ export const OFM_CREDENTIAL_REQUESTS = {
   resolve: 'opl/ofm-credential/resolve',
 } as const
 
-/**
- * Resolve the owned bridge entry next to this adapter.
- *
- * The shipped build bundles this adapter into `package/lib/index.js` and emits the
- * bridge beside it as `package/lib/zcode-ofm-bridge.mjs`, the same convention the shared
- * `AdapterOptions.zcodeBridgePath` follows for the Huawei route. Deriving the path from
- * this module's own location keeps the two bridges independent without asking the
- * shared options DTO to grow a second field for one route.
- *
- * Both built outputs — `index.js` and `index.mjs` — resolve the emitted `.mjs` bridge,
- * because either one is a packaged bundle rather than TypeScript source. Only a `.ts`
- * module URL resolves the `.ts` bridge, which is what the source checkout runs.
- *
- * @param moduleUrl - the calling module's URL; defaults to this adapter's own.
- * @returns an absolute path to the bridge that must be emitted next to it.
- */
 export function zcodeOfmBridgePath(moduleUrl: string = import.meta.url): string {
   const packaged = /\.m?js(?:[?#]|$)/.test(moduleUrl)
   return fileURLToPath(new URL(`./zcode-ofm-bridge${packaged ? '.mjs' : '.ts'}`, moduleUrl))
@@ -191,7 +157,8 @@ async function prepareZcodeOfmLaunch(
 ): Promise<AdapterLaunch> {
   // Permission first and on its own: `plan` is a tool policy, not an operating-system
   // filesystem confinement, so a restricted request stops here rather than launching.
-  zcodeModeForSandbox(record.sandbox)
+  if (record.sandbox !== 'full-access')
+    throw new HarnessConfigurationError('ZCode 仅支持明确授权的 full-access')
   const mode = record.zcodeMode ?? ZCODE_FULL_ACCESS_MODE
   if (!isZcodeOfmRef(record.modelRef))
     throw new HarnessConfigurationError(
@@ -295,14 +262,6 @@ async function prepareZcodeOfmLaunch(
   }
 }
 
-/**
- * Harness adapter for the Our Free Model route on the official ZCode CLI.
- *
- * Capabilities mirror the Huawei route because it is the *same* engine: same
- * transport, same permission surface, same cancel and review behaviour. The one
- * difference is `customEndpoint`, which is true here because this route exists to run
- * a resolved external endpoint, and false for the Huawei route whose endpoint is fixed.
- */
 export const zcodeOfmAdapter: HarnessAdapter = {
   id: ZCODE_OFM_HARNESS,
   transport: 'acp',

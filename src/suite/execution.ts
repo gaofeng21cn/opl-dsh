@@ -1,8 +1,3 @@
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import {
-  HUAWEI_MAAS_ENDPOINT,
-  HUAWEI_MAAS_CREDENTIAL_REF,
-} from '../credentials/contracts/huawei-maas.ts'
 import { executionLimitsSchema } from './config.ts'
 import { installNativeProgressGuard } from '../execution/host/native-progress-guard.ts'
 import type { ProgressWatchdogLimits } from '../execution/host/progress-watchdog.ts'
@@ -73,24 +68,6 @@ export function apply(ctx: Context, config: Config): void {
   })
   harness.configureProgressLimits(config.executionLimits)
   ctx.provide('oplExternalModelSources', harness.modelSources)
-  harness.modelSources.register(ctx, {
-    provider: 'huawei-maas',
-    supports: (engine, ref) =>
-      engine === 'kimi-code' && ref.provider === 'huawei-maas' && ref.model === 'kimi-k2.6',
-    resolve: async (engine, ref) => {
-      if (engine !== 'kimi-code' || ref.model !== 'kimi-k2.6') throw Error('不支持的华为云组合')
-      if (!(await ctx.llm.listModels('huawei-maas')).some((model) => model.id === ref.model))
-        throw Error('华为云模型未启用')
-      const credential = await ctx.credentials.resolve(credentialRef(HUAWEI_MAAS_CREDENTIAL_REF))
-      if (!credential?.value) throw Error('请先配置华为云 API Key')
-      return {
-        baseURL: HUAWEI_MAAS_ENDPOINT,
-        apiKey: credential.value,
-        model: ref.model,
-        protocol: 'chat',
-      }
-    },
-  })
   applyOfmModelSource(ctx, {
     providers: [OFM_PROVIDER],
     connection: createOfmApiConnection(async (request) => {
@@ -142,11 +119,6 @@ export function apply(ctx: Context, config: Config): void {
       : { ...request, reasoningEffort: ReasoningEffortId(effort) }
   })
   ctx.on('llm/stream', (options, next) => harness.conversationStream(options, next))
-  installNativeProgressGuard(
-    ctx,
-    () => harness.executionLimits(),
-    (options) => !options.purpose,
-  )
   installNativeProgressGuard(
     ctx,
     () => harness.executionLimits(),

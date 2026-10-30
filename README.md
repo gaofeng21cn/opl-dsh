@@ -55,16 +55,15 @@ brew install --cask gaofeng21cn/opl-dsh/opl-dsh
 
 ### 常用执行组合
 
-| 来源与模型                                          | Harness                  | 使用前提                                                      |
-| --------------------------------------------------- | ------------------------ | ------------------------------------------------------------- |
-| OPL DeepSeek V4.1 Flash                             | DSH                      | 对应 Gateway 分组可用                                         |
-| OPL GPT                                             | Codex CLI                | 分组与 CLI 已就绪                                             |
-| OPL Claude Opus 5.5                                 | Claude Code              | AWS、Kiro 渠道独立选择                                        |
-| OPL Grok 4.7                                        | Grok Build               | 分组与 CLI 已就绪                                             |
-| OPL Gemini 4 Argon、3.8 Flash、3.1 Pro              | OpenCode                 | 在执行设置中添加组合，使用 Gateway Gemini 渠道                |
-| 华为云 MaaS GLM-5.2 / Kimi K2.6 / DeepSeek V4 Flash | ZCode / Kimi Code / DSH  | [配置 MaaS Key](docs/huawei-maas-zcode.md)                    |
-| MiniMax M3.1-Flash-Preview、M3                      | mcode                    | 官方账号；仅支持明确授权的完全访问                            |
-| OFM 免费模型与虚拟路由                              | 按来源选择已适配 Harness | 见 [OFM 组合](docs/harness-adaptation.md#our-free-model-组合) |
+| 来源与模型                             | Harness                  | 使用前提                                                      |
+| -------------------------------------- | ------------------------ | ------------------------------------------------------------- |
+| OPL DeepSeek V4.1 Flash                | DSH                      | 对应 Gateway 分组可用                                         |
+| OPL GPT                                | Codex CLI                | 分组与 CLI 已就绪                                             |
+| OPL Claude Opus 5.5                    | Claude Code              | AWS、Kiro 渠道独立选择                                        |
+| OPL Grok 4.7                           | Grok Build               | 分组与 CLI 已就绪                                             |
+| OPL Gemini 4 Argon、3.8 Flash、3.1 Pro | OpenCode                 | 在执行设置中添加组合，使用 Gateway Gemini 渠道                |
+| MiniMax M3.1-Flash-Preview、M3         | mcode                    | 官方账号；仅支持明确授权的完全访问                            |
+| OFM 免费模型与虚拟路由                 | 按来源选择已适配 Harness | 见 [OFM 组合](docs/harness-adaptation.md#our-free-model-组合) |
 
 “已适配”表示实现了接入，不保证免费渠道随时可用。不同渠道保留独立身份，失败不会自动换模型或换源；外部 Harness 不支持当前权限时拒绝启动，不会自动提升权限。推理档位按模型与 CLI 实际能力提供。
 
@@ -78,7 +77,7 @@ brew install --cask gaofeng21cn/opl-dsh/opl-dsh
 brew upgrade --cask gaofeng21cn/opl-dsh/opl-dsh
 ```
 
-增强包和缓存保存在 OPL DSH Suite，官方 profile、登录、会话与设置位于 `~/.dsh`；重新安装保留已有数据。Windows 上的华为云 MaaS、BambooNode 和 TypeSafe 个人 Key 使用 Windows Credential Manager；MiniMax 账号凭据由官方 mcode 管理。
+增强包和缓存保存在 OPL DSH Suite，官方 profile、登录、会话与设置位于 `~/.dsh`；重新安装保留已有数据。Windows 上的 BambooNode 和 TypeSafe 个人 Key 使用 Windows Credential Manager；MiniMax 账号凭据由官方 mcode 管理。
 
 准确版本、平台与资产摘要见[最新 Release](https://github.com/gaofeng21cn/opl-dsh/releases/latest)。运行中的 profile 不替换，更新校验失败时保留已安装版本。发布流程每日检查主线的未发布改动，详见[发布约定](docs/release-policy.md)与[发布 SOP](docs/release-sop.md)。
 
@@ -87,6 +86,7 @@ brew upgrade --cask gaofeng21cn/opl-dsh/opl-dsh
 - [开发、数据位置与验证](docs/development.md)
 - [官方桌面兼容验证](docs/compatibility.md)
 - [模型与 Harness 架构](docs/model-harness-architecture.md)
+- [官方能力复用检查](docs/dsh-reuse-audit.md)
 - [外部 Harness 适配](docs/harness-adaptation.md)
 - [Computer Use](docs/computer-use.md)
 - [发布记录](https://github.com/gaofeng21cn/opl-dsh/releases)

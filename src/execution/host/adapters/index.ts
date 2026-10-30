@@ -5,11 +5,8 @@ import { codexAdapter } from './codex.ts'
 import { claudeAdapter } from './claude.ts'
 import { minimaxCodeAdapter, MINIMAX_CODE_HARNESS } from './minimax.ts'
 import { withMinimaxPermissions } from './minimax-permissions.ts'
-import { zcodeAdapter } from './zcode.ts'
-import { withZcodePermissions } from './zcode-permissions.ts'
 import { zcodeOfmAdapter } from './zcode-ofm/index.ts'
 import { kimiCodeAdapter } from './kimi/index.ts'
-import { huaweiKimiCodeAdapter } from './kimi/kimi.ts'
 import { mimoCodeAdapter } from './mimo/index.ts'
 import { poolAdapter } from './pool/index.ts'
 import { stepCodeAdapter } from './step/index.ts'
@@ -26,7 +23,6 @@ export const harnessAdapters: readonly HarnessAdapter[] = [
   codexAdapter,
   claudeAdapter,
   withMinimaxPermissions(minimaxCodeAdapter),
-  withZcodePermissions(zcodeAdapter),
   zcodeOfmAdapter,
   kimiCodeAdapter,
   openCodeAdapter,
@@ -44,7 +40,6 @@ export function adapterFor(
   ref: ModelRef,
   sources?: ExternalModelSources,
 ): HarnessAdapter | undefined {
-  if (id === 'kimi-code' && huaweiKimiCodeAdapter.matches(ref)) return huaweiKimiCodeAdapter
   return harnessAdapters.find(
     (adapter) =>
       adapter.id === id &&

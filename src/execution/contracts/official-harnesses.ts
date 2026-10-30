@@ -18,7 +18,6 @@ export const OFFICIAL_HARNESSES: readonly OfficialHarness[] = [
     id: 'dsh',
     officialModels: [
       { provider: 'deepseek', model: '*' },
-      { provider: 'huawei-maas', model: 'deepseek-v4-flash' },
       { provider: 'deepseek-official', model: '*' },
       { provider: 'deepseek-account', model: '*' },
       { provider: 'opl-gateway', model: 'deepseek-flash' },
@@ -51,13 +50,12 @@ export const OFFICIAL_HARNESSES: readonly OfficialHarness[] = [
   },
   {
     id: 'zcode',
-    officialModels: [{ provider: 'huawei-maas', model: 'glm-5.2' }],
+    officialModels: [],
   },
   {
     id: 'kimi-code',
     officialModels: [
       { provider: 'our-free-model', model: 'moonshotai/kimi-k2.6' },
-      { provider: 'huawei-maas', model: 'kimi-k2.6' },
       { provider: 'our-free-model', model: 'moonshotai/kimi-k3' },
     ],
   },

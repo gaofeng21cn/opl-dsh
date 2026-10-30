@@ -92,48 +92,18 @@ describe('official Harness adapter registry', () => {
     expect(claude.env.CODEX_HOME).toBeUndefined()
     expect(claude.env.ANTHROPIC_BASE_URL).not.toMatch(/\/v1\/?$/)
   })
-  it('ZCode binds only Huawei to the official owner, observes rotation and deletion without secret launch data', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'opl-zcode-adapter-'))
-    roots.push(home)
-    let key: string | undefined = 'synthetic-unified-key'
-    const resolve = vi.fn(async () =>
-      key === undefined ? undefined : { value: key, source: 'file' },
-    )
-    const describe = vi.fn(async () => ({ configured: key !== undefined, writable: true }))
-    const ctx = { credentials: { resolve, describe } } as unknown as Context
-    const ref = { provider: 'huawei-maas', model: 'glm-5.2' }
-    const options = {
-      home,
-      command: process.execPath,
-      grokCommand: process.execPath,
-      nativeBridgePath: '/unused',
-      zcodeBridgePath: '/owned/zcode-bridge.mjs',
+  it('withdraws retired Huawei routes without affecting OFM engines', () => {
+    for (const ref of [
+      { provider: 'huawei-maas', model: 'glm-5.2' },
+      { provider: 'huawei-maas', model: 'kimi-k2.6' },
+      { provider: 'huawei-maas', model: 'deepseek-v4-flash' },
+    ]) {
+      expect(officialHarnessFor(ref)).toBeUndefined()
+      expect(adapterFor('zcode', ref)).toBeUndefined()
+      expect(adapterFor('kimi-code', ref)).toBeUndefined()
     }
-    const adapter = adapterFor('zcode', ref)!
-    expect(await adapter.available(ctx, options)).toEqual({ available: true })
-    const launch = await adapter.prepare!(
-      ctx,
-      {
-        id: 'zcode',
-        cwd: home,
-        sandbox: 'full-access',
-        harnessRef: 'zcode',
-        modelRef: ref,
-      } as HarnessSession,
-      options,
+    expect(adapterFor('zcode', { provider: 'our-free-model', model: 'z-ai/glm-5.3' })?.id).toBe(
+      'zcode',
     )
-    expect(resolve).not.toHaveBeenCalled()
-    expect(JSON.stringify({ args: launch.args, env: launch.env })).not.toContain(
-      'synthetic-unified-key',
-    )
-    const reader = launch.clientRequests!.get('opl/huawei-credential/resolve')!
-    expect(await reader()).toBe('synthetic-unified-key')
-    key = 'synthetic-rotated-key'
-    expect(await reader()).toBe('synthetic-rotated-key')
-    key = undefined
-    expect(await reader()).toBeUndefined()
-    expect((await adapter.available(ctx, options)).available).toBe(false)
-    expect(resolve.mock.calls.every((call) => call[0] === 'HUAWEI_MAAS_API_KEY')).toBe(true)
-    expect(launch.clientRequests!.has('credentials/arbitrary')).toBe(false)
   })
 })

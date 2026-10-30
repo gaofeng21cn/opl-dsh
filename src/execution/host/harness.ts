@@ -72,10 +72,6 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import type { Context } from '@deepseek-ai/cordis'
 import { probeHarnessReasoning, readHarnessReasoning } from './reasoning-preflight.ts'
-import {
-  HUAWEI_REASONING_LEVELS,
-  HUAWEI_DEFAULT_REASONING_LEVEL,
-} from './adapters/zcode-protocol.ts'
 import type { HarnessReasoningPreflight, HarnessStartRequest } from '../../contracts/types.ts'
 import { STOP_EDIT_VERSION } from '../contracts/stop-edit.ts'
 import { projectlessSessionCwd } from './projectless-path.ts'
@@ -777,7 +773,6 @@ export class HarnessService {
       ...(codexRuntime ? { codexRuntime } : {}),
       grokCommand: this.command(),
       nativeBridgePath: fileURLToPath(new URL('./native-harness-bridge.mjs', import.meta.url)),
-      zcodeBridgePath: fileURLToPath(new URL('./zcode-harness-bridge.mjs', import.meta.url)),
       ...(command ? { command } : {}),
       ...(launchPrefix ? { prefix: launchPrefix } : {}),
       ...(this.options.resolveKey ? { resolveKey: this.options.resolveKey } : {}),
@@ -4252,12 +4247,7 @@ export class HarnessService {
         : catalog.groups
     const choice =
       selected && this.cliOwnsEffort(selected)
-        ? (this.conversationEffort(sessionId, selected, executionCatalog) ??
-          (selected.harnessRef === 'zcode' &&
-          selected.modelRef.provider === 'huawei-maas' &&
-          selected.modelRef.model === 'glm-5.2'
-            ? HUAWEI_DEFAULT_REASONING_LEVEL
-            : undefined))
+        ? this.conversationEffort(sessionId, selected, executionCatalog)
         : undefined
     const { reasoningEffort: _providerEffort, ...ref } = current as ModelSelection
     const harnessOwnsEffort =
@@ -4374,13 +4364,6 @@ export class HarnessService {
     const adapter = adapterFor(definition.harnessRef, definition.modelRef, this.modelSources)
     if (!adapter || adapter.capabilities.reasoning === 'none')
       return { status: 'not-applicable', efforts: [] }
-    // This bridge owns a fixed provider option map; no CLI capability discovery is needed.
-    if (
-      definition.harnessRef === 'zcode' &&
-      definition.modelRef.provider === 'huawei-maas' &&
-      definition.modelRef.model === 'glm-5.2'
-    )
-      return { status: 'known', efforts: HUAWEI_REASONING_LEVELS.map((id) => ({ id, name: id })) }
     if (['codex', 'claude'].includes(definition.harnessRef)) {
       const nativeCatalog = (await invokeHostRemote(this.ctx, {
         namespace: 'session',

@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto'
-import type { Socket } from 'node:net'
 
 /** Official ZCode Protocol constants and the pure projection onto ACP updates.
  *
@@ -16,44 +15,6 @@ export const ZCODE_PROTOCOL_NAME = 'ZCode Protocol'
 export const ZCODE_PROTOCOL_VERSION = 1
 
 export const ZCODE_HARNESS = 'zcode'
-export const HUAWEI_MAAS_BASE_URL = 'https://api.modelarts-maas.com/openai/v1'
-/**
- * Non-secret stand-in written into the provider config.
- *
- * The runtime authenticates with this static value, and the relay replaces it with the
- * real credential in memory. It is not a credential, grants nothing on its own, and is
- * not the Huawei key under any encoding.
- */
-export const HUAWEI_RELAY_PLACEHOLDER_KEY = 'opl-relay-placeholder'
-/** The relay binds loopback only; it is never reachable from another host. */
-export const HUAWEI_RELAY_HOST = '127.0.0.1'
-/** Header carrying the per-session relay ticket. Not a credential. */
-export const HUAWEI_RELAY_TICKET_HEADER = 'x-opl-relay-ticket'
-/**
- * The only upstream paths the relay will forward. Anything else is refused, so the
- * relay cannot be used to reach an arbitrary target.
- */
-export const HUAWEI_RELAY_ALLOWED_PATHS = ['/openai/v1/chat/completions'] as const
-/** Full upstream origin the relay is pinned to. */
-export const HUAWEI_RELAY_UPSTREAM_ORIGIN = 'https://api.modelarts-maas.com'
-/** Upper bound on a buffered request body, so the relay cannot be used to exhaust memory. */
-export const HUAWEI_RELAY_MAX_BODY_BYTES = 32 * 1024 * 1024
-export const HUAWEI_MAAS_PROVIDER_ID = 'huawei-maas'
-export const HUAWEI_MAAS_MODEL = 'glm-5.2'
-/** Official credential ref shared by provider settings and the execution bridge. */
-export { HUAWEI_MAAS_CREDENTIAL_REF as HUAWEI_MAAS_API_KEY_REF } from '../../../credentials/contracts/huawei-maas.ts'
-/** OPL-owned bridge-only requests; no caller-selected credential ref is accepted. */
-export const HUAWEI_CREDENTIAL_REQUESTS = {
-  describe: 'opl/huawei-credential/describe',
-  resolve: 'opl/huawei-credential/resolve',
-} as const
-
-/**
- * Official launch vector. `apps/zcode-cli/packages/cli/src/arguments.ts` routes on
- * `positionals[0]` only, so `app-server` is the subcommand; `--stdio` is a registered
- * boolean flag that the router never reads and is therefore not sent.
- */
-export const ZCODE_APP_SERVER_ARGS: readonly string[] = ['app-server']
 
 /** `zcodeProtocolMethods` members this bridge actually drives. */
 export const ZCODE_METHODS = {
@@ -65,14 +26,6 @@ export const ZCODE_METHODS = {
   sessionStop: 'session/stop',
   sessionRequestRuntimePreferences: 'session/requestRuntimePreferences',
 } as const
-
-/**
- * `session/requestRuntimePreferences` scopes (`zcodeSessionRuntimePreferencesScopeSchema`).
- */
-export const ZCODE_RUNTIME_PREFERENCE_SCOPES = [
-  'runtime-materialization',
-  'user-execution',
-] as const
 
 /**
  * Runtime preferences this bridge reports.
@@ -98,14 +51,6 @@ export const ZCODE_CLIENT_REQUESTS = {
 
 /** Notification the agent uses for live session events (services reads `session/event`). */
 export const ZCODE_EVENT_NOTIFICATION = 'session/event'
-
-/**
- * Environment variable the official CLI reads to locate a provider config file
- * (`ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV` in packages/provider-node/src/runtime-paths.ts).
- * It selects the provider file for this process only and never rewrites the provider
- * file a user configured for their own official ZCode account.
- */
-export const ZCODE_PROVIDER_CONFIG_FILE_ENV = 'ZCODE_BUILTIN_PROVIDER_CONFIG_FILE'
 
 /** ZCode permission decisions, from `zcodePermissionResponseSchema`. */
 export type ZcodePermissionDecision = 'allow' | 'deny' | 'escalate' | 'modify'
@@ -329,119 +274,6 @@ export function resolvePermissionResponse(
 }
 
 /**
- * Model capabilities for the Huawei route.
- *
- * Huawei's model list documents 1M context and text/function calls for glm-5.2.
- * Unsupported input modalities and native search are not advertised.
- */
-export const HUAWEI_MODEL_PROPERTIES = {
-  requiresMfjsToolSchema: false,
-  contextWindow: 1000000,
-  inputFormat: {
-    supportsText: true,
-    supportsImage: false,
-    supportsVideo: false,
-    supportsAudio: false,
-    supportsPdf: false,
-  },
-  outputFormat: { supportsText: true },
-  supportsToolCall: true,
-  supportsJsonSchemaOutput: false,
-  supportsNativeWebSearch: false,
-  supportsMidConversationSystem: false,
-} as const
-
-export const HUAWEI_REASONING_LEVELS = ['high', 'max'] as const
-
-/** Huawei GLM-5.2 defaults to max; enabled is the previous default-only representation. */
-export const HUAWEI_DEFAULT_REASONING_LEVEL = 'max'
-export function huaweiReasoningLevel(value?: string): 'high' | 'max' {
-  if (value === undefined || value === 'enabled') return HUAWEI_DEFAULT_REASONING_LEVEL
-  if (value === 'high' || value === 'max') return value
-  throw Error('华为云 GLM-5.2 只支持 high/max 推理档位')
-}
-
-/**
- * Personal provider config.
- *
- * Shape is the official personal layer, not a builtin release:
- * `providerConfigRules.providerRules` is an **array** (a map fails to parse and the whole
- * layer falls back), `modelConfigRules` requires **both** `providerModelRules` and
- * `manualProviderModelRules`, `builtinModelIds` is omitted because the personal schema
- * strips it, and there is **no `revision`** key because the personal schema rejects it.
- *
- * `enabled: true` matters: the resolver compares `modelConfig.enabled === true` strictly,
- * so an omitted flag leaves the model non-executable and the provider unpublished.
- */
-export function buildPersonalProviderConfig(input: {
-  providerId: string
-  providerName: string
-  baseUrl: string
-  modelId: string
-  reasoningLevel?: string
-  headers?: Record<string, string>
-}): unknown {
-  return {
-    schemaVersion: 1,
-    config: {
-      providerOrder: [input.providerId],
-      providerConfigRules: {
-        providerRules: [
-          {
-            providerId: input.providerId,
-            providerName: input.providerName,
-            enabled: true,
-            config: {
-              group: 'standard-personal',
-              access: {
-                type: 'api-key',
-                // A fixed non-secret placeholder. The runtime sends this literal as the
-                // Bearer token on every request, which is exactly why the relay must
-                // replace it in memory rather than trust it.
-                apiKey: HUAWEI_RELAY_PLACEHOLDER_KEY,
-                apiKeyManagementUrl: null,
-              },
-              api: {
-                type: 'openai-chat-completions',
-                baseUrl: input.baseUrl,
-                ...(input.headers ? { headers: input.headers } : {}),
-              },
-              personalModelIds: [input.modelId],
-              visibility: 'visible',
-            },
-          },
-        ],
-      },
-      modelConfigRules: {
-        providerModelRules: [
-          {
-            providerId: input.providerId,
-            modelId: input.modelId,
-            config: {
-              enabled: true,
-              properties: HUAWEI_MODEL_PROPERTIES,
-              optionSpecs: {
-                reasoningLevel: {
-                  values: [...HUAWEI_REASONING_LEVELS],
-                  map: "{'chat_template_kwargs': {'thinking': true}, 'reasoning_effort': reasoningLevel}",
-                },
-                maxOutputTokens: { max: 128000, map: "{'max_completion_tokens': maxOutputTokens}" },
-              },
-            },
-          },
-        ],
-        manualProviderModelRules: [],
-      },
-      defaultModelSelection: {
-        providerId: input.providerId,
-        modelId: input.modelId,
-        options: { reasoningLevel: huaweiReasoningLevel(input.reasoningLevel) },
-      },
-    },
-  }
-}
-
-/**
  * Builtin provider config.
  *
  * The builtin layer forbids the personal vocabulary (`standard-personal`,
@@ -485,16 +317,6 @@ export function assertProtocolIdentity(snapshot: unknown): void {
     )
 }
 
-export function assertModelSelection(snapshot: unknown, providerId: string, modelId: string): void {
-  const current = (snapshot as any)?.settings?.model?.current
-  if (!current || typeof current !== 'object') throw Error('ZCode 未返回当前模型，无法确认路由')
-  if (current.providerId !== providerId || current.modelId !== modelId)
-    throw Error(
-      `ZCode 会话绑定的是 ${String(current.providerId)}/${String(current.modelId)}，` +
-        `与所选的 ${providerId}/${modelId} 不一致`,
-    )
-}
-
 /**
  * Confirm the session really carries the permission mode the task authorized.
  *
@@ -511,20 +333,6 @@ export function assertSessionMode(snapshot: unknown, expected: string): void {
 }
 
 /**
- * The `model` selection accepted by `session/create` and `session/send`.
- */
-export function modelSelection(providerId: string, modelId: string, reasoningLevel?: string) {
-  // The official runtime rejects a selection for a model that declares reasoning levels
-  // when `options.reasoningLevel` is missing ("Reasoning level is required for ..."), and
-  // `modelSelectionSchema` is strict, so the level is always sent explicitly.
-  return {
-    providerId,
-    modelId,
-    options: { reasoningLevel: huaweiReasoningLevel(reasoningLevel) },
-  }
-}
-
-/**
  * Full-access session mode.
  *
  * `zcodeSessionModeSchema` offers plan/build/edit/yolo/auto, but `auto` is reserved and
@@ -533,23 +341,7 @@ export function modelSelection(providerId: string, modelId: string, reasoningLev
  * `grantPermissionFullAccess` receipt sets for a full-access task.
  */
 export const ZCODE_FULL_ACCESS_MODE = 'yolo'
-/** Read-only mode; plan also auto-passes read-only tools. */
-export const ZCODE_READ_ONLY_MODE = 'plan'
 export const ZCODE_SESSION_MODES = ['plan', 'build', 'edit', 'yolo', 'auto'] as const
-
-/**
- * NOT USED — `session/send` also accepts `modelExecution.requestAuth.apiKey`, but it is
- * inert for a plain API-key provider.
- *
- * `apps/zcode-cli/packages/adapters/src/model/runner.ts` only installs
- * `refreshRuntimeHeadersBeforeAttempt` when the provider is `zhipu-account` (requiring it
- * for `off-peak`); its own comment says a plain API-key model must not consume that port.
- * When the hook is absent, `resolveRequest` is invoked without `requestAuth`, so the
- * static key from the provider config is what actually authenticates the request. A
- * schema-level field is not evidence that the request uses it, and the credential is
- * delivered by the loopback relay instead.
- */
-export const ZCODE_REQUEST_AUTH_IS_INERT_FOR_API_KEY = true
 
 /**
  * Remove the credential from anything that may be surfaced.
@@ -561,172 +353,6 @@ export function redactSecret(text: string, secret: string | undefined): string {
   return secret ? text.replaceAll(secret, '[REDACTED]') : text
 }
 
-// ── Loopback credential relay ──────────────────────────────────────────────────────────
-
-/** What the bridge needs from the relay once it is listening. */
-export interface HuaweiRelay {
-  /** Base URL the official CLI should call. */
-  readonly baseUrl: string
-  /** Non-secret, per-session. Guards the relay against open forwarding. */
-  readonly ticket: string
-  close(): void
-}
-
-/**
- * A loopback-only HTTP transport that swaps the placeholder credential for the real one.
- *
- * It is deliberately not a proxy: it binds `127.0.0.1` only, accepts exactly one
- * upstream origin and one allow-listed path, and requires the per-session ticket. It
- * holds no model logic and cannot be pointed at another target. The credential is
- * obtained through `getApiKey`, so it stays in the caller's memory and is never written
- * to a file, an argument vector or a log.
- *
- * @param getApiKey - resolves the real credential on demand; may return undefined.
- */
-export async function startHuaweiRelay(
-  getApiKey: () => Promise<string | undefined>,
-  environment: NodeJS.ProcessEnv = process.env,
-): Promise<HuaweiRelay> {
-  const { randomBytes, timingSafeEqual } = await import('node:crypto')
-  const { createServer } = await import('node:http')
-  const { request: httpsRequest, Agent } = await import('node:https')
-  const proxyEnv = {
-    HTTPS_PROXY: environment.HTTPS_PROXY,
-    https_proxy: environment.https_proxy,
-    HTTP_PROXY: environment.HTTP_PROXY,
-    http_proxy: environment.http_proxy,
-    NO_PROXY: environment.NO_PROXY,
-    no_proxy: environment.no_proxy,
-  }
-  const [major, minor] = process.versions.node.split('.').map(Number)
-  const supportsProxy = major > 24 || (major === 24 && minor >= 5)
-  if (!supportsProxy && (proxyEnv.https_proxy || proxyEnv.HTTPS_PROXY))
-    throw Error('ZCode 的独立代理需要 Node.js 24.5 或以上版本，未发起直连请求')
-  const agent = new Agent({ ...(supportsProxy ? { proxyEnv } : {}), keepAlive: true })
-  const sockets = new Set<Socket>()
-  const ticket = randomBytes(24).toString('hex')
-  const server = createServer((req, res) => {
-    // Refusals never reveal whether a credential exists.
-    const refuse = (status: number) => res.writeHead(status).end()
-    // The body is consumed before any decision. Responding while a request body is
-    // still arriving tears the socket down under the client, which shows up as an
-    // intermittent hang rather than as the status the caller needs.
-    const body = new Promise<Buffer | 'too-large' | 'aborted'>((resolve) => {
-      const chunks: Buffer[] = []
-      let size = 0
-      req.on('data', (chunk: Buffer) => {
-        size += chunk.length
-        // Bounded so a hostile or broken caller cannot make the relay buffer forever.
-        if (size > HUAWEI_RELAY_MAX_BODY_BYTES) {
-          resolve('too-large')
-          return
-        }
-        chunks.push(chunk)
-      })
-      req.on('end', () => resolve(Buffer.concat(chunks)))
-      req.on('aborted', () => resolve('aborted'))
-      req.on('error', () => resolve('aborted'))
-    })
-    void (async () => {
-      // Only the completion POST is proxied. Any other verb is refused outright.
-      if (req.method !== 'POST') return refuse(405)
-      const payload = await body
-      if (payload === 'aborted') return
-      if (payload === 'too-large') return refuse(413)
-      const presented = req.headers[HUAWEI_RELAY_TICKET_HEADER]
-      const value = Array.isArray(presented) ? presented[0] : presented
-      const a = Buffer.from(value ?? '')
-      const b = Buffer.from(ticket)
-      if (a.length !== b.length || !timingSafeEqual(a, b)) return refuse(403)
-      const path = (req.url ?? '').split('?')[0]
-      if (!(HUAWEI_RELAY_ALLOWED_PATHS as readonly string[]).includes(path)) return refuse(404)
-      const apiKey = await getApiKey()
-      if (!apiKey) return refuse(503)
-      const upstream = httpsRequest(
-        HUAWEI_RELAY_UPSTREAM_ORIGIN + path,
-        {
-          method: req.method,
-          agent,
-          headers: {
-            // The placeholder never leaves this process; the real key goes on the wire.
-            authorization: `Bearer ${apiKey}`,
-            'content-type': String(req.headers['content-type'] ?? 'application/json'),
-            'content-length': String(payload.length),
-            accept: String(req.headers.accept ?? 'text/event-stream'),
-          },
-        },
-        (upstreamRes) => {
-          // Provider error bodies can echo request headers. Preserve the status without
-          // exposing that body to the CLI, its logs or the conversation.
-          if ((upstreamRes.statusCode ?? 502) >= 400) {
-            upstreamRes.resume()
-            res.writeHead(upstreamRes.statusCode ?? 502, { 'content-type': 'application/json' })
-            res.end(JSON.stringify({ error: { message: 'Huawei MaaS request failed' } }))
-            return
-          }
-          res.writeHead(upstreamRes.statusCode ?? 502, {
-            'content-type': String(upstreamRes.headers['content-type'] ?? 'application/json'),
-            'cache-control': 'no-cache',
-          })
-          // Streamed through untouched so server-sent events keep arriving incrementally.
-          upstreamRes.pipe(res)
-        },
-      )
-      // A cancelled or torn-down turn must not leave an upstream request running.
-      req.on('aborted', () => upstream.destroy())
-      res.on('close', () => upstream.destroy())
-      upstream.on('error', () => {
-        if (!res.headersSent) res.writeHead(502).end()
-        else res.end()
-      })
-      upstream.setTimeout(180000, () => upstream.destroy())
-      upstream.end(payload)
-    })().catch(() => {
-      if (!res.headersSent) res.writeHead(500).end()
-    })
-  })
-  server.on('connection', (socket) => {
-    sockets.add(socket)
-    socket.on('close', () => sockets.delete(socket))
-  })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, HUAWEI_RELAY_HOST, () => {
-      server.removeListener('error', reject)
-      resolve()
-    })
-  }).catch((error) => {
-    agent.destroy()
-    throw error
-  })
-  const address = server.address()
-  const port = typeof address === 'object' && address ? address.port : 0
-  if (!port) {
-    server.close()
-    throw Error('未能启动本地鉴权转发')
-  }
-  // Tracked so closing the relay also tears down anything still in flight, rather than
-  // leaving sockets open behind a server that will no longer accept them.
-  return {
-    baseUrl: `http://${HUAWEI_RELAY_HOST}:${port}/openai/v1`,
-    ticket,
-    close: () => {
-      for (const socket of sockets) socket.destroy()
-      sockets.clear()
-      server.close()
-      agent.destroy()
-    },
-  }
-}
-
-// ── Same-conversation edit driver surface (v4) ──────────────────────────────────────
-//
-// The bridge exposes two private ACP requests to the OPL host. They are not official
-// ZCode methods; they are the smallest projection of the official v4 command surface
-// that the shared edit transaction needs. A driver never sends a replacement prompt:
-// `fork` only creates a conversation prefix and returns the child identity.
-
-/** Official v4 methods used by the bridge. */
 export const ZCODE_V4_EDIT_METHODS = {
   rowsRange: 'v4/conversation/rowsRange',
   command: 'v4/command',

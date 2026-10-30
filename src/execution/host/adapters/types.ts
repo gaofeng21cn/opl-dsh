@@ -14,7 +14,6 @@ export interface AdapterOptions {
   grokCommand: string
   nativeBridgePath: string
   /** Dedicated ACP projection for the official ZCode app-server protocol. */
-  zcodeBridgePath?: string
 }
 export interface AdapterLaunch {
   home: string

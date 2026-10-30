@@ -707,11 +707,6 @@ describe('auto review settings and routes', () => {
           name: 'MiniMax Code',
           models: [{ id: 'MiniMax-M3', name: 'M3' }],
         },
-        {
-          provider: 'huawei-maas',
-          name: '华为云 MaaS',
-          models: [{ id: 'glm-5.2', name: 'GLM-5.2' }],
-        },
       ],
     })
 
@@ -2518,7 +2513,7 @@ function zcodeBinding(overrides: Partial<ExternalReviewBinding> = {}): ExternalR
       sessionId: 'session-auto',
       preset: 'auto',
       sandbox: 'full-access',
-      combination: 'huawei-zcode-glm',
+      combination: 'ofm-zcode-glm',
     },
     ...overrides,
   }

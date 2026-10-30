@@ -37,14 +37,6 @@ const hostBuild = await bundle({
   outfile: join(output, 'package/lib/index.js'),
 })
 await buildNativeBridge(root, output)
-await bundle({
-  entryPoints: [join(root, 'src/execution/host/adapters/zcode-harness-bridge.ts')],
-  bundle: true,
-  platform: 'node',
-  format: 'esm',
-  target: 'node24',
-  outfile: join(output, 'package/lib/zcode-harness-bridge.mjs'),
-})
 for (const [directory, name] of [
   ['step', 'step-bridge'],
   ['pi', 'pi-bridge'],

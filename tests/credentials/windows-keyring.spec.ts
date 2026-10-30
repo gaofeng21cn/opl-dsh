@@ -5,7 +5,7 @@
  * {@link ownedTarget} and removes it in `finally` through
  * {@link cleanupOwnedTarget}, which asserts the target is gone and fails the
  * test if cleanup does not succeed. No test reads, writes, or deletes
- * {@link HUAWEI_MAAS_KEYRING_TARGET}, and nothing here enumerates the
+ * {@link BAMBOO_STARTLUX_KEYRING_TARGET}, and nothing here enumerates the
  * credential store: the tests address only the target they created.
  *
  * Filesystem assertions stay inside a per-test directory the test created
@@ -24,7 +24,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
 import {
-  HUAWEI_MAAS_KEYRING_TARGET,
+  BAMBOO_STARTLUX_KEYRING_TARGET,
   KEYRING_TARGET_PREFIX,
   MAX_KEYRING_BLOB_BYTES,
   MAX_KEYRING_TARGET_LENGTH,
@@ -41,12 +41,7 @@ import {
   wincredStructSize,
   wincredWrite,
 } from '../../src/credentials/host/windows-credential-manager.ts'
-import {
-  describeHuaweiMaaSApiKey,
-  huaweiMaaSKeyring,
-  readHuaweiMaaSApiKey,
-  setHuaweiMaaSApiKey,
-} from '../../src/credentials/host/windows-keyring.ts'
+import { bambooStartLuxKeyring } from '../../src/credentials/host/windows-keyring.ts'
 
 const run = promisify(execFile)
 const isWindows = process.platform === 'win32'
@@ -70,7 +65,7 @@ function ownedTarget(label: string): string {
 
 describe('keyring target scope', () => {
   it('accepts only names inside the prefix this suite reserves', () => {
-    expect(() => assertKeyringTarget(HUAWEI_MAAS_KEYRING_TARGET)).not.toThrow()
+    expect(() => assertKeyringTarget(BAMBOO_STARTLUX_KEYRING_TARGET)).not.toThrow()
     expect(() => assertKeyringTarget(`${KEYRING_TARGET_PREFIX}anything`)).not.toThrow()
   })
 
@@ -79,7 +74,7 @@ describe('keyring target scope', () => {
       'Generic Credential',
       'Microsoft_RAS_VPN',
       'git:https://example.invalid',
-      'SomeOtherSuite:Huawei:ApiKey',
+      'SomeOtherSuite:Provider:ApiKey',
       '',
       'OPLDSH',
     ]) {
@@ -96,7 +91,7 @@ describe('keyring target scope', () => {
   })
 
   it('exposes no operation that enumerates the credential store', () => {
-    expect(Object.keys(huaweiMaaSKeyring).sort()).toEqual([
+    expect(Object.keys(bambooStartLuxKeyring).sort()).toEqual([
       'describe',
       'read',
       'remove',
@@ -104,33 +99,33 @@ describe('keyring target scope', () => {
       'target',
     ])
     for (const name of ['list', 'enumerate', 'entries', 'targets']) {
-      expect(name in huaweiMaaSKeyring).toBe(false)
+      expect(name in bambooStartLuxKeyring).toBe(false)
     }
   })
 })
 
 describe('value validation', () => {
   it('refuses an empty value, matching the seam rule that blank is absent', async () => {
-    await expect(wincredWrite(HUAWEI_MAAS_KEYRING_TARGET, '')).rejects.toThrowError(
+    await expect(wincredWrite(BAMBOO_STARTLUX_KEYRING_TARGET, '')).rejects.toThrowError(
       expect.objectContaining({ code: 'empty-value' }),
     )
   })
 
   it('refuses a value that cannot survive the blob round trip', async () => {
-    await expect(wincredWrite(HUAWEI_MAAS_KEYRING_TARGET, 'has\0null')).rejects.toThrowError(
+    await expect(wincredWrite(BAMBOO_STARTLUX_KEYRING_TARGET, 'has\0null')).rejects.toThrowError(
       expect.objectContaining({ code: 'invalid-value' }),
     )
   })
 
   it('refuses a value beyond the WinCred blob limit', async () => {
     await expect(
-      wincredWrite(HUAWEI_MAAS_KEYRING_TARGET, 'x'.repeat(MAX_KEYRING_BLOB_BYTES / 2 + 1)),
+      wincredWrite(BAMBOO_STARTLUX_KEYRING_TARGET, 'x'.repeat(MAX_KEYRING_BLOB_BYTES / 2 + 1)),
     ).rejects.toThrowError(expect.objectContaining({ code: 'value-too-large' }))
   })
 
   it('refuses a non-string value', async () => {
     await expect(
-      wincredWrite(HUAWEI_MAAS_KEYRING_TARGET, undefined as unknown as string),
+      wincredWrite(BAMBOO_STARTLUX_KEYRING_TARGET, undefined as unknown as string),
     ).rejects.toThrowError(expect.objectContaining({ code: 'invalid-value' }))
   })
 })
@@ -152,13 +147,13 @@ describe('unsupported platforms', () => {
 
   it('rejects every value-carrying operation off Windows', async () => {
     await withPlatform('linux', async () => {
-      await expect(readHuaweiMaaSApiKey()).rejects.toThrowError(
+      await expect(bambooStartLuxKeyring.read()).rejects.toThrowError(
         expect.objectContaining({ code: 'unsupported-platform' }),
       )
-      await expect(setHuaweiMaaSApiKey('anything')).rejects.toThrowError(
+      await expect(bambooStartLuxKeyring.set('anything')).rejects.toThrowError(
         expect.objectContaining({ code: 'unsupported-platform' }),
       )
-      await expect(huaweiMaaSKeyring.remove()).rejects.toThrowError(
+      await expect(bambooStartLuxKeyring.remove()).rejects.toThrowError(
         expect.objectContaining({ code: 'unsupported-platform' }),
       )
     })
@@ -166,7 +161,7 @@ describe('unsupported platforms', () => {
 
   it('describes an absent keyring as unavailable, not as an unset key', async () => {
     await withPlatform('darwin', async () => {
-      expect(await describeHuaweiMaaSApiKey()).toEqual({
+      expect(await bambooStartLuxKeyring.describe()).toEqual({
         configured: false,
         source: WINDOWS_KEYRING_SOURCE,
         supported: false,
@@ -355,7 +350,7 @@ describe.skipIf(!isWindows)('windows credential manager', () => {
     async () => {
       // The helper program is embedded in the module rather than shipped beside
       // it, so there is no resource path for a build to get wrong. The cycle
-      // runs against this run's own target, never the real Huawei MaaS key.
+      // runs against this run's own target, never the real provider key.
       const target = ownedTarget('cwd')
       const value = synthetic('cwd')
       const elsewhere = exclusiveTempDir()
@@ -396,7 +391,7 @@ describe.skipIf(!isWindows)('windows credential manager', () => {
  * check — not the delete's return value — is the assertion.
  *
  * Only ever call this with a target from {@link ownedTarget}. It must never be
- * given {@link HUAWEI_MAAS_KEYRING_TARGET}.
+ * given {@link BAMBOO_STARTLUX_KEYRING_TARGET}.
  */
 async function cleanupOwnedTarget(target: string): Promise<void> {
   expect(

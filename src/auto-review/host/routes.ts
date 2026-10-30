@@ -8,7 +8,7 @@ import { OFM_PROVIDERS } from '../../execution/host/ofm-source/provider.ts'
  * Adapter routes that exist to expose an external Harness or combination and
  * must never be selected as a tool-free reviewer.
  */
-export const EXCLUDED_REVIEW_PROVIDERS: readonly string[] = ['minimax-official', 'huawei-maas']
+export const EXCLUDED_REVIEW_PROVIDERS: readonly string[] = ['minimax-official']
 
 /** Exact routes whose adapter returns the closed decision protocol directly. */
 export const DECISION_REVIEW_ROUTES: readonly { provider: string; model: string }[] = [

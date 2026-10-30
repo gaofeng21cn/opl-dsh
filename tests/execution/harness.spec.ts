@@ -334,31 +334,6 @@ describe('external completion observations', () => {
     expect(calls.match(/second-once/g)).toHaveLength(1)
   }, 15_000)
 
-  it('reads Huawei GLM default and saved effort without launching a capability probe', async () => {
-    const ref = { provider: 'huawei-maas', model: 'glm-5.2' }
-    const { service, session } = await nativeSetup(
-      [{ id: ref.model, name: 'GLM-5.2' }],
-      [{ id: ref.provider, name: 'Huawei' }],
-    )
-    const adapter = adapterFor('zcode', ref)!
-    vi.spyOn(adapter, 'available').mockResolvedValue({ available: true })
-    const prepare = vi.spyOn(adapter, 'prepare')
-    await service.selectCombination({ sessionId: session.id, combination: 'zcode/glm-5.2' })
-    expect((await service.modelSelection(session.id)).current.reasoningEffort).toBe('max')
-    await service.invoke('select-effort', {
-      ...ref,
-      sessionId: session.id,
-      reasoningEffort: 'high',
-    })
-    expect((await service.modelSelection(session.id)).current.reasoningEffort).toBe('high')
-    expect(
-      (
-        await service.reasoningPreflight({ sessionId: session.id, combination: 'zcode/glm-5.2' })
-      ).efforts.map((x) => x.id),
-    ).toEqual(['high', 'max'])
-    expect((await service.modelSelection(session.id)).current.reasoningEffort).toBe('high')
-    expect(prepare).not.toHaveBeenCalled()
-  })
   it('preserves cancellation when the CLI answers end_turn after a stop', async () => {
     const { service, root, options } = await setup()
     const session = await start(service, root)

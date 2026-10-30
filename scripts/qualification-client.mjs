@@ -538,7 +538,10 @@ export async function verifyDesktopClient(
     }
     if (panel.marker === 'gateway-models') {
       const dialog = "document.querySelector('[role=dialog]')"
-      const editLabels = ['编辑 华为云 MaaS (huawei-maas)', 'Edit 华为云 MaaS (huawei-maas)']
+      const editLabels = [
+        '编辑 BambooNode · StartLux (bamboo-startlux)',
+        'Edit BambooNode · StartLux (bamboo-startlux)',
+      ]
       await waitFor(
         `Boolean(document.querySelector('[data-opl-region-select]'))`,
         'MiniMax地区选择未挂载',
@@ -599,14 +602,14 @@ export async function verifyDesktopClient(
         process.platform === 'win32' ? 280 : 80,
       )
       await waitFor(
-        `Array.from(${dialog}.querySelectorAll('select')).some(node=>Array.from(node.options).some(option=>option.value==='huawei-maas'))`,
-        '华为云未进入原生提供商目录',
+        `Array.from(${dialog}.querySelectorAll('select')).some(node=>Array.from(node.options).some(option=>option.value==='bamboo-startlux'))`,
+        'Bamboo未进入原生提供商目录',
         undefined,
         process.platform === 'win32' ? 280 : 80,
       )
       await pipe.evaluate(
         session,
-        `(() => {const select=Array.from(${dialog}.querySelectorAll('select')).find(node=>Array.from(node.options).some(option=>option.value==='huawei-maas'));select.value='huawei-maas';select.dispatchEvent(new Event('change',{bubbles:true}))})()`,
+        `(() => {const select=Array.from(${dialog}.querySelectorAll('select')).find(node=>Array.from(node.options).some(option=>option.value==='bamboo-startlux'));select.value='bamboo-startlux';select.dispatchEvent(new Event('change',{bubbles:true}))})()`,
       )
       await waitFor(
         `Boolean(${dialog}.querySelector('input[type=password]'))`,
@@ -616,27 +619,27 @@ export async function verifyDesktopClient(
         `${dialog}.querySelector('input[type=password]')?.disabled === false`,
         '原生凭据服务未开放可写密钥输入框',
       )
-      result.huaweiProvider = await pipe.evaluate(
+      result.bambooProvider = await pipe.evaluate(
         session,
-        `(() => {const input=${dialog}.querySelector('input[type=password]');return {nativeAdd:true,keyInputType:input.type,keyInputEmpty:input.value==='',keyInputDisabled:input.disabled,independentCard:document.querySelector('[data-opl-provider="huawei-maas"]')!==null,independentPage:document.querySelector('[data-opl-panel="huawei-maas"]')!==null}})()`,
+        `(() => {const input=${dialog}.querySelector('input[type=password]');return {nativeAdd:true,keyInputType:input.type,keyInputEmpty:input.value==='',keyInputDisabled:input.disabled,independentCard:document.querySelector('[data-opl-provider="bamboo-startlux"]')!==null,independentPage:document.querySelector('[data-opl-panel="bamboo-startlux"]')!==null}})()`,
       )
-      const source = result.huaweiProvider
+      const source = result.bambooProvider
       if (
         !source.keyInputEmpty ||
         source.independentCard ||
         source.independentPage ||
         source.keyInputDisabled
       )
-        throw new Error('华为云未完整复用原生提供商表单或凭据边界错误')
+        throw new Error('Bamboo未完整复用原生提供商表单或凭据边界错误')
       // Never write a synthetic key to the operator's real Windows Credential
       // Manager. The production target is fixed; the keyring transport is
       // covered by owned unit tests with isolated targets.
       const skipProviderSecretWrite =
         process.env.OPL_QUALIFICATION_SKIP_PROVIDER_SECRET_WRITE === '1'
       await enterNativeCredential('synthetic-native-provider-qualification')
-      const providerScreenshot = await captureScreenshot('huawei-provider-add')
+      const providerScreenshot = await captureScreenshot('bamboo-provider-add')
       if (providerScreenshot) screenshots.push(providerScreenshot)
-      else result.screenshotFailures.push('huawei-provider-add')
+      else result.screenshotFailures.push('bamboo-provider-add')
       if (skipProviderSecretWrite) {
         source.providerSecretWrite = 'skipped-real-keyring-target'
         await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
@@ -649,23 +652,23 @@ export async function verifyDesktopClient(
         await credentialReadback('synthetic-native-provider-qualification')
         await waitFor(
           clickLabel(editLabels, dialog),
-          '华为云原生提供商未保存或未显示普通编辑入口',
+          'Bamboo原生提供商未保存或未显示普通编辑入口',
           undefined,
           process.platform === 'win32' ? 520 : 80,
         )
         source.nativeAdded = true
         await waitFor(
           `(() => {const input=${dialog}.querySelector('input[type=password]');return Boolean(input && !input.disabled)})()`,
-          '华为云原生编辑器未就绪',
+          'Bamboo原生编辑器未就绪',
         )
         source.nativeEdited = await pipe.evaluate(
           session,
           `${dialog}.querySelector('input[type=password]').value===''`,
         )
         source.keyMutation = 'native-ui-save-replace-delete'
-        const editScreenshot = await captureScreenshot('huawei-provider-edit')
+        const editScreenshot = await captureScreenshot('bamboo-provider-edit')
         if (editScreenshot) screenshots.push(editScreenshot)
-        else result.screenshotFailures.push('huawei-provider-edit')
+        else result.screenshotFailures.push('bamboo-provider-edit')
         await enterNativeCredential('synthetic-native-provider-replacement')
         await waitFor(clickLabel(['保存', 'Apply'], dialog), '原生更换密钥保存按钮未就绪')
         await waitFor(
@@ -681,15 +684,21 @@ export async function verifyDesktopClient(
         await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
         await waitFor(
           clickLabel(
-            ['删除 华为云 MaaS (huawei-maas)', 'Delete 华为云 MaaS (huawei-maas)'],
+            [
+              '删除 BambooNode · StartLux (bamboo-startlux)',
+              'Delete BambooNode · StartLux (bamboo-startlux)',
+            ],
             dialog,
           ),
-          '华为云原生删除入口未显示',
+          'Bamboo原生删除入口未显示',
         )
         await waitFor(
           clickLabel(
-            ['删除 华为云 MaaS (huawei-maas)', 'Delete 华为云 MaaS (huawei-maas)'],
-            "Array.from(document.querySelectorAll('[role=dialog]')).find(node=>/删除 华为云 MaaS .*？|Delete 华为云 MaaS .*\\?/.test(node.textContent))",
+            [
+              '删除 BambooNode · StartLux (bamboo-startlux)',
+              'Delete BambooNode · StartLux (bamboo-startlux)',
+            ],
+            "Array.from(document.querySelectorAll('[role=dialog]')).find(node=>/删除 BambooNode · StartLux .*？|Delete BambooNode · StartLux .*\\?/.test(node.textContent))",
           ),
           '原生删除确认未显示',
         )
@@ -708,33 +717,12 @@ export async function verifyDesktopClient(
         )
         source.nativeRestorable = await pipe.evaluate(
           session,
-          `Array.from(${dialog}.querySelectorAll('select option')).some(node=>node.value==='huawei-maas')`,
+          `Array.from(${dialog}.querySelectorAll('select option')).some(node=>node.value==='bamboo-startlux')`,
         )
         await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
       }
       if (!source.nativeEdited || !source.nativeRestorable)
-        throw new Error('华为云编辑或删除后的目录恢复未通过')
-      await waitFor(
-        clickLabel(['添加模型提供商', 'Add model provider'], dialog),
-        'Bamboo 原生添加入口未恢复',
-      )
-      await waitFor(
-        `Array.from(${dialog}.querySelectorAll('select')).some(node=>Array.from(node.options).some(option=>option.value==='bamboo-startlux'))`,
-        'Bamboo 未进入原生提供商目录',
-      )
-      await pipe.evaluate(
-        session,
-        `(() => {const select=Array.from(${dialog}.querySelectorAll('select')).find(node=>Array.from(node.options).some(option=>option.value==='bamboo-startlux'));select.value='bamboo-startlux';select.dispatchEvent(new Event('change',{bubbles:true}))})()`,
-      )
-      await waitFor(
-        `Boolean(${dialog}.querySelector('input[type=password]'))`,
-        'Bamboo API Key 表单未显示',
-      )
-      result.bambooProvider = await pipe.evaluate(
-        session,
-        `(() => {const input=${dialog}.querySelector('input[type=password]');return {nativeAdd:true,keyInputEmpty:input.value==='',keyInputDisabled:input.disabled}})()`,
-      )
-      await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
+        throw new Error('Bamboo编辑或删除后的目录恢复未通过')
       await waitFor(
         clickLabel(['添加模型提供商', 'Add model provider'], dialog),
         'Jev 添加入口未就绪',

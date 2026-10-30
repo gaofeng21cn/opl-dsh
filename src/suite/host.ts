@@ -2,7 +2,6 @@ import { GatewayModelsService } from '../gateway/host/model-service.ts'
 import { SetupService } from '../setup/host/index.ts'
 import { CoordinationService } from '../collaboration/host/settings-service.ts'
 import TaskFeedbackService from '../collaboration/host/feedback/index.ts'
-import ContextBudgetService from '../context-budget/host/index.ts'
 import AutoReviewService from '../auto-review/host/index.ts'
 /** OPL account and collaboration contributions for an unmodified DSH Desktop. */
 import type { Context } from '@deepseek-ai/cordis'
@@ -27,7 +26,6 @@ export function apply(ctx: Context, config: Config): void {
   ctx.plugin(GatewayModelsService)
   ctx.plugin(SetupService)
   ctx.plugin(CoordinationService)
-  ctx.plugin(ContextBudgetService)
   ctx.plugin(AutoReviewService, config.toolAutoReview.get())
   ctx.plugin(TaskFeedbackService, {
     wakeTransport: config.wakeTransport.get(),

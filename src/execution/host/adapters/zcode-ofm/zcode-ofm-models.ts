@@ -1,27 +1,7 @@
-/** Our Free Model route over the official ZCode CLI: model gate and provider config.
- *
- * Everything official about ZCode Protocol, ACP projection and session assertions is
- * reused from `../zcode-protocol.ts`; this module only adds what the Our Free Model
- * route needs and cannot borrow from the Huawei MaaS route:
- *
- * - the exact model set this run adapts (`z-ai/glm-5.3`, `z-ai/glm-5.3-flash`);
- * - the reasoning levels the official shipped provider config declares for the GLM-5
- *   family, and nothing else;
- * - a provider config whose wire identity is the owner's catalog id, so the request
- *   that leaves the official CLI carries the exact model Our Free Model serves.
- *
- * The Huawei MaaS route stays exactly as it is. Nothing here reads, imports or
- * delegates to the Huawei credential reference, and the placeholder key below is a
- * different non-secret literal so the two relays cannot be confused for one another.
- *
- * @module zcode-ofm/zcode-ofm-models
- */
-
 import type { ExternalModelRoute } from '../../model-sources.ts'
 import { buildBuiltinProviderConfig } from '../zcode-protocol.ts'
 import { OFM_PROVIDER } from '../../ofm-source/provider.ts'
 
-/** Harness id. Deliberately the same engine as the Huawei route: one ZCode, two routes. */
 export const ZCODE_OFM_HARNESS = 'zcode'
 /** Exact registry provider this route claims. The region route is not claimed here. */
 export const ZCODE_OFM_PROVIDER_ID = OFM_PROVIDER
@@ -39,17 +19,6 @@ export type ZcodeOfmModel = (typeof ZCODE_OFM_MODELS)[number]
 /** Wire protocol this route speaks. `openai-chat-completions` is the only OFM surface ZCode has. */
 export const ZCODE_OFM_WIRE_PROTOCOL = 'chat'
 
-/**
- * Reasoning levels offered for these models.
- *
- * Taken from the official shipped `config/provider/zcode-builtin.json` at
- * zai-org/ZCode@aac4755: the `.*glm-5(?:[.\-:/\[].*)?` model rule declares exactly
- * `["disabled","enabled"]`, and `z-ai/glm-5.3` / `z-ai/glm-5.3-flash` both match it.
- *
- * `high` and `max` are deliberately absent. The official config declares those only
- * for `GLM-5.2`, which is a different model on the Huawei route; carrying them here
- * would advertise a tier this target never published.
- */
 export const ZCODE_OFM_REASONING_LEVELS = ['disabled', 'enabled'] as const
 export type ZcodeOfmReasoningLevel = (typeof ZCODE_OFM_REASONING_LEVELS)[number]
 
@@ -62,13 +31,6 @@ export type ZcodeOfmReasoningLevel = (typeof ZCODE_OFM_REASONING_LEVELS)[number]
  */
 export const ZCODE_OFM_DEFAULT_REASONING_LEVEL: ZcodeOfmReasoningLevel = 'enabled'
 
-/**
- * Non-secret stand-in written into the provider config.
- *
- * The official runtime authenticates with this literal, and the owned relay replaces
- * it in memory. It is not a credential and grants nothing on its own; it is distinct
- * from the Huawei placeholder so neither relay can be driven by the other's config.
- */
 export const OFM_RELAY_PLACEHOLDER_KEY = 'opl-ofm-relay-placeholder'
 
 /** The relay binds loopback only; it is never reachable from another host. */
@@ -218,7 +180,6 @@ export function buildOfmPersonalProviderConfig(input: {
   }
 }
 
-/** The paired builtin layer; route-independent and shared with the Huawei route. */
 export { buildBuiltinProviderConfig }
 
 /**

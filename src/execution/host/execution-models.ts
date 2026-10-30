@@ -18,7 +18,6 @@ import {
 import { ExecutionCatalogStore, type ExecutionCatalog } from './catalog.ts'
 import { defaultHarness, automaticHarness } from './adapters/index.ts'
 import { officialHarnessFor } from '../contracts/official-harnesses.ts'
-import { HUAWEI_ZCODE_MODEL, HUAWEI_ZCODE_COMBINATION } from './adapters/zcode-models.ts'
 import {
   minimaxCodeCombinations,
   minimaxCodeModels,
@@ -135,9 +134,7 @@ export class ExecutionModelResolver {
           let profile = settings?.describe().find((item) => item.ns === directory.settingsNs)
             ?.value as any
           for (const key of directory.settingsPath) profile = profile?.[key]
-          // ZCode owns Huawei readiness and only needs credential presence here;
-          // resolving its secret is reserved for the actual request bridge.
-          if (profile?.apiKeyEnv && provider.id !== HUAWEI_ZCODE_MODEL.provider)
+          if (profile?.apiKeyEnv)
             configured = !!(
               await this.ctx.get('credentials')?.resolve(credentialRef(profile.apiKeyEnv))
             )?.value
@@ -181,9 +178,7 @@ export class ExecutionModelResolver {
               const ref = { provider: provider.id, model: model.id }
               if (isRetiredModel(ref)) return []
               const external =
-                provider.id === MINIMAX_CODE_PROVIDER || provider.id === HUAWEI_ZCODE_MODEL.provider
-                  ? probeExternal(ref)
-                  : undefined
+                provider.id === MINIMAX_CODE_PROVIDER ? probeExternal(ref) : undefined
               const ofm = OFM_PROVIDERS.includes(provider.id) ? probeOfm(ref) : undefined
               const source =
                 provider.id === 'deepseek-account'
@@ -358,20 +353,6 @@ export class ExecutionModelResolver {
         })
       }
     }
-    if (
-      providers.some((provider) => provider.id === HUAWEI_ZCODE_MODEL.provider) &&
-      !catalog.combinations.some((item) => item.id === HUAWEI_ZCODE_COMBINATION)
-    )
-      catalog.combinations.push({
-        id: HUAWEI_ZCODE_COMBINATION,
-        name: 'GLM-5.2 · ZCode',
-        modelRef: HUAWEI_ZCODE_MODEL,
-        harnessRef: 'zcode',
-        permissionPolicy: 'full-access',
-        isDefault: true,
-        enabled: true,
-        generated: true,
-      })
     for (const combination of catalog.combinations)
       if (
         !isRetiredModel(combination.modelRef) &&
