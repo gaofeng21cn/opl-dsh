@@ -170,6 +170,12 @@ export function useExecutionCatalog(call: RemoteCallInput<TypertRemoteNamespace<
       })
     }
     const combinations = catalog.combinations.map((item) => {
+      if (
+        !catalog.models.some(
+          (model) => model.available && modelRefKey(model.ref) === modelRefKey(item.modelRef),
+        )
+      )
+        return item
       const key = savedChoiceKey(item.id)
       return item.enabled !== selected.has(key)
         ? {

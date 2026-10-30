@@ -396,6 +396,15 @@ describe('每个外部 Harness 独立的代理设置', () => {
     const initial = catalog()
     const data = {
       ...initial,
+      models: [
+        ...initial.models,
+        ...['big-pickle', 'beam', 'other'].map((model) => ({
+          ref: { provider: 'our-free-model', model },
+          name: model,
+          source: 'Our Free Model',
+          available: true,
+        })),
+      ],
       recommendations: [
         {
           modelRef: { provider: 'our-free-model', model: 'big-pickle' },
@@ -458,6 +467,15 @@ describe('每个外部 Harness 独立的代理设置', () => {
     }
     const data = {
       ...initial,
+      models: [
+        ...initial.models,
+        ...['big-pickle', 'beam'].map((model) => ({
+          ref: { provider: 'our-free-model', model },
+          name: model,
+          source: 'Our Free Model',
+          available: true,
+        })),
+      ],
       recommendations: [
         recommendation,
         recommendation,
@@ -797,7 +815,7 @@ describe('每个外部 Harness 独立的代理设置', () => {
     ).toBeUndefined()
   })
 
-  it('组合明确不可用时显示未就绪并在悬停保留原因', async () => {
+  it('组合明确不可用时标红不可用并在悬停保留原因', async () => {
     const initial = fixture(catalog())
     const call = (async (method: string, args?: unknown) =>
       method === 'combinations'
@@ -808,9 +826,49 @@ describe('每个外部 Harness 独立的代理设置', () => {
       (node) => node.getAttribute?.('data-opl-combination') === 'codex/one',
     )!
     const summary = walk(row).find((node) => node.nodeName === 'SUMMARY')!
-    expect(text(summary)).toContain('未就绪')
+    expect(text(summary)).toContain('不可用')
     expect(walk(summary).some((node) => node.getAttribute?.('title') === 'CLI 尚未安装')).toBe(true)
     expect(text(summary)).not.toContain('可执行')
+  })
+
+  it('目录移除的 OFM 组合保留配置和明确状态，批量选择不清除它', async () => {
+    const data = catalog()
+    const ref = { provider: 'our-free-model', model: 'moonshotai/kimi-k3' }
+    data.models.push({
+      ref,
+      name: 'EAC Kimi K3',
+      source: 'our-free-model',
+      available: false,
+      reason: 'OFM 当前目录已移除此模型，保留原组合配置',
+      unavailableKind: 'catalog-missing',
+    })
+    data.combinations.push({
+      ...data.combinations[0],
+      id: 'missing-kimi',
+      name: 'EAC Kimi K3 + Kimi Code',
+      modelRef: ref,
+      harnessRef: 'kimi-code',
+    })
+    const { call, stored } = fixture(data)
+    const view = await open(call, ExecutionCatalogSection)
+    const row = walk(view).find(
+      (node) => node.getAttribute?.('data-opl-combination') === 'missing-kimi',
+    )!
+    const summary = walk(row).find((node) => node.nodeName === 'SUMMARY')!
+    expect(text(summary)).toContain('目录已移除')
+    expect(text(summary)).toContain('Our Free Model')
+    expect(text(summary)).not.toContain('our-free-model')
+    const picker = walk(view).find(
+      (node) => node.getAttribute?.('data-opl-panel') === 'recommended-combinations',
+    )!
+    expect(text(picker)).not.toContain('EAC Kimi K3')
+    await press(
+      walk(picker).find((node) => node.nodeName === 'BUTTON' && text(node) === '取消全选')!,
+    )
+    await press(
+      walk(picker).find((node) => node.nodeName === 'BUTTON' && text(node).includes('保存选择'))!,
+    )
+    expect(stored().combinations.find((item) => item.id === 'missing-kimi')?.enabled).toBe(true)
   })
 
   it('为每个外部 Harness 提供三种方式，内置 DSH 不可设置并说明原因', async () => {
