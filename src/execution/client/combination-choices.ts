@@ -3,6 +3,12 @@ import type { CombinationDefinition, ExecutionCatalog } from '../contracts/catal
 
 type Pairing = Pick<CombinationDefinition, 'modelRef' | 'harnessRef'>
 
+/** Visible choices and saved ids explicitly cleared by a bulk action. */
+export interface CombinationSelection {
+  selected: ReadonlySet<string>
+  disabledIds: ReadonlySet<string>
+}
+
 /** Exact source/model and Harness identity for a suggested pairing. */
 export const pairingKey = (item: Pairing): string =>
   JSON.stringify([modelRefKey(item.modelRef), item.harnessRef])

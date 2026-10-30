@@ -254,6 +254,22 @@ function CombinationRow({
             {source}
           </span>
           {hasAlternatives && <span>{item.isDefault ? '默认' : '非默认'}</span>}
+          {failure && (
+            <button
+              type="button"
+              className={listCss.remove}
+              disabled={busy}
+              aria-label={`移除 ${item.name}`}
+              title="从已启用的组合中移除"
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                update(item.id, { enabled: false })
+              }}
+            >
+              移除
+            </button>
+          )}
         </span>
       </summary>
       <div className={`${css.detailsBody} ${listCss.editor}`}>
