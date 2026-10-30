@@ -528,6 +528,40 @@ async function nativeSetup(
   }
 }
 describe('native conversation combinations', () => {
+  it('reads a cold Session from official projections instead of the profile default without activating an Agent', async () => {
+    const { service, ctx, session } = await nativeSetup()
+    vi.spyOn(ctx.sessions, 'get').mockReturnValue(undefined)
+    const original = ctx.typertGateway.invoke.bind(ctx.typertGateway)
+    const invoke = vi.spyOn(ctx.typertGateway, 'invoke').mockImplementation(async (request) => {
+      if (request.namespace === 'session' && request.method === 'projections')
+        return {
+          kind: 'sequenced',
+          asOfSeq: 7,
+          values: {
+            modelSelection: {
+              next: { provider: 'opl-gateway', model: 'deepseek-flash' },
+              lastUsed: null,
+            },
+          },
+        }
+      return original(request)
+    })
+    expect(await service.modelSelection(session.id)).toMatchObject({
+      current: { provider: 'opl-gateway', model: 'deepseek-flash' },
+      combination: 'dsh/deepseek-flash',
+    })
+    expect(invoke).toHaveBeenCalledWith(
+      expect.objectContaining({
+        namespace: 'session',
+        method: 'projections',
+        args: { request: { sessionId: session.id } },
+      }),
+    )
+    expect(
+      invoke.mock.calls.some(([request]) => ['create', 'prompt'].includes(request.method)),
+    ).toBe(false)
+  })
+
   it.each([
     ['codex', 'codex::gpt-test-model', 'gpt-test-model'],
     ['claude', 'aws::claude-opus-5-5', 'claude-opus-5-5'],

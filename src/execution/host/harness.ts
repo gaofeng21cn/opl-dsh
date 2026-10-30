@@ -4212,15 +4212,23 @@ export class HarnessService {
       }) as Promise<import('@deepseek-ai/dsh-api-session-controller/types').ModelCatalog>,
       this.executionCatalog(),
     ])
+    const cold = session
+      ? null
+      : ((await invokeHostRemote(this.ctx, {
+          namespace: 'session',
+          method: 'projections',
+          args: { request: { sessionId } },
+        })) as import('@deepseek-ai/dsh-api-session-controller/types').SessionProjectionsValue)
     const projection = session
       ? this.ctx.sessionProjections.snapshot(session, ['modelSelection']).values.modelSelection
-      : undefined
+      : cold?.kind === 'sequenced'
+        ? cold.values.modelSelection
+        : undefined
     const bound = executionCatalog.combinations.find(
       (item) => item.enabled && item.id === this.selections[sessionId],
     )
-    // A cold official Session may not be attached to the in-memory projection
-    // yet after Desktop restart. The durable OPL binding is the authoritative
-    // selector until the Session supplies its own next-request model.
+    // Official live/cold projections own the model choice. OPL references are
+    // only a fallback for records without an exact official selection yet.
     const historical = [...this.records.values()].find(
       (record) =>
         record.nativeSessionId === sessionId && record.combination === this.selections[sessionId],

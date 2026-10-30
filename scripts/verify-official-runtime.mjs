@@ -79,21 +79,11 @@ if (captureSelections || process.argv.includes('--readback-selections')) {
     await readFile(join(root, 'profiles/desktop/combination-selection.json'), 'utf8'),
   )
   if (!Object.keys(selections).length) throw Error('没有可验收的组合选择记录')
-  const projects = new Map()
-  const sessionsDirectory = join(root, 'profiles/desktop/harness-sessions')
-  for (const name of await readdir(sessionsDirectory)) {
-    if (!/^[a-f0-9]{64}\.json$/.test(name)) continue
-    const record = JSON.parse(await readFile(join(sessionsDirectory, name), 'utf8'))
-    if (record.nativeSessionId) projects.set(record.nativeSessionId, record.cwd)
-  }
   const baselineFile = join(root, 'qualification-model-selections.json')
   const baseline = captureSelections ? {} : JSON.parse(await readFile(baselineFile, 'utf8'))
-  for (const sessionId of Object.keys(selections)) {
+  for (const sessionId of Object.keys(captureSelections ? selections : baseline)) {
     // The association file identifies Sessions to inspect; the official model
     // projection and the live catalog decide which combination is effective.
-    await rpc('session', 'create', {
-      request: { sessionId, cwd: projects.get(sessionId) ?? join(root, 'test-project') },
-    })
     const selection = await harness('model-selection', { sessionId })
     const fact = {
       combination: selection.combination ?? null,
