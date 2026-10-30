@@ -552,6 +552,15 @@ try {
   await startDesktop()
   evidence.checks.desktopWindow = desktopWindow
   await mkdir(resolve(evidenceFile, '..'), { recursive: true })
+  // Establish real fixture model routes and saved combinations through their owners
+  // before the UI checks toggle them. A clean profile has no usable account model.
+  evidence.checks.runtime = JSON.parse(
+    await run(process.execPath, [join(repo, 'scripts/verify-official-runtime.mjs'), root], {
+      // Windows discovery runs real CLI and credential helpers. Keep a finite
+      // overall bound without preempting their per-request completion budgets.
+      timeout: process.platform === 'win32' ? 900000 : 300000,
+    }),
+  )
   evidence.checks.client = await verifyDesktopClient(
     desktopPipe,
     evidenceFile.replace(/\.json$/, '') + '-client',
@@ -563,13 +572,6 @@ try {
       if (stored.refs?.[ref] !== expected) throw new Error('原生表单与隔离测试凭据存储回读不一致')
     },
     evidence.officialVersion,
-  )
-  evidence.checks.runtime = JSON.parse(
-    await run(process.execPath, [join(repo, 'scripts/verify-official-runtime.mjs'), root], {
-      // Windows discovery runs real CLI and credential helpers. Keep a finite
-      // overall bound without preempting their per-request completion budgets.
-      timeout: process.platform === 'win32' ? 900000 : 300000,
-    }),
   )
   if (!modelPluginFixture.requests.some((request) => request.usedTool))
     throw new Error('原版模型插件未完成官方工具调用后的模型回复')
