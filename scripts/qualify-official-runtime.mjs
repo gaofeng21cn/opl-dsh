@@ -587,6 +587,13 @@ try {
       root,
       evidenceFile.replace(/\.json$/, '') + '-live-transcript.png',
     )
+  evidence.checks.selectionBaseline = JSON.parse(
+    await run(process.execPath, [
+      join(repo, 'scripts/verify-official-runtime.mjs'),
+      root,
+      '--capture-selections',
+    ]),
+  )
   await stopDesktop()
   await startDesktop()
   evidence.checks.restartWindow = desktopWindow

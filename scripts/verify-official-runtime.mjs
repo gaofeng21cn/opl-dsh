@@ -73,7 +73,8 @@ async function settledConversation(sessionId, afterTurn) {
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
 }
-if (process.argv.includes('--readback-selections')) {
+const captureSelections = process.argv.includes('--capture-selections')
+if (captureSelections || process.argv.includes('--readback-selections')) {
   const selections = JSON.parse(
     await readFile(join(root, 'profiles/desktop/combination-selection.json'), 'utf8'),
   )
@@ -85,14 +86,32 @@ if (process.argv.includes('--readback-selections')) {
     const record = JSON.parse(await readFile(join(sessionsDirectory, name), 'utf8'))
     if (record.nativeSessionId) projects.set(record.nativeSessionId, record.cwd)
   }
-  for (const [sessionId, combination] of Object.entries(selections)) {
-    // A restarted Host has not loaded these persisted Sessions yet. Resume
-    // their exact identity through the official owner before reading the
-    // Session projection; otherwise modelSelection can only see the default.
+  const baselineFile = join(root, 'qualification-model-selections.json')
+  const baseline = captureSelections ? {} : JSON.parse(await readFile(baselineFile, 'utf8'))
+  for (const sessionId of Object.keys(selections)) {
+    // The association file identifies Sessions to inspect; the official model
+    // projection and the live catalog decide which combination is effective.
     await rpc('session', 'create', {
       request: { sessionId, cwd: projects.get(sessionId) ?? join(root, 'test-project') },
     })
-    assert.equal((await harness('model-selection', { sessionId })).combination, combination)
+    const selection = await harness('model-selection', { sessionId })
+    const fact = {
+      combination: selection.combination ?? null,
+      current: selection.current
+        ? { provider: selection.current.provider, model: selection.current.model }
+        : null,
+    }
+    if (captureSelections) baseline[sessionId] = fact
+    else assert.deepEqual(fact, baseline[sessionId], 'Effective selection changed after restart')
+  }
+  if (captureSelections) {
+    assert(
+      Object.values(baseline).some((fact) => fact.combination),
+      'No effective combination to restore',
+    )
+    await writeFile(baselineFile, JSON.stringify(baseline), { mode: 0o600 })
+    console.log(JSON.stringify({ selectionBaseline: true, sessions: Object.keys(baseline).length }))
+    process.exit(0)
   }
   const permissionSelections = JSON.parse(
     await readFile(join(root, 'qualification-permission-selections.json'), 'utf8'),
