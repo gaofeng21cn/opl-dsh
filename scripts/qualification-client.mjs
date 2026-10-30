@@ -551,7 +551,7 @@ export async function verifyDesktopClient(
         `(() => {const select=document.querySelector('[data-opl-region-select]');select.value='global';select.dispatchEvent(new Event('change',{bubbles:true}))})()`,
       )
       await waitFor(
-        `document.querySelector('[data-opl-panel="minimax-account"]').textContent.includes('在中国大陆使用国际版需要代理。')`,
+        `['在中国大陆使用国际版需要代理。','A proxy is required to use the Global service from mainland China.'].some(text=>document.querySelector('[data-opl-panel="minimax-account"]').textContent.includes(text))`,
         '国际版代理说明未显示',
       )
       result.minimaxGlobalNetworkHint = true
@@ -566,7 +566,7 @@ export async function verifyDesktopClient(
         `(() => {const select=document.querySelector('[data-opl-region-select]');select.value='cn';select.dispatchEvent(new Event('change',{bubbles:true}))})()`,
       )
       await waitFor(
-        `!document.querySelector('[data-opl-panel="minimax-account"]').textContent.includes('在中国大陆使用国际版需要代理。')`,
+        `!['在中国大陆使用国际版需要代理。','A proxy is required to use the Global service from mainland China.'].some(text=>document.querySelector('[data-opl-panel="minimax-account"]').textContent.includes(text))`,
         '大陆版仍显示国际版提示',
       )
 
