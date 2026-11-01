@@ -8,7 +8,9 @@ export async function verifySuperagent(pipe, screenshot) {
   for (let attempt = 0; attempt < 120 && !session; attempt++) {
     const { targetInfos } = await pipe.command('Target.getTargets')
     for (const target of targetInfos.filter(
-      (item) => item.type === 'page' && /^http:\/\/127\.0\.0\.1[:/]/.test(item.url),
+      (item) =>
+        item.type === 'page' &&
+        (/^http:\/\/127\.0\.0\.1[:/]/.test(item.url) || item.url.startsWith('dsh-app://app/')),
     )) {
       const attached = await pipe.command('Target.attachToTarget', {
         targetId: target.targetId,
@@ -31,6 +33,16 @@ export async function verifySuperagent(pipe, screenshot) {
   await pipe.command('Runtime.enable', {}, session)
   await pipe.evaluate(
     session,
+    `[...document.querySelectorAll('button')].find(item => item.textContent === '稍后登录')?.click()`,
+  )
+  await delay(250)
+  await pipe.evaluate(
+    session,
+    `[...document.querySelectorAll('button')].find(item => item.textContent === '稍后再说')?.click()`,
+  )
+  await delay(250)
+  await pipe.evaluate(
+    session,
     `[...document.querySelectorAll('button')].find(item => /superagent/i.test(item.getAttribute('aria-label') || item.title || item.textContent)).click()`,
   )
   let state
@@ -39,9 +51,9 @@ export async function verifySuperagent(pipe, screenshot) {
     if (visible) {
       state = await pipe.evaluate(
         session,
-        `fetch('/orchestrator/api/state', {headers:{'x-orchestrator-request':'1'}}).then(response => {if(!response.ok) throw Error('SuperAgent API'); return response.json()})`,
+        `fetch('/orchestrator/api/state', {headers:{'x-orchestrator-request':'1'}}).then(response => response.ok ? response.json() : null)`,
       )
-      break
+      if (state) break
     }
     await delay(500)
   }
