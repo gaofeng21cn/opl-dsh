@@ -25,7 +25,7 @@ import { DeliverAssetsRow } from './DeliverAssetsRow.tsx'
 import { deliverAssetsDefinition, DELIVER_ASSETS_KIND } from './deliver-assets.ts'
 import { MessageEditControl } from './MessageEditControl.tsx'
 import { MessageEditSession, type EditSelection } from './message-edit-session.ts'
-import { MessageEditUserRow } from './MessageEditUserRow.tsx'
+import { installMessageEditUserRows } from './MessageEditUserRow.tsx'
 import {
   installMessageEditViews,
   installMessageEditNavigation,
@@ -202,23 +202,7 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
       LiveTranscriptRow,
     ),
   )
-  ctx.slots.inject('conversation.chat.node', () => {
-    const dispose = ctx.slots.register(
-      {
-        name: 'conversation.chat.node',
-        key: 'user',
-        priority: -1,
-        locale: 'chat',
-        children: { 'conversation.chat.user.before': { kind: 'chain', scope: 'session' } },
-        inject: (sessionId) => {
-          const edit = messageEditFor(sessionId)
-          return { edit }
-        },
-      },
-      MessageEditUserRow,
-    )
-    return dispose
-  })
+  ctx.effect(() => installMessageEditUserRows(ctx.slots, messageEditFor))
   ctx.slots.inject('conversation.chat.node', () =>
     ctx.slots.register(
       { name: 'conversation.chat.node', key: DELIVER_ASSETS_KIND, locale: 'chat' },

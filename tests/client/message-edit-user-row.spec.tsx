@@ -1,8 +1,9 @@
 import { createTestDom } from './dom.ts'
-import { act, createElement } from 'react'
+import { act, createElement, type ComponentType, type ReactElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
+import { SlotCore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ExecutionCall } from '../../src/shared/client/remote-call.ts'
 import { MessageEditSession } from '../../src/execution/client/message-edit-session.ts'
@@ -10,6 +11,7 @@ import { MessageEditAction } from '../../src/execution/client/MessageEditAction.
 import type { MessageEditState } from '../../src/execution/contracts/message-edit.ts'
 import {
   MessageEditUserRow,
+  installMessageEditUserRows,
   type MessageEditUserRowProps,
 } from '../../src/execution/client/MessageEditUserRow.tsx'
 
@@ -79,9 +81,51 @@ Object.defineProperty(globalThis, 'localStorage', {
   },
 })
 let root: Root
+const installations: (() => void)[] = []
 afterEach(async () => {
   await act(async () => root?.unmount())
+  for (const dispose of installations.splice(0)) dispose()
 })
+
+type ResidentUserRowProps = Omit<MessageEditUserRowProps, 'edit'>
+
+function userRows() {
+  const core = new SlotCore()
+  core.register(
+    {
+      name: 'root',
+      children: { 'conversation.chat.node': { kind: 'keyed', scope: 'session' } },
+    },
+    () => null,
+  )
+  const original = () => null
+  const inject = () => ({ officialSeat: 'retained' })
+  const register = (component = original) =>
+    core.register(
+      {
+        name: 'conversation.chat.node',
+        key: 'user',
+        locale: 'chat',
+        children: { 'conversation.chat.user.before': { kind: 'chain', scope: 'session' } },
+        inject,
+      },
+      component,
+    )
+  const install = (
+    messageEditFor: (id: string) => MessageEditSession = vi.fn(
+      (id: string) => new MessageEditSession(id, vi.fn()),
+    ),
+  ) => {
+    const dispose = installMessageEditUserRows(core, messageEditFor)
+    installations.push(dispose)
+    return dispose
+  }
+  const entry = () =>
+    core
+      .entries('conversation.chat.node')
+      .find((candidate) => candidate.children?.['conversation.chat.user.before'] !== undefined)!
+  return { core, original, inject, register, install, entry }
+}
 
 function buttons(scope: ShimNode): ShimNode[] {
   return [
@@ -109,11 +153,17 @@ it('renders edit beside copy and fills the exact selected message', async () => 
   const renderSlotChain = vi.fn((_name, props) =>
     createElement('span', null, `source:${props.source.kind}`),
   )
+  const rows = userRows()
+  rows.register()
+  const messageEditFor = vi.fn(() => session)
+  rows.install(messageEditFor)
+  const Resident = rows.entry().component as ComponentType<ResidentUserRowProps>
   const container = dom.container()
   root = createRoot(container as unknown as HTMLElement)
   await act(async () =>
     root.render(
-      createElement(MessageEditUserRow, {
+      createElement(Resident, {
+        sessionId: 'row-session',
         node: {
           kind: 'user',
           data: {
@@ -127,7 +177,6 @@ it('renders edit beside copy and fills the exact selected message', async () => 
         loadImage: vi.fn(),
         renderSlotChain,
         renderFactorySlot: vi.fn((_name, props) => createElement('span', null, props.content.text)),
-        edit: session,
         useInput: ((selector: (state: { draft: string }) => unknown) =>
           selector({ draft: '' })) as ChatNodeViewProps<'user'>['useInput'],
         inputActions: { setDraft },
@@ -138,7 +187,7 @@ it('renders edit beside copy and fills the exact selected message', async () => 
             'clock.md': '{m}月{d}日',
             'clock.ymd': '{y}年{m}月{d}日',
           })[key] ?? key,
-      } as unknown as MessageEditUserRowProps),
+      } as unknown as ResidentUserRowProps),
     ),
   )
   const actions = buttons(container)
@@ -151,8 +200,139 @@ it('renders edit beside copy and fills the exact selected message', async () => 
     { fallback: null },
   )
   expect(container.textContent).not.toContain('取消编辑')
+  expect(messageEditFor).toHaveBeenCalledWith('row-session')
   await act(async () => actions[1]!.click!())
   expect(setDraft).toHaveBeenCalledWith('第一条可编辑消息')
+})
+
+it.each(['before', 'after'] as const)(
+  'retains the official user row and source chain when the owner arrives %s installation',
+  async (arrival) => {
+    const rows = userRows()
+    if (arrival === 'before') rows.register()
+    const dispose = rows.install()
+    if (arrival === 'after') rows.register()
+    const owner = rows.entry()
+    const options = owner.options
+    const children = owner.children
+    const sourceSpec = rows.core.spec('conversation.chat.user.before')
+    const decoration = () => null
+    rows.core.register(
+      { name: 'conversation.chat.user.before', select: ({ source }) => source },
+      decoration,
+    )
+    const sourceEntries = rows.core.entries('conversation.chat.user.before')
+    await Promise.resolve()
+    expect(rows.core.entries('conversation.chat.node')).toEqual([owner])
+    expect(rows.core.isLive(owner)).toBe(true)
+    expect(owner.options).toBe(options)
+    expect(owner.children).toBe(children)
+    expect(owner.inject).toBe(rows.inject)
+    expect(owner.component).not.toBe(rows.original)
+    expect(rows.core.spec('conversation.chat.user.before')).toBe(sourceSpec)
+    expect(rows.core.entries('conversation.chat.user.before')).toBe(sourceEntries)
+    expect(sourceEntries[0]?.component).toBe(decoration)
+    dispose()
+    expect(owner.component).toBe(rows.original)
+    expect(rows.core.entries('conversation.chat.user.before')).toBe(sourceEntries)
+  },
+)
+
+it('decorates only the user entry that owns the message-source chain', () => {
+  const rows = userRows()
+  const shadow = () => null
+  rows.core.register({ name: 'conversation.chat.node', key: 'user', priority: -1 }, shadow)
+  rows.register()
+  rows.install()
+  expect(rows.core.entries('conversation.chat.node')[0]?.component).toBe(shadow)
+  expect(rows.entry().component).not.toBe(rows.original)
+})
+
+it('leaves a source-chain owner for another node kind unchanged', () => {
+  const rows = userRows()
+  rows.core.register(
+    {
+      name: 'conversation.chat.node',
+      key: 'steering',
+      children: { 'conversation.chat.user.before': { kind: 'chain', scope: 'session' } },
+    },
+    rows.original,
+  )
+  rows.install()
+  expect(rows.entry().component).toBe(rows.original)
+})
+
+it('resolves edit state from each rendered Session and retains the authorized source renderer', () => {
+  const rows = userRows()
+  rows.register()
+  const first = new MessageEditSession('first-session', vi.fn())
+  const second = new MessageEditSession('second-session', vi.fn())
+  const messageEditFor = vi.fn((id: string) => (id === 'first-session' ? first : second))
+  rows.install(messageEditFor)
+  const render = rows.entry().component as (
+    props: ResidentUserRowProps,
+  ) => ReactElement<MessageEditUserRowProps>
+  const sourceRenderer = vi.fn()
+  for (const [sessionId, edit] of [
+    ['first-session', first],
+    ['second-session', second],
+  ] as const) {
+    const element = render({
+      sessionId,
+      renderSlotChain: sourceRenderer,
+    } as unknown as ResidentUserRowProps)
+    expect(element.type).toBe(MessageEditUserRow)
+    expect(element.props.sessionId).toBe(sessionId)
+    expect(element.props.edit).toBe(edit)
+    expect(element.props.renderSlotChain).toBe(sourceRenderer)
+  }
+  expect(messageEditFor.mock.calls).toEqual([['first-session'], ['second-session']])
+})
+
+it('restores a retired owner and decorates its replacement', async () => {
+  const rows = userRows()
+  const unregister = rows.register()
+  const first = rows.entry()
+  const dispose = rows.install()
+  unregister()
+  await Promise.resolve()
+  expect(first.component).toBe(rows.original)
+  const replacement = () => null
+  rows.register(replacement)
+  const second = rows.entry()
+  await Promise.resolve()
+  expect(second.component).not.toBe(replacement)
+  expect(first.component).toBe(rows.original)
+  dispose()
+  expect(second.component).toBe(replacement)
+})
+
+it('preserves later component takeovers during owner replacement and disposal', async () => {
+  const rows = userRows()
+  const unregister = rows.register()
+  const first = rows.entry()
+  const dispose = rows.install()
+  const firstTakeover = () => null
+  first.component = firstTakeover
+  unregister()
+  rows.register()
+  await Promise.resolve()
+  expect(first.component).toBe(firstTakeover)
+  const second = rows.entry()
+  const secondTakeover = () => null
+  second.component = secondTakeover
+  dispose()
+  expect(first.component).toBe(firstTakeover)
+  expect(second.component).toBe(secondTakeover)
+})
+
+it('stops waiting for an owner after disposal', async () => {
+  const rows = userRows()
+  const dispose = rows.install()
+  dispose()
+  rows.register()
+  await Promise.resolve()
+  expect(rows.entry().component).toBe(rows.original)
 })
 
 function actionState(sessionId = 'action-session'): MessageEditState {

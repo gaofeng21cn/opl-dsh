@@ -6,6 +6,7 @@ import { PassThrough } from 'node:stream'
 import * as cordis from '@deepseek-ai/cordis'
 import * as gateway from '@deepseek-ai/dsh-api-gateway/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { SlotCore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
   SessionControlFrame,
@@ -15,11 +16,15 @@ import type {
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { RemoteError, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import { act, createElement, Fragment, type ReactNode } from 'react'
+import { act, createElement, Fragment, type ReactElement, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import * as execution from '../../src/execution/client/index.tsx'
 import { MessageEditAction } from '../../src/execution/client/MessageEditAction.tsx'
+import {
+  MessageEditUserRow,
+  type MessageEditUserRowProps,
+} from '../../src/execution/client/MessageEditUserRow.tsx'
 import {
   MessageEditControl,
   type MessageEditProps,
@@ -196,6 +201,28 @@ async function fixture() {
   )
   const prompt = vi.fn()
   const registrations: Registration[] = []
+  const slots = new SlotCore()
+  slots.register(
+    {
+      name: 'root',
+      children: { 'conversation.chat.node': { kind: 'keyed', scope: 'session' } },
+    },
+    () => null,
+  )
+  slots.register(
+    {
+      name: 'conversation.chat.node',
+      key: 'user',
+      children: { 'conversation.chat.user.before': { kind: 'chain', scope: 'session' } },
+    },
+    () => null,
+  )
+  const officialUserEntry = slots.entries('conversation.chat.node')[0]!
+  // The fixture captures unrelated controls; Node registrations use the public registry unchanged.
+  const registerNode = slots.register.bind(slots) as (
+    registration: Registration,
+    component: unknown,
+  ) => () => void
   const summaries: SessionSummary[] = [sessionId, otherSessionId].map((id) => ({
     sessionId: id,
     updatedAt: 0,
@@ -208,12 +235,14 @@ async function fixture() {
     apply(provider: cordis.Context) {
       new StubService(provider, 'slots', {
         inject: (_name: string, install: () => unknown) => install(),
-        register: (registration: Registration) => {
+        register: (registration: Registration, component: unknown) => {
           registrations.push(registration)
-          return () => {}
+          return registration.name === 'conversation.chat.node'
+            ? registerNode(registration, component)
+            : () => {}
         },
-        entries: () => [],
-        subscribe: () => () => {},
+        entries: (name: string) => slots.entries(name),
+        subscribe: (name: string, listener: () => void) => slots.subscribe(name, listener),
       })
       new StubService(provider, 'connection', connection)
       new StubService(provider, 'fileUpload')
@@ -263,21 +292,38 @@ async function fixture() {
   await suite.plugin(execution)
   const registration = registrations.find((entry) => entry.name === 'conversation.input.activity')!
   expect(registration).toBeDefined()
-  const props = registration.inject!(sessionId) as MessageEditProps
+  let props: MessageEditProps | undefined
+  const controlProps = () => (props ??= registration.inject!(sessionId) as MessageEditProps)
+  const rowEdit = () => {
+    const userEntries = slots
+      .entries('conversation.chat.node')
+      .filter((entry) => entry.options.key === 'user')
+    expect(userEntries).toEqual([officialUserEntry])
+    const render = userEntries[0]!.component as (
+      props: Pick<MessageEditUserRowProps, 'sessionId'>,
+    ) => ReactElement<MessageEditUserRowProps>
+    const row = render({ sessionId })
+    expect(row.type).toBe(MessageEditUserRow)
+    return row.props.edit
+  }
   const container = dom.container()
   const root = createRoot(container as unknown as HTMLElement)
   roots.push(root)
   const render = async (controlVisible = true) => {
+    const session = rowEdit()
     await act(async () =>
       root.render(
         createElement(
           Fragment,
           null,
           controlVisible
-            ? createElement(MessageEditControl, { ...props, inputActions: { setDraft: vi.fn() } })
+            ? createElement(MessageEditControl, {
+                ...controlProps(),
+                inputActions: { setDraft: vi.fn() },
+              })
             : null,
           createElement(MessageEditAction, {
-            session: props.session,
+            session,
             seq: 12,
             draft: '',
             onDraft: vi.fn(),
@@ -290,7 +336,9 @@ async function fixture() {
     sessions,
     control,
     histories,
-    props,
+    get props() {
+      return controlProps()
+    },
     readState,
     prompt,
     root,
@@ -298,12 +346,7 @@ async function fixture() {
     render,
     enableEdit: () => (editState = available()),
     setState: (state: MessageEditState) => (editState = state),
-    rowEdit: () =>
-      (
-        registrations.find(
-          (entry) => entry.name === 'conversation.chat.node' && entry.key === 'user',
-        )!.inject!(sessionId) as { edit: MessageEditProps['session'] }
-      ).edit,
+    rowEdit,
   }
 }
 
@@ -346,12 +389,14 @@ it('shares the first row store with a later composer control and loads only afte
   const reference = f.sessions.retain(sessionId, { source: 'controllerOperation' })
   f.histories.get(sessionId)!.push(history())
   await reference.ready
-  expect(f.rowEdit()).toBe(f.props.session)
+  const rowEdit = f.rowEdit()
+  expect(f.readState).not.toHaveBeenCalled()
   await f.render(false)
   expect(f.readState).not.toHaveBeenCalled()
   expect(editButton(f.container)).toBeUndefined()
   f.enableEdit()
   await f.render()
+  expect(f.props.session).toBe(rowEdit)
   expect(f.readState).toHaveBeenCalledTimes(1)
   expect(editButton(f.container)).toBeDefined()
   expect(f.prompt).not.toHaveBeenCalled()
