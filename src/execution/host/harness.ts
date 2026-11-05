@@ -61,6 +61,7 @@ import { poolMessageEditDriver } from './message-edit-pool.ts'
 import { stepMessageEditDriver } from './message-edit-step.ts'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent/types'
 import type { MessageEditSend, MessageEditState } from '../contracts/message-edit.ts'
 import { access, mkdir, readFile, writeFile, rename, realpath, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
@@ -2714,7 +2715,56 @@ export class HarnessService {
     )
   }
 
-  /** Validate the assembled route and leave CLI-owned effort out of native provider controls. */
+  /** Record native defaults and CLI-owned effort omission before the Agent prepares its first step. */
+  async prepareConversationModel(agent: Agent, signal?: AbortSignal): Promise<void> {
+    await Promise.all([this.selectionsReady, this.recordsReady])
+    signal?.throwIfAborted()
+    const current = agent.model.current()
+    if (!current) return
+    const binding = this.selections[agent.session.id]
+    const catalog = await this.executionCatalog()
+    const definition = this.combinationFor(agent.session.id, catalog, current)
+    const selected = await this.normalizeConversationSelection(current, definition, signal)
+    signal?.throwIfAborted()
+    if (this.disposed) throw Error('组合服务已关闭')
+    const latest = agent.model.current()
+    if (
+      this.ctx.agents.get(agent.id) !== agent ||
+      this.selections[agent.session.id] !== binding ||
+      !latest ||
+      modelRefKey(latest) !== modelRefKey(current) ||
+      latest.reasoningEffort !== current.reasoningEffort
+    )
+      throw new LlmError('模型选择已改变，请重新发送；本轮未使用旧模型。', 'HARNESS_BINDING')
+    if (selected.reasoningEffort !== current.reasoningEffort) agent.model.select(selected)
+  }
+
+  private async normalizeConversationSelection(
+    selection: ModelSelection,
+    definition: CombinationDefinition | undefined,
+    signal?: AbortSignal,
+  ): Promise<AgentModelSelection> {
+    const ref = { provider: selection.provider, model: selection.model }
+    const adapter = definition && adapterFor(definition.harnessRef, ref, this.modelSources)
+    if (
+      definition &&
+      (this.cliOwnsEffort(definition) || adapter?.capabilities.reasoning === 'none')
+    )
+      return ref
+    if (selection.reasoningEffort !== undefined)
+      return { ...ref, reasoningEffort: ReasoningEffortId(selection.reasoningEffort) }
+    if (
+      ref.model.split('::').at(-1) === 'deepseek-flash' ||
+      ref.model.split('::').at(-1)?.startsWith('gpt-')
+    ) {
+      const info = await this.ctx.llm.resolveModelInfo(ref.provider, ref.model, signal)
+      const effort = modelDefaultEffort(ref.model, info.reasoning)
+      if (effort !== undefined) return { ...ref, reasoningEffort: ReasoningEffortId(effort) }
+    }
+    return ref
+  }
+
+  /** Validate the frozen request without changing its model or reasoning selection. */
   async prepareConversationRequest(
     sessionId: string,
     request: LlmCallConfig,
@@ -2736,23 +2786,6 @@ export class HarnessService {
     const current = selection?.next ?? selection?.lastUsed
     if (current && modelRefKey(current) !== modelRefKey(request))
       throw new LlmError('模型选择已改变，请重新发送；本轮未使用旧模型。', 'HARNESS_BINDING')
-    const adapter = definition && adapterFor(definition.harnessRef, request, this.modelSources)
-    if (
-      definition &&
-      (this.cliOwnsEffort(definition) || adapter?.capabilities.reasoning === 'none')
-    ) {
-      const { reasoningEffort: _, ...ref } = request
-      return ref
-    }
-    if (
-      request.reasoningEffort === undefined &&
-      (request.model.split('::').at(-1) === 'deepseek-flash' ||
-        request.model.split('::').at(-1)?.startsWith('gpt-'))
-    ) {
-      const info = await this.ctx.llm.resolveModelInfo(request.provider, request.model)
-      const effort = modelDefaultEffort(request.model, info.reasoning)
-      if (effort !== undefined) return { ...request, reasoningEffort: ReasoningEffortId(effort) }
-    }
     return request
   }
 
@@ -3696,7 +3729,8 @@ export class HarnessService {
     if (!previous) throw new StopEditError('rewind-failed', '原会话已关闭')
     const selection = this.ctx.sessionProjections.snapshot(previous, ['modelSelection']).values
       .modelSelection
-    const selected = selection?.next ?? selection?.lastUsed ?? record?.modelRef
+    const selected: ModelSelection | undefined =
+      selection?.next ?? selection?.lastUsed ?? record?.modelRef
     if (!selected) throw new StopEditError('rewind-failed', '原会话缺少可复核的模型选择')
     await this.native('selectModel', { sessionId, ...selected })
     const permissions = this.ctx.get('permissionPresets')
@@ -4640,7 +4674,7 @@ export class HarnessService {
       (record) =>
         record.nativeSessionId === sessionId && record.combination === this.selections[sessionId],
     )
-    const current =
+    const current: ModelSelection =
       projection?.next ??
       projection?.lastUsed ??
       bound?.modelRef ??
@@ -4689,6 +4723,7 @@ export class HarnessService {
     await this.ready
     const session = this.ctx.sessions.get(asSessionId<SessionId>(input.sessionId))
     if (!session) throw Error('对话不存在')
+    const selectionBinding = this.selections[input.sessionId]
     const selected = await this.modelSelection(input.sessionId)
     if (modelRefKey(selected.current) !== modelRefKey(input))
       throw Error('模型选择已改变，请重新选择推理档位')
@@ -4704,7 +4739,19 @@ export class HarnessService {
       throw Error('当前 Harness 未提供推理档位，请重新选择')
     if (!definition || !this.cliOwnsEffort(definition)) {
       const { sessionId, ...request } = input
-      return this.native('selectModel', { sessionId, ...request })
+      const normalized = await this.normalizeConversationSelection(request, definition)
+      const projection = this.ctx.sessionProjections.snapshot(session, ['modelSelection']).values
+        .modelSelection
+      const current = projection?.next ?? projection?.lastUsed
+      if (
+        this.disposed ||
+        this.selections[input.sessionId] !== selectionBinding ||
+        (current &&
+          (modelRefKey(current) !== modelRefKey(input) ||
+            current.reasoningEffort !== selected.current.reasoningEffort))
+      )
+        throw Error('模型选择已改变，请重新选择推理档位')
+      return this.native('selectModel', { sessionId, ...normalized })
     }
     const token = Symbol()
     this.effortChanges.set(input.sessionId, token)

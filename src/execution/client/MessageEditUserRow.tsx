@@ -10,19 +10,22 @@ import type {
   ChatNodeViewProps,
   UserContentAttachment,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MessageEditSession } from './message-edit-session.ts'
 import { MessageEditAction } from './MessageEditAction.tsx'
 import css from './MessageEditUserRow.module.css'
 
-export type MessageEditUserRowProps = ChatNodeViewProps<'user'> & {
-  edit: MessageEditSession
-}
+export type MessageEditUserRowProps = ChatNodeViewProps<'user'> &
+  PropsRenderSlots<'conversation.chat.user.before'> & {
+    edit: MessageEditSession
+  }
 
 /** Use the official prepared-content Factory and keep the official row geometry. */
 export function MessageEditUserRow({
   node,
   loadImage,
   renderFactorySlot,
+  renderSlotChain,
   edit,
   useInput,
   inputActions,
@@ -57,6 +60,11 @@ export function MessageEditUserRow({
   const time = formatMessageClock(node.data.time, t, day)
   return (
     <div className={css.row}>
+      {renderSlotChain(
+        'conversation.chat.user.before',
+        { source: node.data.source, kind: node.kind },
+        { fallback: null },
+      )}
       {renderFactorySlot('conversation.chat.user.content', {
         content,
         loadImage,

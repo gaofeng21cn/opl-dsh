@@ -106,6 +106,9 @@ it('renders edit beside copy and fills the exact selected message', async () => 
   const session = new MessageEditSession('row-session', call as ExecutionCall)
   await session.load()
   const setDraft = vi.fn()
+  const renderSlotChain = vi.fn((_name, props) =>
+    createElement('span', null, `source:${props.source.kind}`),
+  )
   const container = dom.container()
   root = createRoot(container as unknown as HTMLElement)
   await act(async () =>
@@ -122,6 +125,7 @@ it('renders edit beside copy and fills the exact selected message', async () => 
           },
         },
         loadImage: vi.fn(),
+        renderSlotChain,
         renderFactorySlot: vi.fn((_name, props) => createElement('span', null, props.content.text)),
         edit: session,
         useInput: ((selector: (state: { draft: string }) => unknown) =>
@@ -140,6 +144,12 @@ it('renders edit beside copy and fills the exact selected message', async () => 
   const actions = buttons(container)
   expect(actions.map((button) => button.getAttribute?.('aria-label'))).toEqual(['复制', '编辑消息'])
   expect(container.textContent).toContain('第一条可编辑消息')
+  expect(container.textContent).toContain('source:user')
+  expect(renderSlotChain).toHaveBeenCalledWith(
+    'conversation.chat.user.before',
+    { source: { kind: 'user' }, kind: 'user' },
+    { fallback: null },
+  )
   expect(container.textContent).not.toContain('取消编辑')
   await act(async () => actions[1]!.click!())
   expect(setDraft).toHaveBeenCalledWith('第一条可编辑消息')

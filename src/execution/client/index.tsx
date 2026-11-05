@@ -11,7 +11,7 @@ import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import { watchStopEditSession } from './stop-edit-session-watch.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { ModelSelectionProjection } from '@deepseek-ai/dsh-agent/types'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -209,6 +209,7 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
         key: 'user',
         priority: -1,
         locale: 'chat',
+        children: { 'conversation.chat.user.before': { kind: 'chain', scope: 'session' } },
         inject: (sessionId) => {
           const edit = messageEditFor(sessionId)
           return { edit }
