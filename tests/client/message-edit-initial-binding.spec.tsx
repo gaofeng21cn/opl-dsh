@@ -403,9 +403,13 @@ it('recovers on a model projection when an existing binding is idle and its hist
     f.control.push({
       type: 'projection',
       sessionId,
-      key: 'modelSelection',
       seq: 13,
-      value: { next: { provider: 'fixture-pi', model: 'fixture-model' } },
+      changes: [
+        {
+          key: 'modelSelection',
+          val: { next: { provider: 'fixture-pi', model: 'fixture-model' } },
+        },
+      ],
     })
     await vi.waitFor(() => expect(f.props.session.getSnapshot().state?.supported).toBe(true))
   })
@@ -431,9 +435,10 @@ it('stops refreshing after unmount while another consumer retains the official b
   f.control.push({
     type: 'projection',
     sessionId,
-    key: 'modelSelection',
     seq: 13,
-    value: { next: { provider: 'fixture-pi', model: 'fixture-model' } },
+    changes: [
+      { key: 'modelSelection', val: { next: { provider: 'fixture-pi', model: 'fixture-model' } } },
+    ],
   })
   await vi.waitFor(() =>
     expect(
