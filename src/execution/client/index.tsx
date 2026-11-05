@@ -91,7 +91,7 @@ function modelSelectionFace(ctx: Context, sessionId: string) {
 function sessionChanges(ctx: Context, sessionId: string, listener: () => void): () => void {
   const binding = ctx.sessions.binding(sessionId as SessionId)
   if (!binding) return () => {}
-  const off = watchStopEditSession(binding.session, listener)
+  const off = watchStopEditSession(binding.session, listener, binding.eventSource)
   const offModel = modelSelectionFace(ctx, sessionId)?.subscribe(listener)
   return () => {
     off()

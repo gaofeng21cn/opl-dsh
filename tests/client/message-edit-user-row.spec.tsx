@@ -1,10 +1,13 @@
 import { createTestDom } from './dom.ts'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ExecutionCall } from '../../src/shared/client/remote-call.ts'
 import { MessageEditSession } from '../../src/execution/client/message-edit-session.ts'
+import { MessageEditAction } from '../../src/execution/client/MessageEditAction.tsx'
+import type { MessageEditState } from '../../src/execution/contracts/message-edit.ts'
 import {
   MessageEditUserRow,
   type MessageEditUserRowProps,
@@ -141,3 +144,136 @@ it('renders edit beside copy and fills the exact selected message', async () => 
   await act(async () => actions[1]!.click!())
   expect(setDraft).toHaveBeenCalledWith('第一条可编辑消息')
 })
+
+function actionState(sessionId = 'action-session'): MessageEditState {
+  return {
+    sessionId,
+    supported: true,
+    busy: false,
+    pending: false,
+    head: 9,
+    choices: [{ seq: 3, text: '消息原文' }],
+  }
+}
+
+it('keeps a supported edit action reachable while initial history is unavailable and retries only the read', async () => {
+  const call = vi
+    .fn()
+    .mockResolvedValueOnce({
+      ...actionState(),
+      choices: [],
+      unavailable: { reason: 'history-unavailable', retryable: true },
+    })
+    .mockResolvedValueOnce(actionState())
+  const session = new MessageEditSession('action-session', call as ExecutionCall)
+  await session.load()
+  const onDraft = vi.fn()
+  const container = dom.container()
+  root = createRoot(container as unknown as HTMLElement)
+  await act(async () =>
+    root.render(createElement(MessageEditAction, { session, seq: 3, draft: '', onDraft })),
+  )
+  expect(buttons(container).map((button) => button.getAttribute?.('aria-label'))).toEqual([
+    '重试编辑',
+  ])
+  await act(async () => buttons(container)[0]!.click!())
+  expect(call).toHaveBeenCalledTimes(2)
+  expect(call).toHaveBeenLastCalledWith('message-edit-state', { sessionId: 'action-session' })
+  expect(onDraft).not.toHaveBeenCalled()
+  expect(session.getSnapshot().selection).toBeUndefined()
+  expect(buttons(container)[0]?.getAttribute?.('aria-label')).toBe('编辑消息')
+})
+
+it.each([
+  { supported: false, choices: [] },
+  { supported: true, choices: [] },
+])('omits an action without supported editable history: %j', async (fields) => {
+  const call = vi.fn().mockResolvedValue({ ...actionState(), ...fields })
+  const session = new MessageEditSession('action-session', call as ExecutionCall)
+  await session.load()
+  const container = dom.container()
+  root = createRoot(container as unknown as HTMLElement)
+  await act(async () =>
+    root.render(createElement(MessageEditAction, { session, seq: 3, draft: '', onDraft: vi.fn() })),
+  )
+  expect(buttons(container)).toHaveLength(0)
+})
+
+it('retains a known row action and selected draft during a temporary empty history result', async () => {
+  const call = vi
+    .fn()
+    .mockResolvedValueOnce(actionState())
+    .mockResolvedValueOnce({
+      ...actionState(),
+      choices: [],
+      unavailable: { reason: 'mapping-unavailable', retryable: false },
+    })
+  const session = new MessageEditSession('action-session', call as ExecutionCall)
+  await session.load()
+  await session.select(3, '')
+  const selected = session.getSnapshot().selection
+  const onDraft = vi.fn()
+  const container = dom.container()
+  root = createRoot(container as unknown as HTMLElement)
+  await act(async () =>
+    root.render(createElement(MessageEditAction, { session, seq: 3, draft: '编辑草稿', onDraft })),
+  )
+  await act(async () => session.load())
+  const action = buttons(container)[0]!
+  expect(action.getAttribute?.('aria-label')).toBe('编辑消息')
+  expect(action.getAttribute?.('aria-disabled')).toBe('true')
+  await act(async () => action.click!())
+  expect(call).toHaveBeenCalledTimes(2)
+  expect(session.getSnapshot().selection).toBe(selected)
+  expect(onDraft).not.toHaveBeenCalled()
+})
+
+it('offers a read retry after transport failure when engine support was already observed', async () => {
+  const call = vi
+    .fn()
+    .mockResolvedValueOnce({ ...actionState(), choices: [] })
+    .mockRejectedValueOnce(Error('offline'))
+  const session = new MessageEditSession('action-session', call as ExecutionCall)
+  await session.load()
+  const container = dom.container()
+  root = createRoot(container as unknown as HTMLElement)
+  await act(async () =>
+    root.render(createElement(MessageEditAction, { session, seq: 3, draft: '', onDraft: vi.fn() })),
+  )
+  expect(buttons(container)).toHaveLength(0)
+  await act(async () => session.load())
+  expect(buttons(container)[0]?.getAttribute?.('aria-label')).toBe('重试编辑')
+  expect(session.getSnapshot().selection).toBeUndefined()
+})
+
+it.each(['session', 'draft', 'unmount'] as const)(
+  'does not fill an old edit after a %s change while selection completes',
+  async (change) => {
+    const call = vi.fn().mockResolvedValue(actionState())
+    const session = new MessageEditSession('action-session', call as ExecutionCall)
+    await session.load()
+    const nextCall = vi.fn().mockResolvedValue(actionState('next-session'))
+    const nextSession = new MessageEditSession('next-session', nextCall as ExecutionCall)
+    await nextSession.load()
+    const onDraft = vi.fn()
+    const container = dom.container()
+    root = createRoot(container as unknown as HTMLElement)
+    const render = (active: MessageEditSession, draft = '') =>
+      root.render(createElement(MessageEditAction, { session: active, seq: 3, draft, onDraft }))
+    await act(async () => render(session))
+    const select = session.select.bind(session)
+    vi.spyOn(session, 'select').mockImplementation((seq, draft) => {
+      const result = select(seq, draft)
+      flushSync(() => {
+        if (change === 'unmount') root.unmount()
+        else
+          render(change === 'session' ? nextSession : session, change === 'draft' ? '新草稿' : '')
+      })
+      return result
+    })
+    await act(async () => buttons(container)[0]!.click!())
+    expect(onDraft).not.toHaveBeenCalled()
+    expect(session.getSnapshot().selection).toBeUndefined()
+    expect(nextSession.getSnapshot().selection).toBeUndefined()
+  },
+)

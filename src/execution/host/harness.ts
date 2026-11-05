@@ -38,6 +38,8 @@ import {
   externalPreparedChoice,
   externalTerminalFailureChoice,
   externalUnsentEmptyChoice,
+  externalRecordedChoices,
+  externalFreshFirstChoice,
 } from './message-edit-mapping.ts'
 import type {
   ExternalEditContext,
@@ -48,13 +50,15 @@ import type { AdapterLaunch } from './adapters/types.ts'
 import { codexMessageEditDriver } from './message-edit-codex.ts'
 import { claudeMessageEditDriver } from './message-edit-claude.ts'
 import { grokMessageEditDriver } from './message-edit-grok.ts'
-import { minimaxMessageEditDriver } from './message-edit-minimax.ts'
+import { minimaxMessageEditDriver, MinimaxEditError } from './message-edit-minimax.ts'
 import { zcodeMessageEditDriver } from './message-edit-zcode.ts'
 import { createOpenCodeMessageEditDriver } from './message-edit-opencode.ts'
+import { ExternalMessageEditError } from './message-edit-opencode-common.ts'
 import { createKiloMessageEditDriver } from './message-edit-kilo.ts'
 import { piMessageEditDriver } from './message-edit-pi.ts'
 import { kimiMessageEditDriver } from './message-edit-kimi.ts'
 import { poolMessageEditDriver } from './message-edit-pool.ts'
+import { stepMessageEditDriver } from './message-edit-step.ts'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { MessageEditSend, MessageEditState } from '../contracts/message-edit.ts'
@@ -315,6 +319,8 @@ interface Active {
   watchdog?: ProgressWatchdog
   deadlineError?: string
   deadlineCleanup?: Promise<void>
+  inputReceiptError?: string
+  inputReceiptWrite?: Promise<void>
 
   acp?: AcpProcess
   turn: HarnessTurn | undefined
@@ -1517,11 +1523,14 @@ export class HarnessService {
       hostPeer(this.ctx),
       bindingPath,
     )
-    let stopped = false
-    active.bridgeStop = async () => {
-      if (stopped) return
-      stopped = true
-      await bridgeStop()
+    let stopping: Promise<void> | undefined
+    active.bridgeStop = () => {
+      if (!stopping) {
+        stopping = bridgeStop()
+        // Exit notifications do not await cleanup; explicit callers retain its rejection.
+        void stopping.catch(() => undefined)
+      }
+      return stopping
     }
     const mcpPath = fileURLToPath(new URL('./harness-mcp.mjs', import.meta.url))
     const servers = await access(mcpPath).then(
@@ -1693,6 +1702,8 @@ export class HarnessService {
       }
       return
     }
+    if (record.harnessRef === 'step-code' && u.sessionUpdate === 'session_info_update')
+      this.recordStepInput(record, active, object(u._meta))
     if (record.harnessRef === 'pool' && active.turn && u.sessionUpdate === 'session_info_update') {
       const id = object(u._meta)['poolside/inputEventId']
       if (typeof id === 'string' && id)
@@ -1734,7 +1745,7 @@ export class HarnessService {
       this.titleUpdates.set(record.id, pending)
       return
     }
-    if (!active.turn || active.deadlineError) return
+    if (!active.turn || active.deadlineError || active.inputReceiptError) return
     const turn = active.turn
     if (
       (['agent_message_chunk', 'agent_thought_chunk'].includes(u.sessionUpdate) &&
@@ -1782,6 +1793,56 @@ export class HarnessService {
       if (owner) this.conversations?.tool(owner.sessionId, record, turn, u)
     }
     this.changed(record)
+  }
+
+  /** Bind Step's exact request receipt only to the current connection's open turn. */
+  private recordStepInput(record: HarnessSession, active: Active, meta: Record<string, unknown>) {
+    const turn = active.turn
+    const inputId = meta['opl/stepInputId']
+    const operationId = meta['opl/clientRequestId']
+    if (
+      this.active.get(record.id) !== active ||
+      active.sessionInfo?.sessionId !== record.acpSessionId ||
+      !turn ||
+      turn !== record.turns.at(-1) ||
+      !['running', 'waiting_approval', 'waiting_input'].includes(turn.state) ||
+      active.cancelled ||
+      active.deadlineError ||
+      active.inputReceiptError ||
+      typeof inputId !== 'string' ||
+      !inputId ||
+      typeof operationId !== 'string' ||
+      operationId !== turn.operationId
+    )
+      return
+    if (turn.native?.userMessageId === inputId) return
+    if (turn.native?.userMessageId) {
+      active.inputReceiptError =
+        'Step 返回了相互冲突的用户消息身份，已停止本轮请求；编辑状态待核对，原任务未自动重发。'
+      turn.error = active.inputReceiptError
+    } else turn.native = { ...turn.native, userMessageId: inputId }
+    this.changed(record)
+    const stopped = active.inputReceiptError
+      ? active.acp?.terminate(active.inputReceiptError)
+      : undefined
+    const saved = active.inputReceiptError
+      ? this.persistStepInputConflict(record, turn)
+      : this.save(record)
+    active.inputReceiptWrite = Promise.all([active.inputReceiptWrite, saved, stopped]).then(
+      () => {},
+    )
+    void active.inputReceiptWrite.catch(() => {
+      this.ctx.logger?.warn('Step 用户消息身份尚未保存，原记录和编辑保护已保留')
+    })
+  }
+
+  private async persistStepInputConflict(record: HarnessSession, turn: HarnessTurn): Promise<void> {
+    const intent = record.nativeSessionId
+      ? this.externalMessageEdits.intent(record.nativeSessionId)
+      : undefined
+    if (intent && turn.operationId === 'message-edit:' + intent.requestId)
+      await this.externalEditJournal.save({ ...intent, phase: 'uncertain' })
+    await this.save(record)
   }
   private ask(record: HarnessSession, active: Active, rpcId: string | number, value: unknown) {
     const p = object(value)
@@ -2180,6 +2241,8 @@ export class HarnessService {
     try {
       delete active.deadlineError
       delete active.deadlineCleanup
+      delete active.inputReceiptError
+      delete active.inputReceiptWrite
       if (record.harnessRef !== 'dsh' && this.progressLimits) {
         active.watchdog = new ProgressWatchdog(this.progressLimits, () => {
           if (active.turn !== turn || active.cancelled) return
@@ -2269,6 +2332,16 @@ export class HarnessService {
               : undefined,
           ),
         )
+        if (active.inputReceiptError) throw new HarnessTransportError(active.inputReceiptError)
+        if (['opencode', 'kilo'].includes(record.harnessRef)) {
+          const userMessageId = result.userMessageId
+          if (typeof userMessageId === 'string' && userMessageId) {
+            if (turn.native?.userMessageId && turn.native.userMessageId !== userMessageId)
+              throw Error('官方 Harness 返回的用户消息身份不一致')
+            turn.native = { ...turn.native, userMessageId }
+            await this.save(record)
+          }
+        }
         let usage = acpUsage(result.usage)
         // Native bridges publish the owned per-turn marker on the ACP result
         // envelope because ACP does not define a usage metadata field. Keep
@@ -2424,6 +2497,7 @@ export class HarnessService {
       // must not collapse into the generic transport text.
       turn.error =
         active.deadlineError ??
+        active.inputReceiptError ??
         (error instanceof HarnessTransportError || error instanceof HarnessConfigurationError
           ? error.message
           : '执行未完成，请检查 Harness 安装、所选渠道和模型。原任务未自动重发。')
@@ -2453,6 +2527,10 @@ export class HarnessService {
     delete active.watchdog
     await active.deadlineCleanup
     delete active.deadlineCleanup
+    await active.inputReceiptWrite?.catch(() => {
+      active.inputReceiptError ??= 'Step 用户消息身份未能保存，请检查磁盘后重新读取对话。'
+    })
+    delete active.inputReceiptWrite
     await this.titleUpdates.get(record.id)
     if (active.deadlineError) {
       turn.state = 'failed'
@@ -2461,6 +2539,13 @@ export class HarnessService {
     if (active.cancelled) {
       turn.state = 'cancelled'
       delete turn.error
+    }
+    if (active.inputReceiptError) {
+      turn.state = 'failed'
+      turn.error = active.inputReceiptError
+      await this.persistStepInputConflict(record, turn).catch(() => {
+        this.ctx.logger?.warn('Step 用户消息身份冲突尚未保存，编辑保护已保留')
+      })
     }
     if (turn.contextUsage?.size !== undefined)
       this.recordContextWindow(record, active, turn.contextUsage.size)
@@ -2477,7 +2562,9 @@ export class HarnessService {
             : await this.observeEditHistory(record)
         if (
           after?.sessionId === editBefore.sessionId &&
-          after.boundaries.length > editBefore.boundaries.length &&
+          after.boundaries.length === editBefore.boundaries.length + 1 &&
+          (!turn.native?.userMessageId ||
+            turn.native.userMessageId === after.boundaries.at(-1)?.id) &&
           editBefore.boundaries.every((item, index) => item.id === after.boundaries[index]?.id)
         ) {
           const statistics =
@@ -2691,6 +2778,8 @@ export class HarnessService {
         return kimiMessageEditDriver()
       case 'pool':
         return poolMessageEditDriver()
+      case 'step-code':
+        return stepMessageEditDriver()
       default:
         return undefined
     }
@@ -2717,13 +2806,7 @@ export class HarnessService {
           configOptions: current.configOptions,
         }
       },
-      disconnect: async () => {
-        const current = this.active.get(record.id)
-        if (current?.turn) throw Error('外部会话仍在执行')
-        await current?.acp?.dispose()
-        await current?.bridgeStop?.()
-        this.active.delete(record.id)
-      },
+      disconnect: () => this.disconnectForEdit(record, active),
       reconnect: async (id) => {
         if (id !== record.acpSessionId) throw Error('新会话身份必须先持久保存')
         await this.connectAdmitted(record)
@@ -2756,11 +2839,27 @@ export class HarnessService {
     }
   }
 
+  /** Release only the idle connection observed here, after its owned process and bridge have exited. */
+  private async disconnectForEdit(record: HarnessSession, expected?: Active): Promise<void> {
+    const current = this.active.get(record.id)
+    if (current && expected && current !== expected) throw Error('外部会话连接已变化')
+    if (current?.turn || this.connecting.has(record.id)) throw Error('外部会话仍在执行或连接')
+    if (!current) return
+    await current.acp?.dispose()
+    if (this.active.get(record.id) !== current || current.turn) throw Error('外部会话连接已变化')
+    await current.bridgeStop?.()
+    if (this.active.get(record.id) !== current || current.turn) throw Error('外部会话连接已变化')
+    this.active.delete(record.id)
+  }
+
   private async externalHistory(record: HarnessSession): Promise<ExternalEditHistory> {
-    await this.connectAdmitted(record)
     const fingerprint = externalEditRecordFingerprint(record)
     const cached = this.externalHistories.get(record.id)
-    if (cached?.fingerprint === fingerprint) return cached.history
+    if (cached?.fingerprint === fingerprint) {
+      await this.connectAdmitted(record)
+      return cached.history
+    }
+    await this.connectAdmitted(record)
     const driver = this.externalDriver(record)
     if (!driver) throw Error('此执行引擎尚不支持编辑消息')
     const intent = record.nativeSessionId
@@ -2813,7 +2912,7 @@ export class HarnessService {
     })
   }
 
-  /** Read active editable inputs without stopping, forking, or changing history. */
+  /** Read editable inputs and verify stopped replacements without forking or sending prompts. */
   async messageEditState(input: { sessionId: string }): Promise<MessageEditState> {
     await this.ready
     const session = this.ctx.sessions.get(
@@ -2830,6 +2929,14 @@ export class HarnessService {
         pending: false,
         head: -1,
         choices: [],
+        ...(target?.record && this.externalDriver(target.record)
+          ? {
+              pending:
+                this.externalMessageEdits.pending(input.sessionId) ||
+                this.messageEdits.pending(input.sessionId),
+              unavailable: { reason: 'history-busy' as const, retryable: true },
+            }
+          : {}),
       }
     if (target?.record) await this.finalizing.get(target.record.id)
     const agent = this.ctx.agents.get(session.id)
@@ -2847,6 +2954,13 @@ export class HarnessService {
       if (busy || this.messageEdits.pending(session.id))
         return { ...base, supported: true, choices: [] }
       const intent = this.externalMessageEdits.intent(session.id)
+      const lastTurn = record.turns.at(-1)
+      const terminalEdit = Boolean(
+        ['opencode', 'kilo'].includes(record.harnessRef) &&
+          intent?.phase === 'settled' &&
+          lastTurn?.state === 'failed' &&
+          lastTurn.operationId.startsWith('message-edit:'),
+      )
       const preparedChoice = externalPreparedChoice(
         record,
         intent,
@@ -2868,13 +2982,44 @@ export class HarnessService {
         session.snapshotEvents(),
         new Set<number>(session.surface.nodes),
       )
-      if (terminalChoice)
+      if (terminalChoice && !terminalEdit)
         return { ...base, pending: false, supported: true, choices: [terminalChoice] }
       if (pending && !['admitting', 'prompting'].includes(intent?.phase ?? ''))
-        return { ...base, supported: true, choices: [] }
+        return {
+          ...base,
+          supported: true,
+          choices: [],
+          unavailable: { reason: 'mapping-unavailable', retryable: false },
+        }
+      // A settled journal records prompt completion, not a fresh match to vendor history.
+      if (!pending && !terminalEdit) {
+        const events = session.snapshotEvents()
+        const activeSeqs = new Set<number>(session.surface.nodes)
+        const choices = externalRecordedChoices(record, events, activeSeqs).map(
+          ({ seq, text }) => ({
+            seq,
+            text,
+          }),
+        )
+        const first = externalFreshFirstChoice(record, events, activeSeqs)
+        if (first) choices.unshift(first)
+        return {
+          ...base,
+          supported: true,
+          choices,
+          ...(choices.length || !record.turns.length
+            ? {}
+            : { unavailable: { reason: 'mapping-unavailable' as const, retryable: false } }),
+        }
+      }
       this.externalEditing.add(record.id)
+      let phase = 'history-read'
       try {
-        const history = await this.externalRecoveryHistory(record, intent)
+        if (terminalEdit) this.externalHistories.delete(record.id)
+        const history = terminalEdit
+          ? await this.externalHistory(record)
+          : await this.externalRecoveryHistory(record, intent)
+        phase = 'recovery-check'
         const recovery = externalEditRecovery(
           record,
           history,
@@ -2891,10 +3036,29 @@ export class HarnessService {
         )
           return { ...base, busy: true, supported: true, choices: [] }
         if (recovery?.kind === 'settled') {
-          await this.externalMessageEdits.settle(session.id, intent!.requestId)
+          phase = 'journal-settle'
+          if (intent?.phase === 'prompting')
+            await this.externalMessageEdits.settle(session.id, intent.requestId)
           pending = false
         }
-        if (pending && recovery?.kind !== 'unsent') return { ...base, supported: true, choices: [] }
+        if (terminalEdit && recovery?.kind !== 'settled') {
+          await this.externalMessageEdits.retainUncertainty(session.id, intent!.requestId)
+          return {
+            ...base,
+            pending: true,
+            supported: true,
+            choices: [],
+            unavailable: { reason: 'mapping-unavailable', retryable: false },
+          }
+        }
+        if (pending && recovery?.kind !== 'unsent')
+          return {
+            ...base,
+            supported: true,
+            choices: [],
+            unavailable: { reason: 'mapping-unavailable', retryable: false },
+          }
+        phase = 'choices'
         const choices = externalEditChoices(
           record,
           history,
@@ -2902,14 +3066,54 @@ export class HarnessService {
           new Set<number>(session.surface.nodes),
         ).map(({ seq, text }) => ({ seq, text }))
         if (recovery?.kind === 'unsent') choices.push(recovery.choice)
+        if (!pending) {
+          const first = externalFreshFirstChoice(
+            record,
+            session.snapshotEvents(),
+            new Set<number>(session.surface.nodes),
+          )
+          if (first) choices.unshift(first)
+        }
         return {
           ...base,
           pending: false,
-          supported: choices.length > 0,
+          supported: true,
           choices: choices.map(({ seq, text }) => ({ seq, text })),
+          ...(choices.length
+            ? {}
+            : { unavailable: { reason: 'mapping-unavailable' as const, retryable: false } }),
         }
       } catch (error) {
-        return { ...base, supported: false, choices: [] }
+        if (terminalEdit) {
+          await this.externalMessageEdits.retainUncertainty(session.id, intent!.requestId)
+          pending = true
+        }
+        const code =
+          error instanceof MinimaxEditError || error instanceof ExternalMessageEditError
+            ? error.code
+            : error instanceof HarnessConfigurationError
+              ? 'configuration'
+              : error instanceof HarnessRequestError
+                ? 'acp-request'
+                : error instanceof HarnessTransportError
+                  ? 'transport'
+                  : 'unclassified'
+        this.ctx.logger?.warn(
+          `外部编辑历史暂未确认，未修改历史或发送消息（phase=${phase} code=${code}）`,
+        )
+        return {
+          ...base,
+          pending,
+          supported: true,
+          choices: [],
+          unavailable: {
+            reason:
+              error instanceof ExternalMessageEditError && error.code === 'busy'
+                ? 'history-busy'
+                : 'history-unavailable',
+            retryable: !terminalEdit,
+          },
+        }
       } finally {
         this.externalEditing.delete(record.id)
       }
@@ -2947,6 +3151,8 @@ export class HarnessService {
         )
       const driver = this.externalDriver(record)
       if (!driver || this.externalEditing.has(record.id)) throw Error('此会话暂时不能编辑')
+      if (!state.choices.some((choice) => choice.seq === input.targetSeq))
+        throw Error('消息已变化，请重新选择')
       if (
         input.prompt.mode !== 'queue' ||
         input.prompt.content.some((part) => part.type !== 'text') ||
@@ -2969,14 +3175,16 @@ export class HarnessService {
             agent.session.snapshotEvents(),
             new Set<number>(agent.session.surface.nodes),
           )
-          const terminalChoice = externalTerminalFailureChoice(
-            record,
-            priorIntent,
-            agent.session.snapshotEvents(),
-            new Set<number>(agent.session.surface.nodes),
-          )
+          const fresh =
+            !preparedChoice && !emptyChoice && (!priorIntent || priorIntent.phase === 'settled')
+              ? externalFreshFirstChoice(
+                  record,
+                  agent.session.snapshotEvents(),
+                  new Set<number>(agent.session.surface.nodes),
+                )?.seq === input.targetSeq
+              : false
           const history =
-            emptyChoice || terminalChoice || preparedChoice
+            emptyChoice || preparedChoice || fresh
               ? undefined
               : await this.externalRecoveryHistory(record, priorIntent)
           const recovery = history
@@ -2994,7 +3202,6 @@ export class HarnessService {
           const unsent =
             empty ||
             prepared ||
-            terminalChoice?.seq === input.targetSeq ||
             (recovery?.kind === 'unsent' && recovery.choice.seq === input.targetSeq)
           const choice = history
             ? externalEditChoices(
@@ -3009,44 +3216,59 @@ export class HarnessService {
           // user identity are re-read below; a changed Session cursor alone does not
           // mean that the selected user message changed. Native DSH editing keeps the
           // strict cursor check in MessageEditTransactions.
-          if (!choice && !unsent) throw Error('消息已变化，请重新选择')
+          if (!choice && !unsent && !fresh) throw Error('消息已变化，请重新选择')
           // Cached choices and terminal failures do not establish a live connection.
           // Restore it before changing the fork binding or advancing its durable send guard.
-          if (unsent && !empty) await this.connectAdmitted(record)
+          if (!fresh && !empty) await this.connectAdmitted(record)
           signal.throwIfAborted()
-          const result = unsent
-            ? await this.externalMessageEdits.reuseUnsent(
-                { record, signal, targetSeq: input.targetSeq },
-                priorIntent!.requestId,
-                input.prompt.requestId,
-                empty
-                  ? async () => {
-                      const allocation = { ...record, acpSessionId: '', turns: [] }
-                      await this.openConnection(allocation, true)
-                      return { sessionId: allocation.acpSessionId, retained: [], ephemeral: true }
-                    }
-                  : undefined,
+          const allocateEmpty = async () => {
+            await this.disconnectForEdit(record)
+            signal.throwIfAborted()
+            const allocation = { ...record, acpSessionId: '', turns: [] }
+            await this.openConnection(allocation, true)
+            return { sessionId: allocation.acpSessionId, retained: [], ephemeral: true }
+          }
+          const result = fresh
+            ? await this.externalMessageEdits.prepareFirst(
+                { record, signal },
+                { requestId: input.prompt.requestId, targetSeq: input.targetSeq },
+                allocateEmpty,
               )
-            : await this.externalMessageEdits.prepare(
-                this.externalContext(record, signal),
-                driver,
-                {
-                  requestId: input.prompt.requestId,
-                  targetId: choice!.boundaryId,
-                  targetSeq: input.targetSeq,
-                  expected: history!,
-                },
-              )
-          const next = unsent
-            ? {
-                ...record,
-                acpSessionId: result.sessionId,
-                turns: prepared ? record.turns : record.turns.slice(0, -1),
-              }
-            : externalEditedRecord(record, history!, choice!.boundaryId, result)
+            : unsent
+              ? await this.externalMessageEdits.reuseUnsent(
+                  { record, signal, targetSeq: input.targetSeq },
+                  priorIntent!.requestId,
+                  input.prompt.requestId,
+                  empty ? allocateEmpty : undefined,
+                )
+              : await this.externalMessageEdits.prepare(
+                  this.externalContext(record, signal),
+                  driver,
+                  {
+                    requestId: input.prompt.requestId,
+                    targetId: choice!.boundaryId,
+                    targetSeq: input.targetSeq,
+                    expected: history!,
+                  },
+                )
+          const next = fresh
+            ? { ...record, acpSessionId: result.sessionId, turns: [] }
+            : unsent
+              ? {
+                  ...record,
+                  acpSessionId: result.sessionId,
+                  turns: prepared ? record.turns : record.turns.slice(0, -1),
+                }
+              : externalEditedRecord(record, history!, choice!.boundaryId, result)
           Object.assign(record, next)
           await this.save(record)
-          const current = this.active.get(record.id)
+          let current = this.active.get(record.id)
+          const reconnect = !current?.acp || current.acp.closed
+          if (reconnect) {
+            await this.connectAdmitted(record)
+            signal.throwIfAborted()
+            current = this.active.get(record.id)
+          }
           if (!current?.acp || current.acp.closed) throw Error('编辑后的连接已断开')
           current.provisional = false
           delete current.editHistory
@@ -3056,10 +3278,11 @@ export class HarnessService {
           // disk yet. Its in-memory session identity must follow the persisted binding.
           current.sessionInfo = { ...current.sessionInfo, sessionId: result.sessionId }
           if (
-            needsPreparedLoad ||
-            (history &&
-              result.sessionId !== history.sessionId &&
-              (!result.ephemeral || record.harnessRef === 'claude'))
+            !reconnect &&
+            (needsPreparedLoad ||
+              (history &&
+                result.sessionId !== history.sessionId &&
+                (!result.ephemeral || record.harnessRef === 'claude')))
           ) {
             current.sessionInfo = object(
               await current.acp.request('session/load', {
