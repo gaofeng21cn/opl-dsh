@@ -11,6 +11,8 @@ import {
 } from '../../src/execution/host/message-edit-minimax.ts'
 import type { HarnessAdapter } from '../../src/execution/host/adapters/types.ts'
 import type { HarnessSession } from '../../src/execution/contracts/sessions.ts'
+import type { ExternalEditHistory } from '../../src/execution/host/message-edit-driver.ts'
+import { externalEditRecordFingerprint } from '../../src/execution/host/message-edit-external.ts'
 import { testPeerConnection } from '../test-peer.ts'
 
 interface FixtureAcp {
@@ -76,6 +78,7 @@ interface FixtureActive {
 interface Owner {
   openConnection(record: HarnessSession): Promise<void>
   disconnectForEdit(record: HarnessSession, expected: FixtureActive): Promise<void>
+  externalHistory(record: HarnessSession): Promise<ExternalEditHistory>
   active: Map<string, FixtureActive>
 }
 
@@ -226,5 +229,68 @@ describe('message edit history diagnostics', () => {
     expect(warn).toHaveBeenCalledTimes(1)
     expect(warn.mock.calls[0]![0]).toContain(`phase=history-read code=${code}`)
     expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE_PROVIDER')
+  })
+})
+
+function historyOwner() {
+  const session = record()
+  session.turns = [
+    {
+      operationId: 'cold-edit-input',
+      fingerprint: 'original-input',
+      prompt: 'original input',
+      text: '',
+      tools: [],
+      state: 'failed',
+      native: { userMessageId: 'exact-input', officialSeq: 1 },
+    },
+  ]
+  const history: ExternalEditHistory = {
+    sessionId: session.acpSessionId,
+    token: 'current-history',
+    boundaries: [{ id: 'exact-input' }],
+  }
+  const cache = new Map<string, { fingerprint: string; history: ExternalEditHistory }>()
+  const connect = vi.fn(async () => {
+    session.turns[0]!.contextUsage = { used: 1234, size: 512000 }
+  })
+  const read = vi.fn(async () => history)
+  const owner = Object.assign(Object.create(HarnessService.prototype) as HarnessService, {
+    externalHistories: cache,
+    active: new Map(),
+    connectAdmitted: connect,
+    externalDriver: () => ({ read }),
+    externalMessageEdits: { intent: () => undefined },
+    externalContext: () => ({ record: session, signal: new AbortController().signal }),
+  }) as unknown as Owner
+  return { owner, session, history, cache, read, connect }
+}
+
+describe('edit history after cold load', () => {
+  it('accepts unchanged history when loading fills missing context usage', async () => {
+    const f = historyOwner()
+    await expect(f.owner.externalHistory(f.session)).resolves.toEqual(f.history)
+    expect(f.session.turns[0]!.contextUsage).toEqual({ used: 1234, size: 512000 })
+    expect(f.cache.get(f.session.id)?.fingerprint).toBe(externalEditRecordFingerprint(f.session))
+  })
+
+  it('checks the cached binding after the load observations have settled', async () => {
+    const f = historyOwner()
+    f.cache.set(f.session.id, {
+      fingerprint: externalEditRecordFingerprint(f.session),
+      history: { ...f.history, token: 'cached-before-load' },
+    })
+    await expect(f.owner.externalHistory(f.session)).resolves.toEqual(f.history)
+    expect(f.read).toHaveBeenCalledTimes(1)
+  })
+
+  it('still rejects a message identity change during history reading', async () => {
+    const f = historyOwner()
+    f.read.mockImplementationOnce(async () => {
+      f.session.turns[0]!.native!.userMessageId = 'different-input'
+      return f.history
+    })
+    await expect(f.owner.externalHistory(f.session)).rejects.toThrow('编辑历史已变化')
+    expect(f.cache.has(f.session.id)).toBe(false)
   })
 })

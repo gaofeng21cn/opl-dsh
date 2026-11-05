@@ -2853,13 +2853,10 @@ export class HarnessService {
   }
 
   private async externalHistory(record: HarnessSession): Promise<ExternalEditHistory> {
+    await this.connectAdmitted(record)
     const fingerprint = externalEditRecordFingerprint(record)
     const cached = this.externalHistories.get(record.id)
-    if (cached?.fingerprint === fingerprint) {
-      await this.connectAdmitted(record)
-      return cached.history
-    }
-    await this.connectAdmitted(record)
+    if (cached?.fingerprint === fingerprint) return cached.history
     const driver = this.externalDriver(record)
     if (!driver) throw Error('此执行引擎尚不支持编辑消息')
     const intent = record.nativeSessionId
