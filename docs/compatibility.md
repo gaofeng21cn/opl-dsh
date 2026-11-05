@@ -16,6 +16,8 @@ node scripts/qualify-official-runtime.mjs --app "$HOME/Applications/DeepSeek Har
 
 Windows 的 `--app` 指向包含 `DeepSeek Harness.exe` 的目录。runner 校验官方签名与版本，通过官方插件管理接口向新建的临时 `opl-dsh-accept-*` profile 安装增强包，并指定独立 Electron user-data 目录。它只关闭自己启动的进程树；Suite、Skill 与安装回执均落在该临时根目录；不改用户 Skill 或快捷方式、不停止已有用户桌面。旧数据迁移固定读取临时空目录，避免导入真实账号和会话。
 
+Windows 安装器为版本比较与增强安装脚本设置 `ELECTRON_RUN_AS_NODE`，运行官方安装程序前清除此标记。官方程序安装失败时保留实际退出码，不继续安装增强层。
+
 隔离根目录由脚本使用 Node 的真实 `os.tmpdir()` 创建。macOS 的 `/tmp` 可能是指向 `/private/var/...` 的符号链接；不要手写 `/tmp/opl-dsh-accept-*`，否则会被隔离检查拒绝。
 
 `--evidence <文件>` 指定证据 JSON，默认在 `dist/qualification-<平台>.json`。正常清理会删除临时 profile；排障时可用 `--keep-profile` 保留。保留目录含本次本地测试的控制令牌，不应上传整个目录。
