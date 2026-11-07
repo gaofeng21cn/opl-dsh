@@ -151,6 +151,9 @@ async function fixture(t, { sourcePatch, targetPatch, manifestPatch } = {}) {
     release,
     suiteVersion: '0.2.55',
     officialVersion,
+    // Keep the release-compatibility fixture stable on Linux CI as well as Windows.
+    platform: 'win32',
+    arch: 'x64',
     suiteSha256: source.suiteSha256,
     enhancementSha256: source.sha256,
     skillDir: join(root, 'Codex home/skills/opl-dsh-official'),
