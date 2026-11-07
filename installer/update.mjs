@@ -578,7 +578,13 @@ async function confirmInstalled(root, application, expected, original) {
 export async function refreshEnhancements(
   root,
   application,
-  { transaction, readVersion = readOfficialVersion, install = runInstaller } = {},
+  {
+    transaction,
+    readVersion = readOfficialVersion,
+    install = runInstaller,
+    platform = process.platform,
+    arch = process.arch,
+  } = {},
 ) {
   let unlock
   let rollback
@@ -608,10 +614,8 @@ export async function refreshEnhancements(
       !newer(plan.version, current.suiteVersion) ||
       readVersion(application) !== plan.officialVersion ||
       current.officialVersion !== plan.officialVersion ||
-      releaseForInstallation(
-        { ...current, platform: process.platform, arch: process.arch },
-        plan.metadata,
-      ).compatibility !== 'enhancement'
+      releaseForInstallation({ ...current, platform, arch }, plan.metadata).compatibility !==
+        'enhancement'
     )
       throw Error('待安装更新与官方桌面不兼容')
     await profilesStopped(current)

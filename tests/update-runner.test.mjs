@@ -773,6 +773,8 @@ test('the existing updater joins only the runner install stage and excludes prep
     transaction: lease,
     readVersion: () => officialVersion,
     install,
+    platform: 'win32',
+    arch: 'x64',
   })
   assert.equal(installs, 1)
   assert.equal((await json(join(value.root, 'installation.json'))).suiteVersion, '0.2.56')
