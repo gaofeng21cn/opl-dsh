@@ -575,7 +575,11 @@ async function confirmInstalled(root, application, expected, original) {
 }
 
 /** Apply only a prepared plan, offline, before any profile starts; preserve failures for retry. */
-export async function refreshEnhancements(root, application, { transaction } = {}) {
+export async function refreshEnhancements(
+  root,
+  application,
+  { transaction, readVersion = readOfficialVersion, install = runInstaller } = {},
+) {
   let unlock
   let rollback
   try {
@@ -602,7 +606,7 @@ export async function refreshEnhancements(root, application, { transaction } = {
       throw Error('待安装更新与当前安装不匹配')
     if (
       !newer(plan.version, current.suiteVersion) ||
-      readOfficialVersion(application) !== plan.officialVersion ||
+      readVersion(application) !== plan.officialVersion ||
       current.officialVersion !== plan.officialVersion ||
       releaseForInstallation(
         { ...current, platform: process.platform, arch: process.arch },
@@ -653,19 +657,19 @@ export async function refreshEnhancements(root, application, { transaction } = {
     await profilesStopped(current)
     if (
       digest((await installed(root, application)).bytes) !== plan.installationSha256 ||
-      readOfficialVersion(application) !== plan.officialVersion
+      readVersion(application) !== plan.officialVersion
     )
       throw Error('启动安装前原安装已改变')
     try {
       if (transaction) await assertUpdateTransaction(root, transaction)
-      runInstaller(payload, application, root, current)
+      install(payload, application, root, current)
       await confirmInstalled(root, application, artifact, current)
     } catch (error) {
       rollback = 'failed'
       try {
         if (transaction) await assertUpdateTransaction(root, transaction)
         await profilesStopped(current)
-        runInstaller(current.release, application, root, current, current.localCandidate === true)
+        install(current.release, application, root, current, current.localCandidate === true)
         await confirmInstalled(root, application, previous.artifact, current)
         await writeFile(join(root, 'installation.json'), installationBytes, { mode: 0o600 })
         if (oldProfileReceipt !== null)

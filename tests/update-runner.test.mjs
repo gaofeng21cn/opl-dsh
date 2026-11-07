@@ -746,12 +746,9 @@ test('the existing updater joins only the runner install stage and excludes prep
   assert.equal(await readFile(join(value.root, 'enhancement-pending.json'), 'utf8'), pendingBefore)
   await transitionUpdateTransaction(value.root, lease, 'installing')
   let installs = 0
-  const originalSpawn = childProcess.spawnSync
-  const mocked = t.mock.method(childProcess, 'spawnSync', (command, args, options) => {
-    if (!String(command).startsWith(value.application)) return originalSpawn(command, args, options)
-    if (args[0] === '-e') return { status: 0, stdout: officialVersion, stderr: '' }
-    assert.ok(args.includes('--update-if-stopped'))
-    assert.ok(args.includes('--no-launch'))
+  const install = (payload, _application, _root, current, candidate = false) => {
+    assert.equal(payload, join(value.stage, 'payload'))
+    assert.equal(candidate, false)
     installs++
     const artifact = JSON.parse(readFileSync(join(value.stage, 'payload/artifact.json'), 'utf8'))
     const release = join(value.root, 'releases', artifact.suiteSha256)
@@ -768,13 +765,12 @@ test('the existing updater joins only the runner install stage and excludes prep
       }) + '\n',
     )
     return { status: 0, stdout: '', stderr: '' }
+  }
+  await refreshEnhancements(value.root, value.application, {
+    transaction: lease,
+    readVersion: () => officialVersion,
+    install,
   })
-  syncBuiltinESMExports()
-  t.after(() => {
-    mocked.mock.restore()
-    syncBuiltinESMExports()
-  })
-  await refreshEnhancements(value.root, value.application, { transaction: lease })
   assert.equal(installs, 1)
   assert.equal((await json(join(value.root, 'installation.json'))).suiteVersion, '0.2.56')
   assert.equal((await json(join(value.root, 'enhancement-update.json'))).state, 'updated')
