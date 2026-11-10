@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, lstat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { migrateOfmLink } from '../installer/ofm-upgrade.cjs'
+import { migrateOfmLink, recoverOfmUpgrade } from '../installer/ofm-upgrade.cjs'
 const name = 'dsh-our-free-model'
 const dep = `link:ofm/${name}`
 async function fixture(run) {
@@ -166,7 +166,6 @@ test('snapshot failure preserves the original error and restores the original de
   }))
 test('rollback removes the failed link before restoring file bytes and restores bundle order', () =>
   fixture(async ({ dir, pkg, install }) => {
-    const { cp } = await import('node:fs/promises')
     const calls = []
     const bundles = []
     let failed = false
@@ -178,7 +177,11 @@ test('rollback removes the failed link before restoring file bytes and restores 
         const manifest = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'))
         manifest.dependencies[name] = originalDependency
         await writeFile(join(dir, 'package.json'), JSON.stringify(manifest))
-        await cp(join(dir, 'ofm', name), pkg, { recursive: true })
+        // The real package manager re-extracts vendor bytes, not the updated copy.
+        await mkdir(pkg, { recursive: true })
+        await writeFile(join(pkg, 'package.json'), JSON.stringify({ name, version: '2.8.3' }))
+        for (const file of ['index.js', 'client.js', 'cordis.patch.yml'])
+          await writeFile(join(pkg, file), `vendor ${file}`)
         return
       }
       await install(args)
@@ -202,4 +205,47 @@ test('rollback removes the failed link before restoring file bytes and restores 
     assert.deepEqual(bundles, [[name]])
     assert.equal((await lstat(pkg)).isSymbolicLink(), false)
     assert.equal(await readFile(join(pkg, 'client.js'), 'utf8'), 'official client.js')
+    assert.equal(JSON.parse(await readFile(join(pkg, 'package.json'), 'utf8')).version, '2.9.0')
+  }))
+
+test('same-version rollback restores changed bytes and a later recovery retains the complete package', () =>
+  fixture(async ({ dir, pkg, install }) => {
+    const originalDependency = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'))
+      .dependencies[name]
+    await writeFile(join(pkg, 'package.json'), JSON.stringify({ name, version: '2.8.3' }))
+    await writeFile(join(pkg, 'new-resource.txt'), 'user retained resource')
+    let recoveryAvailable = false
+    const manager = async (args) => {
+      if (args[0] === 'add' && args[1] === `${name}@${originalDependency}`) {
+        if (!recoveryAvailable) throw Error('manager unavailable during rollback')
+        const manifest = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'))
+        manifest.dependencies[name] = originalDependency
+        await writeFile(join(dir, 'package.json'), JSON.stringify(manifest))
+        await mkdir(pkg, { recursive: true })
+        await writeFile(join(pkg, 'package.json'), JSON.stringify({ name, version: '2.8.3' }))
+        await writeFile(join(pkg, 'client.js'), 'original vendor bytes')
+        return
+      }
+      await install(args)
+      if (args[0] === 'add') throw Error('post-link failure')
+    }
+    await assert.rejects(
+      migrateOfmLink({ dir, install: manager, restoreBundles: async () => {} }),
+      (error) => error.recovery === 'backup-retained',
+    )
+    assert.equal(await readFile(join(dir, 'ofm', name, 'client.js'), 'utf8'), 'official client.js')
+    recoveryAvailable = true
+    const result = await recoverOfmUpgrade({
+      dir,
+      install: manager,
+      restoreBundles: async () => {},
+    })
+    assert.equal(result.phase, 'recovered')
+    assert.equal(await readFile(join(pkg, 'client.js'), 'utf8'), 'official client.js')
+    assert.equal(await readFile(join(pkg, 'new-resource.txt'), 'utf8'), 'user retained resource')
+    await assert.rejects(lstat(join(dir, 'ofm', name)), { code: 'ENOENT' })
+    assert.equal(
+      (await migrateOfmLink({ dir, install, restoreBundles: async () => {} })).phase,
+      'succeeded',
+    )
   }))

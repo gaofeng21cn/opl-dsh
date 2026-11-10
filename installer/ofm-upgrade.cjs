@@ -271,11 +271,27 @@ async function restoreSnapshot(dir, snapshot, install, before) {
         ? ['remove', PACKAGE_NAME]
         : ['add', `${PACKAGE_NAME}@${before.dependency}`]
     await install(args)
+    if (before.preservedPackageBefore && (await inspectOfm(dir)).dependency === before.dependency) {
+      const preserved = join(dir, 'ofm', PACKAGE_NAME)
+      await regularDirectory(preserved)
+      const metadata = await readJson(join(preserved, 'package.json'))
+      if (metadata.name !== PACKAGE_NAME || metadata.version !== before.installedVersion)
+        throw transactionError('invalid-ofm-recovery', 'OFM 完整恢复副本标识不匹配')
+      const staged = join(dir, `.ofm-restore-${randomUUID()}`)
+      try {
+        await cp(preserved, staged, { recursive: true, errorOnExist: true, force: false })
+        const installed = join(dir, 'node_modules', PACKAGE_NAME)
+        await rm(installed, { recursive: true, force: true })
+        await rename(staged, installed)
+      } finally {
+        await rm(staged, { recursive: true, force: true })
+      }
+    }
     const after = await inspectOfm(dir)
     managerRestored =
       after.dependency === before.dependency &&
       after.installedVersion === before.installedVersion &&
-      (!before.managed || after.managed)
+      (before.preservedPackageBefore || !before.managed || after.managed)
   } catch {
     // The snapshot remains available for a later recovery call.
   }
@@ -454,6 +470,7 @@ async function recoverOfmUpgrade({ dir, install, restoreBundles }) {
       installedVersion: state.versionBefore === null ? undefined : state.versionBefore,
       managed: state.managedBefore === true,
       resetInstalled: state.resetInstalled === true,
+      preservedPackageBefore: state.preservedPackageBefore === true,
     })
     if (state.bundlesBefore !== undefined) {
       if (!restoreBundles) throw transactionError('missing-ofm-bundle-restorer')
@@ -465,7 +482,11 @@ async function recoverOfmUpgrade({ dir, install, restoreBundles }) {
       recoveredAt: new Date().toISOString(),
     }
     await saveState(root, next)
-    if (restored) await rm(snapshot.root, { recursive: true, force: true })
+    if (restored) {
+      await rm(snapshot.root, { recursive: true, force: true })
+      if (state.preservedPackageBefore)
+        await rm(join(root, 'ofm', PACKAGE_NAME), { recursive: true, force: true })
+    }
     return next
   } finally {
     await unlock()
@@ -573,6 +594,7 @@ async function migrateOfmLink({ dir, install, plugin, fetchImpl, restoreBundles 
       phase: 'installing',
       bundlesBefore,
       resetInstalled: true,
+      preservedPackageBefore: before.installed,
       dependencyBefore: before.dependency ?? null,
       versionBefore: before.installedVersion ?? null,
       managedBefore: before.managed,
@@ -603,6 +625,7 @@ async function migrateOfmLink({ dir, install, plugin, fetchImpl, restoreBundles 
       let restored = await restoreSnapshot(root, snapshot ?? {}, install, {
         ...before,
         resetInstalled: true,
+        preservedPackageBefore: before.installed,
       })
       if (bundlesBefore !== undefined && restoreBundles) {
         try {
@@ -620,6 +643,7 @@ async function migrateOfmLink({ dir, install, plugin, fetchImpl, restoreBundles 
         recoveryPath: snapshot?.root,
         bundlesBefore,
         resetInstalled: true,
+        preservedPackageBefore: before.installed,
       })
       error.recovery = restored ? 'restored-by-pnpm' : 'backup-retained'
       if (restored) await rm(target, { recursive: true, force: true })

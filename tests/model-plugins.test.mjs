@@ -226,6 +226,38 @@ test('OPL package installation delegates without rewriting package-manager-owned
   })
 })
 
+test('OPL reinstall preserves legacy upstream updates before pnpm re-extracts the vendor archive', async () => {
+  await profile(
+    { dependencies: { 'dsh-our-free-model': 'file:vendor/dsh-our-free-model-2.8.0.tgz' } },
+    async (dir) => {
+      const installed = join(dir, 'node_modules/dsh-our-free-model')
+      await mkdir(installed, { recursive: true })
+      await writeFile(join(installed, 'package.json'), '{"version":"2.8.3"}')
+      await writeFile(join(installed, 'index.js'), 'upstream updated bytes')
+      await writeFile(join(installed, 'new-resource.txt'), 'upstream added resource')
+      await preserveModelPlugins({
+        dir,
+        install: async () => {
+          // pnpm add of another dependency re-extracts the retained file: archive.
+          await rm(installed, { recursive: true })
+          await mkdir(installed, { recursive: true })
+          await writeFile(join(installed, 'package.json'), '{"version":"2.8.0"}')
+          await writeFile(join(installed, 'index.js'), 'original archive bytes')
+        },
+      })
+      assert.equal(
+        JSON.parse(await readFile(join(installed, 'package.json'), 'utf8')).version,
+        '2.8.3',
+      )
+      assert.equal(await readFile(join(installed, 'index.js'), 'utf8'), 'upstream updated bytes')
+      assert.equal(
+        await readFile(join(installed, 'new-resource.txt'), 'utf8'),
+        'upstream added resource',
+      )
+    },
+  )
+})
+
 async function ownedOfm(
   dir,
   { version = '2.8.0', sourceVersion = version, enabled = true, source, archive = true } = {},

@@ -2,9 +2,12 @@
 const {
   existsSync,
   readFileSync,
+  mkdtempSync,
   mkdirSync,
   writeFileSync,
   renameSync,
+  cpSync,
+  realpathSync,
   rmSync,
 } = require('node:fs')
 const { join } = require('node:path')
@@ -88,9 +91,32 @@ async function installModelPlugins({
   }
 }
 
-/** Reconcile OPL dependencies without replacing OFM's profile-local link target. */
+/** Keep legacy installed bytes until OFM has migrated to its independent link. */
 async function preserveModelPlugins({ dir, install }) {
-  return install()
+  const profile = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+  const retained = MODEL_PLUGINS.filter(
+    (plugin) =>
+      !profile.dependencies?.[plugin.name]?.startsWith('link:') &&
+      existsSync(join(dir, 'node_modules', plugin.name, 'package.json')),
+  )
+  if (!retained.length) return install()
+  const backup = mkdtempSync(join(dir, '.opl-model-plugins-'))
+  for (const plugin of retained)
+    cpSync(realpathSync(join(dir, 'node_modules', plugin.name)), join(backup, plugin.name), {
+      recursive: true,
+    })
+  try {
+    return await install()
+  } finally {
+    // Adding the suite can re-extract a legacy vendor archive before migration.
+    // Restore the complete installed version, including upstream-added files.
+    for (const plugin of retained) {
+      const installed = join(dir, 'node_modules', plugin.name)
+      rmSync(installed, { recursive: true, force: true })
+      cpSync(join(backup, plugin.name), installed, { recursive: true })
+    }
+    rmSync(backup, { recursive: true })
+  }
 }
 
 module.exports = { MODEL_PLUGINS, prepareModelPlugin, installModelPlugins, preserveModelPlugins }
