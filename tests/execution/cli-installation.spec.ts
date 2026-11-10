@@ -119,61 +119,67 @@ it('verifies a fresh install in the actual npm global prefix with the same npm s
   ])
 })
 
-it('finds Antigravity in the Windows user-local fallback when LOCALAPPDATA is absent', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'opl-antigravity-path-'))
-  roots.push(root)
-  const bin = join(root, 'AppData', 'Local', 'agy', 'bin')
-  await mkdir(bin, { recursive: true })
-  await writeFile(join(bin, 'agy.cmd'), '@echo off\r\necho 1.5.3\r\n')
-  vi.stubEnv('PATH', '')
-  vi.stubEnv('HOME', root)
-  vi.stubEnv('USERPROFILE', root)
-  vi.stubEnv('APPDATA', join(root, 'AppData', 'Roaming'))
-  vi.stubEnv('LOCALAPPDATA', '')
+it.runIf(process.platform === 'win32')(
+  'finds Antigravity in the Windows user-local fallback when LOCALAPPDATA is absent',
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opl-antigravity-path-'))
+    roots.push(root)
+    const bin = join(root, 'AppData', 'Local', 'agy', 'bin')
+    await mkdir(bin, { recursive: true })
+    await writeFile(join(bin, 'agy.cmd'), '@echo off\r\necho 1.5.3\r\n')
+    vi.stubEnv('PATH', '')
+    vi.stubEnv('HOME', root)
+    vi.stubEnv('USERPROFILE', root)
+    vi.stubEnv('APPDATA', join(root, 'AppData', 'Roaming'))
+    vi.stubEnv('LOCALAPPDATA', '')
 
-  const result = await inspectHarness(
-    { id: 'antigravity', name: 'Antigravity CLI', kind: 'acp', command: 'agy' },
-    root,
-    undefined,
-    { fresh: true },
-  )
-  expect(result).toMatchObject({
-    path: join(bin, 'agy.cmd'),
-    detectedBy: 'known-path',
-    installed: true,
-    runnable: true,
-    verification: 'verified',
-    version: '1.5.3',
-  })
-})
+    const result = await inspectHarness(
+      { id: 'antigravity', name: 'Antigravity CLI', kind: 'acp', command: 'agy' },
+      root,
+      undefined,
+      { fresh: true },
+    )
+    expect(result).toMatchObject({
+      path: join(bin, 'agy.cmd'),
+      detectedBy: 'known-path',
+      installed: true,
+      runnable: true,
+      verification: 'verified',
+      version: '1.5.3',
+    })
+  },
+)
 
-it('keeps the user-local Antigravity fallback when LOCALAPPDATA points elsewhere', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'opl-antigravity-wrong-localappdata-'))
-  roots.push(root)
-  const bin = join(root, 'AppData', 'Local', 'agy', 'bin')
-  await mkdir(bin, { recursive: true })
-  await writeFile(join(bin, 'agy.cmd'), '@echo off\r\necho 1.5.3\r\n')
-  vi.stubEnv('PATH', '')
-  vi.stubEnv('HOME', root)
-  vi.stubEnv('USERPROFILE', root)
-  vi.stubEnv('APPDATA', join(root, 'AppData', 'Roaming'))
-  vi.stubEnv('LOCALAPPDATA', join(root, 'wrong-localappdata'))
+it.runIf(process.platform === 'win32')(
+  'keeps the user-local Antigravity fallback when LOCALAPPDATA points elsewhere',
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opl-antigravity-wrong-localappdata-'))
+    roots.push(root)
+    const bin = join(root, 'AppData', 'Local', 'agy', 'bin')
+    await mkdir(bin, { recursive: true })
+    await writeFile(join(bin, 'agy.cmd'), '@echo off\r\necho 1.5.3\r\n')
+    vi.stubEnv('PATH', '')
+    vi.stubEnv('HOME', root)
+    vi.stubEnv('USERPROFILE', root)
+    vi.stubEnv('APPDATA', join(root, 'AppData', 'Roaming'))
+    vi.stubEnv('LOCALAPPDATA', join(root, 'wrong-localappdata'))
 
-  const result = await inspectHarness(
-    { id: 'antigravity', name: 'Antigravity CLI', kind: 'acp', command: 'agy' },
-    root,
-    undefined,
-    { fresh: true },
-  )
-  expect(result).toMatchObject({
-    path: join(bin, 'agy.cmd'),
-    detectedBy: 'known-path',
-    installed: true,
-    runnable: true,
-    verification: 'verified',
-    version: '1.5.3',
-  })
-})
+    const result = await inspectHarness(
+      { id: 'antigravity', name: 'Antigravity CLI', kind: 'acp', command: 'agy' },
+      root,
+      undefined,
+      { fresh: true },
+    )
+    expect(result).toMatchObject({
+      path: join(bin, 'agy.cmd'),
+      detectedBy: 'known-path',
+      installed: true,
+      runnable: true,
+      verification: 'verified',
+      version: '1.5.3',
+    })
+  },
+)
 
 it('reports a newly installed official candidate without replacing a stale explicit path', async () => {
   const fixture = await fakeNpm()
