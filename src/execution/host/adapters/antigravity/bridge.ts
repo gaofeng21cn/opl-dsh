@@ -6,6 +6,7 @@ import { createInterface } from 'node:readline'
 import type { Readable, Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { safeFailureDetails } from '../failure-diagnostics.ts'
+import { commandLaunch } from '../../harness-registry.ts'
 import { nativeContextUsageMeta, nativeTurnUsageMeta } from '../native-usage.ts'
 import {
   startAntigravityGeminiProxy,
@@ -84,8 +85,9 @@ async function stopChild(
   child: ChildProcessWithoutNullStreams,
   exited: Promise<void>,
 ): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null || !child.pid) return
+  if (!child.pid) return
   if (process.platform === 'win32') {
+    if (child.exitCode !== null || child.signalCode !== null) return
     await new Promise<void>((resolveStop, reject) => {
       execFile(
         join(process.env.SystemRoot ?? 'C:/Windows', 'System32', 'taskkill.exe'),
@@ -101,25 +103,36 @@ async function stopChild(
     await exited
     return
   }
-  try {
-    process.kill(-child.pid, 'SIGTERM')
-  } catch {
-    // The owned process may have exited between the state read and the signal.
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
-  }
-  const timer = setTimeout(() => {
+  // A detached CLI owns this process group even after its leader exits. While
+  // members remain, its PGID cannot be assigned to another group. Once ESRCH is
+  // observed, retire the identity permanently rather than scheduling a later kill.
+  const group = -child.pid
+  let retired = false
+  const signal = (value: NodeJS.Signals | 0): boolean => {
+    if (retired) return false
     try {
-      process.kill(-child.pid!, 'SIGKILL')
-    } catch {
-      // A successful TERM may already have removed the owned process group.
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+      process.kill(group, value)
+      return true
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH')
+        throw Error('Antigravity owned process group could not be stopped')
+      retired = true
+      return false
     }
-  }, 1500)
-  try {
-    await exited
-  } finally {
-    clearTimeout(timer)
   }
+  const waitForGroup = async (timeout: number): Promise<boolean> => {
+    const deadline = Date.now() + timeout
+    while (signal(0)) {
+      if (Date.now() >= deadline) return false
+      await new Promise<void>((resolveWait) => setTimeout(resolveWait, 25))
+    }
+    return true
+  }
+  if (signal('SIGTERM') && !(await waitForGroup(1500))) {
+    if (signal('SIGKILL') && !(await waitForGroup(1500)))
+      throw Error('Antigravity owned process group did not stop')
+  }
+  await exited
 }
 
 /**
@@ -252,9 +265,8 @@ export async function runAntigravityBridge(options: AntigravityBridgeOptions = {
     if (key.startsWith('OPL_AGY_') && !key.startsWith('OPL_AGY_SHELL_')) delete childEnv[key]
   delete childEnv.ELECTRON_RUN_AS_NODE
   // The CLI only receives an ephemeral loopback key. The actual source key stays in this process.
-  child = spawn(
-    command!,
-    [
+  try {
+    const launch = commandLaunch(command!, [
       ...(prefix as string[]),
       'acp',
       '--disable-telemetry',
@@ -262,19 +274,29 @@ export async function runAntigravityBridge(options: AntigravityBridgeOptions = {
       '--log-file',
       join(profile!, 'cli.log'),
       ...shell.args,
-    ],
-    {
+    ])
+    child = spawn(launch.command, launch.args, {
       cwd: workspace!,
       env: childEnv,
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
       detached: process.platform !== 'win32',
-    },
-  )
+      ...(launch.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
+    })
+  } catch (error) {
+    await relay.close()
+    await shell.dispose()
+    throw error
+  }
   const cli = child
   exited = new Promise<void>((resolveExit) => {
     cli.once('close', () => resolveExit())
     cli.once('error', () => resolveExit())
+  })
+  // `close` can wait for inherited tool pipes after the CLI leader has exited.
+  // Start tree cleanup on `exit`; do not wait for those pipes to close first.
+  cli.once('exit', () => {
+    void stop().catch(() => {})
   })
   cli.stderr.resume()
   cli.stdin.on('error', () => {
