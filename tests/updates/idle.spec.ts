@@ -56,6 +56,7 @@ function status(overrides: Partial<OplUpdateStatus> = {}): OplUpdateStatus {
     checkedAt: null,
     lastSuccessAt: null,
     error: null,
+    failure: null,
     release: offer,
     pendingVersion: null,
     policy: policy(),

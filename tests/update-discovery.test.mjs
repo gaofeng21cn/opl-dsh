@@ -261,3 +261,117 @@ test('abort and failed downloads leave discovery to the caller without fetching 
   })
   await assert.rejects(checkRelease(current), /offline/)
 })
+
+function publicRemote(
+  t,
+  value,
+  { status = 403, remaining = '0', location, page, assets, manifestBytes } = {},
+) {
+  const calls = []
+  const tagUrl = value.release.html_url
+  const assetHtml = value.release.assets
+    .map(
+      (asset) =>
+        `<li><a href="${new URL(asset.browser_download_url).pathname}">${asset.name}</a><clipboard-copy value="${asset.digest}"></clipboard-copy></li>`,
+    )
+    .join('')
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    calls.push(String(url))
+    assert.equal(options.redirect, 'manual')
+    assert.equal(options.headers?.authorization, undefined)
+    if (url === api)
+      return new Response(null, { status, headers: { 'x-ratelimit-remaining': remaining } })
+    if (url === `${repository}/releases/latest`)
+      return new Response(null, { status: 302, headers: { location: location ?? tagUrl } })
+    if (url === tagUrl)
+      return new Response(
+        page ?? `<relative-time datetime="${value.release.published_at}"></relative-time>`,
+      )
+    if (url === `${repository}/releases/expanded_assets/${value.release.tag_name}`)
+      return new Response(assets ?? assetHtml)
+    if (url === value.release.assets[1].browser_download_url)
+      return new Response(manifestBytes ?? value.manifestBytes)
+    throw Error('unexpected public discovery request: ' + url)
+  })
+  return { calls, assetHtml }
+}
+
+test('rate-limited API falls back to tag-pinned public release digests without credentials or ZIP download', async (t) => {
+  for (const status of [403, 429]) {
+    const value = fixture()
+    const { calls } = publicRemote(t, value, { status })
+    const result = await checkRelease(current)
+    assert.equal(result.release.version, '0.2.56')
+    assert.equal(result.release.publishedAt, value.release.published_at)
+    assert.equal(result.metadata.manifestAsset.digest, hash(value.manifestBytes))
+    assert.equal(result.metadata.manifestAsset.size, value.manifestBytes.length)
+    assert.equal(result.metadata.asset.size, value.payload.length)
+    assert.deepEqual(calls, [
+      api,
+      `${repository}/releases/latest`,
+      value.release.html_url,
+      `${repository}/releases/expanded_assets/${value.release.tag_name}`,
+      value.release.assets[1].browser_download_url,
+    ])
+  }
+  publicRemote(t, fixture({ version: current.suiteVersion }))
+  assert.deepEqual(await checkRelease(current), { release: null, metadata: null })
+})
+
+test('ordinary forbidden API responses do not trigger public fallback', async (t) => {
+  const { calls } = publicRemote(t, fixture(), { remaining: '12' })
+  await assert.rejects(checkRelease(current), (error) => error.updateFailure.httpStatus === 403)
+  assert.deepEqual(calls, [api])
+})
+
+test('public fallback refuses foreign tags, prereleases, ambiguous metadata and corrupted manifests', async (t) => {
+  const value = fixture()
+  const { assetHtml } = publicRemote(t, value)
+  for (const options of [
+    { location: 'https://evil.example/releases/tag/opl-dsh-v0.2.56' },
+    { location: value.release.html_url + '?redirect=evil' },
+    { location: value.release.html_url + '-rc.1' },
+    { page: '<relative-time datetime="bad"></relative-time>' },
+    { page: '<relative-time datetime="2026-11-07T00:00:00Z"></relative-time>'.repeat(2) },
+    { assets: assetHtml + assetHtml },
+    { assets: assetHtml.replace('sha256:', 'sha512:') },
+    { assets: assetHtml.replace('/opl-dsh-v0.2.56/', '/opl-dsh-v0.2.57/') },
+    { manifestBytes: Buffer.alloc(value.manifestBytes.length) },
+    { manifestBytes: Buffer.alloc(128 * 1024 + 1) },
+  ]) {
+    publicRemote(t, value, options)
+    await assert.rejects(
+      checkRelease(current),
+      (error) => error.updateFailure.reason === 'integrity',
+    )
+  }
+})
+
+test('public fallback preserves download HTTP failures and aborts before the next pinned read', async (t) => {
+  const value = fixture()
+  publicRemote(t, value)
+  let fetchPublic = globalThis.fetch
+  t.mock.method(globalThis, 'fetch', (url, options) =>
+    url === value.release.assets[1].browser_download_url
+      ? Promise.resolve(new Response(null, { status: 503 }))
+      : fetchPublic(url, options),
+  )
+  await assert.rejects(
+    checkRelease(current),
+    (error) =>
+      error.updateFailure.stage === 'download' &&
+      error.updateFailure.reason === 'http' &&
+      error.updateFailure.httpStatus === 503,
+  )
+
+  const controller = new AbortController()
+  const { calls } = publicRemote(t, value)
+  fetchPublic = globalThis.fetch
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const response = await fetchPublic(url, options)
+    if (url === `${repository}/releases/latest`) controller.abort()
+    return response
+  })
+  await assert.rejects(checkRelease(current, { signal: controller.signal }), { name: 'AbortError' })
+  assert.deepEqual(calls, [api, `${repository}/releases/latest`])
+})

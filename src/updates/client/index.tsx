@@ -8,6 +8,7 @@ import { UpdateController } from './controller.ts'
 import { UpdatesSection } from './UpdatesSection.tsx'
 import { UpdateNotice } from './UpdateNotice.tsx'
 import { UPDATE_NAMESPACE, zh, en } from './locales.ts'
+import { createUpdateNavigation } from './navigation.ts'
 
 export type { Config } from './config.ts'
 export const inject = ['slots', 'locale']
@@ -20,6 +21,8 @@ export function apply(ctx: Context, config: Config): void {
     controller.start()
     return () => controller.stop()
   })
+  const navigation = createUpdateNavigation()
+  ctx.effect(() => navigation.dispose)
   ctx.slots.inject('settings.general.item', () =>
     ctx.slots.register(
       {
@@ -27,7 +30,7 @@ export function apply(ctx: Context, config: Config): void {
         id: 'opl-updates',
         order: 60,
         locale: UPDATE_NAMESPACE,
-        inject: () => ({ controller }),
+        inject: () => ({ controller, navigation }),
       },
       UpdatesSection,
     ),
@@ -41,6 +44,7 @@ export function apply(ctx: Context, config: Config): void {
         locale: UPDATE_NAMESPACE,
         inject: () => ({
           controller,
+          navigation,
           ...(config.openSettings ? { openSettings: config.openSettings } : {}),
         }),
       },

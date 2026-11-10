@@ -35,6 +35,7 @@ function status(): OplUpdateStatus {
     checkedAt: null,
     lastSuccessAt: null,
     error: null,
+    failure: null,
     release: null,
     pendingVersion: null,
   }

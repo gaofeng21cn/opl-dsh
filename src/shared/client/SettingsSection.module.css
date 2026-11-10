@@ -7,16 +7,58 @@
 }
 
 /* Settings contributed by OPL use the same rhythm as the native preference rows. */
-.officialRow {
+.officialRow,
+.preferenceRow {
   display: flex;
-  flex-direction: column;
+  min-width: 0;
   gap: 8px;
   padding: 16px 0;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
 }
 
-.officialRow:first-child {
-  padding-top: 12px;
+.officialRow {
+  flex-direction: column;
+}
+
+.officialRow p {
+  margin: 0;
+}
+
+.preferenceRow {
+  align-items: center;
+}
+
+.preferenceContent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preferenceText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-right: 48px;
+}
+
+.preferenceTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+}
+
+.preferenceDescription {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .intro {
@@ -61,6 +103,7 @@
 }
 
 .name {
+  margin: 0;
   font-size: 14px;
   font-weight: 500;
   line-height: 22px;
@@ -292,6 +335,9 @@ select.input {
   }
   .row {
     flex-wrap: wrap;
+  }
+  .preferenceText {
+    padding-right: 8px;
   }
   .actions {
     flex-wrap: wrap;

@@ -31,9 +31,11 @@ function payload(version = '0.2.56', patch = {}) {
       'install.mjs',
       'profile.cjs',
       'model-plugins.cjs',
+      'ofm-upgrade.cjs',
       'kimi-cu.mjs',
       'setup.mjs',
       'update.mjs',
+      'update-errors.mjs',
       'skill-install.mjs',
       'migrate.cjs',
       'skill/SKILL.md',
@@ -309,6 +311,25 @@ test('a candidate is replaced only after explicit prepare and a later stopped st
   )
 })
 
+test('a candidate can prepare and install a protocol 1 official package without local helpers', async (t) => {
+  const value = await fixture(t, { localCandidate: true })
+  const target = payload('0.2.60')
+  for (const path of ['ofm-upgrade.cjs', 'update-errors.mjs']) {
+    target.entries.delete(path)
+    delete target.artifact.payloadFiles[path]
+  }
+  target.artifact.suiteSha256 = hash(JSON.stringify(target.artifact.payloadFiles))
+  target.entries.set('artifact.json', Buffer.from(JSON.stringify(target.artifact)))
+  remote(t, releaseFixture(target))
+  await prepareUpdate(value.root, value.application, { expectedVersion: '0.2.60' })
+  await refreshEnhancements(value.root, value.application)
+  assert.equal(value.state.installs.length, 1)
+  const installed = JSON.parse(await readFile(join(value.root, 'installation.json'), 'utf8'))
+  assert.equal(installed.suiteVersion, '0.2.60')
+  assert.equal(installed.localCandidate, false)
+  assert.equal(await readPreparedUpdate(value.root), null)
+})
+
 test('old, incompatible and no-longer-accepted releases never download the ZIP', async (t) => {
   for (const scenario of [
     'same',
@@ -363,6 +384,10 @@ test('prepare refuses a changed official app or a foreign installation path befo
 
 test('invalid archives and unverified executable bytes cannot create a pending plan', async (t) => {
   const cases = [
+    ...['ofm-upgrade.cjs', 'update-errors.mjs'].map((path) => [
+      `optional-file-hash:${path}`,
+      (target) => target.entries.set(path, Buffer.from('changed optional helper')),
+    ]),
     [
       'payload-hash',
       (target) => {
@@ -447,7 +472,9 @@ test('invalid archives and unverified executable bytes cannot create a pending p
         target = payload()
       mutate(target)
       remote(t, releaseFixture(target, zip(target.entries, zipOptions)))
-      await assert.rejects(prepareUpdate(value.root, value.application))
+      await assert.rejects(prepareUpdate(value.root, value.application), {
+        updateFailure: { stage: 'verify', reason: 'integrity' },
+      })
       assert.equal(await readPreparedUpdate(value.root), null)
       assert.equal(value.state.installs.length, 0)
       assert.equal(

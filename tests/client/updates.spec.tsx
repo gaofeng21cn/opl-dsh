@@ -12,6 +12,7 @@ import type {
 } from '../../src/updates/contracts.ts'
 import type { Config } from '../../src/updates/client/config.ts'
 import { UpdateController } from '../../src/updates/client/controller.ts'
+import { createUpdateNavigation } from '../../src/updates/client/navigation.ts'
 import {
   UpdatesSection,
   type UpdatesSectionProps,
@@ -77,6 +78,7 @@ function status(overrides: Partial<OplUpdateStatus> = {}): OplUpdateStatus {
     checkedAt: null,
     lastSuccessAt: null,
     error: null,
+    failure: null,
     release: null,
     pendingVersion: null,
     ...overrides,
@@ -178,11 +180,14 @@ async function mount(
     configure?: (api: ReturnType<typeof host>['api']) => void
     config?: Partial<Omit<Config, 'api'>>
     dictionary?: typeof en
+    navigation?: ReturnType<typeof createUpdateNavigation>
+    renderSection?: boolean
   } = {},
 ) {
   const backend = host(options.initial)
   options.configure?.(backend.api)
   const openSettings = vi.fn()
+  const navigation = options.navigation
   const controller = new UpdateController({
     api: backend.api,
     subscribe: backend.source.subscribe,
@@ -199,6 +204,7 @@ async function mount(
     await act(async () => {
       controller.stop()
       root.unmount()
+      navigation?.dispose()
     })
   }
   cleanups.push(unmount)
@@ -208,9 +214,16 @@ async function mount(
       createElement(
         'div',
         null,
-        createElement(UpdatesSection, { controller, t: translator(options.dictionary) }),
+        options.renderSection === false
+          ? null
+          : createElement(UpdatesSection, {
+              controller,
+              ...(navigation ? { navigation } : {}),
+              t: translator(options.dictionary),
+            }),
         createElement(UpdateNotice, {
           controller,
+          ...(navigation ? { navigation } : {}),
           wide: true,
           t: translator(options.dictionary),
           openSettings,
@@ -218,7 +231,7 @@ async function mount(
       ),
     )
   })
-  return { ...backend, controller, container, root, openSettings, unmount }
+  return { ...backend, controller, container, root, navigation, openSettings, unmount }
 }
 
 function section(container: HTMLElement): HTMLElement {
@@ -1238,6 +1251,60 @@ describe('update subscriptions and request lifetimes', () => {
     await click(notices[0]!)
     expect(f.openSettings).toHaveBeenCalledTimes(1)
     expect(f.api.prepare).not.toHaveBeenCalled()
+  })
+
+  it('consumes each notice navigation intent once and ignores status refreshes', async () => {
+    const offer = status({ release: release() })
+    const navigation = createUpdateNavigation()
+    const f = await mount({ initial: offer, navigation })
+    const panel = section(f.container)
+    const scroll = vi.fn()
+    panel.scrollIntoView = scroll
+    const notice = f.container.querySelector<HTMLButtonElement>('[data-opl-update-notice]')!
+
+    await click(notice)
+    expect(scroll).toHaveBeenCalledTimes(1)
+    await act(async () => f.publish({ ...offer }))
+    expect(scroll).toHaveBeenCalledTimes(1)
+
+    await click(notice)
+    expect(scroll).toHaveBeenCalledTimes(2)
+    await f.unmount()
+    await act(async () => f.navigation.request())
+    expect(scroll).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a notice intent until the Updates section mounts', async () => {
+    const offer = status({ release: release() })
+    const navigation = createUpdateNavigation()
+    const f = await mount({ initial: offer, navigation, renderSection: false })
+    const scroll = vi.fn()
+    const previousScrollIntoView = HTMLElement.prototype.scrollIntoView
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scroll,
+    })
+    cleanups.push(() => {
+      if (previousScrollIntoView) {
+        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+          configurable: true,
+          value: previousScrollIntoView,
+        })
+      } else delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    })
+
+    await click(f.container.querySelector<HTMLButtonElement>('[data-opl-update-notice]')!)
+    expect(scroll).not.toHaveBeenCalled()
+    await act(async () =>
+      f.root.render(
+        createElement(UpdatesSection, {
+          controller: f.controller,
+          navigation,
+          t,
+        }),
+      ),
+    )
+    expect(scroll).toHaveBeenCalledOnce()
   })
 
   it('uses a release link without navigation injection and labels a pending collapsed notice', async () => {

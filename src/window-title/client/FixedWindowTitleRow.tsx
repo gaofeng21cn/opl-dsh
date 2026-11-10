@@ -31,10 +31,10 @@ export function FixedWindowTitleRow({
   }, [])
   return (
     <div className={css.officialRow} data-opl-preference="fixed-window-title">
-      <div className={css.row}>
-        <div>
-          <h3 className={css.name}>{t('title')}</h3>
-          <p className={css.muted}>{t('description')}</p>
+      <div className={css.preferenceContent}>
+        <div className={css.preferenceText}>
+          <h3 className={css.preferenceTitle}>{t('title')}</h3>
+          <p className={css.preferenceDescription}>{t('description')}</p>
         </div>
         <Switch
           label={t('enabled')}
