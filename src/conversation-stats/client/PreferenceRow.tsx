@@ -4,6 +4,7 @@ import { IconChevronDownOutlineRegular, Menu } from '@deepseek-ai/dsh-client-ui-
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './PreferenceRow.module.css'
+import settingsCss from '../../shared/client/SettingsSection.module.css'
 
 export type StatisticsMode = 'current' | 'history'
 /** The count preference is one field of the existing Suite settings namespace. */
@@ -54,10 +55,10 @@ export function StatisticsPreferenceRow({
     }
   }
   return (
-    <div className={css.row} data-opl-preference="conversation-counts">
-      <div className={css.text} title={t('help')}>
-        <div className={css.title}>{t('title')}</div>
-        <div className={css.description}>{t('description')}</div>
+    <div className={settingsCss.preferenceRow} data-opl-preference="conversation-counts">
+      <div className={settingsCss.preferenceText} title={t('help')}>
+        <div className={settingsCss.preferenceTitle}>{t('title')}</div>
+        <div className={settingsCss.preferenceDescription}>{t('description')}</div>
         {failed && (
           <div role="alert" className={css.error}>
             {t('saveFailed')}

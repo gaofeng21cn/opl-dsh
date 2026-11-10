@@ -1,11 +1,14 @@
 /** One Host owns release discovery, prepared-update state and the check schedule. */
 import type {
   OplUpdateApi,
+  OplUpdateError,
+  OplUpdateFailure,
   OplUpdatePolicy,
   OplUpdateRelease,
   OplUpdateRestart,
   OplUpdateStatus,
 } from '../contracts.ts'
+import { describeUpdateFailure } from '../../../installer/update-errors.mjs'
 import { defaultUpdatePolicy, IdleUpdateCoordinator, updatePolicy } from './idle.ts'
 
 export interface InstalledUpdateIdentity {
@@ -33,6 +36,140 @@ export interface UpdateOperations {
 const interval = 6 * 60 * 60 * 1000
 const initialDelay = 15_000
 const stable = /^\d+\.\d+\.\d+$/
+
+const persistedErrors = new Set<Exclude<OplUpdateError, null>>([
+  'check-failed',
+  'prepare-failed',
+  'prepare-network-failed',
+  'prepare-proxy-failed',
+  'prepare-timeout',
+  'prepare-http-failed',
+  'prepare-integrity-failed',
+  'prepare-lock-failed',
+  'prepare-installation-failed',
+])
+
+const failureStages = new Set<OplUpdateFailure['stage']>([
+  'acquire',
+  'installation',
+  'discovery',
+  'download',
+  'verify',
+  'stage',
+  'confirm',
+  'cancel',
+  'apply',
+  'save',
+])
+const failureReasons = new Set<OplUpdateFailure['reason']>([
+  'network',
+  'proxy',
+  'timeout',
+  'http',
+  'integrity',
+  'busy',
+  'installation',
+  'release-changed',
+  'filesystem',
+  'unknown',
+])
+
+function validFailure(value: unknown): value is OplUpdateFailure {
+  if (!value || typeof value !== 'object') return false
+  const row = value as Partial<OplUpdateFailure>
+  if (!failureStages.has(row.stage as OplUpdateFailure['stage'])) return false
+  if (!failureReasons.has(row.reason as OplUpdateFailure['reason'])) return false
+  if (
+    row.httpStatus !== undefined &&
+    (!Number.isInteger(row.httpStatus) || row.httpStatus < 100 || row.httpStatus > 599)
+  )
+    return false
+  if (
+    row.systemCode !== undefined &&
+    (typeof row.systemCode !== 'string' || !/^[A-Z][A-Z0-9_-]{1,63}$/u.test(row.systemCode))
+  )
+    return false
+  return true
+}
+
+function errorForFailure(failure: OplUpdateFailure): Exclude<OplUpdateError, null> {
+  switch (failure.reason) {
+    case 'proxy':
+      return 'prepare-proxy-failed'
+    case 'network':
+      return 'prepare-network-failed'
+    case 'timeout':
+      return 'prepare-timeout'
+    case 'http':
+      return 'prepare-http-failed'
+    case 'integrity':
+    case 'release-changed':
+      return 'prepare-integrity-failed'
+    case 'busy':
+      return 'prepare-lock-failed'
+    case 'installation':
+    case 'filesystem':
+      return 'prepare-installation-failed'
+    default:
+      return 'prepare-failed'
+  }
+}
+
+/** Map updater exceptions to a fixed, non-sensitive status category. */
+export function classifyPrepareFailure(error: unknown): Exclude<OplUpdateError, null> {
+  const details = describeUpdateFailure(error, 'download') as OplUpdateFailure
+  if (validFailure(details) && details.reason !== 'unknown') return errorForFailure(details)
+  const row =
+    error && typeof error === 'object'
+      ? (error as { code?: unknown; message?: unknown; cause?: unknown })
+      : {}
+  const code = typeof row.code === 'string' ? row.code.toLowerCase() : ''
+  const message =
+    typeof row.message === 'string' ? row.message.toLowerCase() : String(error).toLowerCase()
+  const cause =
+    row.cause && typeof row.cause === 'object'
+      ? String((row.cause as { code?: unknown }).code ?? '').toLowerCase()
+      : ''
+  const text = `${code} ${cause} ${message}`
+  if (text.includes('timeout') || text.includes('timed out') || code === 'etimedout')
+    return 'prepare-timeout'
+  if (
+    /http\s+\d{3}/u.test(text) ||
+    text.includes('fetch failed') ||
+    text.includes('network') ||
+    text.includes('socket') ||
+    /\beconn|\benet|\bund_err_/u.test(text)
+  )
+    return /http\s+\d{3}/u.test(text) ? 'prepare-http-failed' : 'prepare-network-failed'
+  if (text.includes('proxy')) return 'prepare-proxy-failed'
+  if (
+    text.includes('sha-256') ||
+    text.includes('校验') ||
+    text.includes('摘要') ||
+    text.includes('增强 zip') ||
+    text.includes('增强包') ||
+    text.includes('清单')
+  )
+    return 'prepare-integrity-failed'
+  if (
+    text.includes('更新锁') ||
+    text.includes('更新正在进行') ||
+    text.includes('无法取得增强更新锁') ||
+    text.includes('suite-operation-busy')
+  )
+    return 'prepare-lock-failed'
+  if (
+    text.includes('安装回执') ||
+    text.includes('原安装') ||
+    text.includes('官方桌面') ||
+    text.includes('协议') ||
+    text.includes('兼容') ||
+    text.includes('版本不符')
+  )
+    return 'prepare-installation-failed'
+  return 'prepare-failed'
+}
+
 function cached(value: unknown): Partial<OplUpdateStatus> {
   if (!value || typeof value !== 'object') return {}
   const row = value as Partial<OplUpdateStatus>
@@ -52,7 +189,12 @@ function cached(value: unknown): Partial<OplUpdateStatus> {
     ['enhancement', 'full-suite'].includes(release.compatibility)
   )
     result.release = release
-  if (row.error === 'check-failed' || row.error === 'prepare-failed') result.error = row.error
+  if (
+    typeof row.error === 'string' &&
+    persistedErrors.has(row.error as Exclude<OplUpdateError, null>)
+  )
+    result.error = row.error as OplUpdateError
+  if (validFailure(row.failure)) result.failure = row.failure
   return result
 }
 
@@ -68,6 +210,7 @@ export class UpdateController implements OplUpdateApi {
     checkedAt: null,
     lastSuccessAt: null,
     error: null,
+    failure: null,
     release: null,
     pendingVersion: null,
   }
@@ -137,11 +280,13 @@ export class UpdateController implements OplUpdateApi {
           checkedAt: null,
           lastSuccessAt: null,
           error: null,
+          failure: null,
         })
       try {
         this.value.pendingVersion = await this.operations.pending()
       } catch {
         this.value.error = 'prepare-failed'
+        this.value.failure = { stage: 'acquire', reason: 'filesystem' }
       }
       this.publish()
     })()
@@ -218,9 +363,13 @@ export class UpdateController implements OplUpdateApi {
           this.value.release = release
           succeeded = true
           this.value.error = null
+          this.value.failure = null
         }
       } catch (_error) {
-        if (!this.closed && !abort.signal.aborted) this.value.error = 'check-failed'
+        if (!this.closed && !abort.signal.aborted) {
+          this.value.error = 'check-failed'
+          this.value.failure = describeUpdateFailure(_error, 'discovery')
+        }
       } finally {
         this.value.checking = false
         if (!this.closed) {
@@ -230,6 +379,7 @@ export class UpdateController implements OplUpdateApi {
             await this.persist()
           } catch {
             this.value.error = 'check-failed'
+            this.value.failure = { stage: 'save', reason: 'filesystem' }
           }
           this.publish()
         }
@@ -278,20 +428,28 @@ export class UpdateController implements OplUpdateApi {
     const abort = (this.prepareAbort = new AbortController())
     const work = (async () => {
       this.value.preparing = true
+      // A new attempt supersedes the previous failure; do not display stale red text while downloading.
+      this.value.error = null
+      this.value.failure = null
       this.publish()
       try {
         await this.operations.prepare(abort.signal, expectedVersion)
         if (!this.closed && !abort.signal.aborted) {
           this.value.pendingVersion = await this.operations.pending()
           this.value.error = null
+          this.value.failure = null
         }
       } catch (_error) {
-        if (!this.closed && !abort.signal.aborted) this.value.error = 'prepare-failed'
+        if (!this.closed && !abort.signal.aborted) {
+          this.value.failure = describeUpdateFailure(_error, 'download')
+          this.value.error = errorForFailure(this.value.failure)
+        }
       } finally {
         this.value.preparing = false
         if (!this.closed) {
           await this.persist().catch(() => {
             this.value.error = 'prepare-failed'
+            this.value.failure = { stage: 'save', reason: 'filesystem' }
           })
           this.publish()
         }
@@ -320,10 +478,12 @@ export class UpdateController implements OplUpdateApi {
       await this.operations.cancel()
       this.value.pendingVersion = null
       this.value.error = null
+      this.value.failure = null
       try {
         await this.persist()
       } catch {
         this.value.error = 'prepare-failed'
+        this.value.failure = { stage: 'save', reason: 'filesystem' }
       }
       this.publish()
       return this.status()

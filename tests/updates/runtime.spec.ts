@@ -14,11 +14,13 @@ it('restores a failed launch after the Host restarts, keeping the pending plan s
   expect(restoreLaunchFailure(stored, failure, pending, current)).toEqual({
     ...stored,
     error: 'prepare-failed',
+    failure: { stage: 'apply', reason: 'unknown' },
   })
   expect(restoreLaunchFailure(null, failure, pending, current)).toEqual({
     installedVersion: current.suiteVersion,
     officialVersion: current.officialVersion,
     error: 'prepare-failed',
+    failure: { stage: 'apply', reason: 'unknown' },
   })
 })
 
@@ -45,6 +47,7 @@ it('does not reuse an offer cached for a different installed runtime', () => {
     installedVersion: current.suiteVersion,
     officialVersion: current.officialVersion,
     error: 'prepare-failed',
+    failure: { stage: 'apply', reason: 'unknown' },
   })
   expect(
     restoreLaunchFailure(null, { state: 'deferred', checkedAt: 'invalid' }, pending, current),
