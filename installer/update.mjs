@@ -16,6 +16,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import childProcess from 'node:child_process'
 import { inflateRawSync, crc32 } from 'node:zlib'
 import { installationPaths } from './installation-paths.mjs'
+import { updateFailureError } from './update-errors.mjs'
 import {
   acquireSuiteMaintenance,
   assertUpdateTransaction,
@@ -448,10 +449,15 @@ export async function prepareUpdate(root, application, { signal, expectedVersion
     )
       throw Error('原安装文件与安装回执不符')
     const archive = await downloadReleaseAsset(metadata.asset, { signal })
-    const entries = unpackPayload(archive)
-    const artifact = verifyEntries(entries, release)
-    if (artifact.updateProtocolVersion !== 1)
-      throw Error('增强包不支持安全更新协议，请安装完整套件')
+    let entries, artifact
+    try {
+      entries = unpackPayload(archive)
+      artifact = verifyEntries(entries, release)
+      if (artifact.updateProtocolVersion !== 1)
+        throw Error('增强包不支持安全更新协议，请安装完整套件')
+    } catch (error) {
+      throw updateFailureError(error, 'verify', 'integrity')
+    }
     const updates = join(root, 'updates')
     await mkdir(updates, { recursive: true, mode: 0o700 })
     await directory(updates)
