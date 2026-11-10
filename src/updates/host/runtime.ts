@@ -54,6 +54,7 @@ export function restoreLaunchFailure(
     installedVersion: current.suiteVersion,
     officialVersion: current.officialVersion,
     error: 'prepare-failed',
+    failure: { stage: 'apply', reason: 'unknown' },
   }
 }
 

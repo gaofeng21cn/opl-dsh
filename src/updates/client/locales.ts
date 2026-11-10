@@ -61,6 +61,14 @@ export const zh = {
   'policy-failed': '无法确认更新方式是否保存，请重新读取状态后再操作。',
   'postpone-failed': '无法确认重启是否延后，请重新读取状态后再操作。',
   'prepare-failed': '未能确认更新已准备完成，请检查更新后再操作。',
+  'prepare-network-failed': '更新包下载失败，通常是网络或代理连接中断。请检查网络后重试。',
+  'prepare-proxy-failed': '更新包下载失败，代理连接未建立。请检查代理地址和网络后重试。',
+  'prepare-timeout': '更新包下载超时，请检查网络或代理后重试。',
+  'prepare-http-failed': '更新包下载被服务器拒绝，请稍后重试或检查代理。',
+  'prepare-integrity-failed': '更新包校验失败，请重新检查更新后重试。',
+  'prepare-lock-failed': '已有更新操作仍在进行，请稍后重新读取状态。',
+  'prepare-installation-failed': '当前安装状态不适合增量更新，请重新检查；必要时安装完整套件。',
+  failureDetail: '失败阶段：{stage}，分类：{reason}{detail}',
   'cancel-failed': '无法确认更新是否已取消，请检查更新后再操作。',
   noticeShort: '更新',
   noticeAvailable: 'OPL 更新可用：{version}。在通用设置的“更新”中查看。',
@@ -143,6 +151,20 @@ export const en: Record<UpdateLocaleKey, string> = {
     'Could not confirm that the restart was postponed. Read status again before making another change.',
   'prepare-failed':
     'Could not confirm update preparation. Check for updates before making another change.',
+  'prepare-network-failed':
+    'The update download failed because the network or proxy connection was interrupted.',
+  'prepare-proxy-failed':
+    'The update download failed because the proxy connection could not be established. Check the proxy and try again.',
+  'prepare-timeout': 'The update download timed out. Check the network or proxy and try again.',
+  'prepare-http-failed':
+    'The update server rejected the download. Check the proxy or try again later.',
+  'prepare-integrity-failed':
+    'The update package failed integrity checks. Check for updates and try again.',
+  'prepare-lock-failed':
+    'Another update operation is still running. Read the status again before retrying.',
+  'prepare-installation-failed':
+    'The installed files are not compatible with an incremental update. Recheck or install the full suite.',
+  failureDetail: 'Failure stage: {stage}; category: {reason}{detail}',
   'cancel-failed':
     'Could not confirm cancellation. Check for updates before making another change.',
   noticeShort: 'Update',

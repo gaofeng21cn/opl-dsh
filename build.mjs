@@ -190,6 +190,8 @@ for (const file of [
   'desktop-platform.mjs',
   'update.mjs',
   'update-discovery.mjs',
+  'update-errors.mjs',
+  'update-errors.d.mts',
   'update-runner.mjs',
   'update-transaction.mjs',
   'desktop-update.mjs',

@@ -160,6 +160,30 @@ describe('Host update discovery and preparation', () => {
     await f.controller.dispose()
   })
 
+  it('retains bounded proxy diagnostics without persisting the original error text', async () => {
+    const f = fixture()
+    vi.mocked(f.operations.prepare).mockRejectedValue(
+      Object.assign(new Error('proxy secret at C:/private'), {
+        updateFailure: {
+          stage: 'download',
+          reason: 'proxy',
+          systemCode: 'ERR_PROXY_CONNECTION_FAILED',
+        },
+      }),
+    )
+    await f.controller.check()
+    const result = await f.controller.prepare()
+    expect(result.error).toBe('prepare-proxy-failed')
+    expect(result.failure).toEqual({
+      stage: 'download',
+      reason: 'proxy',
+      systemCode: 'ERR_PROXY_CONNECTION_FAILED',
+    })
+    expect(JSON.stringify(result)).not.toContain('proxy secret')
+    expect(JSON.stringify(result)).not.toContain('C:/private')
+    await f.controller.dispose()
+  })
+
   it('checks after startup and at six-hour intervals, with a durable opt out', async () => {
     vi.useFakeTimers()
     const f = fixture()

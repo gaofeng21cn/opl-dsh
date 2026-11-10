@@ -4,16 +4,18 @@ import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { UpdateController } from './controller.ts'
 import { useUpdateCountdown } from './countdown.ts'
+import type { UpdateNavigation } from './navigation.ts'
 import css from './Updates.module.css'
 
 export type UpdateNoticeProps = PropsRuntime<'sidebar.footer.action'> &
   PropsLocale<'settings.oplUpdates'> & {
     controller: UpdateController
+    navigation?: UpdateNavigation
     openSettings?: () => void
   }
 
 /** @param props - Sidebar geometry, shared status, and existing settings navigation. @returns Release notice. */
-export function UpdateNotice({ controller, openSettings, wide, t }: UpdateNoticeProps) {
+export function UpdateNotice({ controller, navigation, openSettings, wide, t }: UpdateNoticeProps) {
   const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
   const status = view.status
   const restart = status?.restart
@@ -61,7 +63,10 @@ export function UpdateNotice({ controller, openSettings, wide, t }: UpdateNotice
       title={title}
       aria-label={title}
       data-opl-update-notice={version}
-      onClick={openSettings}
+      onClick={() => {
+        navigation?.request()
+        openSettings()
+      }}
     >
       {content}
     </Button>
