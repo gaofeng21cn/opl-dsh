@@ -580,7 +580,8 @@ async function migrateOfmLink({ dir, install, plugin, fetchImpl, restoreBundles 
     })
     if (before.dependency !== undefined) await install(['remove', PACKAGE_NAME])
     await install(['add', `${PACKAGE_NAME}@${dependency}`])
-    if (bundlesBefore !== undefined && restoreBundles) await restoreBundles(bundlesBefore)
+    if (before.dependency !== undefined && bundlesBefore !== undefined && restoreBundles)
+      await restoreBundles(bundlesBefore)
     const after = await inspectOfm(root)
     if (
       after.dependency !== dependency ||

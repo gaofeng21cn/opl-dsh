@@ -110,16 +110,27 @@ test('first install extracts the verified complete archive and registers a relat
       sha256: createHash('sha256').update(bytes).digest('hex'),
     }
     await rm(join(dir, 'vendor', `${name}-2.8.3.tgz`))
-    await writeFile(join(dir, 'package.json'), '{}')
+    await writeFile(
+      join(dir, 'package.json'),
+      JSON.stringify({ dsh: { profile: { bundles: ['existing'] } } }),
+    )
     await rm(pkg, { recursive: true })
     // pnpm registers the dependency without modifying the target package contents.
     const register = async (args) => {
-      await writeFile(join(dir, 'package.json'), JSON.stringify({ dependencies: { [name]: dep } }))
+      await writeFile(
+        join(dir, 'package.json'),
+        JSON.stringify({
+          dependencies: { [name]: dep },
+          dsh: { profile: { bundles: ['existing', name] } },
+        }),
+      )
       await symlink(join(dir, 'ofm', name), pkg, process.platform === 'win32' ? 'junction' : 'dir')
       assert.deepEqual(args, ['add', `${name}@${dep}`])
     }
     await migrateOfmLink({
-      restoreBundles: async () => {},
+      restoreBundles: async () => {
+        throw Error('fresh install must retain the newly enabled bundle')
+      },
       dir,
       install: register,
       plugin,
