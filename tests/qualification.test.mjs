@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, mkdir, symlink, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { JSDOM } from 'jsdom'
+import { workspaceExpansionExpression } from '../scripts/qualification-client.mjs'
 import {
   assertIsolatedRoot,
   verifyPayload,
@@ -18,6 +20,32 @@ import {
   verifyOfficialCapabilities,
   verifyOfficialTeamChild,
 } from '../scripts/qualification-official-capabilities.mjs'
+
+test('qualification opens only its fixture workspace and preserves an expanded disclosure', () => {
+  const dom = new JSDOM(
+    '<div role="treeitem" aria-expanded="false"><span>other-project</span></div><div role="treeitem" aria-expanded="false"><span>test-project</span></div>',
+    { runScripts: 'outside-only' },
+  )
+  try {
+    const rows = [...dom.window.document.querySelectorAll('[role=treeitem]')]
+    const clicked = []
+    for (const row of rows) {
+      row.getClientRects = () => [1]
+      row.addEventListener('click', () => {
+        clicked.push(row.textContent)
+        row.setAttribute('aria-expanded', 'true')
+      })
+    }
+    assert.equal(dom.window.eval(workspaceExpansionExpression('missing-project')), false)
+    assert.equal(dom.window.eval(workspaceExpansionExpression('test-project')), false)
+    assert.deepEqual(clicked, ['test-project'])
+    assert.equal(dom.window.eval(workspaceExpansionExpression('test-project')), true)
+    assert.deepEqual(clicked, ['test-project'])
+    assert.equal(rows[0].getAttribute('aria-expanded'), 'false')
+  } finally {
+    dom.window.close()
+  }
+})
 
 test('official Team child waits for its durable end through the parent-addressed events API', async () => {
   let calls = 0

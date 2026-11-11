@@ -2,6 +2,11 @@
 import { writeFile, rm } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 
+/** Expand the fixture workspace through its visible disclosure without toggling it closed. */
+export function workspaceExpansionExpression(title) {
+  return `(() => {const title=${JSON.stringify(title)};const row=Array.from(document.querySelectorAll('[role=treeitem][aria-expanded]')).find(node=>node.getClientRects().length && Array.from(node.querySelectorAll('span')).some(label=>label.textContent?.trim()===title));if(!row)return false;if(row.getAttribute('aria-expanded')==='true')return true;row.click();return false})()`
+}
+
 export class DesktopPipe {
   nextId = 0
   pending = new Map()
@@ -976,6 +981,7 @@ export async function verifyDesktopClient(
     const showsCounts = ({ turns, steps }) =>
       `Array.from(document.querySelectorAll('button,[role=button]')).some(node=>node.getClientRects().length && (${JSON.stringify(`${turns} 轮 ${steps} 步`)}===node.textContent.trim() || ${JSON.stringify(`${turns} turns ${steps} steps`)}===node.textContent.trim() || node.textContent.includes(${JSON.stringify(`${turns} 轮 ${steps} 步`)}) || node.textContent.includes(${JSON.stringify(`${turns} turns ${steps} steps`)})))`
     await closeSettings()
+    await waitFor(workspaceExpansionExpression('test-project'), '计数验收工作区未展开')
     await waitFor(
       `(() => {const title='Conversation count qualification';const node=Array.from(document.querySelectorAll('*')).find(x=>x.getClientRects().length && x.textContent?.trim()===title && !Array.from(x.children).some(c=>c.textContent?.trim()===title));if(!node)return false;node.click();return true})()`,
       '计数验收对话未进入侧边栏',
