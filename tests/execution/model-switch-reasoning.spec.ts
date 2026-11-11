@@ -1,5 +1,6 @@
 import { harnessAdapters } from '../../src/execution/host/adapters/index.ts'
 import * as harnessRegistry from '../../src/execution/host/harness-registry.ts'
+import * as reasoningProbe from '../../src/execution/host/reasoning-preflight.ts'
 import { beforeEach } from 'vitest'
 /** Exercise the model picker through its Host entry point and the official Session selection log. */
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -91,6 +92,7 @@ async function setup() {
     get: () => undefined,
     agents: { get: () => undefined },
     sessions: { get: () => session },
+    permissionPresets: { current: () => 'danger-full-access' },
     llm: {
       listProviders: () => groups.map((g) => ({ id: g.id, name: g.name })),
       listConfigurableProviders: () => [],
@@ -515,6 +517,41 @@ describe('CLI effort selection independent of source provider', () => {
     release({ status: 'known', efforts: [{ id: 'balanced', name: 'Balanced' }] })
     await expect(pending).rejects.toThrow('状态已改变')
     expect((await f.service.modelSelection(f.session.id)).current.model).toBe(m3)
+  })
+})
+
+describe('reasoning preflight selection readback', () => {
+  it('configures the probe with the chosen effort rather than the CLI default', async () => {
+    const f = await setup()
+    await f.choose(flash)
+    await f.service.invoke('select-effort', {
+      sessionId: f.session.id,
+      provider,
+      model: flash,
+      reasoningEffort: 'low',
+    })
+    const adapter = adapterFor('minimax-code', { provider, model: flash })!
+    vi.spyOn(adapter, 'prepare').mockResolvedValue({
+      home: f.session.header.cwd!,
+      command: process.execPath,
+      args: [],
+      env: {},
+    })
+    const probe = vi
+      .spyOn(reasoningProbe, 'probeHarnessReasoning')
+      .mockImplementation(async (_adapter, record) => ({
+        status: 'known',
+        efforts: [{ id: 'low', name: 'low' }],
+        currentEffort: record.reasoningEffort,
+      }))
+    expect(
+      await f.service.reasoningPreflight({
+        sessionId: f.session.id,
+        combination: 'minimax-code/' + flash,
+      }),
+    ).toMatchObject({ currentEffort: 'low' })
+    expect(probe.mock.calls[0]![1].reasoningEffort).toBe('low')
+    expect(f.service.start).not.toHaveBeenCalled()
   })
 })
 

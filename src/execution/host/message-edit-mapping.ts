@@ -1,6 +1,7 @@
 /** Match official user events to vendor input identities without text or position inference. */
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { HarnessSession } from '../contracts/sessions.ts'
+import type { MessageEditSend } from '../contracts/message-edit.ts'
 import type { ExternalEditHistory, ExternalEditResult } from './message-edit-driver.ts'
 import {
   editableNativeMessage,
@@ -53,6 +54,61 @@ export function externalPreparedChoice(
       editableNativeMessage(message),
   )
   return matches.length === 1 ? { seq: matches[0]!.seq, text: matches[0]!.text } : undefined
+}
+
+/** A committed native replacement can retry when admission never created a vendor turn. */
+export function externalUnsentAdmissionChoice(
+  record: HarnessSession,
+  intent: ExternalEditIntent | undefined,
+  events: readonly SessionEvent[],
+  activeSeqs: ReadonlySet<number>,
+): { seq: number; text: string } | undefined {
+  if (
+    intent?.phase !== 'admitting' ||
+    !intent.result ||
+    intent.recordId !== record.id ||
+    intent.sessionId !== record.nativeSessionId ||
+    intent.result.sessionId !== record.acpSessionId ||
+    record.turns.length !== intent.result.retained.length ||
+    record.turns.some(
+      (turn, index) =>
+        !['completed', 'failed', 'cancelled'].includes(turn.state) ||
+        !turn.native?.userMessageId ||
+        turn.native.userMessageId !== intent.result!.retained[index]?.nextId,
+    )
+  )
+    return
+  const matches = readNativeUserMessages(events).filter(
+    (message) => message.rpcId === intent.requestId,
+  )
+  const message = matches.length === 1 ? matches[0] : undefined
+  if (!message || !activeSeqs.has(message.seq) || !editableNativeMessage(message)) return
+  return { seq: message.seq, text: message.text }
+}
+
+/** Match an unappended native replacement already verified by the native transaction journal. */
+export function externalUnsentNativeRecovery(
+  record: HarnessSession,
+  intent: ExternalEditIntent | undefined,
+  recovery: MessageEditSend | undefined,
+): boolean {
+  return Boolean(
+    intent?.phase === 'admitting' &&
+    intent.result &&
+    intent.recordId === record.id &&
+    intent.sessionId === record.nativeSessionId &&
+    intent.result.sessionId === record.acpSessionId &&
+    recovery?.prompt.sessionId === intent.sessionId &&
+    recovery.prompt.requestId === intent.requestId &&
+    (intent.targetSeq === undefined || intent.targetSeq === recovery.targetSeq) &&
+    record.turns.length === intent.result.retained.length &&
+    record.turns.every(
+      (turn, index) =>
+        ['completed', 'failed', 'cancelled'].includes(turn.state) &&
+        turn.native?.userMessageId &&
+        turn.native.userMessageId === intent.result!.retained[index]?.nextId,
+    ),
+  )
 }
 
 /** An empty fork with no vendor send can be replaced explicitly even if its file was never created. */
@@ -118,6 +174,56 @@ export function externalTerminalFailureChoice(
   return matches.length === 1 ? { seq: matches[0]!.seq, text: matches[0]!.text } : undefined
 }
 
+/** Recover a missing vendor input id only from its durable exact request receipt. */
+export function externalReceivedInput(
+  record: HarnessSession,
+  history: ExternalEditHistory,
+  intent: ExternalEditIntent | undefined,
+  events: readonly SessionEvent[],
+  activeSeqs: ReadonlySet<number>,
+): string | undefined {
+  const turn = record.turns.at(-1)
+  if (
+    !intent?.result ||
+    !['prompting', 'settled', 'uncertain'].includes(intent.phase) ||
+    intent.recordId !== record.id ||
+    intent.sessionId !== record.nativeSessionId ||
+    intent.result.sessionId !== record.acpSessionId ||
+    history.sessionId !== record.acpSessionId ||
+    !turn ||
+    !['failed', 'cancelled'].includes(turn.state) ||
+    turn.operationId !== 'message-edit:' + intent.requestId ||
+    turn.native?.userMessageId ||
+    turn.native?.officialSeq === undefined ||
+    record.turns.length !== intent.result.retained.length + 1 ||
+    history.boundaries.length !== record.turns.length ||
+    new Set(history.boundaries.map((boundary) => boundary.id)).size !== history.boundaries.length ||
+    record.turns
+      .slice(0, -1)
+      .some(
+        (prior, index) =>
+          !prior.native?.userMessageId ||
+          prior.native.userMessageId !== intent.result!.retained[index]?.nextId ||
+          prior.native.userMessageId !== history.boundaries[index]?.id,
+      )
+  )
+    return
+  const messages = readNativeUserMessages(events).filter(
+    (message) => message.rpcId === intent.requestId,
+  )
+  if (
+    messages.length !== 1 ||
+    messages[0]!.seq !== turn.native.officialSeq ||
+    !activeSeqs.has(messages[0]!.seq) ||
+    !editableNativeMessage(messages[0]!)
+  )
+    return
+  const receipts = history.receivedInputs?.filter((entry) => entry.requestId === intent.requestId)
+  const receipt = receipts?.length === 1 ? receipts[0] : undefined
+  if (!receipt?.inputId || receipt.inputId !== history.boundaries.at(-1)?.id) return
+  return receipt.inputId
+}
+
 /** Confirm a failed replacement using its journal, official request and complete vendor prefix. */
 export function externalEditRecovery(
   record: HarnessSession,
@@ -173,7 +279,7 @@ export function externalEditRecovery(
   )
     return { kind: 'settled' }
   if (
-    ['prompting', 'settled'].includes(intent.phase) &&
+    ['prompting', 'settled', 'uncertain'].includes(intent.phase) &&
     inputId &&
     history.boundaries.length === prefix.length + 1 &&
     history.boundaries.at(-1)?.id === inputId &&

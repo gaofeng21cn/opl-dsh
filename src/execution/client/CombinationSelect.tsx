@@ -117,8 +117,12 @@ export function CombinationSelect({
   const [busy, setBusy] = useState(false)
   const [preflightRevision, setPreflightRevision] = useState(0)
   const [preflight, setPreflight] = useState<
-    | { key: string; state: 'loading' }
-    | { key: string; state: 'ready'; value: HarnessReasoningPreflight }
+    | {
+        key: string
+        state: 'loading' | 'ready'
+        value?: HarnessReasoningPreflight
+        requestedEffort?: string | undefined
+      }
     | undefined
   >()
   const [pendingChoice, setPendingChoice] = useState<Choice>()
@@ -237,8 +241,12 @@ export function CombinationSelect({
     selected !== undefined && selected.combination.harnessRef !== 'dsh'
   const preflightKey = `${sessionId}:${selected?.combination.id ?? ''}`
   const livePreflight =
-    externalCliControlsEffort && preflight?.key === preflightKey && preflight.state === 'ready'
-      ? preflight.value
+    externalCliControlsEffort && preflight?.key === preflightKey ? preflight.value : undefined
+  const confirmedEffort =
+    preflight?.requestedEffort === selection.current?.reasoningEffort &&
+    livePreflight?.status === 'known' &&
+    livePreflight.efforts.some((effort) => effort.id === livePreflight.currentEffort)
+      ? livePreflight.currentEffort
       : undefined
   const displayedReasoning = externalCliControlsEffort
     ? livePreflight?.status === 'known' && livePreflight.efforts.length > 0
@@ -257,18 +265,21 @@ export function CombinationSelect({
   const requestedEffort = externalCliControlsEffort
     ? selection.effortSource === 'harness'
       ? selection.current?.reasoningEffort
-      : providerOwnsEffort && reasoning?.efforts.some((effort) => effort.id === providerEffort)
-        ? providerEffort
-        : livePreflight?.status === 'known' &&
-            livePreflight.efforts.some((effort) => effort.id === selection.current?.reasoningEffort)
-          ? selection.current?.reasoningEffort
-          : undefined
+      : (confirmedEffort ??
+        (providerOwnsEffort && reasoning?.efforts.some((effort) => effort.id === providerEffort)
+          ? providerEffort
+          : livePreflight?.status === 'known' &&
+              livePreflight.efforts.some(
+                (effort) => effort.id === selection.current?.reasoningEffort,
+              )
+            ? selection.current?.reasoningEffort
+            : undefined))
     : (selection.current?.reasoningEffort ?? modelDefaultEffort(currentModel?.id ?? '', reasoning))
   const effectiveEffort =
     externalCliControlsEffort && livePreflight?.status === 'known'
       ? livePreflight.efforts.some((effort) => effort.id === requestedEffort)
         ? requestedEffort
-        : undefined
+        : confirmedEffort
       : externalCliControlsEffort &&
           (selection.effortSource === 'harness' ||
             (providerOwnsEffort &&
@@ -349,7 +360,6 @@ export function CombinationSelect({
     focusIntent.current = selection.current === null ? 'drill' : null
     setPane(selection.current === null ? 'model' : 'root')
     setOpen(true)
-    setPreflightRevision((revision) => revision + 1)
     setError('')
     void reload(sessionId)
   }
@@ -358,25 +368,55 @@ export function CombinationSelect({
       setPreflight(undefined)
       return
     }
+    if (!available || locked) return
     const key = `${sessionId}:${selected.combination.id}`
+    const requestedEffort = selection.current?.reasoningEffort
+    const combination = selected.combination.id
     let current = true
-    setPreflight({ key, state: 'loading' })
-    void call('reasoning-preflight', { sessionId, combination: selected.combination.id })
-      .then((value: HarnessReasoningPreflight) => {
-        if (current) setPreflight({ key, state: 'ready', value })
+    let retry: ReturnType<typeof setTimeout> | undefined
+    const query = async (attempt: number) => {
+      if (!current) return
+      setPreflight((previous) => ({
+        ...(previous?.key === key ? previous : { key }),
+        state: 'loading',
+      }))
+      let value: HarnessReasoningPreflight
+      try {
+        value = await call('reasoning-preflight', { sessionId, combination })
+      } catch {
+        value = { status: 'unavailable', efforts: [] }
+      }
+      if (!current) return
+      // A new Session may not exist on the Host until its first control update.
+      // Retry only the unavailable read, then leave recovery to a user action or unlock.
+      if (value.status === 'unavailable' && attempt < 2) {
+        retry = setTimeout(() => void query(attempt + 1), attempt === 0 ? 500 : 1500)
+        return
+      }
+      setPreflight((previous) => {
+        if (
+          value.status === 'unavailable' &&
+          previous?.key === key &&
+          previous.value?.status === 'known'
+        )
+          return { ...previous, state: 'ready' }
+        return { key, state: 'ready', value, requestedEffort }
       })
-      .catch(() => {
-        if (current)
-          setPreflight({
-            key,
-            state: 'ready',
-            value: { status: 'unavailable', efforts: [] },
-          })
-      })
+    }
+    void query(0)
     return () => {
       current = false
+      clearTimeout(retry)
     }
-  }, [call, selected?.combination.id, sessionId, preflightRevision])
+  }, [
+    call,
+    selected?.combination.id,
+    selection.current?.reasoningEffort,
+    sessionId,
+    available,
+    locked,
+    preflightRevision,
+  ])
   const drill = (next: 'model' | 'effort') => {
     focusIntent.current = 'drill'
     setPane(next)
@@ -624,24 +664,28 @@ export function CombinationSelect({
                     onClick={() => drill('effort')}
                   >
                     <span className={css.cellLabel}>{effortTitle}</span>
-                    <span className={css.cellValue}>{currentEffortLabel ?? '默认'}</span>
+                    <span className={css.cellValue}>{currentEffortLabel ?? '未报告当前档位'}</span>
                     <IconChevronRightOutlineRegular className={css.cellChevron} />
                   </button>
                 )}
-                {externalCliControlsEffort && preflight?.state === 'loading' && (
-                  <div className={css.groupTitle} role="status">
-                    正在读取推理设置…
-                  </div>
-                )}
-                {externalCliControlsEffort && livePreflight?.status === 'unavailable' && (
-                  <button
-                    type="button"
-                    className={css.cell}
-                    onClick={() => setPreflightRevision((revision) => revision + 1)}
-                  >
-                    重新读取推理设置
-                  </button>
-                )}
+                {externalCliControlsEffort &&
+                  preflight?.key === preflightKey &&
+                  preflight.state === 'loading' && (
+                    <div className={css.groupTitle} role="status">
+                      正在读取推理设置…
+                    </div>
+                  )}
+                {externalCliControlsEffort &&
+                  livePreflight?.status === 'unavailable' &&
+                  preflight?.state === 'ready' && (
+                    <button
+                      type="button"
+                      className={css.cell}
+                      onClick={() => setPreflightRevision((revision) => revision + 1)}
+                    >
+                      重新读取推理设置
+                    </button>
+                  )}
               </>
             )}
             {pane === 'model' && (

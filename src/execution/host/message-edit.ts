@@ -96,8 +96,10 @@ export class MessageEditTransactions {
       throw error
     }
   }
-  async recoverUnadmitted(agent: Agent): Promise<void> {
+  /** Identify a stopped edit that never reached the Session log or the vendor prompt. */
+  unadmitted(agent: Agent): EditIntent | undefined {
     const intent = this.store.get(agent.id)
+    const events = agent.session.snapshotEvents()
     if (
       !intent ||
       intent.phase !== 'prepared' ||
@@ -105,9 +107,20 @@ export class MessageEditTransactions {
       agent.status !== 'idle' ||
       agent.inbox.nextTurn.length ||
       agent.inbox.nextStep.length ||
-      unresolvedMessageEdit(agent.session.snapshotEvents())
+      unresolvedMessageEdit(events) ||
+      events.some(
+        (event) =>
+          event.type === 'user/message' &&
+          'rpcId' in event.data.source &&
+          event.data.source.rpcId === intent.input.prompt.requestId,
+      )
     )
       return
+    return structuredClone(intent)
+  }
+  async recoverUnadmitted(agent: Agent): Promise<void> {
+    const intent = this.unadmitted(agent)
+    if (!intent) return
     await this.store.save({ ...intent, phase: 'cancelled' })
   }
   async send(
@@ -224,9 +237,9 @@ export class MessageEditTransactions {
     if (!prior) {
       if (JSON.stringify(agent.session.surface.nodes) !== JSON.stringify(intent.surface))
         throw Error('消息上下文已变化，请重新选择')
-      const nodes = agent.session.surface.nodes.filter(
-        (seq) => Number(seq) >= intent.input.targetSeq,
-      )
+      const targetIndex = agent.session.surface.nodes.indexOf(intent.input.targetSeq as SessionSeq)
+      if (targetIndex < 0) throw Error('消息上下文已变化')
+      const nodes = agent.session.surface.nodes.slice(targetIndex)
       const start = nodes[0],
         end = nodes.at(-1)
       if (start === undefined || end === undefined) throw Error('消息上下文已变化')

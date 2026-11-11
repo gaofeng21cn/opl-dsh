@@ -187,6 +187,7 @@ function fixture(initial: { model: string; reasoningEffort?: string }) {
 const mounted: Array<() => Promise<void>> = []
 afterEach(async () => {
   while (mounted.length) await mounted.pop()!()
+  vi.useRealTimers()
 })
 
 /** Mount the real component against the projection face, as the desktop does. */
@@ -633,6 +634,7 @@ describe('MiniMax Code model menu labels', () => {
   )
 
   it('offers a read retry and no effort ladder after a preflight failure', async () => {
+    vi.useFakeTimers()
     const base = fixture({ model: M3_FLASH, reasoningEffort: 'max' })
     const call = (async (method: string, args?: unknown) => {
       if (method === 'reasoning-preflight') throw Error('private provider detail')
@@ -643,6 +645,7 @@ describe('MiniMax Code model menu labels', () => {
       next: { provider: PROVIDER, model: M3_FLASH, reasoningEffort: 'max' },
     })
     const view = await mount({ call, source: () => face.face })
+    await act(async () => vi.advanceTimersByTimeAsync(2000))
     await view.open()
     expect(view.menuText()).toContain('重新读取推理设置')
     expect(view.menuText()).not.toContain('推理强度')

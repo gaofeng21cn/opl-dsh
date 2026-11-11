@@ -1621,6 +1621,7 @@ const _one_person_lab_dsh_opl_oplExecution_reasoning_preflight_result$schema = (
   'id': z.string(),
   'name': z.string(),
 })),
+  'currentEffort': z.string().optional().describe('Actual configured choice confirmed by this Harness\'s advertisement.'),
 }))
 let _one_person_lab_dsh_opl_oplExecution_report_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_report_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_report_parameter_0$schema$value ??= z.object({
@@ -5749,7 +5750,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         mode: 'strict',
         typeSymbol: '@one-person-lab/dsh-opl/types#HarnessReasoningPreflight',
         create: _one_person_lab_dsh_opl_oplExecution_reasoning_preflight_result$schema,
-        jsonSchema: {"type":"object","properties":{"status":{"type":"string","enum":["unavailable","not-applicable","known"]},"efforts":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":true}}},"required":["status","efforts"],"additionalProperties":true},
+        jsonSchema: {"type":"object","properties":{"status":{"type":"string","enum":["unavailable","not-applicable","known"]},"efforts":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id","name"],"additionalProperties":true}},"currentEffort":{"type":"string","description":"Actual configured choice confirmed by this Harness's advertisement."}},"required":["status","efforts"],"additionalProperties":true},
       },
       sourceLocation: {"file":"src/execution/host/service.ts","line":211,"column":3},
     },

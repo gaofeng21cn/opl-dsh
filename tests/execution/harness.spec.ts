@@ -3012,13 +3012,15 @@ it.each([
   'ephemeral-unsent',
   'legacy-unbound-first',
   'driver-disconnect',
+  'native-admission-failed-restart',
 ] as const)(
   'edits an external conversation with recovery mode=%s',
   async (mode) => {
     const prepared =
       mode === 'ready-restart' ||
       mode === 'legacy-ready-restart' ||
-      mode === 'ephemeral-ready-restart'
+      mode === 'ephemeral-ready-restart' ||
+      mode === 'native-admission-failed-restart'
     const ephemeral =
       mode === true || mode === 'ephemeral-unsent' || mode === 'ephemeral-ready-restart'
     const quota = mode === 'quota' || mode === 'quota-restart'
@@ -3085,6 +3087,12 @@ it.each([
           await f.service.claimMessageEdit(agent as never, queued, number, 1)
           real.append('turn/start', { turn: number })
           real.append('step/start', { turn: number, step: 1 })
+          if (mode === 'native-admission-failed-restart' && request.requestId === 'replacement') {
+            queued.length = 0
+            real.append('step/end', { turn: number, step: 1 })
+            real.append('turn/end', { turn: number, reason: { kind: 'completed' } })
+            return { accepted: true as const }
+          }
           const edited = await f.service.commitMessageEdit(
             agent as never,
             number,
@@ -3246,7 +3254,13 @@ it.each([
         await releaseQuotaSettlement.promise
       })
     }
-    if (prepared) {
+    if (mode === 'native-admission-failed-restart') {
+      expect(await f.service.messageEditSend(input)).toEqual({ accepted: true })
+      expect(owner.externalMessageEdits.intent(real.id)?.phase).toBe('admitting')
+      await f.service.dispose()
+      f.service = new HarnessService(f.ctx, f.options)
+      cleanups.push(() => f.service.dispose())
+    } else if (prepared) {
       const save = owner.save.bind(owner)
       vi.spyOn(owner, 'save').mockImplementation(async (row) => {
         await save(row)
@@ -3393,6 +3407,20 @@ it.each([
       expect(await readFile(join(f.root, 'calls.txt'), 'utf8')).toBe(
         callsBefore + 'user: followup-false\nuser: followup-true\n',
       )
+      const owner = f.service as unknown as {
+        records: Map<string, HarnessSession>
+        externalMessageEdits: ExternalMessageEditTransactions
+        save(record: HarnessSession): Promise<void>
+      }
+      const row = [...owner.records.values()].find((item) => item.nativeSessionId === real.id)!
+      expect(owner.externalMessageEdits.intent(real.id)?.phase).toBe('settled')
+      row.turns.at(-1)!.state = 'failed'
+      row.turns.at(-1)!.operationId = 'message-edit:another-request'
+      await owner.save(row)
+      const unrelatedFailure = await f.service.messageEditState({ sessionId: real.id })
+      expect(unrelatedFailure.pending).toBe(false)
+      expect(unrelatedFailure.choices.length).toBeGreaterThan(1)
+      expect(owner.externalMessageEdits.intent(real.id)?.phase).toBe('settled')
     }
   },
   20_000,

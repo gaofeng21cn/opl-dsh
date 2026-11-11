@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   probeHarnessReasoning,
+  readHarnessCurrentEffort,
   readHarnessReasoning,
 } from '../../src/execution/host/reasoning-preflight.ts'
 import { minimaxModelValue, minimaxReasoning } from '../../src/execution/host/adapters/minimax.ts'
@@ -128,6 +129,48 @@ describe('external reasoning preflight', () => {
       readHarnessReasoning(record(), [{ id: 'thinkingEffort', options: [{ value: 'max' }] }]),
     ).toEqual([{ id: 'max', name: 'max' }])
   })
+  it('reads a current value only from the advertised reasoning values', () => {
+    const options = [
+      {
+        id: 'thought_level',
+        currentValue: 'high',
+        options: ['low', 'medium', 'high'].map((value) => ({ value })),
+      },
+    ]
+    expect(readHarnessCurrentEffort(record(), options)).toBe('high')
+    expect(
+      readHarnessCurrentEffort(record(), [
+        { id: 'thinkingEffort', currentValue: 'max', options: [{ value: 'max' }] },
+      ]),
+    ).toBe('max')
+  })
+  it.each([undefined, '', null, 1, 'max', 'HIGH'])(
+    'does not guess a missing or unoffered current value: %s',
+    (currentValue) => {
+      expect(
+        readHarnessCurrentEffort(record(), [
+          { id: 'thought_level', currentValue, options: [{ value: 'high' }] },
+        ]),
+      ).toBeUndefined()
+    },
+  )
+  it('does not choose between competing reasoning controls or invalid advertisements', () => {
+    const option = { id: 'thinking', currentValue: 'on', options: [{ value: 'on' }] }
+    expect(readHarnessCurrentEffort(record(), [option, option])).toBeUndefined()
+    expect(
+      readHarnessCurrentEffort(record(), [
+        option,
+        { id: 'reasoning_effort', currentValue: 'high', options: [{ value: 'high' }] },
+      ]),
+    ).toBeUndefined()
+    expect(readHarnessCurrentEffort(record(), undefined)).toBeUndefined()
+    expect(
+      readHarnessCurrentEffort(record(), [{ id: 'model', currentValue: 'high' }]),
+    ).toBeUndefined()
+    expect(
+      readHarnessCurrentEffort(record(), [{ ...option, options: [{ value: null }] }]),
+    ).toBeUndefined()
+  })
   it('offers M3 thinking variants only when the CLI advertises them', () => {
     const m3 = {
       ...record(),
@@ -141,16 +184,52 @@ describe('external reasoning preflight', () => {
       ]),
     ).toEqual([{ id: 'off', name: 'off' }])
   })
+  it.each(['on', 'off'])('reads M3 thinking %s from the current advertised model variant', (id) => {
+    const m3 = {
+      ...record(),
+      harnessRef: 'minimax-code',
+      modelRef: { provider: 'minimax-official', model: 'MiniMax-M3' },
+    }
+    const { spec } = minimaxReasoning(m3.modelRef)!
+    const offered = ['on', 'off'].map((value) => ({ value: minimaxModelValue(spec, value) }))
+    const option = {
+      id: 'model',
+      currentValue: minimaxModelValue(spec, id),
+      options: offered,
+    }
+    expect(readHarnessCurrentEffort(m3, [option])).toBe(id)
+    expect(readHarnessCurrentEffort(m3, [option, option])).toBeUndefined()
+    expect(readHarnessCurrentEffort(m3, [{ ...option, currentValue: undefined }])).toBeUndefined()
+    expect(
+      readHarnessCurrentEffort(m3, [{ ...option, currentValue: 'not-a-model' }]),
+    ).toBeUndefined()
+    expect(
+      readHarnessCurrentEffort(m3, [
+        { ...option, options: [{ value: minimaxModelValue(spec, id === 'on' ? 'off' : 'on') }] },
+      ]),
+    ).toBeUndefined()
+  })
   it('authenticates before opening a session and accepts only the configured model readback', async () => {
     await withAuthenticatedFixture(async ({ session, launch, methods }) => {
       expect(await probeHarnessReasoning(antigravityAdapter, session, launch)).toEqual({
         status: 'known',
         efforts: ['low', 'medium', 'high'].map((id) => ({ id, name: id })),
+        currentEffort: 'high',
       })
       expect(await readFile(methods, 'utf8')).toBe(
         'initialize\nauthenticate\nsession/new\nsession/set_config_option\nsession/set_config_option\n',
       )
       expect(session.turns).toEqual([])
+    })
+  }, 20000)
+  it('returns the configured effort instead of the session creation default', async () => {
+    await withAuthenticatedFixture(async ({ session, launch }) => {
+      session.reasoningEffort = 'medium'
+      expect(await probeHarnessReasoning(antigravityAdapter, session, launch)).toEqual({
+        status: 'known',
+        efforts: ['low', 'medium', 'high'].map((id) => ({ id, name: id })),
+        currentEffort: 'medium',
+      })
     })
   }, 20000)
   it('does not allocate a session or send a prompt after authentication fails', async () => {
@@ -204,6 +283,7 @@ describe('external reasoning preflight', () => {
       })
       expect(result.status).toBe('known')
       expect(result.efforts.map((effort) => effort.id)).toEqual(['off', 'on'])
+      expect(result.currentEffort).toBe('on')
       expect(await readFile(methods, 'utf8')).toBe(
         'initialize\nsession/new\nsession/set_config_option\n',
       )

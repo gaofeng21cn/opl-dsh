@@ -81,6 +81,30 @@ it('selection and successful admission do not change history before the official
   expect(f.session.seq).toBe(before)
   expect(f.edits.pending(f.agent.id)).toBe(true)
 })
+it('recovers only an idle edit with no queued or logged replacement', async () => {
+  const f = fixture()
+  await f.edits.send(f.agent, f.input, f.admit)
+  expect(f.edits.unadmitted(f.agent)).toBeUndefined()
+  f.agent.inbox.nextTurn.splice(0)
+  expect(f.edits.unadmitted(f.agent)?.input.prompt.requestId).toBe(f.input.prompt.requestId)
+  await f.edits.recoverUnadmitted(f.agent)
+  expect(f.edits.pending(f.agent.id)).toBe(false)
+
+  const admitted = fixture()
+  await admitted.edits.send(admitted.agent, admitted.input, admitted.admit)
+  admitted.agent.inbox.nextTurn.splice(0)
+  admitted.session.append(
+    'user/message',
+    createUserMessage({
+      source: { kind: 'user', rpcId: admitted.input.prompt.requestId },
+      content: admitted.input.prompt.content,
+    }),
+    { surfaceOp: 'append' },
+  )
+  expect(admitted.edits.unadmitted(admitted.agent)).toBeUndefined()
+  await admitted.edits.recoverUnadmitted(admitted.agent)
+  expect(admitted.edits.pending(admitted.agent.id)).toBe(true)
+})
 it('first message replacement keeps identity, audit history and system input, removes later model input', async () => {
   const f = fixture()
   await f.edits.send(f.agent, f.input, f.admit)
@@ -112,6 +136,27 @@ it('first message replacement keeps identity, audit history and system input, re
   await expect(
     f.edits.send(f.agent, { ...f.input, targetSeq: Number(f.later.seq) }, f.admit),
   ).rejects.toThrow('身份')
+})
+it('replaces from the selected surface position when a newer system node precedes it', async () => {
+  const f = fixture()
+  const oldSystem = f.session.surface.nodes[0]!
+  f.session.append(
+    'system/message',
+    { turn: 1, step: 1, message: createSystemMessage('updated instructions') },
+    {
+      surfaceOp: { op: 'replace', startSeq: oldSystem, endSeq: oldSystem },
+      sourceEventSeqs: [oldSystem],
+    },
+  )
+  expect(f.session.surface.nodes[0]).toBeGreaterThan(f.input.targetSeq)
+  f.input.head = Number(f.session.seq) - 1
+  await f.edits.send(f.agent, f.input, f.admit)
+  await f.commit()
+  f.drain()
+  expect(f.session.deriveMessages().flatMap((message) => message.content)).toEqual([
+    { type: 'text', text: 'updated instructions' },
+    { type: 'text', text: 'edited' },
+  ])
 })
 it('later message replacement preserves earlier inputs', async () => {
   const f = fixture()

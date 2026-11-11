@@ -41,7 +41,14 @@
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs'
 import { StringDecoder } from 'node:string_decoder'
 import { join, resolve, sep } from 'node:path'
 import { commandLaunch } from '../../harness-registry.ts'
@@ -876,6 +883,7 @@ interface StepEditHistory {
   token: string
   boundaries: { id: string; text?: string; unavailableReason?: string }[]
   settledInputId?: string
+  receivedInputs?: { requestId: string; inputId: string }[]
   file: string
   ephemeral: boolean
   thinkingLevel: string
@@ -883,6 +891,60 @@ interface StepEditHistory {
   fileHash: string | null
   entries: StepEntry[]
   branch: StepEntry[]
+}
+
+interface DurableStepInput {
+  requestId: string
+  inputId: string
+  entryHash: string
+}
+
+function receiptFile(): string {
+  return join(
+    sessionIndexDir,
+    createHash('sha256').update(sessionId).digest('hex') + '.inputs.json',
+  )
+}
+
+function durableInputs(): DurableStepInput[] {
+  const file = receiptFile()
+  if (!existsSync(file)) return []
+  const value = JSON.parse(readFileSync(file, 'utf8'))
+  if (!Array.isArray(value)) refuseEdit('protocol')
+  const requests = new Set<string>()
+  return value.map((raw) => {
+    const item = editObject(raw)
+    if (
+      typeof item.requestId !== 'string' ||
+      !item.requestId ||
+      requests.has(item.requestId) ||
+      typeof item.inputId !== 'string' ||
+      !item.inputId ||
+      typeof item.entryHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(item.entryHash)
+    )
+      refuseEdit('protocol')
+    requests.add(item.requestId)
+    return item as unknown as DurableStepInput
+  })
+}
+
+/** Persist correlation before advertising it; later reads require the exact native event bytes. */
+function saveInputReceipt(receipt: StepInputReceipt, entry: StepEntry): void {
+  const values = durableInputs()
+  const next = {
+    requestId: receipt.requestId,
+    inputId: entry.id,
+    entryHash: createHash('sha256').update(canonical(entry)).digest('hex'),
+  }
+  const prior = values.find((value) => value.requestId === next.requestId)
+  if (prior && canonical(prior) !== canonical(next)) refuseEdit('stale')
+  if (prior) return
+  mkdirSync(sessionIndexDir, { recursive: true })
+  const file = receiptFile()
+  const temp = file + '.tmp'
+  writeFileSync(temp, JSON.stringify([...values, next]), { mode: 0o600 })
+  renameSync(temp, file)
 }
 
 /** Stable ids and parent links select the active branch; append order also contains abandoned branches. */
@@ -978,6 +1040,7 @@ function captureInputReceipt(receipt: StepInputReceipt): void {
           .length !== 1
       )
         return
+      saveInputReceipt(receipt, candidate)
       receipt.inputId = candidate.id
       emit({
         sessionUpdate: 'session_info_update',
@@ -1066,6 +1129,15 @@ async function readEditHistory(requirePinned = true): Promise<StepEditHistory> {
   if (ephemeral && boundaries.length) refuseEdit('stale')
   const fileHash = ephemeral ? null : createHash('sha256').update(readFileSync(file)).digest('hex')
   const lastMessage = [...branch].reverse().find((entry) => entry.type === 'message')
+  const receivedInputs = durableInputs().flatMap((receipt) => {
+    const entry = branch.find((item) => item.id === receipt.inputId)
+    return entry &&
+      entry.type === 'message' &&
+      editObject(entry.message).role === 'user' &&
+      createHash('sha256').update(canonical(entry)).digest('hex') === receipt.entryHash
+      ? [{ requestId: receipt.requestId, inputId: receipt.inputId }]
+      : []
+  })
   const terminal = editObject(lastMessage?.message)
   const settledInputId =
     terminal.role === 'assistant' &&
@@ -1078,6 +1150,7 @@ async function readEditHistory(requirePinned = true): Promise<StepEditHistory> {
       .update(canonical({ version: 1, state, entries, leafId: response.data.leafId, fileHash }))
       .digest('hex')}`,
     boundaries,
+    ...(receivedInputs.length ? { receivedInputs } : {}),
     ...(settledInputId ? { settledInputId } : {}),
     file,
     ephemeral,
@@ -1410,6 +1483,7 @@ async function invoke(method: string, params: any): Promise<unknown> {
           sessionId: history.sessionId,
           token: history.token,
           boundaries: history.boundaries,
+          ...(history.receivedInputs ? { receivedInputs: history.receivedInputs } : {}),
           ...(history.settledInputId ? { settledInputId: history.settledInputId } : {}),
         }
       })

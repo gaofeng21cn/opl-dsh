@@ -125,6 +125,43 @@ describe('StepCode message-edit driver', () => {
     },
   )
 
+  it('recovers a missing identity only from its durable request receipt and stable owned history', async () => {
+    const receivedInputs = [{ requestId: 'request-2', inputId: 'u2' }]
+    const run = failedRun()
+    delete run.record.turns[1]!.native!.userMessageId
+    run.record.turns[1]!.operationId = 'message-edit:request-2'
+    run.request.mockResolvedValue({ ok: true, ...history, receivedInputs })
+    expect(await run.driver.read(run.context)).toEqual({
+      ...history,
+      receivedInputs,
+      settledInputId: 'u2',
+    })
+    expect(run.disconnect).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps an unidentified input blocked when the durable receipt belongs to another request', async () => {
+    const receivedInputs = [{ requestId: 'other-request', inputId: 'u2' }]
+    const run = failedRun()
+    delete run.record.turns[1]!.native!.userMessageId
+    run.record.turns[1]!.operationId = 'message-edit:request-2'
+    run.request.mockResolvedValue({ ok: true, ...history, receivedInputs })
+    expect(await run.driver.read(run.context)).toEqual({ ...history, receivedInputs })
+    expect(run.disconnect).not.toHaveBeenCalled()
+  })
+
+  it('refuses duplicate or foreign durable request receipts', async () => {
+    for (const receivedInputs of [
+      [{ requestId: 'request-2', inputId: 'missing' }],
+      [
+        { requestId: 'request-2', inputId: 'u1' },
+        { requestId: 'request-2', inputId: 'u2' },
+      ],
+    ]) {
+      const run = setup({ ok: true, ...history, receivedInputs })
+      await expect(run.driver.read(run.context)).rejects.toMatchObject({ code: 'protocol' })
+    }
+  })
+
   it.each(['after-exit', 'second-read'])('refuses history changes at %s', async (when) => {
     const run = failedRun()
     run.request

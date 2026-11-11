@@ -23,6 +23,8 @@ export interface ExternalEditHistory {
   boundaries: ExternalEditBoundary[]
   /** Latest input with a verified terminal reply or owned engine exit and stable idle history. */
   settledInputId?: string
+  /** Durable request receipts issued by the bridge for exact native input identities. */
+  receivedInputs?: { requestId: string; inputId: string }[]
 }
 
 /** Shared owner supplies transport lifecycle and retains all record/prompt ownership. */
