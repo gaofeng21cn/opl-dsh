@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { assertIsolatedRoot, safeBinding } from './qualification-support.mjs'
 import { verifyModelPlugins } from './qualification-model-plugins.mjs'
 import {
-  TEAM_CHILD_PROMPT,
+  officialTeamProbeResponse,
   verifyOfficialCapabilities,
 } from './qualification-official-capabilities.mjs'
 // Run against an already booted, isolated official Desktop. Never target a user's profile.
@@ -181,46 +181,30 @@ const server = createServer(async (req, res) => {
         m.role === 'tool' ||
         (Array.isArray(m.content) && m.content.some((b) => b.type === 'tool_result')),
     )
-    const teamChild =
-      teamProbe &&
-      body.messages.some(
-        (message) =>
-          message.role === 'user' && JSON.stringify(message.content).includes(TEAM_CHILD_PROMPT),
-      )
-    const toolName = teamProbe
-      ? 'spawn_teammate'
-      : gitBashProbe
-        ? 'bash'
-        : 'list_harness_combinations'
-    const toolInput = teamProbe
-      ? {
-          name: 'qualification-worker',
-          description: 'Verify the official Team child',
-          prompt: TEAM_CHILD_PROMPT,
-          context: 'fresh',
-        }
-      : gitBashProbe
+    const teamResponse = teamProbe ? officialTeamProbeResponse(body) : undefined
+    const toolName =
+      teamResponse?.tool?.name ?? (gitBashProbe ? 'bash' : 'list_harness_combinations')
+    const toolInput =
+      teamResponse?.tool?.input ??
+      (gitBashProbe
         ? {
             command: 'git --version && printf OPL_GIT_BASH_OK > opl-git-bash-smoke.txt',
             description: 'Verify Git Bash in the isolated workspace',
             timeoutMs: 10000,
           }
-        : {}
-    const hasTool = !teamChild && body.tools?.some((t) => (t.name ?? t.function?.name) === toolName)
-    const resultText = teamProbe
-      ? teamChild
-        ? 'OPL_OFFICIAL_TEAM_CHILD_VERIFIED'
-        : 'OPL_OFFICIAL_TEAM_LEAD_VERIFIED'
-      : 'runtime verified'
+        : {})
+    const toolCallId = teamResponse?.tool?.id ?? 'fixture_tool'
+    const hasTool = teamProbe
+      ? teamResponse.tool !== undefined
+      : !usedTool && body.tools?.some((t) => (t.name ?? t.function?.name) === toolName)
+    const resultText = teamResponse?.text ?? 'runtime verified'
     requests.push({
       path: req.url,
       model: body.model,
       key: req.headers['x-api-key'] ?? req.headers.authorization,
       usedTool,
       hasTool,
-      ...(teamProbe && !teamChild
-        ? { teamTools: body.tools?.map((t) => t.name ?? t.function?.name) ?? [] }
-        : {}),
+      ...(teamProbe ? { teamTools: body.tools?.map((t) => t.name ?? t.function?.name) ?? [] } : {}),
     })
     res.writeHead(200, { 'content-type': 'text/event-stream' })
     if (isMessages) {
@@ -236,11 +220,11 @@ const server = createServer(async (req, res) => {
           usage: { input_tokens: 3, output_tokens: 0 },
         },
       })
-      if (!usedTool && hasTool) {
+      if (hasTool) {
         send({
           type: 'content_block_start',
           index: 0,
-          content_block: { type: 'tool_use', id: 'fixture_tool', name: toolName, input: {} },
+          content_block: { type: 'tool_use', id: toolCallId, name: toolName, input: {} },
         })
         send({
           type: 'content_block_delta',
@@ -258,7 +242,7 @@ const server = createServer(async (req, res) => {
       send({ type: 'content_block_stop', index: 0 })
       send({
         type: 'message_delta',
-        delta: { stop_reason: !usedTool && hasTool ? 'tool_use' : 'end_turn' },
+        delta: { stop_reason: hasTool ? 'tool_use' : 'end_turn' },
         usage: { output_tokens: 4 },
       })
       send({ type: 'message_stop' })
@@ -276,12 +260,12 @@ const server = createServer(async (req, res) => {
             '\n\n',
         )
       send({ role: 'assistant' })
-      if (!usedTool && hasTool)
+      if (hasTool)
         send({
           tool_calls: [
             {
               index: 0,
-              id: 'call_fixture',
+              id: toolCallId,
               type: 'function',
               function: { name: toolName, arguments: JSON.stringify(toolInput) },
             },
@@ -295,9 +279,7 @@ const server = createServer(async (req, res) => {
             object: 'chat.completion.chunk',
             created: 1,
             model: body.model,
-            choices: [
-              { index: 0, delta: {}, finish_reason: !usedTool && hasTool ? 'tool_calls' : 'stop' },
-            ],
+            choices: [{ index: 0, delta: {}, finish_reason: hasTool ? 'tool_calls' : 'stop' }],
             usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 },
           }) +
           '\n\ndata: [DONE]\n\n',
