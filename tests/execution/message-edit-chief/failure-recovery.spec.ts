@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { HarnessSession } from '../../../src/execution/contracts/sessions.ts'
+import type { MessageEditSend } from '../../../src/execution/contracts/message-edit.ts'
 import type { ExternalEditHistory } from '../../../src/execution/host/message-edit-driver.ts'
 import type { ExternalEditIntent } from '../../../src/execution/host/message-edit-external.ts'
 import {
@@ -8,6 +9,9 @@ import {
   externalPreparedChoice,
   externalTerminalFailureChoice,
   externalUnsentEmptyChoice,
+  externalUnsentAdmissionChoice,
+  externalReceivedInput,
+  externalUnsentNativeRecovery,
 } from '../../../src/execution/host/message-edit-mapping.ts'
 
 function fixture() {
@@ -116,6 +120,43 @@ it('does not resume a prepared allocation if its replacement already appears in 
 it('recovers a settled failed input by its exact vendor and official request identities', () => {
   expect(fixture().recover()).toEqual({ kind: 'settled' })
 })
+
+it('recovers a lost input notification from an exact durable request receipt', () => {
+  const f = fixture()
+  delete f.record.turns[1]!.native!.userMessageId
+  f.history.receivedInputs = [{ requestId: 'edit', inputId: 'b' }]
+  expect(externalReceivedInput(f.record, f.history, f.intent, f.events, f.active)).toBe('b')
+})
+
+it.each([
+  'no-receipt',
+  'wrong-request',
+  'wrong-input',
+  'duplicate',
+  'prefix',
+  'extra-boundary',
+  'native-request',
+  'native-seq',
+  'hidden',
+  'running',
+  'admitting',
+])('does not recover a missing input when %s evidence differs', (change) => {
+  const f = fixture()
+  delete f.record.turns[1]!.native!.userMessageId
+  f.history.receivedInputs = [{ requestId: 'edit', inputId: 'b' }]
+  if (change === 'no-receipt') delete f.history.receivedInputs
+  if (change === 'wrong-request') f.history.receivedInputs[0]!.requestId = 'foreign'
+  if (change === 'wrong-input') f.history.receivedInputs[0]!.inputId = 'foreign'
+  if (change === 'duplicate') f.history.receivedInputs.push({ requestId: 'edit', inputId: 'b' })
+  if (change === 'prefix') f.record.turns[0]!.native!.userMessageId = 'foreign'
+  if (change === 'extra-boundary') f.history.boundaries.push({ id: 'foreign' })
+  if (change === 'native-request') f.intent.requestId = 'foreign'
+  if (change === 'native-seq') f.record.turns[1]!.native!.officialSeq = 8
+  if (change === 'hidden') f.active.delete(2)
+  if (change === 'running') f.record.turns[1]!.state = 'running'
+  if (change === 'admitting') f.intent.phase = 'admitting'
+  expect(externalReceivedInput(f.record, f.history, f.intent, f.events, f.active)).toBeUndefined()
+})
 it('offers a second retry directly from a persisted terminal vendor identity', () => {
   const f = fixture()
   f.intent.phase = 'settled'
@@ -138,6 +179,20 @@ it('recovers a durable terminal error response after restart without sending a p
   f.record.turns[1]!.stopReason = 'error_response'
   expect(f.recover()).toEqual({ kind: 'settled' })
 })
+it.each(['error-response', 'vendor-terminal'])(
+  'recovers an uncertain replacement only with exact received input and %s evidence',
+  (evidence) => {
+    const f = fixture()
+    f.intent.phase = 'uncertain'
+    if (evidence === 'error-response') {
+      delete f.history.settledInputId
+      f.record.turns[1]!.stopReason = 'error_response'
+    }
+    expect(f.recover()).toEqual({ kind: 'settled' })
+    f.history.boundaries[0]!.id = 'foreign-prefix'
+    expect(f.recover()).toBeUndefined()
+  },
+)
 it('offers a verified unsent replacement while retaining the prepared vendor prefix', () => {
   const f = fixture()
   f.intent.phase = 'admitting'
@@ -160,6 +215,74 @@ it('locates an unsent empty fork from the durable admission without inventing a 
   f.record.turns[0]!.native!.userMessageId = 'already-sent'
   expect(choice()).toBeUndefined()
 })
+
+it('retries a native committed replacement rejected before creating a vendor turn', () => {
+  const f = fixture()
+  f.intent.phase = 'admitting'
+  f.record.turns.pop()
+  const choice = () => externalUnsentAdmissionChoice(f.record, f.intent, f.events, f.active)
+  expect(choice()).toEqual({ seq: 2, text: 'same' })
+  f.intent.result!.retained = []
+  f.record.turns = []
+  expect(choice()).toEqual({ seq: 2, text: 'same' })
+})
+
+it('matches an exact native recovery before its replacement user event is appended', () => {
+  const f = fixture()
+  f.intent.phase = 'admitting'
+  f.record.turns.pop()
+  const recovery = { prompt: { sessionId: 'dsh', requestId: 'edit' } } as MessageEditSend
+  expect(externalUnsentNativeRecovery(f.record, f.intent, recovery)).toBe(true)
+  f.record.turns = []
+  f.intent.result!.retained = []
+  expect(externalUnsentNativeRecovery(f.record, f.intent, recovery)).toBe(true)
+})
+
+it.each(['request', 'native-session', 'vendor', 'record', 'phase', 'prefix', 'turn', 'missing'])(
+  'does not authorize native recovery with different %s evidence',
+  (change) => {
+    const f = fixture()
+    f.intent.phase = 'admitting'
+    if (change !== 'turn') f.record.turns.pop()
+    const recovery = { prompt: { sessionId: 'dsh', requestId: 'edit' } } as MessageEditSend
+    if (change === 'request') recovery.prompt.requestId = 'foreign'
+    if (change === 'native-session') recovery.prompt.sessionId = 'foreign'
+    if (change === 'vendor') f.record.acpSessionId = 'foreign'
+    if (change === 'record') f.record.id = 'foreign'
+    if (change === 'phase') f.intent.phase = 'prompting'
+    if (change === 'prefix') f.record.turns[0]!.native!.userMessageId = 'foreign'
+    expect(
+      externalUnsentNativeRecovery(f.record, f.intent, change === 'missing' ? undefined : recovery),
+    ).toBe(false)
+  },
+)
+
+it.each(['prompting', 'uncertain', 'settled', 'ready', 'invoking'] as const)(
+  'does not infer an unsent admission after phase %s',
+  (phase) => {
+    const f = fixture()
+    f.intent.phase = phase
+    f.record.turns.pop()
+    expect(externalUnsentAdmissionChoice(f.record, f.intent, f.events, f.active)).toBeUndefined()
+  },
+)
+
+it.each(['new-turn', 'prefix', 'vendor', 'record', 'session', 'request', 'duplicate', 'hidden'])(
+  'keeps an unsent admission blocked when %s evidence differs',
+  (change) => {
+    const f = fixture()
+    f.intent.phase = 'admitting'
+    if (change !== 'new-turn') f.record.turns.pop()
+    if (change === 'prefix') f.record.turns[0]!.native!.userMessageId = 'foreign'
+    if (change === 'vendor') f.record.acpSessionId = 'foreign'
+    if (change === 'record') f.record.id = 'foreign'
+    if (change === 'session') f.record.nativeSessionId = 'foreign'
+    if (change === 'request') f.intent.requestId = 'foreign'
+    if (change === 'duplicate') f.events.push(structuredClone(f.events[1]!))
+    if (change === 'hidden') f.active.delete(2)
+    expect(externalUnsentAdmissionChoice(f.record, f.intent, f.events, f.active)).toBeUndefined()
+  },
+)
 it.each([
   'unknown',
   'wrong-session',
@@ -206,6 +329,7 @@ it.each([
       break
     case 'uncertain':
       f.intent.phase = 'uncertain'
+      delete f.history.settledInputId
       break
     case 'invoking':
       f.intent.phase = 'invoking'

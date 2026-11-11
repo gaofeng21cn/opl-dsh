@@ -19,6 +19,7 @@ interface History {
   token: string
   boundaries: { id: string; text?: string }[]
   settledInputId?: string
+  receivedInputs?: { requestId: string; inputId: string }[]
 }
 interface Result {
   ok: true
@@ -199,6 +200,40 @@ describe('StepCode bridge message editing', () => {
       await run.agent.acp.cancel(fork.sessionId)
       expect(await prompt).toMatchObject({ stopReason: 'cancelled', userMessageId: inputId })
       expect((await read(run.agent, fork.sessionId)).settledInputId).toBe(inputId)
+      expect((await read(run.agent, fork.sessionId)).receivedInputs).toEqual([
+        { requestId: 'message-edit:second-replacement', inputId },
+      ])
+      await run.agent.dispose()
+      const restarted = await run.start()
+      try {
+        await restarted.acp.request('session/load', {
+          sessionId: fork.sessionId,
+          cwd: run.cwd,
+          mcpServers: [],
+        })
+        expect((await read(restarted, fork.sessionId)).receivedInputs).toEqual([
+          { requestId: 'message-edit:second-replacement', inputId },
+        ])
+        const rows = readFileSync(nativeFile, 'utf8')
+          .trim()
+          .split('\n')
+          .map((row) => JSON.parse(row))
+        rows.find((row) => row.id === inputId).message.timestamp += 1
+        writeFileSync(nativeFile, rows.map((row) => JSON.stringify(row)).join('\n') + '\n')
+      } finally {
+        await restarted.dispose()
+      }
+      const changed = await run.start()
+      try {
+        await changed.acp.request('session/load', {
+          sessionId: fork.sessionId,
+          cwd: run.cwd,
+          mcpServers: [],
+        })
+        expect((await read(changed, fork.sessionId)).receivedInputs).toBeUndefined()
+      } finally {
+        await changed.dispose()
+      }
       expect(readFileSync(run.sourceFile, 'utf8')).toBe(source)
       expect(run.commands().filter((call) => call.type === 'prompt')).toHaveLength(1)
     } finally {

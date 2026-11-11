@@ -6,7 +6,7 @@ const { mkdirSync, writeFileSync, readFileSync, existsSync } = require('node:fs'
 const { installModelPlugins, preserveModelPlugins } = require('./model-plugins.cjs')
 const { officialPnpm } = require('./official-pnpm.cjs')
 const [application, home, archive, companion, ...flags] = process.argv.slice(2)
-const officialBundles = [
+const optionalBundles = [
   '@deepseek-ai/dsh-experimental-agent-team-profile',
   '@deepseek-ai/dsh-experimental-auto-review',
 ]
@@ -19,6 +19,17 @@ async function main() {
   const pnpm = officialPnpm(resources)
   const requireRuntime = createRequire(join(runtime, 'package.json'))
   const load = (name) => import(pathToFileURL(requireRuntime.resolve(name)).href)
+  const official = JSON.parse(
+    readFileSync(requireRuntime.resolve('@deepseek-ai/dsh/package.json'), 'utf8'),
+  )
+  const teamBundle = optionalBundles[0]
+  const retiredTeam = !official.dependencies?.[teamBundle]
+  if (
+    retiredTeam &&
+    !(await load('@deepseek-ai/dsh-official-bundles')).RETIRED_BUNDLES?.has(teamBundle)
+  )
+    throw new Error('官方桌面缺少 Team 插件且未声明迁移，未改动插件选择')
+  const officialBundles = optionalBundles.filter((bundle) => !retiredTeam || bundle !== teamBundle)
   process.env.DSH_HOME = home
   const boot = await load('@deepseek-ai/dsh-app-boot')
   const { initProfile } = boot
@@ -97,6 +108,17 @@ async function main() {
   await withFileLock(
     join(dir, 'package.json'),
     async () => {
+      // The official profile loader removes its retired bundle references before
+      // the previous suite receipt can skip the optional-bundle migration.
+      if (retiredTeam) {
+        await require('./ofm-owner.cjs').stopped(dir)
+        boot.loadProfileDirectory(
+          'dsh',
+          dir,
+          requireRuntime.resolve('@deepseek-ai/dsh/package.json'),
+          { userLayer: false },
+        )
+      }
       if (existsSync(receipt)) {
         const saved = JSON.parse(readFileSync(receipt, 'utf8'))
         if (
@@ -110,9 +132,6 @@ async function main() {
       const bundles = manifest.dsh?.profile?.bundles ?? []
       // A custom profile without the official base cannot host Agent Teams.
       if (!bundles.includes('@deepseek-ai/dsh-base')) return
-      const official = JSON.parse(
-        readFileSync(requireRuntime.resolve('@deepseek-ai/dsh/package.json'), 'utf8'),
-      )
       for (const bundle of officialBundles) {
         const metadata = JSON.parse(
           readFileSync(requireRuntime.resolve(bundle + '/package.json'), 'utf8'),

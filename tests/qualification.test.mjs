@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, mkdir, symlink, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { JSDOM } from 'jsdom'
+import { workspaceExpansionExpression } from '../scripts/qualification-client.mjs'
 import {
   assertIsolatedRoot,
   verifyPayload,
@@ -11,9 +13,39 @@ import {
   installationDiagnostics,
 } from '../scripts/qualification-support.mjs'
 import {
+  TEAM_CHILD_PROMPT,
+  TEAM_TASK_SUBJECT,
   officialCapabilityInventory,
+  officialTeamProbeResponse,
+  verifyOfficialCapabilities,
   verifyOfficialTeamChild,
 } from '../scripts/qualification-official-capabilities.mjs'
+
+test('qualification opens only its fixture workspace and preserves an expanded disclosure', () => {
+  const dom = new JSDOM(
+    '<div role="treeitem" aria-expanded="false"><span>other-project</span></div><div role="treeitem" aria-expanded="false"><span>test-project</span></div>',
+    { runScripts: 'outside-only' },
+  )
+  try {
+    const rows = [...dom.window.document.querySelectorAll('[role=treeitem]')]
+    const clicked = []
+    for (const row of rows) {
+      row.getClientRects = () => [1]
+      row.addEventListener('click', () => {
+        clicked.push(row.textContent)
+        row.setAttribute('aria-expanded', 'true')
+      })
+    }
+    assert.equal(dom.window.eval(workspaceExpansionExpression('missing-project')), false)
+    assert.equal(dom.window.eval(workspaceExpansionExpression('test-project')), false)
+    assert.deepEqual(clicked, ['test-project'])
+    assert.equal(dom.window.eval(workspaceExpansionExpression('test-project')), true)
+    assert.deepEqual(clicked, ['test-project'])
+    assert.equal(rows[0].getAttribute('aria-expanded'), 'false')
+  } finally {
+    dom.window.close()
+  }
+})
 
 test('official Team child waits for its durable end through the parent-addressed events API', async () => {
   let calls = 0
@@ -136,6 +168,347 @@ test('official capability inventory requires live bundled owners and exact Host 
     change(changed)
     assert.throws(() => officialCapabilityInventory(changed, { presets: [] }, officialVersion))
   }
+})
+
+function promotedBundles() {
+  const version = '0.2.2-rc.2'
+  return [
+    {
+      name: '@deepseek-ai/dsh-base',
+      official: false,
+      optional: false,
+      availability: 'installation',
+      version,
+      enabled: true,
+      rows: ['agent-team', 'tool-agent-team'].map((name) => ({
+        moduleName: '@deepseek-ai/dsh-' + name,
+        entryId: name,
+      })),
+    },
+    {
+      name: '@deepseek-ai/dsh-web-app',
+      official: false,
+      optional: false,
+      availability: 'installation',
+      version,
+      enabled: true,
+      rows: [{ moduleName: '@deepseek-ai/dsh-client-ui-agent-team', entryId: 'ui-agent-team' }],
+    },
+    {
+      name: '@deepseek-ai/dsh-experimental-auto-review',
+      official: true,
+      optional: true,
+      availability: 'installation',
+      version,
+      enabled: true,
+      rows: [{ entryId: 'auto-review' }],
+    },
+    ...['codex', 'claude-code'].map((name) => ({
+      name: '@deepseek-ai/dsh-subagent-' + name,
+      official: true,
+      installed: false,
+      installTarget: { version, spec: '@deepseek-ai/dsh-subagent-' + name + '@' + version },
+    })),
+  ]
+}
+
+test('promoted Team inventory requires the shipped base and Web rows without optional-bundle flags', () => {
+  const bundles = promotedBundles()
+  const inventory = officialCapabilityInventory(bundles, { presets: [] }, '0.2.2-rc.2')
+  assert.deepEqual(inventory.agentTeams, {
+    package: '@deepseek-ai/dsh-base',
+    webPackage: '@deepseek-ai/dsh-web-app',
+    composition: 'base',
+    owner: 'official',
+    modules: [
+      '@deepseek-ai/dsh-agent-team',
+      '@deepseek-ai/dsh-tool-agent-team',
+      '@deepseek-ai/dsh-client-ui-agent-team',
+    ],
+  })
+  for (const change of [
+    (items) => {
+      items[0].enabled = false
+    },
+    (items) => {
+      items[0].availability = 'profile'
+    },
+    (items) => {
+      items[0].version = '0.2.2-rc.1'
+    },
+    (items) => {
+      delete items[0].rows[0].entryId
+    },
+    (items) => {
+      items[0].rows.pop()
+    },
+    (items) => {
+      items[1].rows = []
+    },
+    (items) => {
+      items[1].version = '0.2.2-rc.1'
+    },
+    (items) => {
+      items[2].enabled = false
+    },
+  ]) {
+    const changed = structuredClone(bundles)
+    change(changed)
+    assert.throws(() => officialCapabilityInventory(changed, { presets: [] }, '0.2.2-rc.2'))
+  }
+})
+
+function appendToolExchange(body, response, value, protocol) {
+  const { name, id, input } = response.tool
+  if (protocol === 'messages') {
+    body.messages.push(
+      { role: 'assistant', content: [{ type: 'tool_use', id, name, input }] },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: id,
+            content: [{ type: 'text', text: JSON.stringify(value) }],
+          },
+        ],
+      },
+    )
+  } else {
+    body.messages.push(
+      {
+        role: 'assistant',
+        tool_calls: [
+          { id, type: 'function', function: { name, arguments: JSON.stringify(input) } },
+        ],
+      },
+      { role: 'tool', tool_call_id: id, content: JSON.stringify(value) },
+    )
+  }
+}
+
+for (const protocol of ['messages', 'completions'])
+  test(`promoted Team model fixture uses actual task revisions and advertised subagent tools over ${protocol}`, () => {
+    const body = {
+      messages: [{ role: 'user', content: 'OPL_OFFICIAL_TEAM_LEAD_PROBE' }],
+      tools: ['subagent', 'team_task_create', 'team_task_update'].map((name) =>
+        protocol === 'messages' ? { name } : { function: { name } },
+      ),
+    }
+    const create = officialTeamProbeResponse(body)
+    assert.equal(create.tool.name, 'team_task_create')
+    assert.equal(create.tool.input.subject, TEAM_TASK_SUBJECT)
+    appendToolExchange(body, create, { id: 'task-41', revision: 7, status: 'pending' }, protocol)
+    const claim = officialTeamProbeResponse(body)
+    assert.equal(claim.tool.name, 'team_task_update')
+    assert.deepEqual(claim.tool.input, {
+      task_id: 'task-41',
+      expected_revision: 7,
+      action: 'claim',
+    })
+    appendToolExchange(body, claim, { id: 'task-41', revision: 8, status: 'in_progress' }, protocol)
+    const complete = officialTeamProbeResponse(body)
+    assert.deepEqual(complete.tool.input, {
+      task_id: 'task-41',
+      expected_revision: 8,
+      action: 'complete',
+    })
+    appendToolExchange(
+      body,
+      complete,
+      { id: 'task-41', revision: 9, status: 'completed' },
+      protocol,
+    )
+    const delegate = officialTeamProbeResponse(body)
+    assert.equal(delegate.tool.name, 'subagent')
+    assert.deepEqual(delegate.tool.input, {
+      name: 'qualification-worker',
+      description: 'Verify the official Team child',
+      prompt: TEAM_CHILD_PROMPT,
+    })
+    appendToolExchange(
+      body,
+      delegate,
+      { kind: 'activation', name: 'qualification-worker' },
+      protocol,
+    )
+    assert.deepEqual(officialTeamProbeResponse(body), { text: 'OPL_OFFICIAL_TEAM_LEAD_VERIFIED' })
+    assert.deepEqual(
+      officialTeamProbeResponse({
+        messages: [{ role: 'user', content: TEAM_CHILD_PROMPT }],
+        tools: [],
+      }),
+      { text: 'OPL_OFFICIAL_TEAM_CHILD_VERIFIED' },
+    )
+  })
+
+test('legacy Team fixture retains spawn_teammate and does not invoke an unadvertised task tool', () => {
+  const body = {
+    messages: [{ role: 'user', content: 'OPL_OFFICIAL_TEAM_LEAD_PROBE' }],
+    tools: [{ name: 'spawn_teammate' }],
+  }
+  const response = officialTeamProbeResponse(body)
+  assert.equal(response.tool.name, 'spawn_teammate')
+  assert.equal(response.tool.input.context, 'fresh')
+  appendToolExchange(body, response, { id: 'child-session' }, 'messages')
+  assert.deepEqual(officialTeamProbeResponse(body), { text: 'OPL_OFFICIAL_TEAM_LEAD_VERIFIED' })
+  assert.throws(() => officialTeamProbeResponse({ ...body, tools: [] }), /not advertised/)
+})
+
+test('Team model fixture rejects failed or malformed task results', () => {
+  for (const value of [{ error: 'permission denied' }, { id: 'task-1', revision: 0 }]) {
+    const body = {
+      messages: [],
+      tools: [{ name: 'team_task_create' }, { name: 'team_task_update' }],
+    }
+    appendToolExchange(body, officialTeamProbeResponse(body), value, 'messages')
+    assert.throws(() => officialTeamProbeResponse(body), /invalid task result/)
+  }
+  const body = { messages: [], tools: [{ name: 'team_task_create' }] }
+  appendToolExchange(body, officialTeamProbeResponse(body), { error: 'refused' }, 'messages')
+  body.messages.at(-1).content[0].is_error = true
+  assert.throws(() => officialTeamProbeResponse(body), /tool failed/)
+})
+
+function capabilityProbe({ changeProjection = () => {}, ignoreEnable = false, tools } = {}) {
+  let enabled = false
+  let prompted = false
+  const calls = []
+  return {
+    calls,
+    async run() {
+      return verifyOfficialCapabilities({
+        project: '/isolated/fixture-project',
+        officialVersion: '0.2.2-rc.2',
+        readTools: () =>
+          tools ?? [
+            'subagent',
+            'send_message',
+            'list_agents',
+            'team_task_create',
+            'team_task_update',
+            'team_task_get',
+            'team_task_list',
+          ],
+        rpc: async (namespace, method, args) => {
+          assert.equal(namespace, 'session')
+          calls.push({ method, args })
+          if (method === 'create') return { sessionId: 'lead-session' }
+          if (method === 'selectModel') return {}
+          if (method === 'prompt') {
+            assert.equal(enabled, true, 'Probe prompted before official Team mode was saved')
+            prompted = true
+            return { accepted: true }
+          }
+          if (method === 'wait') return { outcome: { kind: 'completed' } }
+          assert.fail('Unexpected control call: ' + method)
+        },
+        wire: async (method, args) => {
+          calls.push({ method, args })
+          if (method === 'pluginManager/listBundles') return promotedBundles()
+          if (method === 'agentPresets/list') return { presets: [] }
+          if (method === 'agentTeams/setEnabled') {
+            assert.equal(args.agentId, 'lead-session')
+            if (!ignoreEnable) enabled = args.enabled
+            return
+          }
+          if (method === 'session/projections') {
+            assert.deepEqual(args, { request: { sessionId: 'lead-session' } })
+            const projection = {
+              values: {
+                agentTeam: {
+                  enabled,
+                  tasks: prompted
+                    ? [
+                        {
+                          id: 'task-1',
+                          subject: TEAM_TASK_SUBJECT,
+                          status: 'completed',
+                          revision: 3,
+                          ownerId: 'lead-session',
+                        },
+                      ]
+                    : [],
+                },
+                subagentCatalog: prompted
+                  ? [{ name: 'qualification-worker', id: 'child-session', mode: 'continuable' }]
+                  : [],
+              },
+            }
+            if (prompted) changeProjection(projection)
+            return projection
+          }
+          if (method === 'session/events') {
+            assert.deepEqual(args.request.address, {
+              kind: 'subagent',
+              parentSessionId: 'lead-session',
+              childSessionId: 'child-session',
+              mode: 'continuable',
+            })
+            return {
+              records: [
+                {
+                  event: {
+                    type: 'assistant/message',
+                    data: { text: 'OPL_OFFICIAL_TEAM_CHILD_VERIFIED' },
+                  },
+                },
+                { event: { type: 'turn/end', data: { reason: { kind: 'completed' } } } },
+              ],
+            }
+          }
+          if (method === 'permissionPresets/catalog')
+            return { options: [{ value: 'auto' }], defaultOptions: [] }
+          assert.fail('Unexpected wire call: ' + method)
+        },
+      })
+    },
+  }
+}
+
+test('promoted Team qualification saves mode before prompting and verifies durable task ownership and child completion', async () => {
+  const probe = capabilityProbe()
+  const result = await probe.run()
+  assert.equal(result.agentTeams.nativeChild, true)
+  assert.equal(result.agentTeams.taskBoard, true)
+  assert.equal(result.agentTeams.taskId, 'task-1')
+  assert.equal(result.agentTeams.childSessionId, 'child-session')
+  assert.deepEqual(probe.calls.find((item) => item.method === 'agentTeams/setEnabled').args, {
+    agentId: 'lead-session',
+    enabled: true,
+  })
+})
+
+test('promoted Team qualification rejects unsaved mode, missing children and incomplete or misowned boards', async () => {
+  await assert.rejects(capabilityProbe({ ignoreEnable: true }).run(), /mode was not saved/)
+  for (const changeProjection of [
+    (view) => {
+      view.values.subagentCatalog = []
+    },
+    (view) => {
+      view.values.subagentCatalog[0].mode = 'one-shot'
+    },
+    (view) => {
+      view.values.agentTeam.enabled = false
+    },
+    (view) => {
+      view.values.agentTeam.failure = 'corrupt board'
+    },
+    (view) => {
+      view.values.agentTeam.tasks = []
+    },
+    (view) => {
+      view.values.agentTeam.tasks[0].status = 'in_progress'
+    },
+    (view) => {
+      view.values.agentTeam.tasks[0].revision = 2
+    },
+    (view) => {
+      view.values.agentTeam.tasks[0].ownerId = 'another-session'
+    },
+  ])
+    await assert.rejects(capabilityProbe({ changeProjection }).run(), /Official Team/)
+  await assert.rejects(capabilityProbe({ tools: ['subagent'] }).run(), /Official Team tool missing/)
 })
 
 test('qualification retains bounded package failures before scratch cleanup', async () => {

@@ -121,14 +121,23 @@ function failedInput(
 ): string | undefined {
   const turns = context.record.turns
   const last = turns.at(-1)
-  const id = last?.native?.userMessageId
+  const requestId = last?.operationId?.startsWith('message-edit:')
+    ? last.operationId.slice('message-edit:'.length)
+    : undefined
+  const received = history.receivedInputs?.filter((entry) => entry.requestId === requestId)
+  const id =
+    last?.native?.userMessageId ?? (received?.length === 1 ? received[0]!.inputId : undefined)
   if (
     !last ||
     !['failed', 'cancelled'].includes(last.state) ||
     !id ||
     turns.some((turn) => !['completed', 'failed', 'cancelled'].includes(turn.state)) ||
     turns.length !== history.boundaries.length ||
-    turns.some((turn, index) => turn.native?.userMessageId !== history.boundaries[index]?.id)
+    turns.some(
+      (turn, index) =>
+        (index === turns.length - 1 ? id : turn.native?.userMessageId) !==
+        history.boundaries[index]?.id,
+    )
   )
     return
   return id
@@ -141,6 +150,22 @@ async function readHistory(
   const reply = successfulReply(await request(context, READ, { sessionId }, false))
   if (requiredString(reply.sessionId) !== sessionId) throw fail('stale')
   const values = boundaries(reply.boundaries)
+  const receivedInputs =
+    reply.receivedInputs === undefined
+      ? undefined
+      : (() => {
+          if (!Array.isArray(reply.receivedInputs)) throw fail('protocol')
+          const requests = new Set<string>()
+          return reply.receivedInputs.map((raw) => {
+            const item = object(raw)
+            const requestId = requiredString(item.requestId)
+            const inputId = requiredString(item.inputId)
+            if (requests.has(requestId) || !values.some((boundary) => boundary.id === inputId))
+              throw fail('protocol')
+            requests.add(requestId)
+            return { requestId, inputId }
+          })
+        })()
   if (
     reply.settledInputId !== undefined &&
     (typeof reply.settledInputId !== 'string' || reply.settledInputId !== values.at(-1)?.id)
@@ -151,6 +176,7 @@ async function readHistory(
     sessionId,
     token: requiredString(reply.token),
     boundaries: values,
+    ...(receivedInputs ? { receivedInputs } : {}),
     ...(typeof reply.settledInputId === 'string' ? { settledInputId: reply.settledInputId } : {}),
   }
 }

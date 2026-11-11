@@ -47,6 +47,36 @@ export function readHarnessReasoning(
   return []
 }
 
+/** Read the current advertised value; an omitted or ambiguous selection stays unknown. */
+export function readHarnessCurrentEffort(
+  record: HarnessSession,
+  configOptions: unknown,
+): string | undefined {
+  const efforts = readHarnessReasoning(record, configOptions)
+  if (!efforts?.length || !Array.isArray(configOptions)) return undefined
+  const options = configOptions.filter((raw: unknown) => {
+    const id = object(raw).id
+    return typeof id === 'string' && OPTION_IDS.has(id)
+  })
+  if (options.length > 0) {
+    if (options.length !== 1) return undefined
+    const current = object(options[0]).currentValue
+    return typeof current === 'string' && efforts.some((effort) => effort.id === current)
+      ? current
+      : undefined
+  }
+  const declared = minimaxReasoning(record.modelRef)
+  if (record.harnessRef !== 'minimax-code' || declared?.spec.control.kind !== 'thinking')
+    return undefined
+  const models = configOptions.filter((raw: unknown) => object(raw).id === 'model')
+  if (models.length !== 1) return undefined
+  const current = object(models[0]).currentValue
+  const matching = efforts.filter(
+    (effort) => minimaxModelValue(declared.spec, effort.id) === current,
+  )
+  return matching.length === 1 ? matching[0]!.id : undefined
+}
+
 /** Initialize and configure an isolated CLI, read its options, then close it without a prompt. */
 export async function probeHarnessReasoning(
   adapter: HarnessAdapter,
@@ -95,9 +125,10 @@ export async function probeHarnessReasoning(
     if (model !== undefined && model !== expected) throw Error('Harness 配置后的模型回读不一致')
     adapter.verifySession?.(record, { ...snapshot, configOptions: options })
     const efforts = readHarnessReasoning(record, options)
+    const currentEffort = readHarnessCurrentEffort(record, options)
     return efforts === undefined
       ? { status: 'unavailable', efforts: [] }
-      : { status: 'known', efforts }
+      : { status: 'known', efforts, ...(currentEffort === undefined ? {} : { currentEffort }) }
   } finally {
     await acp.dispose()
   }

@@ -32,6 +32,8 @@ export interface HarnessSelection {
 export interface HarnessReasoningPreflight {
   status: 'known' | 'unavailable' | 'not-applicable'
   efforts: Array<{ id: string; name: string }>
+  /** Actual configured choice confirmed by this Harness's advertisement. */
+  currentEffort?: string
 }
 export interface SessionRequest {
   sessionId: string

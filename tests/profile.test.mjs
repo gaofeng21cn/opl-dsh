@@ -17,7 +17,13 @@ const autoReviewBundle = '@deepseek-ai/dsh-experimental-auto-review'
 const officialBundles = [teamBundle, autoReviewBundle]
 const officialVersion = '0.2.2-rc.1'
 
-async function runtime(t, owner, existing, { disableAndReinstall = false, teamVersion } = {}) {
+async function runtime(
+  t,
+  owner,
+  existing,
+  { disableAndReinstall = false, teamVersion, promotedTeam = false, migrationReceipt } = {},
+) {
+  const runtimeVersion = promotedTeam ? '0.2.2-rc.2' : officialVersion
   const root = await mkdtemp(join(tmpdir(), 'opl-profile-template-'))
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
   const app = join(root, 'official')
@@ -75,10 +81,24 @@ export function writeProfileBundles(dir, manifest, bundles) {
   writeFileSync(join(dir, 'package.json'), JSON.stringify(next));
   return next;
 }
+export function loadProfileDirectory(bin, dir, anchor, options) {
+  const manifest = readProfileManifest(bin, dir);
+  const retired = ${JSON.stringify(promotedTeam ? [teamBundle] : [])};
+  const bundles = manifest.dsh?.profile?.bundles ?? [];
+  const kept = bundles.filter(name => !retired.includes(name));
+  if (kept.length !== bundles.length) writeProfileBundles(dir, manifest, kept);
+  writeFileSync(join(dir, 'retirement-observation.json'), JSON.stringify({ bin, anchor, options }));
+  return {};
+}
 ${owner === 'app-boot' ? template : ''}`,
   )
-  if (owner === 'official-bundles')
-    await module('@deepseek-ai/dsh-official-bundles', './index.mjs', template)
+  if (owner === 'official-bundles' || promotedTeam)
+    await module(
+      '@deepseek-ai/dsh-official-bundles',
+      './index.mjs',
+      template +
+        `export const RETIRED_BUNDLES = new Set(${JSON.stringify(promotedTeam ? [teamBundle] : [])});\n`,
+    )
   await module(
     '@deepseek-ai/dsh-plugin-manager',
     { './operations': './index.mjs' },
@@ -100,17 +120,25 @@ export async function withFileLock(file, operation, options) {
 }`,
   )
   await module('@deepseek-ai/dsh', { './package.json': './package.json' }, '', {
-    version: officialVersion,
-    dependencies: Object.fromEntries(officialBundles.map((name) => [name, officialVersion])),
+    version: runtimeVersion,
+    dependencies: Object.fromEntries(
+      officialBundles
+        .filter((name) => !promotedTeam || name !== teamBundle)
+        .map((name) => [name, runtimeVersion]),
+    ),
   })
-  for (const bundle of officialBundles)
+  for (const bundle of officialBundles.filter((name) => !promotedTeam || name !== teamBundle))
     await module(bundle, { './package.json': './package.json' }, '', {
-      version: bundle === teamBundle ? (teamVersion ?? officialVersion) : officialVersion,
+      version: bundle === teamBundle ? (teamVersion ?? runtimeVersion) : runtimeVersion,
       dsh: { bundle: { patch: './cordis.patch.yml' } },
     })
   if (existing) {
     await mkdir(profile, { recursive: true })
     await writeFile(join(profile, 'package.json'), JSON.stringify(existing))
+  }
+  if (migrationReceipt) {
+    await mkdir(profile, { recursive: true })
+    await writeFile(join(profile, 'opl-official-bundles.json'), JSON.stringify(migrationReceipt))
   }
   const env = { ...process.env }
   delete env.ELECTRON_RUN_AS_NODE
@@ -137,6 +165,13 @@ export async function withFileLock(file, operation, options) {
     template: JSON.parse(await readFile(join(profile, 'template-observation.json'), 'utf8')),
     install: JSON.parse(await readFile(join(profile, 'install-observation.json'), 'utf8')),
     archive,
+    retirement: await readFile(join(profile, 'retirement-observation.json'), 'utf8').then(
+      JSON.parse,
+      (error) => {
+        if (error.code !== 'ENOENT') throw error
+        return undefined
+      },
+    ),
   }
 }
 
@@ -206,4 +241,59 @@ test('Team activation refuses a package outside the actual official desktop coho
     runtime(t, 'official-bundles', undefined, { teamVersion: '0.2.1-rc.5' }),
     /官方插件与桌面版本不一致/,
   )
+})
+
+test('a desktop with built-in Team selects only the remaining official optional bundle', async (t) => {
+  const result = await runtime(t, 'official-bundles', undefined, { promotedTeam: true })
+  assert.deepEqual(result.manifest.dsh.profile.bundles, [...bundles, autoReviewBundle])
+  assert.equal(result.retirement.bin, 'dsh')
+  assert.deepEqual(result.retirement.options, { userLayer: false })
+  assert(
+    result.retirement.anchor.endsWith('/package.json') ||
+      result.retirement.anchor.endsWith('\\package.json'),
+  )
+})
+
+test('official retirement runs before a previous suite receipt can skip migration', async (t) => {
+  const existing = {
+    dependencies: { 'personal-plugin': '1.0.0' },
+    dsh: {
+      profile: {
+        bundles: [...bundles, ...officialBundles, '@one-person-lab/dsh-opl'],
+        personal: true,
+      },
+    },
+  }
+  const result = await runtime(t, 'official-bundles', existing, {
+    promotedTeam: true,
+    migrationReceipt: { schemaVersion: 1, bundles: officialBundles, officialVersion },
+  })
+  assert.deepEqual(result.manifest, {
+    ...existing,
+    dsh: {
+      profile: {
+        ...existing.dsh.profile,
+        bundles: [...bundles, autoReviewBundle, '@one-person-lab/dsh-opl'],
+      },
+    },
+  })
+  assert(result.retirement)
+})
+
+test('Team promotion preserves a previously disabled Auto Review bundle', async (t) => {
+  const existing = {
+    dependencies: Object.fromEntries(officialBundles.map((name) => [name, officialVersion])),
+    dsh: { profile: { bundles: [...bundles, teamBundle, '@one-person-lab/dsh-opl'] } },
+  }
+  const result = await runtime(t, 'official-bundles', existing, {
+    promotedTeam: true,
+    migrationReceipt: {
+      schemaVersion: 1,
+      bundles: officialBundles,
+      officialVersion,
+      preservedDisabled: [autoReviewBundle],
+    },
+  })
+  assert.deepEqual(result.manifest.dependencies, existing.dependencies)
+  assert.deepEqual(result.manifest.dsh.profile.bundles, [...bundles, '@one-person-lab/dsh-opl'])
 })

@@ -207,6 +207,11 @@ export class ExternalMessageEditTransactions {
     }
   }
 
+  /** Restore the prepared fork only when the Host proves admission never reached a user event. */
+  async reopenUnadmitted(sessionId: string, requestId: string): Promise<void> {
+    await this.transition(sessionId, requestId, 'admitting', 'ready')
+  }
+
   /** Persist before the single replacement prompt crosses the vendor transport. */
   async beginPrompt(sessionId: string, requestId: string): Promise<void> {
     await this.transition(sessionId, requestId, 'admitting', 'prompting')
@@ -267,6 +272,11 @@ export class ExternalMessageEditTransactions {
   /** Only an observed terminal vendor turn can release the edit's send guard. */
   async settle(sessionId: string, requestId: string): Promise<void> {
     await this.transition(sessionId, requestId, 'prompting', 'settled')
+  }
+
+  /** Release a prior uncertainty only after the Host verifies the exact terminal input and history. */
+  async confirmTerminalHistory(sessionId: string, requestId: string): Promise<void> {
+    await this.transition(sessionId, requestId, 'uncertain', 'settled')
   }
 
   /** Keep sends blocked when a settled edit cannot be verified against live history. */

@@ -3,7 +3,10 @@ import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
 
 export const TEAM_CHILD_PROMPT = 'OPL_OFFICIAL_TEAM_CHILD_PROBE'
+export const TEAM_TASK_SUBJECT = 'OPL_OFFICIAL_TEAM_TASK_PROBE'
 const teamBundle = '@deepseek-ai/dsh-experimental-agent-team-profile'
+const baseBundle = '@deepseek-ai/dsh-base'
+const webBundle = '@deepseek-ai/dsh-web-app'
 const autoReviewBundle = '@deepseek-ai/dsh-experimental-auto-review'
 const oneShotProviders = [
   '@deepseek-ai/dsh-subagent-codex',
@@ -12,9 +15,11 @@ const oneShotProviders = [
 
 export function officialCapabilityInventory(bundles, roster, officialVersion) {
   assert.match(officialVersion, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
-  const selected = (name) => {
+  const selected = (name, optional = true) => {
     const bundle = bundles.find((item) => item.name === name)
-    assert(bundle?.official && bundle.optional, 'Official optional bundle missing: ' + name)
+    assert(bundle, 'Official bundle missing: ' + name)
+    if (optional)
+      assert(bundle.official && bundle.optional, 'Official optional bundle missing: ' + name)
     assert.equal(
       bundle.availability,
       'installation',
@@ -25,22 +30,34 @@ export function officialCapabilityInventory(bundles, roster, officialVersion) {
     assert.equal(bundle.error, undefined, 'Official bundle cannot load: ' + name)
     return bundle
   }
-  const team = selected(teamBundle)
   const autoReview = selected(autoReviewBundle)
   assert(
     autoReview.rows.some((row) => row.entryId),
     'Official Auto Review row is not mounted',
   )
-  const teamModules = [
-    '@deepseek-ai/dsh-experimental-agent-team',
-    '@deepseek-ai/dsh-experimental-tool-agent-team',
-    '@deepseek-ai/dsh-experimental-client-ui-agent-team',
-  ]
-  for (const name of teamModules)
+  const builtIn = bundles
+    .find((bundle) => bundle.name === baseBundle)
+    ?.rows.some((row) => row.moduleName === '@deepseek-ai/dsh-agent-team')
+  const teamModules = builtIn
+    ? [
+        '@deepseek-ai/dsh-agent-team',
+        '@deepseek-ai/dsh-tool-agent-team',
+        '@deepseek-ai/dsh-client-ui-agent-team',
+      ]
+    : [
+        '@deepseek-ai/dsh-experimental-agent-team',
+        '@deepseek-ai/dsh-experimental-tool-agent-team',
+        '@deepseek-ai/dsh-experimental-client-ui-agent-team',
+      ]
+  const team = selected(builtIn ? baseBundle : teamBundle, !builtIn)
+  const web = builtIn ? selected(webBundle, false) : team
+  for (const [index, name] of teamModules.entries()) {
+    const owner = index === 2 ? web : team
     assert(
-      team.rows.some((row) => row.moduleName === name && row.entryId),
+      owner.rows.some((row) => row.moduleName === name && row.entryId),
       'Team row not mounted: ' + name,
     )
+  }
   const providers = oneShotProviders.map((name) => {
     const bundle = bundles.find((item) => item.name === name)
     assert.equal(bundle?.official, true, 'Official one-shot provider missing: ' + name)
@@ -61,7 +78,13 @@ export function officialCapabilityInventory(bundles, roster, officialVersion) {
   assert(Array.isArray(roster.presets), 'Official preset registry is unavailable')
   return {
     officialVersion,
-    agentTeams: { package: teamBundle, owner: 'official', modules: teamModules },
+    agentTeams: {
+      package: team.name,
+      ...(builtIn ? { webPackage: web.name } : {}),
+      composition: builtIn ? 'base' : 'optional',
+      owner: 'official',
+      modules: teamModules,
+    },
     autoReview: {
       package: autoReviewBundle,
       owner: 'official',
@@ -80,6 +103,110 @@ export function officialCapabilityInventory(bundles, roster, officialVersion) {
         availability,
       })),
   }
+}
+
+/** Script only advertised Team tools, using their actual results for task revisions. */
+export function officialTeamProbeResponse(body) {
+  const text = body.messages.some(
+    (message) =>
+      message.role === 'user' && JSON.stringify(message.content).includes(TEAM_CHILD_PROMPT),
+  )
+    ? 'OPL_OFFICIAL_TEAM_CHILD_VERIFIED'
+    : 'OPL_OFFICIAL_TEAM_LEAD_VERIFIED'
+  if (text === 'OPL_OFFICIAL_TEAM_CHILD_VERIFIED') return { text }
+  const advertised = new Set(body.tools?.map((tool) => tool.name ?? tool.function?.name))
+  const calls = []
+  const results = new Map()
+  for (const message of body.messages) {
+    if (message.role === 'assistant') {
+      for (const block of Array.isArray(message.content) ? message.content : [])
+        if (block.type === 'tool_use')
+          calls.push({ id: block.id, name: block.name, input: block.input })
+      for (const call of message.tool_calls ?? [])
+        calls.push({
+          id: call.id,
+          name: call.function.name,
+          input: JSON.parse(call.function.arguments),
+        })
+    }
+    if (message.role === 'tool') results.set(message.tool_call_id, message.content)
+    for (const block of Array.isArray(message.content) ? message.content : [])
+      if (block.type === 'tool_result') {
+        assert(!block.is_error, 'Official Team fixture tool failed')
+        results.set(block.tool_use_id, block.content)
+      }
+  }
+  const call = (name, input, id) => {
+    assert(advertised.has(name), 'Official Team fixture tool is not advertised: ' + name)
+    return { text, tool: { name, input, id } }
+  }
+  const childInput = {
+    name: 'qualification-worker',
+    description: 'Verify the official Team child',
+    prompt: TEAM_CHILD_PROMPT,
+  }
+  if (advertised.has('spawn_teammate'))
+    return calls.some((item) => item.name === 'spawn_teammate')
+      ? { text }
+      : call('spawn_teammate', { ...childInput, context: 'fresh' }, 'team_child_fixture')
+
+  const taskResult = (item) => {
+    const content = results.get(item.id)
+    assert(content !== undefined, 'Official Team fixture has no task result')
+    const value = JSON.parse(
+      typeof content === 'string'
+        ? content
+        : content
+            .filter((block) => block.type === 'text')
+            .map((block) => block.text)
+            .join('\n'),
+    )
+    assert(
+      typeof value.id === 'string' && Number.isSafeInteger(value.revision) && value.revision > 0,
+      'Official Team fixture has an invalid task result',
+    )
+    return value
+  }
+  const created = calls.find((item) => item.name === 'team_task_create')
+  if (!created)
+    return call(
+      'team_task_create',
+      {
+        subject: TEAM_TASK_SUBJECT,
+        description: 'Verify durable official task ownership and completion.',
+      },
+      'team_create_fixture',
+    )
+  const claimed = calls.find(
+    (item) => item.name === 'team_task_update' && item.input.action === 'claim',
+  )
+  if (!claimed) {
+    const task = taskResult(created)
+    return call(
+      'team_task_update',
+      { task_id: task.id, expected_revision: task.revision, action: 'claim' },
+      'team_claim_fixture',
+    )
+  }
+  const completed = calls.find(
+    (item) => item.name === 'team_task_update' && item.input.action === 'complete',
+  )
+  if (!completed) {
+    const task = taskResult(claimed)
+    return call(
+      'team_task_update',
+      { task_id: task.id, expected_revision: task.revision, action: 'complete' },
+      'team_complete_fixture',
+    )
+  }
+  assert.equal(
+    taskResult(completed).status,
+    'completed',
+    'Official Team fixture task did not complete',
+  )
+  return calls.some((item) => item.name === 'subagent')
+    ? { text }
+    : call('subagent', childInput, 'team_child_fixture')
 }
 
 export async function verifyOfficialTeamChild({ wire, parentSessionId, childSessionId }) {
@@ -118,6 +245,19 @@ export async function verifyOfficialCapabilities({
   await rpc('session', 'selectModel', {
     request: { sessionId: lead.sessionId, provider: 'opl-gateway', model: 'deepseek-flash' },
   })
+  const builtIn = inventory.agentTeams.composition === 'base'
+  if (builtIn) {
+    const before = await wire('session/projections', { request: { sessionId: lead.sessionId } })
+    assert.equal(
+      before?.values.agentTeam?.enabled,
+      false,
+      'Fresh official Team mode must be disabled',
+    )
+    await wire('agentTeams/setEnabled', { agentId: lead.sessionId, enabled: true })
+    const enabled = await wire('session/projections', { request: { sessionId: lead.sessionId } })
+    assert.equal(enabled?.values.agentTeam?.enabled, true, 'Official Team mode was not saved')
+    assert.equal(enabled.values.agentTeam.failure, undefined, 'Official Team projection failed')
+  }
   const receipt = await rpc('session', 'prompt', {
     request: {
       sessionId: lead.sessionId,
@@ -132,13 +272,28 @@ export async function verifyOfficialCapabilities({
   const done = await rpc('session', 'wait', { sessionId: lead.sessionId })
   assert.equal(done.outcome.kind, 'completed', 'Official Team Lead did not complete')
   const projection = await wire('session/projections', { request: { sessionId: lead.sessionId } })
-  const teammate = projection.values.agentTeam?.members.find(
-    (member) => member.name === 'qualification-worker',
-  )
+  const teammate = builtIn
+    ? projection.values.subagentCatalog?.find((member) => member.name === 'qualification-worker')
+    : projection.values.agentTeam?.members.find((member) => member.name === 'qualification-worker')
   assert(
-    teammate && teammate.role === 'teammate' && teammate.phase === 'active',
+    teammate &&
+      (builtIn
+        ? teammate.mode === 'continuable'
+        : teammate.role === 'teammate' && teammate.phase === 'active'),
     'Official Team child was not published',
   )
+  if (builtIn) {
+    const board = projection.values.agentTeam
+    assert.equal(board?.enabled, true, 'Official Team mode changed during the probe')
+    assert.equal(board.failure, undefined, 'Official Team projection failed')
+    const task = board.tasks.find((item) => item.subject === TEAM_TASK_SUBJECT)
+    assert(
+      task && task.status === 'completed' && task.revision === 3 && task.ownerId === lead.sessionId,
+      'Official Team task was not created, claimed and completed by its native owner',
+    )
+    inventory.agentTeams.taskBoard = true
+    inventory.agentTeams.taskId = task.id
+  }
   await verifyOfficialTeamChild({
     wire,
     parentSessionId: lead.sessionId,
@@ -160,11 +315,12 @@ export async function verifyOfficialCapabilities({
   }
   const tools = new Set(readTools())
   for (const name of [
-    'spawn_teammate',
+    builtIn ? 'subagent' : 'spawn_teammate',
     'send_message',
     'list_agents',
     'team_task_create',
     'team_task_update',
+    ...(builtIn ? ['team_task_get', 'team_task_list'] : []),
   ])
     assert(tools.has(name), 'Official Team tool missing: ' + name)
   // Official Web presets may retain scoped continuable Subagent controls.

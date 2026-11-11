@@ -8,6 +8,7 @@ import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import type { HarnessSession, HarnessTurn } from '../../src/execution/contracts/sessions.ts'
 import type { MessageEditSend } from '../../src/execution/contracts/message-edit.ts'
 import { HarnessService } from '../../src/execution/host/harness.ts'
+import { MessageEditTransactions } from '../../src/execution/host/message-edit.ts'
 import {
   AcpProcess,
   HarnessRequestError,
@@ -54,6 +55,9 @@ interface Owner {
   externalEditJournal: FileExternalEditJournal
   externalMessageEdits: ExternalMessageEditTransactions
   externalDriver(record: HarnessSession): ExternalMessageEditDriver
+  storedKiloHistory(
+    record: HarnessSession,
+  ): Promise<import('../../src/execution/host/message-edit-driver.ts').ExternalEditHistory>
   externalContext(record: HarnessSession, signal: AbortSignal): ExternalEditContext
   stopEditTarget(sessionId: string): { record: HarnessSession; harness: string } | undefined
   connectAdmitted(record: HarnessSession): Promise<void>
@@ -287,6 +291,12 @@ async function fixture(harness: 'opencode' | 'kilo' = 'opencode') {
       id === session.id ? { record, harness } : undefined,
     )
     vi.spyOn(owner, 'externalDriver').mockReturnValue(driver)
+    vi.spyOn(owner, 'storedKiloHistory').mockImplementation((current) =>
+      driver.read({
+        ...owner.externalContext(current, new AbortController().signal),
+        record: current,
+      }),
+    )
     vi.spyOn(owner, 'pinSession').mockResolvedValue()
     vi.spyOn(owner, 'syncNotification').mockResolvedValue()
     vi.spyOn(owner, 'drainQueue').mockImplementation(() => {})
@@ -564,6 +574,68 @@ it.each(['opencode', 'kilo'] as const)(
   },
 )
 
+it.each(['opencode', 'kilo'] as const)(
+  'keeps a settled quota error sendable after a transient history read failure (%s)',
+  async (harness) => {
+    const f = await fixture(harness)
+    f.intent.phase = 'settled'
+    f.record.turns[0]!.stopReason = 'error_response'
+    await f.owner.externalEditJournal.save(f.intent)
+    await f.owner.save(f.record)
+    vi.spyOn(f.driver, 'read').mockRejectedValueOnce(
+      new HarnessTransportError('temporary read failure'),
+    )
+    expect(await f.service.messageEditState({ sessionId: f.session.id })).toMatchObject({
+      pending: false,
+      choices: [],
+      unavailable: { reason: 'history-unavailable', retryable: true },
+    })
+    expect(f.owner.externalMessageEdits.intent(f.session.id)?.phase).toBe('settled')
+    await expect(f.service.assertConversationEditable(f.session.id)).resolves.toBeUndefined()
+    await f.restart()
+    expect(await f.service.messageEditState({ sessionId: f.session.id })).toMatchObject({
+      pending: false,
+      choices: [{ text: 'replacement' }],
+    })
+    expect(f.prompt).not.toHaveBeenCalled()
+    expect(f.calls.filter((call) => call.startsWith('fork:'))).toEqual([])
+  },
+)
+
+it.each(['opencode', 'kilo'] as const)(
+  'recovers an old uncertain quota edit with a retained failed prefix after restart (%s)',
+  async (harness) => {
+    const f = await fixture(harness)
+    f.intent.phase = 'uncertain'
+    f.intent.result!.retained = [{ previousId: 'old-prefix', nextId: 'msg_prefix' }]
+    f.intent.expected.boundaries.unshift({ id: 'old-prefix' })
+    f.record.turns[0]!.stopReason = 'error_response'
+    f.record.turns.unshift({
+      ...structuredClone(f.record.turns[0]!),
+      operationId: 'message-edit:previous-edit',
+      native: { userMessageId: 'msg_prefix' },
+    })
+    f.histories.set(f.record.acpSessionId, [
+      ...messages(f.record.acpSessionId, 'msg_prefix', 'old input', true),
+      ...messages(f.record.acpSessionId, 'msg_failed_edit', 'user: replacement', true),
+    ])
+    await f.owner.externalEditJournal.save(f.intent)
+    await f.owner.save(f.record)
+    await f.restart()
+    expect(await f.service.messageEditState({ sessionId: f.session.id })).toMatchObject({
+      pending: false,
+      choices: [{ text: 'replacement' }],
+    })
+    expect(f.owner.externalMessageEdits.intent(f.session.id)?.phase).toBe('settled')
+    await f.restart()
+    await expect(f.service.assertConversationEditable(f.session.id)).resolves.toBeUndefined()
+    expect(f.prompt).not.toHaveBeenCalled()
+    expect(
+      f.calls.filter((call) => call.startsWith('fork:') || call.startsWith('prompt:')),
+    ).toEqual([])
+  },
+)
+
 it('offers an explicit fresh first edit after verified stopping without inventing a missing input id', async () => {
   const f = await fixture()
   delete f.record.turns[0]!.native!.userMessageId
@@ -637,18 +709,15 @@ it('keeps a stderr quota diagnostic distinct from a matched terminal response', 
   expect(process.closed).toBe(true)
 })
 
-it('marks a known cold conversation retryable until official activation publishes its session', async () => {
+it('restores a known cold conversation through the official owner without sending a prompt', async () => {
   const f = await fixture()
   f.state.sessionAttached = false
   expect(await f.service.messageEditState({ sessionId: f.session.id })).toMatchObject({
-    supported: false,
+    supported: true,
     busy: false,
-    pending: true,
-    head: -1,
-    choices: [],
-    unavailable: { reason: 'history-busy', retryable: true },
+    pending: false,
+    choices: [{ text: 'replacement' }],
   })
-  expect(f.calls).toEqual([])
   f.state.sessionAttached = true
   expect(await f.service.messageEditState({ sessionId: f.session.id })).toMatchObject({
     supported: true,
@@ -682,7 +751,6 @@ it.each([
   'wrong-input',
   'terminal-wrong-input',
   'terminal-wrong-input-kilo',
-  'terminal-wrong-operation',
   'terminal-wrong-seq',
   'terminal-wrong-rpc',
   'terminal-wrong-record',
@@ -703,13 +771,13 @@ it.each([
     f.intent.phase = 'settled'
   }
   if (reason === 'uncertain' || reason === 'invoking') f.intent.phase = reason
+  if (reason === 'uncertain') delete f.intent.result
   if (reason === 'running') f.agent.status = 'running'
   if (reason === 'busy') f.state.status = 'busy'
   if (reason === 'wrong-parent') history[1]!.info.parentID = 'some-other-user'
   if (reason === 'missing-reply') history.pop()
   if (['wrong-input', 'terminal-wrong-input', 'terminal-wrong-input-kilo'].includes(reason))
     f.record.turns[0]!.native!.userMessageId = 'conflicting-input'
-  if (reason === 'terminal-wrong-operation') f.record.turns[0]!.operationId = 'message-edit:other'
   if (reason === 'terminal-wrong-seq') f.record.turns[0]!.native!.officialSeq = 999
   if (reason === 'terminal-wrong-rpc') {
     const events = f.session.snapshotEvents().map((event) =>
@@ -751,19 +819,66 @@ it.each([
   await f.owner.save(f.record)
   for (const restart of [false, true]) {
     if (restart) await f.restart()
+    const readUnavailable = [
+      'terminal-missing-status',
+      'terminal-busy',
+      'terminal-active-tool',
+    ].includes(reason)
     expect(await f.service.messageEditState({ sessionId: f.session.id })).toMatchObject({
-      pending: true,
+      pending: !readUnavailable,
       choices: [],
     })
     expect(f.owner.externalMessageEdits.intent(f.session.id)?.phase).toBe(
-      terminal ? 'uncertain' : f.intent.phase,
+      terminal && !readUnavailable ? 'uncertain' : f.intent.phase,
     )
     if (reason.includes('wrong-input'))
       expect(f.record.turns[0]!.native!.userMessageId).toBe('conflicting-input')
-    await expect(f.service.assertConversationEditable(f.session.id)).rejects.toThrow('结果尚未确认')
+    if (readUnavailable)
+      await expect(f.service.assertConversationEditable(f.session.id)).resolves.toBeUndefined()
+    else
+      await expect(f.service.assertConversationEditable(f.session.id)).rejects.toThrow(
+        '结果尚未确认',
+      )
   }
   expect(f.prompt).not.toHaveBeenCalled()
   expect(f.calls.filter((call) => call.startsWith('fork:') || call.startsWith('prompt:'))).toEqual(
     [],
   )
+})
+
+it('exposes an exact native admission retry without reading or forking the external session', async () => {
+  const f = await fixture('kilo')
+  f.intent.phase = 'admitting'
+  f.record.turns = []
+  await f.owner.externalEditJournal.save(f.intent)
+  const recovery: MessageEditSend = {
+    targetSeq: f.intent.targetSeq!,
+    head: Number(f.session.seq) - 1,
+    prompt: {
+      sessionId: f.session.id,
+      requestId: 'quota-edit' as never,
+      mode: 'queue',
+      content: [{ type: 'text', text: 'original missing admission' }],
+    },
+  }
+  const native = (f.owner as unknown as { messageEdits: MessageEditTransactions }).messageEdits
+  vi.spyOn(native, 'recovery').mockReturnValue(recovery)
+  const retry = vi.spyOn(native, 'send').mockImplementation(async (_agent, input, admit) => {
+    expect(input).toEqual(recovery)
+    return admit()
+  })
+  f.prompt.mockResolvedValueOnce({ accepted: true })
+  expect(await f.service.messageEditState({ sessionId: f.session.id })).toMatchObject({
+    busy: false,
+    pending: true,
+    choices: [],
+    recovery,
+  })
+  expect(f.prompt).not.toHaveBeenCalled()
+  expect(await f.service.messageEditSend(recovery)).toEqual({ accepted: true })
+  expect(retry).toHaveBeenCalledTimes(1)
+  expect(f.prompt).toHaveBeenCalledExactlyOnceWith(recovery.prompt, expect.any(AbortSignal))
+  expect(f.calls).toEqual([])
+  expect(f.record.turns).toEqual([])
+  expect(f.owner.externalMessageEdits.intent(f.session.id)?.phase).toBe('admitting')
 })

@@ -118,6 +118,34 @@ describe('external edit admission', () => {
     ).rejects.toThrow('connection lost')
     expect(u.rows.get('dsh')?.phase).toBe('uncertain')
   })
+
+  it('persists confirmed terminal history across owners without admitting or resending a replacement', async () => {
+    const s = setup()
+    await s.tx.prepare(s.context, s.driver, s.input)
+    await expect(
+      s.tx.admit('dsh', 'edit', async () => {
+        throw Error('transport lost')
+      }),
+    ).rejects.toThrow()
+    const restored = new ExternalMessageEditTransactions(s.journal)
+    await expect(restored.confirmTerminalHistory('dsh', 'other-request')).rejects.toThrow()
+    expect(restored.pending('dsh')).toBe(true)
+    await restored.confirmTerminalHistory('dsh', 'edit')
+    expect(new ExternalMessageEditTransactions(s.journal).pending('dsh')).toBe(false)
+    expect(s.rewind).toHaveBeenCalledTimes(1)
+    await expect(restored.confirmTerminalHistory('dsh', 'edit')).rejects.toThrow()
+  })
+  it('reopens an allocation after a stopped native admission without repeating the vendor rewind', async () => {
+    const s = setup()
+    await s.tx.prepare(s.context, s.driver, s.input)
+    await s.tx.admit('dsh', 'edit', async () => {})
+    const restored = new ExternalMessageEditTransactions(s.journal)
+    await expect(restored.reopenUnadmitted('dsh', 'wrong')).rejects.toThrow()
+    await restored.reopenUnadmitted('dsh', 'edit')
+    expect(restored.intent('dsh')?.phase).toBe('ready')
+    expect(s.rewind).toHaveBeenCalledTimes(1)
+    await expect(restored.reopenUnadmitted('dsh', 'edit')).rejects.toThrow()
+  })
   it('does not repeat an empty allocation whose response was lost', async () => {
     const s = setup()
     s.result.retained = []

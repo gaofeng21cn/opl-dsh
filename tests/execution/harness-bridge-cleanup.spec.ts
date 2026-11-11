@@ -215,7 +215,7 @@ describe('message edit history diagnostics', () => {
         stopEditTarget: () => ({ record: saved, harness: 'minimax-code' }),
         externalDriver: () => ({}),
         externalMessageEdits: { pending: () => true, intent: () => ({ phase: 'prompting' }) },
-        messageEdits: { pending: () => false },
+        messageEdits: { pending: () => false, recovery: () => undefined },
         externalRecoveryHistory: async () => {
           throw error
         },

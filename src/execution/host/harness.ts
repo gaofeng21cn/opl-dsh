@@ -36,6 +36,9 @@ import {
   externalEditedRecord,
   externalEditRecovery,
   externalPreparedChoice,
+  externalReceivedInput,
+  externalUnsentAdmissionChoice,
+  externalUnsentNativeRecovery,
   externalTerminalFailureChoice,
   externalUnsentEmptyChoice,
   externalRecordedChoices,
@@ -67,7 +70,7 @@ import { minimaxMessageEditDriver, MinimaxEditError } from './message-edit-minim
 import { zcodeMessageEditDriver } from './message-edit-zcode.ts'
 import { createOpenCodeMessageEditDriver } from './message-edit-opencode.ts'
 import { ExternalMessageEditError } from './message-edit-opencode-common.ts'
-import { createKiloMessageEditDriver } from './message-edit-kilo.ts'
+import { createKiloMessageEditDriver, readStoredKiloHistory } from './message-edit-kilo.ts'
 import { piMessageEditDriver } from './message-edit-pi.ts'
 import { kimiMessageEditDriver } from './message-edit-kimi.ts'
 import { poolMessageEditDriver } from './message-edit-pool.ts'
@@ -91,7 +94,11 @@ import {
   type TokenUsage,
 } from '@deepseek-ai/dsh-llm'
 import type { Context } from '@deepseek-ai/cordis'
-import { probeHarnessReasoning, readHarnessReasoning } from './reasoning-preflight.ts'
+import {
+  probeHarnessReasoning,
+  readHarnessReasoning,
+  readHarnessCurrentEffort,
+} from './reasoning-preflight.ts'
 import type { HarnessReasoningPreflight, HarnessStartRequest } from '../../contracts/types.ts'
 import { STOP_EDIT_VERSION } from '../contracts/stop-edit.ts'
 import { projectlessSessionCwd } from './projectless-path.ts'
@@ -2954,7 +2961,10 @@ export class HarnessService {
   }
 
   private async externalHistory(record: HarnessSession): Promise<ExternalEditHistory> {
-    await this.connectAdmitted(record)
+    const active = this.active.get(record.id)
+    const stored = record.harnessRef === 'kilo' && (!active?.acp || active.acp.closed)
+    if (stored && active) await this.disconnectForEdit(record, active)
+    if (!stored) await this.connectAdmitted(record)
     const fingerprint = externalEditRecordFingerprint(record)
     const cached = this.externalHistories.get(record.id)
     if (cached?.fingerprint === fingerprint) return cached.history
@@ -2971,10 +2981,12 @@ export class HarnessService {
       !last.native?.userMessageId
         ? { ...record, turns: record.turns.slice(0, -1) }
         : record
-    const history = await driver.read({
-      ...this.externalContext(record, new AbortController().signal),
-      record: readRecord,
-    })
+    const history = stored
+      ? await this.storedKiloHistory(readRecord)
+      : await driver.read({
+          ...this.externalContext(record, new AbortController().signal),
+          record: readRecord,
+        })
     if (
       externalEditRecordFingerprint(record) !== fingerprint ||
       history.sessionId !== record.acpSessionId
@@ -2984,6 +2996,20 @@ export class HarnessService {
     const current = this.active.get(record.id)
     if (current) current.editHistory = history
     return history
+  }
+
+  /** Read persisted Kilo identities without preparing a route to a possibly retired model. */
+  private async storedKiloHistory(record: HarnessSession): Promise<ExternalEditHistory> {
+    const harness = (await this.catalogStore.get()).harnesses.find((h) => h.id === 'kilo')
+    return readStoredKiloHistory(
+      record,
+      {
+        home: this.directory,
+        ...(harness?.command ? { command: harness.command } : {}),
+        ...(harness?.prefix ? { prefix: harness.prefix } : {}),
+      },
+      new AbortController().signal,
+    )
   }
 
   /** Read a vendor prefix for a terminal replacement failure without mapping the failed input. */
@@ -3003,6 +3029,11 @@ export class HarnessService {
       return this.externalHistory(record)
     const driver = this.externalDriver(record)
     if (!driver) throw Error('此执行引擎尚不支持编辑消息')
+    const active = this.active.get(record.id)
+    if (record.harnessRef === 'kilo' && (!active?.acp || active.acp.closed)) {
+      if (active) await this.disconnectForEdit(record, active)
+      return this.storedKiloHistory({ ...record, turns: record.turns.slice(0, -1) })
+    }
     await this.connectAdmitted(record)
     return driver.read({
       ...this.externalContext(record, new AbortController().signal),
@@ -3013,10 +3044,16 @@ export class HarnessService {
   /** Read editable inputs and verify stopped replacements without forking or sending prompts. */
   async messageEditState(input: { sessionId: string }): Promise<MessageEditState> {
     await this.ready
-    const session = this.ctx.sessions.get(
+    let session = this.ctx.sessions.get(
       asSessionId<SessionId>(required(input.sessionId, 'sessionId')),
     )
     const target = this.stopEditTarget(input.sessionId)
+    if (!session && target?.record && this.supportsExternalEditing(target.record)) {
+      const restored = await this.ctx.sessionController.resolveAgent(
+        asSessionId<SessionId>(input.sessionId),
+      )
+      if (!('error' in restored)) session = restored.agent.session
+    }
     const supported =
       target?.harness === 'dsh' && !target.record && !this.stopEditBlocked(input.sessionId)
     if (!session)
@@ -3046,18 +3083,38 @@ export class HarnessService {
         Boolean(this.active.get(record.id)?.turn) ||
         this.finalizing.has(record.id) ||
         this.externalEditing.has(record.id)
+      const abandoned = !busy && agent ? this.messageEdits.unadmitted(agent) : undefined
+      const admission = this.externalMessageEdits.intent(session.id)
+      const prepared =
+        abandoned && admission && admission.requestId === abandoned.input.prompt.requestId
+          ? externalPreparedChoice(
+              record,
+              { ...admission, phase: 'ready' },
+              session.snapshotEvents(),
+              new Set<number>(session.surface.nodes),
+            )?.seq === abandoned.input.targetSeq
+          : false
+      if (prepared && admission?.phase === 'admitting' && agent) {
+        await this.externalMessageEdits.reopenUnadmitted(session.id, admission.requestId)
+        await this.messageEdits.recoverUnadmitted(agent)
+      } else if (prepared && admission?.phase === 'ready' && agent) {
+        await this.messageEdits.recoverUnadmitted(agent)
+      }
       let pending =
         this.externalMessageEdits.pending(session.id) || this.messageEdits.pending(session.id)
       const base = { sessionId: session.id, head: Number(session.seq) - 1, busy, pending }
+      const nativeRecovery = !busy ? this.messageEdits.recovery(session) : undefined
+      if (nativeRecovery && externalUnsentNativeRecovery(record, admission, nativeRecovery))
+        return { ...base, supported: true, choices: [], recovery: nativeRecovery }
       if (busy || this.messageEdits.pending(session.id))
         return { ...base, supported: true, choices: [] }
       const intent = this.externalMessageEdits.intent(session.id)
       const lastTurn = record.turns.at(-1)
       const terminalEdit = Boolean(
         ['opencode', 'kilo'].includes(record.harnessRef) &&
-        intent?.phase === 'settled' &&
+        ['settled', 'uncertain'].includes(intent?.phase ?? '') &&
         lastTurn?.state === 'failed' &&
-        lastTurn.operationId.startsWith('message-edit:'),
+        lastTurn.operationId === 'message-edit:' + intent?.requestId,
       )
       const preparedChoice = externalPreparedChoice(
         record,
@@ -3067,6 +3124,14 @@ export class HarnessService {
       )
       if (preparedChoice)
         return { ...base, pending: false, supported: true, choices: [preparedChoice] }
+      const admissionChoice = externalUnsentAdmissionChoice(
+        record,
+        intent,
+        session.snapshotEvents(),
+        new Set<number>(session.surface.nodes),
+      )
+      if (admissionChoice)
+        return { ...base, pending: false, supported: true, choices: [admissionChoice] }
       const emptyChoice = externalUnsentEmptyChoice(
         record,
         intent,
@@ -3082,7 +3147,7 @@ export class HarnessService {
       )
       if (terminalChoice && !terminalEdit)
         return { ...base, pending: false, supported: true, choices: [terminalChoice] }
-      if (pending && !['admitting', 'prompting'].includes(intent?.phase ?? ''))
+      if (pending && !terminalEdit && !['admitting', 'prompting'].includes(intent?.phase ?? ''))
         return {
           ...base,
           supported: true,
@@ -3119,6 +3184,17 @@ export class HarnessService {
         const history = terminalEdit
           ? await this.externalHistory(record)
           : await this.externalRecoveryHistory(record, intent)
+        const received = externalReceivedInput(
+          record,
+          history,
+          intent,
+          session.snapshotEvents(),
+          new Set<number>(session.surface.nodes),
+        )
+        if (received && lastTurn?.native && !lastTurn.native.userMessageId) {
+          lastTurn.native.userMessageId = received
+          await this.save(record)
+        }
         phase = 'recovery-check'
         const recovery = externalEditRecovery(
           record,
@@ -3139,10 +3215,13 @@ export class HarnessService {
           phase = 'journal-settle'
           if (intent?.phase === 'prompting')
             await this.externalMessageEdits.settle(session.id, intent.requestId)
+          else if (intent?.phase === 'uncertain')
+            await this.externalMessageEdits.confirmTerminalHistory(session.id, intent.requestId)
           pending = false
         }
         if (terminalEdit && recovery?.kind !== 'settled') {
-          await this.externalMessageEdits.retainUncertainty(session.id, intent!.requestId)
+          if (intent?.phase === 'settled')
+            await this.externalMessageEdits.retainUncertainty(session.id, intent.requestId)
           return {
             ...base,
             pending: true,
@@ -3184,10 +3263,6 @@ export class HarnessService {
             : { unavailable: { reason: 'mapping-unavailable' as const, retryable: false } }),
         }
       } catch (error) {
-        if (terminalEdit) {
-          await this.externalMessageEdits.retainUncertainty(session.id, intent!.requestId)
-          pending = true
-        }
         const code =
           error instanceof MinimaxEditError || error instanceof ExternalMessageEditError
             ? error.code
@@ -3211,7 +3286,7 @@ export class HarnessService {
               error instanceof ExternalMessageEditError && error.code === 'busy'
                 ? 'history-busy'
                 : 'history-unavailable',
-            retryable: !terminalEdit,
+            retryable: true,
           },
         }
       } finally {
@@ -3258,6 +3333,20 @@ export class HarnessService {
       if (agent.inbox.nextTurn.length || agent.inbox.nextStep.length)
         throw Error('请先处理待发送消息，再编辑对话')
       const record = this.stopEditTarget(input.prompt.sessionId)?.record
+      if (
+        record &&
+        state.recovery &&
+        externalUnsentNativeRecovery(
+          record,
+          this.externalMessageEdits.intent(agent.id),
+          state.recovery,
+        )
+      )
+        return agent.runMaintenance((signal) =>
+          this.messageEdits.send(agent, input, () =>
+            this.ctx.sessionController.prompt(input.prompt, signal),
+          ),
+        )
       // The composer edits text; immutable pictures belong to the selected message.
       // Re-read them from that exact event before any vendor fork or Session mutation.
       const original = readNativeUserMessages(agent.session.snapshotEvents()).find(
@@ -3336,6 +3425,12 @@ export class HarnessService {
             agent.session.snapshotEvents(),
             new Set<number>(agent.session.surface.nodes),
           )
+          const admissionChoice = externalUnsentAdmissionChoice(
+            record,
+            priorIntent,
+            agent.session.snapshotEvents(),
+            new Set<number>(agent.session.surface.nodes),
+          )
           const emptyChoice = externalUnsentEmptyChoice(
             record,
             priorIntent,
@@ -3365,7 +3460,8 @@ export class HarnessService {
                 new Set<number>(agent.session.surface.nodes),
               )
             : undefined
-          const prepared = preparedChoice?.seq === input.targetSeq
+          const prepared =
+            preparedChoice?.seq === input.targetSeq || admissionChoice?.seq === input.targetSeq
           const empty =
             emptyChoice?.seq === input.targetSeq || (prepared && priorIntent?.result?.ephemeral)
           const unsent =
@@ -4956,7 +5052,16 @@ export class HarnessService {
     combination: string
   }): Promise<HarnessReasoningPreflight> {
     await this.ready
-    const key = `${input.sessionId}\0${input.combination}`
+    const session = this.ctx.sessions.get(asSessionId<SessionId>(input.sessionId))
+    const projected = session
+      ? this.ctx.sessionProjections.snapshot(session, ['modelSelection']).values.modelSelection
+      : undefined
+    const key = JSON.stringify([
+      input.sessionId,
+      input.combination,
+      this.externalEfforts.get(input.sessionId, input.combination),
+      (projected?.next ?? projected?.lastUsed)?.reasoningEffort,
+    ])
     const existing = this.reasoningPreflights.get(key)
     if (existing) return existing
     const pending = this.runtimeMaintenance
@@ -4991,7 +5096,20 @@ export class HarnessService {
       const reasoning = nativeCatalog.groups
         .find((group) => group.id === definition.modelRef.provider)
         ?.models.find((model) => model.id === definition.modelRef.model)?.reasoning
-      return { status: 'known', efforts: reasoning ? [...reasoning.efforts] : [] }
+      const selection = await this.modelSelection(session.id)
+      const currentEffort =
+        selection.current.provider === definition.modelRef.provider &&
+        selection.current.model === definition.modelRef.model
+          ? (selection.current.reasoningEffort ??
+            modelDefaultEffort(definition.modelRef.model, reasoning))
+          : undefined
+      return {
+        status: 'known',
+        efforts: reasoning ? [...reasoning.efforts] : [],
+        ...(currentEffort && reasoning?.efforts.some((effort) => effort.id === currentEffort)
+          ? { currentEffort }
+          : {}),
+      }
     }
     if (adapter.capabilities.reasoning === 'model-declared') return { status: 'known', efforts: [] }
     const replacement = this.replacementFor(session.id, catalog, definition.modelRef)
@@ -4999,12 +5117,22 @@ export class HarnessService {
       [...this.records.values()].find(
         (record) => record.nativeSessionId === session.id && record.combination === definition.id,
       ) ?? (replacement?.definition.id === definition.id ? replacement.record : undefined)
+    const requestedEffort =
+      (this.cliOwnsEffort(definition)
+        ? this.conversationEffort(session.id, definition, catalog)
+        : (await this.modelSelection(session.id)).current.reasoningEffort) ?? undefined
     const boundActive = bound ? this.active.get(bound.id) : undefined
-    if (boundActive?.acp && !boundActive.acp.closed && boundActive.configOptions !== undefined) {
+    if (
+      boundActive?.acp &&
+      !boundActive.acp.closed &&
+      boundActive.configOptions !== undefined &&
+      bound?.reasoningEffort === requestedEffort
+    ) {
       const efforts = readHarnessReasoning(bound!, boundActive.configOptions)
+      const currentEffort = readHarnessCurrentEffort(bound!, boundActive.configOptions)
       return efforts === undefined
         ? { status: 'unavailable', efforts: [] }
-        : { status: 'known', efforts }
+        : { status: 'known', efforts, ...(currentEffort ? { currentEffort } : {}) }
     }
     if (this.ctx.agents.get(session.id)?.status === 'running')
       return { status: 'unavailable', efforts: [] }
@@ -5015,6 +5143,7 @@ export class HarnessService {
       combination: definition.id,
       harnessRef: definition.harnessRef,
       modelRef: definition.modelRef,
+      ...(requestedEffort === undefined ? {} : { reasoningEffort: requestedEffort }),
       cwd: binding.cwd,
       origin: { kind: 'dsh', sessionId: session.id },
       sandbox: binding.sandbox,
