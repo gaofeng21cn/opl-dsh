@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { PassThrough } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { runAntigravityBridge } from '../../../src/execution/host/adapters/antigravity/bridge.ts'
 
 type Message = Record<string, any> // Untrusted ACP fixture messages.
@@ -103,11 +103,24 @@ async function bridge(shim: boolean = false) {
   }
 }
 
-it.runIf(process.platform !== 'win32').each(['leader-exit', 'cancel'])(
-  'stops a TERM-resistant tool before settling when the CLI %s',
-  async (mode) => {
+it.runIf(process.platform !== 'win32').each([
+  ['leader-exit', false],
+  ['cancel', false],
+  ['leader-exit', true],
+] as const)(
+  'stops a TERM-resistant tool before settling when the CLI %s (EPERM probe: %s)',
+  async (mode, deniedProbe) => {
     const fixture = await bridge()
     let pids: { leader: number; tool: number } | undefined
+    const nativeKill = process.kill.bind(process)
+    let injectedProbe = false
+    const kill = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+      if (deniedProbe && !injectedProbe && pids && pid === -pids.leader && signal === 0) {
+        injectedProbe = true
+        throw Object.assign(Error('kill EPERM'), { code: 'EPERM' })
+      }
+      return nativeKill(pid, signal)
+    })
     try {
       await fixture.request('initialize')
       await fixture.request('session/new', { cwd: fixture.root })
@@ -130,7 +143,9 @@ it.runIf(process.platform !== 'win32').each(['leader-exit', 'cancel'])(
           errorName: 'processExited',
         })
       expect((await fixture.completed).error).toBeUndefined()
+      expect(injectedProbe).toBe(deniedProbe)
     } finally {
+      kill.mockRestore()
       // A failing regression must not leave its deliberately persistent tool running.
       if (pids) {
         try {

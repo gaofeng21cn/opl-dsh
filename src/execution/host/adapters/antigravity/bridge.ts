@@ -114,8 +114,15 @@ async function stopChild(
       process.kill(group, value)
       return true
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ESRCH')
-        throw Error('Antigravity owned process group could not be stopped')
+      const code = (error as NodeJS.ErrnoException).code
+      // A zero signal probes existence, not permission to deliver a signal. Darwin
+      // can report EPERM while an orphaned group's final zombie is being reaped.
+      // Keep waiting for ESRCH; never treat a denied probe as completed cleanup.
+      if (value === 0 && code === 'EPERM') return true
+      if (code !== 'ESRCH')
+        throw Error('Antigravity owned process group could not be stopped', {
+          cause: error,
+        })
       retired = true
       return false
     }
