@@ -89,6 +89,7 @@ export const KILO_OFM_MODELS: readonly string[] = [
   'stealth/crouton-alpha',
   'liquid/lfm-3-1.7b:free',
   'thinkingmachines/inkling-2-small:free',
+  'baidu/ernie-5.5-flash-preview:free',
   'kilo-auto/free',
   'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
   'nvidia/nemotron-3-super-120b-a12b:free',

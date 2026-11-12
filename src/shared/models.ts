@@ -54,6 +54,7 @@ export function displayModelName(ref: ModelRef, name?: string): string {
     if (id === 'stealth/crouton-alpha') return 'Kilo Crouton Alpha'
     if (id === 'liquid/lfm-3-1.7b:free') return 'Kilo LFM3-1.7B'
     if (id === 'thinkingmachines/inkling-2-small:free') return 'Kilo Inkling 2 Small'
+    if (id === 'baidu/ernie-5.5-flash-preview:free') return 'Kilo ERNIE-5.5-Flash-Preview'
     if (id === 'minimax-m3.1-flash-free') return 'MiniMax M3.1 Flash Free'
     if (id === 'minimax/minimax-m3.1-flash:free') return 'Kilo MiniMax M3.1 Flash'
     if (id === 'nvidia/nemotron-3-super-120b-a12b:free') return 'Kilo Nemotron 3 Super'
