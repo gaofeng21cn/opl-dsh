@@ -53,6 +53,8 @@ OFM 来源统一使用 `Our Free Model` 写法，区域渠道保留 `region-limi
 
 表格描述适配器配对，不是当前在线可用性承诺；模型必须仍在来源目录中且通过启动前检查。Cat Jam、MiMo v2.6 Flash、Muse Spark 1.3、Longcat 2.5、OpenCode 的 DeepSeek/GLM/Beam/Nemotron 免费条目、Space Bunny 和 Big Pickle 的精确裸 ID 使用 OpenCode 官方免费通道。Kilo 频道的 Nemotron 3 Super 120B 使用 Kilo 执行器并经 OFM Chat 转发，不折叠成 OpenCode 路线。Flint 的 `flint-40b-free` 与 EAC 的 `opencode/flint-40b-free` 均由 OpenCode 经 OFM Chat 转发，保留各自的完整 ID；`recursive/flint-v1.0:free` 由 Kilo 执行并经 OFM 转发。同名模型不互相替换。
 
+Kilo ERNIE-5.5-Flash-Preview 使用精确 ID `baidu/ernie-5.5-flash-preview:free`，通过 Kilo Code 和 OFM Chat 转发执行；默认推荐该组合。来源目录声明推理能力，但 Kilo ACP 自定义 provider 未提供可写档位，因此保持来源默认思考设置，不显示推理档位菜单。
+
 OFM 的 Kilo 目录对 `liquid/lfm-3-1.7b:free` 声明 `low`、`medium`、`high` 三档推理强度，默认 `high`，且不提供关闭思考。当前 OPL 适配使用的官方 Kilo ACP 自定义 provider 没有可写的 effort 配置项，因此不把来源档位伪装成 Kilo 选项；显式档位请求会在发送前拒绝，未指定档位时保留上游默认设置。
 
 EAC 的 `opencode/nemotron-3.5-lightning-free`、`opencode/nemotron-3.5-super-vl-free` 和 `opencode/flint-40b-free` 保留完整 ID，使用 OFM 转发，不改成裸 ID 的 OpenCode 直连通道。Pi 的 `thinkingmachines/inkling:free` 与已有的 `thinkingmachines/inkling-small:free` 分开配置；Kilo 的 `thinkingmachines/inkling-2-small:free` 是独立的 Kilo Gateway 免费路由；`google/gemma-4-31b-it:free` 不提供推理档位菜单。EAC 的 `deepseek-ai/deepseek-v4.1-flash` 在新模型发现中推荐 DSH；其他未知模型不会因此变成推荐项，组合仍需用户选择添加。
