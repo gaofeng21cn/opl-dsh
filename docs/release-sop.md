@@ -8,7 +8,7 @@
 
 ### GitHub Actions 发布环境
 
-`.github/workflows/stable-release.yml` 每日北京时间 02:37 自动检查主线，并为稳定发布提供临时 macOS arm64 打包环境（Node 24、Python、Apple 工具及 NSIS）、尽力运行的 Windows 桌面验收环境和 Ubuntu 公开发布环境。准备与发布 job 使用 GitHub 为本仓库签发的临时 `GITHUB_TOKEN`，仅这两个 job 具有 `contents: write`；不需要把个人访问令牌写入仓库或云环境。
+`.github/workflows/stable-release.yml` 每日北京时间 02:37 自动检查主线，并为稳定发布提供临时 macOS arm64 打包环境（Node 24、Python、Apple 工具及 NSIS）、Windows 桌面验收环境和 Ubuntu 公开发布环境。准备与发布 job 使用 GitHub 为本仓库签发的临时 `GITHUB_TOKEN`，仅这两个 job 具有 `contents: write`；不需要把个人访问令牌写入仓库或云环境。
 
 日常增强改动只需让可接受实现进入 `main`；上游单独升级无需额外提交产品改动。每日准备 job 通过 `scripts/prepare-daily-release.mjs` 比较公开稳定 tag 与主线的真实产品路径，同时用 `scripts/official-desktop-feeds.mjs` 读取两平台官方清单，并与 Latest 中校验过摘要的联合清单比较。有未发布增强改动或官方版本变化，就自动准备递增版本、`docs/release-notes-<版本>.md` 和 canonical tag；两者都未变化则跳过。新 tag 注释固定目标官方版本，打包及发布再次核对实际 feed，随后沿原双平台隔离验收与公开回读执行。
 
@@ -18,7 +18,7 @@ GitHub 的临时 token 推送 tag 不会触发另一轮 push 工作流，因此�
 
 说明写作链可通过 `.github/workflows/release-notes-check.yml` 单独运行云端检查。它使用已发布功能的真实 Git 证据生成预览，同时验证 Copilot 实际调用、Copilot 失败后的真实 `deepseek-flash` 调用、前两层失败后的真实 `gpt-6-luna` 调用和三层均失败后的机械说明；只提供预览与结果 artifact，不准备或发布产品版本。
 
-打包 job 执行源码门禁，生成 macOS DMG、Windows EXE、增强 ZIP 和联合清单；两个验收 job 解压同一 ZIP，用其实际 payload 验收官方桌面，不用各自重建的字节代替。发布 job 必须检查 macOS 证据、清洁源码、清单与套件摘要并重新读取官方 feed；Windows 证据若失败或缺失则写入联合资格 JSON 和发布审计，不阻断 macOS Release。
+打包 job 执行源码门禁，生成 macOS DMG、Windows EXE、增强 ZIP 和联合清单；两个验收 job 解压同一 ZIP，用其实际 payload 验收官方桌面，不用各自重建的字节代替。发布 job 必须检查 macOS 与 Windows 证据、清洁源码、清单与套件摘要并重新读取官方 feed；Windows 证据失败或缺失会直接停止发布。
 
 冻结产品源码与资格运行器分别记录。打包、产品源码检查和公开校验仍使用候选 tag 的提交；资格运行器从触发本轮工作流的精确提交独立检出到忽略目录，显式读取同一交付 payload，不改产品 checkout 或安装包。证据的 `sourceCommit`、源树摘要和套件摘要对应产品，`qualificationRunner.sourceCommit` 对应执行验收的脚本，`sourceDirty` 要求构建来源与运行器均清洁。仅修正验收脚本时，主线手动触发可用修正后的运行器继续验收已冻结候选，保留同一个版本与 tag；这不能用于替换产品代码或绕过既有门禁。
 
@@ -31,9 +31,9 @@ GitHub 的临时 token 推送 tag 不会触发另一轮 push 工作流，因此�
 一次发布只有在以下事实都成立时才算完成：
 
 1. 主线候选已冻结，工作区和源提交可追溯。
-2. macOS 官方 feed 版本与构建产物、联合清单和 macOS 验收证据一致；Windows feed 的实际版本单独记录。
+2. macOS 与 Windows 官方 feed 版本相同，并与构建产物、联合清单和两平台验收证据一致。
 3. Host/Client、RPC、模块边界、格式、构建和测试全部通过。
-4. 未修改的 macOS 官方桌面在隔离 profile 中完成安装、Client/RPC、模型流、官方工具、重启恢复和官方文件未改变的验收；Windows 尽力验收并记录结果。
+4. 未修改的 macOS 与 Windows 官方桌面都在隔离 profile 中完成安装、Client/RPC、模型流、官方工具、重启恢复和官方文件未改变的验收。
 5. GitHub Release、tag、五类交付资产、SHA-256 清单和验收记录已公开，且公开下载摘要与本地摘要一致。
 6. `releases/latest` 指向本次 Release；安装器和更新器能从该 Release 读取稳定清单。
 7. Homebrew Cask（如果本次维护）已指向公开增强包摘要并完成回读。
@@ -52,7 +52,7 @@ GitHub 的临时 token 推送 tag 不会触发另一轮 push 工作流，因此�
 | macOS arm64 | `https://download.deepseek.com/dsh-desk/feeds/mac-arm64/nightly-mac.yml` |
 | Windows x64 | `https://download.deepseek.com/dsh-desk/feeds/win-x64/nightly.yml`       |
 
-两份 feed 的 `version`、下载路径和摘要必须都可解析；macOS 版本作为主版本，Windows 可暂时落后。官方 GitHub 仓库的 tag/release 用于核对上游阶段；它可以是 RC，而 OPL Release 仍可使用稳定的 OPL 版本号，但 Release Note 必须明确写出各平台官方版本及其候选状态。不能把 `0.2.0-rc.2` 改写成 `0.2.0`。
+两份 feed 的 `version`、下载路径和摘要必须都可解析，且 `version` 必须相同；准备、打包、验收和发布都使用这一冻结版本。官方 GitHub 仓库的 tag/release 用于核对上游阶段；它可以是 RC，而 OPL Release 仍可使用稳定的 OPL 版本号，但 Release Note 必须明确写出官方版本及其候选状态。不能把 `0.2.0-rc.2` 改写成 `0.2.0`。
 
 使用下面的只读检查确认当前事实；不要把检查结果手写进源码：
 
@@ -87,11 +87,11 @@ gh api 'repos/deepseek-ai/deepseek-harness/releases?per_page=3' \
 
 - `channel=stable`；
 - `releaseVersion`、`enhancement.version` 和 `tagName`；
-- macOS 主版本及两平台官方 feed 的实际版本、路径和 SHA-512；
+- 两平台共同的官方 feed 版本、路径和 SHA-512；
 - 增强包名称、大小和 SHA-256；
 - 构建源提交、源树摘要和验收证据文件名。
 
-`scripts/create-release-manifest.mjs` 会重新读取两个官方 feed；macOS feed 字段无效或构建基线不同必须停止发布，Windows 版本差异只写入清单并交由 Windows 尽力资格记录。
+`scripts/create-release-manifest.mjs` 会重新读取两个官方 feed；任一字段无效、两平台版本不一致或构建基线不同都必须停止发布。
 
 ## 3. 发布前准备
 
@@ -177,12 +177,12 @@ Windows 的 `--download` 会安装官方程序并写入系统注册信息，只�
 验收 JSON 必须满足：
 
 - `status=passed`；
-- macOS `officialVersion` 与 macOS feed、`artifact.json` 和联合清单主版本一致；Windows `officialVersion` 与 Windows feed 一致（若有证据）；
+- macOS 与 Windows `officialVersion` 都与共同 feed、`artifact.json` 和联合清单版本一致；
 - `sourceDirty=false`；
 - `isolatedInstallation`、Client、runtime、restart 和 `officialUnmodified` 均通过；
 - 官方 Bundle ID、Developer ID/Windows 发布者签名和 `app.asar` 摘要未改变。
 
-本地模拟模型只证明协议、工具和持久化链路，不证明真实 Gateway、凭据、外部模型质量或所有 Harness 组合。API/RPC 通过不能代替 Client 页面可见性和交互验收；两者必须分别记录。macOS 通过不能替代 Windows 结果；Windows 未进入桌面运行验收时，Release Note 必须明确记录。
+本地模拟模型只证明协议、工具和持久化链路，不证明真实 Gateway、凭据、外部模型质量或所有 Harness 组合。API/RPC 通过不能代替 Client 页面可见性和交互验收；两者必须分别记录。任一平台未进入桌面运行验收时，不能公开 Release。
 
 ## 5. 组装发布资产
 
@@ -316,18 +316,18 @@ gh release delete opl-dsh-v<OLD_VERSION> --cleanup-tag --yes
 
 ## 9. 失败恢复
 
-| 断点                                      | 处理方式                                                                                                                    |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| macOS feed 失败或主版本变化               | 停止发布，记录 macOS feed 断点；修复读取或从主线重新准备。                                                                  |
-| Windows feed 落后、资格失败或缺失         | 保留 Windows 实际版本和失败证据，继续 macOS 打包与发布；在 Release audit/Release Note 记录解除条件。                        |
-| `npm ci`、类型、RPC、边界、格式或测试失败 | 修复源代码/依赖后重新从源码门禁开始；不要复用旧 artifact。                                                                  |
-| package 后发现源代码或文档改变            | 重新构建、重新生成清单、重新验收；不能只替换 `artifact.json`。                                                              |
-| 官方隔离验收失败                          | 定位最深失败检查；macOS/Windows 分开记录。未通过的平台不能写成通过。                                                        |
-| 上传/发布结果未知                         | 只读回查 Release、tag、资产和 latest 指针；明确已有对象前不重试公开 mutation。                                              |
-| 资产摘要不一致                            | 保留当前公开 Release，先确认是否下载损坏、资产混入旧候选或清单错配；修复候选后按同 tag 修复流程处理。                       |
-| Homebrew 摘要更新失败                     | Release 仍可保持已公开状态；只恢复 Cask，回读公开资产后再提交。                                                             |
-| 用户更新失败                              | 保留当前本地 release 和 profile，读取 `enhancement-update.json`；网络、运行中 profile、版本未变和校验失败不能触发强制覆盖。 |
-| 清理旧 Release 结果未知                   | 先查询旧 tag、Release 和 latest；确认删除状态后再继续，不能盲目重复删除或创建新 Release。                                   |
+| 断点                                                  | 处理方式                                                                                                                    |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 任一官方 feed 失败或冻结版本变化                      | 停止发布，记录 feed 断点；修复读取或从主线重新准备。                                                                        |
+| Windows feed 读取失败、版本不一致、资格失败或证据缺失 | 停止打包或发布，保留候选和失败证据；修复后从同一冻结版本重新执行双平台流程。                                                |
+| `npm ci`、类型、RPC、边界、格式或测试失败             | 修复源代码/依赖后重新从源码门禁开始；不要复用旧 artifact。                                                                  |
+| package 后发现源代码或文档改变                        | 重新构建、重新生成清单、重新验收；不能只替换 `artifact.json`。                                                              |
+| 官方隔离验收失败                                      | 定位最深失败检查；macOS/Windows 分开记录。未通过的平台不能写成通过。                                                        |
+| 上传/发布结果未知                                     | 只读回查 Release、tag、资产和 latest 指针；明确已有对象前不重试公开 mutation。                                              |
+| 资产摘要不一致                                        | 保留当前公开 Release，先确认是否下载损坏、资产混入旧候选或清单错配；修复候选后按同 tag 修复流程处理。                       |
+| Homebrew 摘要更新失败                                 | Release 仍可保持已公开状态；只恢复 Cask，回读公开资产后再提交。                                                             |
+| 用户更新失败                                          | 保留当前本地 release 和 profile，读取 `enhancement-update.json`；网络、运行中 profile、版本未变和校验失败不能触发强制覆盖。 |
+| 清理旧 Release 结果未知                               | 先查询旧 tag、Release 和 latest；确认删除状态后再继续，不能盲目重复删除或创建新 Release。                                   |
 
 ## 10. 发布记录
 
@@ -347,7 +347,7 @@ gh release delete opl-dsh-v<OLD_VERSION> --cleanup-tag --yes
 
 ### 发布前
 
-- [ ] macOS feed 主版本已核对；Windows feed 实际版本已记录。
+- [ ] macOS 与 Windows feed 版本相同，并已与冻结版本核对。
 - [ ] OPL 版本递增，`package.json` 与 lockfile 一致。
 - [ ] 主线干净，文档和源代码已冻结。
 - [ ] RPC、类型、边界、格式、构建和测试通过。

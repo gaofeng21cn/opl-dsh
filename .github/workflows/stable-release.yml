@@ -25,6 +25,7 @@ jobs:
       tag: ${{ steps.candidate.outputs.tag }}
       source_commit: ${{ steps.candidate.outputs.source_commit }}
       official_version: ${{ steps.candidate.outputs.official_version }}
+      official_windows_version: ${{ steps.candidate.outputs.official_windows_version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -33,7 +34,6 @@ jobs:
         with:
           node-version: 24
       - name: Load shared release-note writer policy
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/prepare-shared-release-note-writer.mjs
@@ -90,15 +90,19 @@ jobs:
       - name: Resolve the live official desktop feed version
         env:
           OPL_PREPARED_OFFICIAL_VERSION: ${{ needs.prepare.outputs.official_version }}
+          OPL_PREPARED_OFFICIAL_WINDOWS_VERSION: ${{ needs.prepare.outputs.official_windows_version }}
         run: |
           node --input-type=module - <<'NODE'
           import { readOfficialDesktopFeeds } from './dist/release-runner/scripts/official-desktop-feeds.mjs'
           const feeds = await readOfficialDesktopFeeds()
           const version = feeds['mac-arm64'].version
-          if (version !== process.env.OPL_PREPARED_OFFICIAL_VERSION)
+          const windowsVersion = feeds['win-x64'].version
+          if (version !== process.env.OPL_PREPARED_OFFICIAL_VERSION ||
+              windowsVersion !== process.env.OPL_PREPARED_OFFICIAL_WINDOWS_VERSION ||
+              version !== windowsVersion)
             throw Error('Official feeds changed after release preparation')
           await import('node:fs/promises').then(({ appendFile }) => appendFile(process.env.GITHUB_ENV, `OPL_OFFICIAL_VERSION=${version}\n`))
-          console.log(`Using macOS official desktop feed version ${version}; Windows feed is ${feeds['win-x64'].version}`)
+          console.log(`Using frozen official desktop feed version ${version} on macOS arm64 and Windows x64`)
           NODE
       - run: npm run package
       - run: npm test
@@ -122,7 +126,6 @@ jobs:
         os: [macos-15, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -180,7 +183,7 @@ jobs:
           path: |
             dist/official-qualification.json
             dist/official-qualification-client-*.png
-          if-no-files-found: warn
+          if-no-files-found: error
 
   publish:
     needs: [prepare, package, qualify]
@@ -208,11 +211,12 @@ jobs:
         with:
           name: release-qualification-windows-latest
           path: dist/evidence/windows-latest
-        continue-on-error: true
       - name: Verify provenance, publish, and read back all public assets
         env:
           GH_TOKEN: ${{ github.token }}
           OPL_RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          OPL_PREPARED_OFFICIAL_VERSION: ${{ needs.prepare.outputs.official_version }}
+          OPL_PREPARED_OFFICIAL_WINDOWS_VERSION: ${{ needs.prepare.outputs.official_windows_version }}
         run: node scripts/publish-stable-release.mjs
       - name: Retain publication and previous-release audit records
         if: always()

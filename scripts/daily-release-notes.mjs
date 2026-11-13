@@ -22,8 +22,8 @@ ${changes}
 
 - Host/Client 类型检查、RPC、模块边界、格式、构建与自动测试：通过
 - macOS arm64 未修改官方桌面隔离验收：通过（发布硬门槛）
-- Windows x64 使用自身官方 feed（\`{{OFFICIAL_WINDOWS_VERSION}}\`）尽力验收；资格失败或缺失会记录在审计中，不阻断 macOS 发布
-- macOS 与 Windows 验收同一增强包字节，覆盖 Client 设置、模型流、官方工具与重启恢复；源提交为 \`{{SOURCE_COMMIT}}\`
+- Windows x64 使用自身官方 feed（\`{{OFFICIAL_WINDOWS_VERSION}}\`）完成隔离资格验收；资格失败或证据缺失会阻断发布
+- macOS 与 Windows 使用同一冻结官方版本和增强包字节完成资格验收，覆盖 Client 设置、模型流、官方工具与重启恢复；源提交为 \`{{SOURCE_COMMIT}}\`
 - 联合清单与验收记录随 Release 提供；发布后逐一回读公开资产摘要
 
 ### 已知限制

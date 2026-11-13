@@ -2,7 +2,7 @@
 import { createServer, connect } from 'node:net'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile, rename, unlink, mkdir } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join, posix, resolve } from 'node:path'
 
 /** Keep Unix socket paths below macOS's AF_UNIX limit even with a long TMPDIR. */
 export function desktopUpdateEndpoint({
@@ -11,7 +11,7 @@ export function desktopUpdateEndpoint({
   nonce = randomUUID(),
 } = {}) {
   if (platform === 'win32') return String.raw`\\.\pipe\opl-update-${pid}-${nonce}`
-  return join('/tmp', `opl-u-${nonce}.sock`)
+  return posix.join('/tmp', `opl-u-${nonce}.sock`)
 }
 
 export async function atomicUpdateJson(path, value) {

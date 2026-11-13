@@ -110,7 +110,7 @@ try {
 exit $LASTEXITCODE
 `
 
-function runInstaller(t, vendorExitCode) {
+function runInstaller(t, vendorExitCode, { forwardSlashReceipt = false } = {}) {
   const scratch = mkdtempSync(join(tmpdir(), 'opl-windows-official-installer-'))
   t.after(() => rmSync(scratch, { recursive: true, force: true }))
   const root = join(scratch, 'Suite root')
@@ -128,9 +128,10 @@ function runInstaller(t, vendorExitCode) {
   const wrapper = join(scratch, 'run-installer.ps1')
   const fixturePath = join(scratch, 'fixture.json')
   const archiveBytes = Buffer.from('test-owned official installer fixture\n')
+  const receiptApp = forwardSlashReceipt ? app.replaceAll('\\', '/') : app
   writeFileSync(exe, 'not an executable\n')
   writeFileSync(archive, archiveBytes)
-  writeFileSync(receipt, JSON.stringify({ app }))
+  writeFileSync(receipt, JSON.stringify({ app: receiptApp }))
   for (const script of [compare, enhancement])
     writeFileSync(script, 'throw new Error("stub only")\n')
   const sha512 = createHash('sha512').update(archiveBytes).digest('base64')
@@ -183,7 +184,7 @@ function runInstaller(t, vendorExitCode) {
   )
   assert.deepEqual(readFileSync(archive), archiveBytes)
   assert.equal(readFileSync(exe, 'utf8'), 'not an executable\n')
-  assert.deepEqual(JSON.parse(readFileSync(receipt, 'utf8')), { app })
+  assert.deepEqual(JSON.parse(readFileSync(receipt, 'utf8')), { app: receiptApp })
   return { run, events, root, payload, app, exe, archive, compare, enhancement }
 }
 
@@ -239,7 +240,7 @@ test(
             (value) => `"${value}"`,
           ),
         },
-        { path: result.archive, args: ['/S', `/D=${result.app}`] },
+        { path: result.archive, args: ['/S', `"/D=${result.app}"`] },
         {
           path: result.exe,
           args: [result.enhancement, result.app, result.root, result.payload, '--no-launch'].map(
@@ -265,6 +266,19 @@ test(
     assert.deepEqual(
       starts(events).map((event) => event.phase),
       ['compare', 'official'],
+    )
+  },
+)
+
+test(
+  'Windows installer normalizes a forward-slash app path from an older receipt',
+  { skip: windowsOnly },
+  (t) => {
+    const { run, events } = runInstaller(t, 0, { forwardSlashReceipt: true })
+    assert.equal(run.status, 0, run.stdout + run.stderr)
+    assert.deepEqual(
+      starts(events).map((event) => event.phase),
+      ['compare', 'official', 'enhancement'],
     )
   },
 )
