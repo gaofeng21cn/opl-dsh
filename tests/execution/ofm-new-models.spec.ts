@@ -33,6 +33,8 @@ const lanes = [
   ['liquid/lfm-3-1.7b:free', 'kilo', 'Kilo LFM3-1.7B'],
   ['thinkingmachines/inkling-2-small:free', 'kilo', 'Kilo Inkling 2 Small'],
   ['baidu/ernie-5.5-flash-preview:free', 'kilo', 'Kilo ERNIE-5.5-Flash-Preview'],
+  ['particle-ai/particle-1:free', 'kilo', 'Kilo Particle-1'],
+  ['apodex/apodex-1.1-mini:free', 'kilo', 'Kilo Apodex 1.1 Mini'],
 ] as const
 const ref = (model: string) => ({ provider: 'our-free-model', model })
 const record = { modelRef: ref(VIBE_MODEL), sandbox: 'full-access' } as HarnessSession
@@ -125,6 +127,8 @@ describe('new OFM channel pairings', () => {
     ['liquid/lfm-3-1.7b:free', buildKiloRouteConfig, 'oplkilo'],
     ['thinkingmachines/inkling-2-small:free', buildKiloRouteConfig, 'oplkilo'],
     ['baidu/ernie-5.5-flash-preview:free', buildKiloRouteConfig, 'oplkilo'],
+    ['particle-ai/particle-1:free', buildKiloRouteConfig, 'oplkilo'],
+    ['apodex/apodex-1.1-mini:free', buildKiloRouteConfig, 'oplkilo'],
   ] as const)(
     'writes the exact %s model and its owning relay into CLI config',
     (model, build, provider) => {

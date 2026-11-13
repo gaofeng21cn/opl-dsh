@@ -232,50 +232,48 @@ describe('Kilo 会话固定模型', () => {
     expect((await entries(journal)).filter((e) => e.params?.configId === 'effort')).toHaveLength(0)
   })
 
-  it('每个声明模型都能逐字固定并回读，free/auto 路由不被替换', { timeout: 15_000 }, async () => {
+  it.each(KILO_OFM_MODELS)('%s 能逐字固定并回读，free/auto 路由不被替换', { timeout: 15_000 }, async (model) => {
     const dir = await workspace('opl-kilo-each-')
-    for (const model of KILO_OFM_MODELS) {
-      const sources = new ExternalModelSources({} as never, () => {})
-      sources.register({ effect: (fn: () => unknown) => fn() } as never, {
-        provider: KILO_OFM_PROVIDER,
-        supports: () => true,
-        resolve: async () => ({ ...ROUTE, model }),
-      })
-      const home = join(dir, 'opl-home')
-      const launch = await kiloAdapter.prepare!(
-        {} as never,
-        { ...sessionRecord(), modelRef: { provider: KILO_OFM_PROVIDER, model } },
-        {
-          home,
-          command: process.execPath,
-          modelSources: sources,
-          grokCommand: 'grok',
-          nativeBridgePath: 'bridge.js',
-        },
-      )
-      const journal = join(dir, `journal-${model.replace(/[^a-z0-9]/gi, '_')}.jsonl`)
-      const started = kiloLaunch(launch.command, dir, [FIXTURE])
-      const acp = new AcpProcess(
-        started.command,
-        started.args,
-        dir,
-        { ...(launch.env as Record<string, string>), KILO_JOURNAL: journal },
-        () => {},
-        () => {},
-        () => {},
-      )
-      cleanups.push(() => acp.dispose())
-      await acp.request('initialize', { protocolVersion: 1 })
-      const created = await openSession(acp, dir)
-      const value = kiloModelValue(model)
-      const configured = await kiloAdapter.configureSession!(
-        surface(acp, []),
-        { ...sessionRecord(created.sessionId), modelRef: { provider: KILO_OFM_PROVIDER, model } },
-        { agent: agentSnapshot, session: created, configOptions: created.configOptions },
-      )
-      const readBack = (configured as any).configOptions.find((o: any) => o.id === 'model')
-      expect(readBack.currentValue).toBe(value)
-    }
+    const sources = new ExternalModelSources({} as never, () => {})
+    sources.register({ effect: (fn: () => unknown) => fn() } as never, {
+      provider: KILO_OFM_PROVIDER,
+      supports: () => true,
+      resolve: async () => ({ ...ROUTE, model }),
+    })
+    const home = join(dir, 'opl-home')
+    const launch = await kiloAdapter.prepare!(
+      {} as never,
+      { ...sessionRecord(), modelRef: { provider: KILO_OFM_PROVIDER, model } },
+      {
+        home,
+        command: process.execPath,
+        modelSources: sources,
+        grokCommand: 'grok',
+        nativeBridgePath: 'bridge.js',
+      },
+    )
+    const journal = join(dir, `journal-${model.replace(/[^a-z0-9]/gi, '_')}.jsonl`)
+    const started = kiloLaunch(launch.command, dir, [FIXTURE])
+    const acp = new AcpProcess(
+      started.command,
+      started.args,
+      dir,
+      { ...(launch.env as Record<string, string>), KILO_JOURNAL: journal },
+      () => {},
+      () => {},
+      () => {},
+    )
+    cleanups.push(() => acp.dispose())
+    await acp.request('initialize', { protocolVersion: 1 })
+    const created = await openSession(acp, dir)
+    const value = kiloModelValue(model)
+    const configured = await kiloAdapter.configureSession!(
+      surface(acp, []),
+      { ...sessionRecord(created.sessionId), modelRef: { provider: KILO_OFM_PROVIDER, model } },
+      { agent: agentSnapshot, session: created, configOptions: created.configOptions },
+    )
+    const readBack = (configured as any).configOptions.find((o: any) => o.id === 'model')
+    expect(readBack.currentValue).toBe(value)
   })
 
   it('恢复会话后模型回到官方默认值，适配器必须重新固定而不是沿用', async () => {

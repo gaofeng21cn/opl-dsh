@@ -124,6 +124,8 @@ export const OFM_PINNED_HARNESS_MODELS: Readonly<Record<string, readonly string[
     'liquid/lfm-3-1.7b:free',
     'thinkingmachines/inkling-2-small:free',
     'baidu/ernie-5.5-flash-preview:free',
+    'particle-ai/particle-1:free',
+    'apodex/apodex-1.1-mini:free',
     'kilo-auto/free',
     'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
     'nvidia/nemotron-3-super-120b-a12b:free',

@@ -198,6 +198,8 @@ describe('Kilo 声明面', () => {
       'liquid/lfm-3-1.7b:free',
       'thinkingmachines/inkling-2-small:free',
       'baidu/ernie-5.5-flash-preview:free',
+      'particle-ai/particle-1:free',
+      'apodex/apodex-1.1-mini:free',
       'kilo-auto/free',
       'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
       'nvidia/nemotron-3-super-120b-a12b:free',
@@ -228,6 +230,8 @@ describe('Kilo 声明面', () => {
     expect(KILO_OFM_MODELS).toContain('reflection/beam-free')
     expect(KILO_OFM_MODELS).toContain('xingchen-agi/xing4.0-29b-a4b:free')
     expect(KILO_OFM_MODELS).toContain('recursive/flint-v1.0:free')
+    expect(KILO_OFM_MODELS).toContain('particle-ai/particle-1:free')
+    expect(KILO_OFM_MODELS).toContain('apodex/apodex-1.1-mini:free')
     expect(kiloModelValue('kilo-auto/free')).toBe('oplkilo/kilo-auto/free')
   })
 
