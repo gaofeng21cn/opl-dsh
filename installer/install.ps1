@@ -78,6 +78,8 @@ try {
     if ($registered) { $app = $registered.InstallLocation.TrimEnd('\') }
   }
   if (-not $app) { $app = Join-Path ${env:LOCALAPPDATA} 'Programs\DeepSeek Harness' }
+  # Older receipts may use forward slashes; NSIS rejects those in /D= paths.
+  $app = [IO.Path]::GetFullPath($app)
   $oldExe = Join-Path $app 'DeepSeek Harness.exe'
   if (Test-Path -LiteralPath $oldExe) {
     Assert-OfficialSignature $oldExe
@@ -100,7 +102,10 @@ try {
     if ((Get-HashHex $archive 'SHA512') -ne $expected.ToLowerInvariant()) { throw '官方安装文件校验失败。' }
     Assert-OfficialSignature $archive
     Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
-    $process = Start-Process -FilePath $archive -ArgumentList @('/S', "/D=$app") -Wait -PassThru
+    # NSIS requires the destination to remain one argument when the suite path
+    # contains spaces, which is the default under AppData.
+    $destination = '"/D=' + $app + '"'
+    $process = Start-Process -FilePath $archive -ArgumentList @('/S', $destination) -Wait -PassThru
     if ($process.ExitCode -ne 0) { throw ('官方运行环境安装失败（退出码 ' + $process.ExitCode + '）。') }
     if ((Get-Item -LiteralPath $exe).VersionInfo.FileVersion -ne $officialVersion) { throw '官方版本与清单不符。' }
   }

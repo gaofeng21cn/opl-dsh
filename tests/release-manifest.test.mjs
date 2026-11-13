@@ -34,10 +34,23 @@ const manifest = {
   },
 }
 
-test('release manifest accepts macOS-primary divergent feeds and selects by platform', () => {
+test('release manifest keeps historical divergent feeds readable', () => {
   assert.equal(officialVersionForPlatform(manifest, 'darwin', 'arm64'), '0.2.2-rc.2')
   assert.equal(officialVersionForPlatform(manifest, 'win32', 'x64'), '0.2.2-rc.1')
   assert.doesNotThrow(() => validateReleaseManifest(manifest))
+  assert.throws(
+    () => validateReleaseManifest(manifest, { requireMatchingOfficialFeeds: true }),
+    /版本必须一致/,
+  )
+  assert.doesNotThrow(() =>
+    validateReleaseManifest({
+      ...manifest,
+      official: {
+        ...manifest.official,
+        feeds: { 'mac-arm64': feed('0.2.2-rc.2'), 'win-x64': feed('0.2.2-rc.2') },
+      },
+    }),
+  )
 })
 
 test('release manifest keeps macOS as the primary official version', () => {

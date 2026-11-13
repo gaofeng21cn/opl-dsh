@@ -75,15 +75,23 @@ const compare = (a, b) => {
 export async function planDailyRelease(
   root,
   latest,
-  { officialVersion, publishedOfficialVersion } = {},
+  { officialVersion, officialWindowsVersion, publishedOfficialVersion } = {},
 ) {
   const project = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   if (!stable.test(project.version)) throw Error('OPL version is not stable SemVer')
   if (git(root, ['status', '--porcelain'])) throw Error('Release preparation requires clean source')
   const currentTag = `opl-dsh-v${project.version}`
-  for (const version of [officialVersion, publishedOfficialVersion])
+  for (const version of [officialVersion, officialWindowsVersion, publishedOfficialVersion])
     if (version !== undefined && !officialVersionPattern.test(version))
       throw Error('Invalid official desktop version')
+  if (
+    officialVersion !== undefined &&
+    officialWindowsVersion !== undefined &&
+    officialVersion !== officialWindowsVersion
+  )
+    throw Error(
+      `Official mac-arm64 and win-x64 versions differ: ${officialVersion} vs ${officialWindowsVersion}`,
+    )
   const upstreamChanged =
     officialVersion && publishedOfficialVersion && officialVersion !== publishedOfficialVersion
   if (latest) {
@@ -161,6 +169,7 @@ export async function prepareDailyRelease(root, { request = fetch } = {}) {
   const ref = process.env.GITHUB_REF
   const feeds = await readOfficialDesktopFeeds(request)
   const officialVersion = feeds['mac-arm64'].version
+  const officialWindowsVersion = feeds['win-x64'].version
   let candidate
   if (/^refs\/tags\/opl-dsh-v\d+\.\d+\.\d+$/.test(ref ?? '')) {
     const tag = ref.slice('refs/tags/'.length)
@@ -182,7 +191,11 @@ export async function prepareDailyRelease(root, { request = fetch } = {}) {
       throw Error('Cannot read public Latest; no version or tag was written')
     const latest = response.status === 0 ? JSON.parse(response.stdout) : undefined
     const publishedOfficialVersion = latest && readPublishedOfficialVersion(latest)
-    candidate = await planDailyRelease(root, latest, { officialVersion, publishedOfficialVersion })
+    candidate = await planDailyRelease(root, latest, {
+      officialVersion,
+      officialWindowsVersion,
+      publishedOfficialVersion,
+    })
     if (candidate.action === 'prepare') {
       let changes = git(root, [
         'log',
@@ -290,10 +303,11 @@ export async function prepareDailyRelease(root, { request = fetch } = {}) {
     }
   }
   candidate.officialVersion = officialVersion
+  candidate.officialWindowsVersion = officialWindowsVersion
   if (candidate.tag)
     await appendFile(
       process.env.GITHUB_OUTPUT,
-      `tag=${candidate.tag}\nsource_commit=${candidate.sourceCommit}\nofficial_version=${officialVersion}\n`,
+      `tag=${candidate.tag}\nsource_commit=${candidate.sourceCommit}\nofficial_version=${officialVersion}\nofficial_windows_version=${officialWindowsVersion}\n`,
     )
   await appendFile(
     process.env.GITHUB_STEP_SUMMARY,

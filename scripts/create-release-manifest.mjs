@@ -18,6 +18,10 @@ if (officialFeeds['mac-arm64'].version !== officialVersion)
   throw new Error(
     `官方 mac-arm64 清单为 ${officialFeeds['mac-arm64'].version}，构建基线为 ${officialVersion}`,
   )
+if (officialFeeds['win-x64'].version !== officialVersion)
+  throw new Error(
+    `官方 win-x64 清单为 ${officialFeeds['win-x64'].version}，构建基线为 ${officialVersion}`,
+  )
 const manifest = {
   schemaVersion: 1,
   channel: 'stable',
@@ -42,6 +46,6 @@ const manifest = {
   sourceTreeSha256: artifact.sourceTreeSha256,
   qualification: 'official-qualification-' + enhancementVersion + '.json',
 }
-validateReleaseManifest(manifest)
+validateReleaseManifest(manifest, { requireMatchingOfficialFeeds: true })
 await writeFile(join(dist, 'release-manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
 console.log(join(dist, 'release-manifest.json'))

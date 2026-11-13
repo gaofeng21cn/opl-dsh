@@ -1,6 +1,6 @@
 # OPL DSH 发布约定
 
-OPL DSH 使用一个联合稳定版本表示一套可安装组合。macOS arm64 是稳定发布主渠道；Windows x64 尽力跟随并独立记录其官方 feed 版本。版本号只递增，不复用，不在稳定渠道发布 `-rc`、`-beta` 或 nightly。
+OPL DSH 使用一个联合稳定版本表示一套可安装组合。macOS arm64 与 Windows x64 必须使用同一官方 feed 版本并完成资格验收，任一平台失败都会阻断发布。版本号只递增，不复用，不在稳定渠道发布 `-rc`、`-beta` 或 nightly。
 
 本页是发布合同，定义稳定版本的触发、身份、资产和更新边界。按时间顺序执行发布、回读和恢复时，使用[稳定发布 SOP](release-sop.md)；不要从 README、旧 Release Note 或历史命令推导当前流程。
 
@@ -8,15 +8,15 @@ OPL DSH 使用一个联合稳定版本表示一套可安装组合。macOS arm64 
 
 OPL DSH 是官方桌面的打包增强层，采用与 OPL 智能体相同的每日云端巡检发布策略。用户持续授权 GitHub Actions 在 `gaofeng21cn/opl-dsh` 内自动准备版本、提交主线、创建发布 tag、运行既有稳定发布工作流并公开合格资产，无需用户逐次手动触发或批准。
 
-`.github/workflows/stable-release.yml` 每日北京时间 02:37 检查 `main` 与最新公开稳定 tag 之间的增强层改动，同时读取官方 macOS arm64、Windows x64 更新清单，并与最新公开联合清单的 macOS 主版本比较；GitHub 调度可能延迟。插件源码、配置、协作 Skill、安装器、构建入口和依赖有未发布更新或修复，或官方 macOS 版本发生变化时，自动递增 OPL patch 版本并生成中文发布说明。上游单独更新也会重新构建；Windows feed 暂时落后时保留其实际版本并尽力验收，不阻断 macOS 稳定发布。开发 API 依赖仍按实际接口需要维护。维护者已准备的更高稳定版本和对应说明予以沿用。只有文档、测试、发布流程或 Homebrew 派生元数据变化，且官方 macOS 版本也未变化时跳过，不制造空版本。
+`.github/workflows/stable-release.yml` 每日北京时间 02:37 检查 `main` 与最新公开稳定 tag 之间的增强层改动，同时读取官方 macOS arm64、Windows x64 更新清单，并与最新公开联合清单的官方版本比较；GitHub 调度可能延迟。插件源码、配置、协作 Skill、安装器、构建入口和依赖有未发布更新或修复，或官方 feed 版本发生变化时，自动递增 OPL patch 版本并生成中文发布说明。上游单独更新也会重新构建；两份 feed 必须解析成功且版本相同，发布全过程使用准备阶段冻结的版本。开发 API 依赖仍按实际接口需要维护。维护者已准备的更高稳定版本和对应说明予以沿用。只有文档、测试、发布流程或 Homebrew 派生元数据变化，且官方版本也未变化时跳过，不制造空版本。
 
-官方版本比较使用 GitHub Latest 中经资产摘要校验的 `release-manifest.json`，不解析 Release Note 作为版本依据。macOS feed 读取失败、字段无效或主版本变化时停止准备；Windows feed 读取失败或版本落后只记录为尽力验收状态，不阻断 macOS。新候选的 annotated tag 固定 macOS 主版本；打包再次核对实时 feed，发布前继续核对两端实际清单。上游在未完成候选期间变化时，从主线准备新的 OPL patch，保留旧 tag；显式恢复旧 tag 时若 macOS 主版本已变化则拒绝混用。
+官方版本比较使用 GitHub Latest 中经资产摘要校验的 `release-manifest.json`，不解析 Release Note 作为版本依据。任一 feed 读取失败、字段无效、两平台版本不一致或冻结版本发生变化时停止准备、打包和发布。新候选的 annotated tag 固定两平台共同版本；打包和发布再次核对实时 feed。上游在未完成候选期间变化时，从主线准备新的 OPL patch，保留旧 tag；显式恢复旧 tag 时若官方版本已变化则拒绝混用。
 
 检查后直接在同一工作流内打包、双平台验收、公开发布、资产回读和 Homebrew 跟随。未公开的候选已有 canonical tag 且产品源码无需改变时续作该版本，不分配新版本、不覆盖 tag 或公开资产。若验收确认必须修改产品代码，保留失败候选的 tag 与证据，为修正后的产品递增版本并建立新 tag；不把新产品字节写入旧候选身份。版本准备与人工 tag 发布共享同一串行组；主线竞争、认证、源码或资格检查失败时明确报告断点，保留上一个可用 Release。手动触发 `main` 可立即执行一次同样的检查；选择 canonical tag 可恢复该候选。
 
 DSH 与 OPL App Stable/Nightly 共用 [Framework 发布说明策略](https://github.com/gaofeng21cn/one-person-lab/blob/main/scripts/release-note-writer/policy.json)及同目录调用实现。中央主线修改自动影响下一次准备，单次准备固定中央提交与配置摘要，已冻结正文不追新；中文提示词、结构校验与机械正文仍归本仓，共享代码不进入增强包。共享源码下载或校验失败直接使用机械说明。当前自动 Release Note 按四个入口顺序生成：先由 Copilot CLI 使用 `--model auto` 与 Actions 自带 `GITHUB_TOKEN` 撰写中文用户说明；额度不足、认证、安装、调用或结果校验失败时，降级到 OPL App 已使用的 Gateway 接口的 `deepseek-flash`，失败后再调用 `gpt-6-luna`；仍失败时，使用带提交链接的原始改动记录和发布门禁事实生成机械说明。模型只读取本次公开 Git 证据，不执行工具；正文标注最终生成方式，工作流记录尝试顺序，维护者已准备的说明不覆盖。Copilot 消耗仓库所有者的包含额度，不承诺无限免费，不自动开启额外付费预算。Gateway 凭据保存在仓库 Secret `OPL_RELEASE_NOTES_CODEX_API_KEY`，不进入源码、日志、Copilot 子进程或发布资产。输入超过写作预算时直接生成机械说明。Release Note 的模型质量或可用性不构成发布阻断项；资格与版本事实由发布工作流填入，模型不得代替验收证据。
 
-每日触发改变的是发布时机与授权，不取消官方签名、摘要、隔离运行和平台资格验收。macOS 资格是稳定发布硬门槛；Windows 资格尽力执行，失败或缺失写入 Release audit/Release Note。只使用已进入主线的 OPL 增强实现；未合并提案不会直接发布。官方上游更新先验证 macOS 主渠道，Windows 尽量 patch 对齐。
+每日触发改变的是发布时机与授权，不取消官方签名、摘要、隔离运行和平台资格验收。macOS 与 Windows 资格都是稳定发布硬门槛；任一平台失败或缺失证据都会停止发布。只使用已进入主线的 OPL 增强实现；未合并提案不会直接发布。官方上游更新必须先确认两平台 feed 版本一致，再进入双平台验收。
 
 ## 命名
 
@@ -29,7 +29,7 @@ DSH 与 OPL App Stable/Nightly 共用 [Framework 发布说明策略](https://git
 
 ## 联合版本
 
-`releaseVersion` 与 `enhancement.version` 相同，`official.version` 记录 macOS arm64 主版本；`official.feeds` 分别记录 macOS 与 Windows 的实际版本、路径和摘要。官方桌面仍由 DeepSeek 更新清单负责下载和签名校验，OPL 安装器不修改官方应用资源。macOS 新官方版本必须先完成隔离资格验收，再生成新的联合 Release。
+`releaseVersion` 与 `enhancement.version` 相同，`official.version` 记录两平台共同的冻结版本；`official.feeds` 分别记录 macOS 与 Windows 的路径和摘要，并要求两者版本相同。官方桌面仍由 DeepSeek 更新清单负责下载和签名校验，OPL 安装器不修改官方应用资源。官方版本变化必须先完成双平台隔离资格验收，再生成新的联合 Release。
 
 ## 自动更新
 

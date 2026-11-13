@@ -99,20 +99,56 @@ test('an official-only update prepares one new patch, resumes it and skips after
   assert.equal(git('rev-parse', 'opl-dsh-v0.2.22^{commit}'), frozen)
 })
 
+test('daily planning rejects a macOS and Windows freeze with different versions', async (t) => {
+  const { root, latest } = await fixture(t)
+  await assert.rejects(
+    planDailyRelease(root, latest, {
+      officialVersion: '0.2.2-rc.2',
+      officialWindowsVersion: '0.2.2-rc.1',
+    }),
+    /versions differ/,
+  )
+})
+
 const feed = (version) =>
   `version: ${version}\npath: https://download.deepseek.com/desktop\nsha512: ${Buffer.alloc(64, 1).toString('base64')}\n`
 
-test('upstream detection retains independently versioned platform feeds', async () => {
+test('upstream detection retries transient feed errors and requires one platform version', async () => {
   const feeds = await readOfficialDesktopFeeds(async () => new Response(feed('0.2.2-rc.1')))
   assert.equal(feeds['mac-arm64'].version, '0.2.2-rc.1')
-  const divergent = await readOfficialDesktopFeeds(
-    async (url) => new Response(feed(url.includes('mac-arm64') ? '0.2.2-rc.2' : '0.2.2-rc.1')),
-  )
-  assert.equal(divergent['mac-arm64'].version, '0.2.2-rc.2')
-  assert.equal(divergent['win-x64'].version, '0.2.2-rc.1')
   await assert.rejects(
-    readOfficialDesktopFeeds(async () => new Response('', { status: 503 })),
-    /读取失败/,
+    readOfficialDesktopFeeds(
+      async (url) => new Response(feed(url.includes('mac-arm64') ? '0.2.2-rc.2' : '0.2.2-rc.1')),
+    ),
+    /版本不一致/,
+  )
+  const attempts = new Map()
+  const retried = await readOfficialDesktopFeeds(
+    async (url) => {
+      const count = (attempts.get(url) ?? 0) + 1
+      attempts.set(url, count)
+      if (count === 1) throw Error('temporary socket reset')
+      return new Response(feed('0.2.2-rc.1'))
+    },
+    { retryDelayMs: 0 },
+  )
+  assert.equal(retried['win-x64'].version, '0.2.2-rc.1')
+  assert.deepEqual([...attempts.values()], [2, 2])
+  let networkAttempts = 0
+  await assert.rejects(
+    readOfficialDesktopFeeds(
+      async () => {
+        networkAttempts++
+        throw Error('ECONNRESET')
+      },
+      { retryDelayMs: 0 },
+    ),
+    /网络错误.*已尝试 3 次.*download\.deepseek\.com/,
+  )
+  assert.equal(networkAttempts, 6)
+  await assert.rejects(
+    readOfficialDesktopFeeds(async () => new Response('', { status: 503 }), { retryDelayMs: 0 }),
+    /读取失败.*已尝试 3 次/,
   )
   await assert.rejects(
     readOfficialDesktopFeeds(async () => new Response('version: 0.2.2\n')),

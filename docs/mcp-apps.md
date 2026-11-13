@@ -12,7 +12,7 @@ OPL DSH 使用官方 DSH 会话、工具、MCP 连接与审批。Agent 可调用
 
 ## 官方公开接口缺口
 
-当前开发 cohort 是锁文件固定的 `@deepseek-ai/dsh-mcp-client` / `dsh-mcp-resources` `0.2.2-rc.2`。`tests/mcp-apps/host-status.spec.ts` 通过未修改的官方插件连接合成 stdio MCP 服务，验证以下实际行为：
+当前开发 cohort 是锁文件固定的 `@deepseek-ai/dsh-mcp-client` / `dsh-mcp-resources` `0.2.2-rc.3`。`tests/mcp-apps/host-status.spec.ts` 通过未修改的官方插件连接合成 stdio MCP 服务，验证以下实际行为：
 
 - 初始化没有协商 MCP Apps 扩展能力。
 - 上游工具 `_meta.ui.resourceUri` / `visibility` 没有进入公开 ToolDefinition；结果 `_meta` 也未保留。

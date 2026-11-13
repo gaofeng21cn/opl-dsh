@@ -130,7 +130,7 @@ describe('MCP Apps no-UI handoff', () => {
       const exec = { signal: new AbortController().signal } as never
       const result = (await tool.execute({}, exec)) as Record<string, any>
       expect(result.structuredContent).toMatchObject({ object_id: 'fixture-1', revision: 3 })
-      expect(officialMcpBridgeVersion()).toBe('0.2.2-rc.2')
+      expect(officialMcpBridgeVersion()).toBe('0.2.2-rc.3')
       expect(result.structuredContent.capabilities).not.toHaveProperty('extensions')
       expect(tool).not.toHaveProperty('_meta')
       expect(result).not.toHaveProperty('_meta')

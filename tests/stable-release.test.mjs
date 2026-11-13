@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { assertQualification } from '../scripts/publish-stable-release.mjs'
 
 const artifact = {
@@ -9,7 +10,18 @@ const artifact = {
   suiteSha256: 'c'.repeat(64),
   sha256: 'd'.repeat(64),
 }
-const manifest = { official: { version: '0.2.0-rc.2' } }
+const feed = {
+  url: 'https://download.deepseek.com/feed.yml',
+  version: '0.2.0-rc.2',
+  path: 'https://download.deepseek.com/desktop.exe',
+  sha512: 'a'.repeat(86) + '==',
+}
+const manifest = {
+  official: {
+    version: feed.version,
+    feeds: { 'mac-arm64': feed, 'win-x64': { ...feed } },
+  },
+}
 function evidence(platform = 'darwin') {
   return {
     schemaVersion: 1,
@@ -122,4 +134,30 @@ test('release rejects missing signature, wrong official identity and skipped che
   const windows = evidence('win32')
   windows.officialIdentity.publisher = 'someone-else'
   assert.throws(() => assertQualification(windows, artifact, manifest, 'win32', 'x64'))
+})
+
+test('stable workflow makes Windows qualification and evidence mandatory', async () => {
+  const workflow = await readFile(
+    new URL('../.github/workflows/stable-release.yml', import.meta.url),
+    'utf8',
+  )
+  assert.doesNotMatch(workflow, /continue-on-error/)
+  assert.match(
+    workflow,
+    /name: release-qualification-\$\{\{ matrix\.os \}\}[\s\S]*?if-no-files-found: error/,
+  )
+  assert.match(
+    workflow,
+    /name: release-qualification-windows-latest[\s\S]*?path: dist\/evidence\/windows-latest/,
+  )
+  const publisher = await readFile(
+    new URL('../scripts/publish-stable-release.mjs', import.meta.url),
+    'utf8',
+  )
+  assert.match(
+    publisher,
+    /const windowsEvidence = await readQualification\(root, 'windows-latest'\)/,
+  )
+  assert.doesNotMatch(publisher, /status: 'unavailable'|status: 'failed'/)
+  assert.match(publisher, /OPL_PREPARED_OFFICIAL_WINDOWS_VERSION/)
 })

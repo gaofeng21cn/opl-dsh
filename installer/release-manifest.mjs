@@ -18,7 +18,10 @@ export function officialVersionForPlatform(
   return manifest?.official?.feeds?.[key]?.version ?? manifest?.official?.version
 }
 
-export function validateReleaseManifest(manifest, { tagName, assetName } = {}) {
+export function validateReleaseManifest(
+  manifest,
+  { tagName, assetName, requireMatchingOfficialFeeds = false } = {},
+) {
   if (!manifest || manifest.schemaVersion !== 1 || manifest.channel !== 'stable')
     throw new Error('发布清单不是稳定版清单')
   if (!stableVersion.test(manifest.releaseVersion)) throw new Error('发布版本无效')
@@ -53,6 +56,8 @@ export function validateReleaseManifest(manifest, { tagName, assetName } = {}) {
     }
     if (feeds['mac-arm64'].version !== manifest.official.version)
       throw new Error('官方主版本必须来自 macOS feed')
+    if (requireMatchingOfficialFeeds && feeds['win-x64'].version !== feeds['mac-arm64'].version)
+      throw new Error('官方 macOS 与 Windows feed 版本必须一致')
   }
   if (!manifest.enhancement || !stableVersion.test(manifest.enhancement.version))
     throw new Error('OPL 增强版本无效')
