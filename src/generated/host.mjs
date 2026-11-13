@@ -1298,7 +1298,7 @@ const _one_person_lab_dsh_opl_oplExecution_list_result$schema = () => (_one_pers
 let _one_person_lab_dsh_opl_oplExecution_message_edit_send_parameter_0$schema$value
 const _one_person_lab_dsh_opl_oplExecution_message_edit_send_parameter_0$schema = () => (_one_person_lab_dsh_opl_oplExecution_message_edit_send_parameter_0$schema$value ??= z.object({
   'prompt': z.object({
-  'requestId': z.string().readonly().describe('Client-minted identity persisted on the exact accepted user message.'),
+  'requestId': z.string().readonly().describe('Client-minted identity persisted on the accepted inbox input, including empty continuation.'),
   'sessionId': z.string().readonly(),
   'mode': z.union([z.literal("queue"), z.literal("steer")]).readonly(),
   'content': z.array(z.union([z.object({
@@ -1312,7 +1312,7 @@ const _one_person_lab_dsh_opl_oplExecution_message_edit_send_parameter_0$schema 
 }), z.object({
   'type': z.literal("file").readonly(),
   'receiptId': z.string().readonly(),
-})])).readonly().describe('At least one non-whitespace text part or attachment.'),
+})])).readonly().describe('Non-whitespace text or attachments; an empty array continues an eligible failed idle Session.'),
   'clientTimeZone': z.string().readonly().optional(),
 }),
   'targetSeq': z.number(),
@@ -1335,7 +1335,7 @@ const _one_person_lab_dsh_opl_oplExecution_message_edit_state_result$schema = ()
   'pending': z.boolean(),
   'recovery': z.object({
   'prompt': z.object({
-  'requestId': z.string().readonly().describe('Client-minted identity persisted on the exact accepted user message.'),
+  'requestId': z.string().readonly().describe('Client-minted identity persisted on the accepted inbox input, including empty continuation.'),
   'sessionId': z.string().readonly(),
   'mode': z.union([z.literal("queue"), z.literal("steer")]).readonly(),
   'content': z.array(z.union([z.object({
@@ -1349,7 +1349,7 @@ const _one_person_lab_dsh_opl_oplExecution_message_edit_state_result$schema = ()
 }), z.object({
   'type': z.literal("file").readonly(),
   'receiptId': z.string().readonly(),
-})])).readonly().describe('At least one non-whitespace text part or attachment.'),
+})])).readonly().describe('Non-whitespace text or attachments; an empty array continues an eligible failed idle Session.'),
   'clientTimeZone': z.string().readonly().optional(),
 }),
   'targetSeq': z.number(),
@@ -4600,7 +4600,7 @@ const _one_person_lab_dsh_opl_oplExecution_harness_update_parameter_0_strict$sch
 let _one_person_lab_dsh_opl_oplExecution_message_edit_send_parameter_0_strict$schema$value
 const _one_person_lab_dsh_opl_oplExecution_message_edit_send_parameter_0_strict$schema = () => (_one_person_lab_dsh_opl_oplExecution_message_edit_send_parameter_0_strict$schema$value ??= z.strictObject({
   'prompt': z.strictObject({
-  'requestId': z.string().readonly().describe('Client-minted identity persisted on the exact accepted user message.'),
+  'requestId': z.string().readonly().describe('Client-minted identity persisted on the accepted inbox input, including empty continuation.'),
   'sessionId': z.string().readonly(),
   'mode': z.union([z.literal("queue"), z.literal("steer")]).readonly(),
   'content': z.array(z.union([z.strictObject({
@@ -4614,7 +4614,7 @@ const _one_person_lab_dsh_opl_oplExecution_message_edit_send_parameter_0_strict$
 }), z.strictObject({
   'type': z.literal("file").readonly(),
   'receiptId': z.string().readonly(),
-})])).readonly().describe('At least one non-whitespace text part or attachment.'),
+})])).readonly().describe('Non-whitespace text or attachments; an empty array continues an eligible failed idle Session.'),
   'clientTimeZone': z.string().readonly().optional(),
 }),
   'targetSeq': z.number(),
@@ -5451,13 +5451,13 @@ const $remote = createTypertRemoteInfo({
             mode: 'strict',
             typeSymbol: '@one-person-lab/dsh-opl/types#MessageEditSend',
             create: _one_person_lab_dsh_opl_oplExecution_message_edit_send_parameter_0$schema,
-            jsonSchema: {"type":"object","properties":{"prompt":{"type":"object","properties":{"requestId":{"type":"string","description":"Client-minted identity persisted on the exact accepted user message."},"sessionId":{"type":"string"},"mode":{"type":"string","enum":["queue","steer"]},"content":{"type":"array","items":{"oneOf":[{"type":"object","properties":{"type":{"type":"string","const":"text"},"text":{"type":"string"}},"required":["type","text"],"additionalProperties":true},{"type":"object","properties":{"type":{"type":"string","const":"image"},"mediaType":{"type":"string","enum":["image/png","image/jpeg","image/webp","image/gif"]},"data":{"type":"string"},"name":{"type":"string"}},"required":["type","mediaType","data"],"additionalProperties":true},{"type":"object","properties":{"type":{"type":"string","const":"file"},"receiptId":{"type":"string"}},"required":["type","receiptId"],"additionalProperties":true}]},"description":"At least one non-whitespace text part or attachment."},"clientTimeZone":{"type":"string"}},"required":["requestId","sessionId","mode","content"],"additionalProperties":true},"targetSeq":{"type":"number"},"head":{"type":"number"}},"required":["prompt","targetSeq","head"],"additionalProperties":true},
+            jsonSchema: {"type":"object","properties":{"prompt":{"type":"object","properties":{"requestId":{"type":"string","description":"Client-minted identity persisted on the accepted inbox input, including empty continuation."},"sessionId":{"type":"string"},"mode":{"type":"string","enum":["queue","steer"]},"content":{"type":"array","items":{"oneOf":[{"type":"object","properties":{"type":{"type":"string","const":"text"},"text":{"type":"string"}},"required":["type","text"],"additionalProperties":true},{"type":"object","properties":{"type":{"type":"string","const":"image"},"mediaType":{"type":"string","enum":["image/png","image/jpeg","image/webp","image/gif"]},"data":{"type":"string"},"name":{"type":"string"}},"required":["type","mediaType","data"],"additionalProperties":true},{"type":"object","properties":{"type":{"type":"string","const":"file"},"receiptId":{"type":"string"}},"required":["type","receiptId"],"additionalProperties":true}]},"description":"Non-whitespace text or attachments; an empty array continues an eligible failed idle Session."},"clientTimeZone":{"type":"string"}},"required":["requestId","sessionId","mode","content"],"additionalProperties":true},"targetSeq":{"type":"number"},"head":{"type":"number"}},"required":["prompt","targetSeq","head"],"additionalProperties":true},
           },
           strictCodec: {
             mode: 'strict',
             typeSymbol: '@one-person-lab/dsh-opl/types#MessageEditSend',
             create: _one_person_lab_dsh_opl_oplExecution_message_edit_send_parameter_0_strict$schema,
-            jsonSchema: {"type":"object","properties":{"prompt":{"type":"object","properties":{"requestId":{"type":"string","description":"Client-minted identity persisted on the exact accepted user message."},"sessionId":{"type":"string"},"mode":{"type":"string","enum":["queue","steer"]},"content":{"type":"array","items":{"oneOf":[{"type":"object","properties":{"type":{"type":"string","const":"text"},"text":{"type":"string"}},"required":["type","text"],"additionalProperties":false},{"type":"object","properties":{"type":{"type":"string","const":"image"},"mediaType":{"type":"string","enum":["image/png","image/jpeg","image/webp","image/gif"]},"data":{"type":"string"},"name":{"type":"string"}},"required":["type","mediaType","data"],"additionalProperties":false},{"type":"object","properties":{"type":{"type":"string","const":"file"},"receiptId":{"type":"string"}},"required":["type","receiptId"],"additionalProperties":false}]},"description":"At least one non-whitespace text part or attachment."},"clientTimeZone":{"type":"string"}},"required":["requestId","sessionId","mode","content"],"additionalProperties":false},"targetSeq":{"type":"number"},"head":{"type":"number"}},"required":["prompt","targetSeq","head"],"additionalProperties":false},
+            jsonSchema: {"type":"object","properties":{"prompt":{"type":"object","properties":{"requestId":{"type":"string","description":"Client-minted identity persisted on the accepted inbox input, including empty continuation."},"sessionId":{"type":"string"},"mode":{"type":"string","enum":["queue","steer"]},"content":{"type":"array","items":{"oneOf":[{"type":"object","properties":{"type":{"type":"string","const":"text"},"text":{"type":"string"}},"required":["type","text"],"additionalProperties":false},{"type":"object","properties":{"type":{"type":"string","const":"image"},"mediaType":{"type":"string","enum":["image/png","image/jpeg","image/webp","image/gif"]},"data":{"type":"string"},"name":{"type":"string"}},"required":["type","mediaType","data"],"additionalProperties":false},{"type":"object","properties":{"type":{"type":"string","const":"file"},"receiptId":{"type":"string"}},"required":["type","receiptId"],"additionalProperties":false}]},"description":"Non-whitespace text or attachments; an empty array continues an eligible failed idle Session."},"clientTimeZone":{"type":"string"}},"required":["requestId","sessionId","mode","content"],"additionalProperties":false},"targetSeq":{"type":"number"},"head":{"type":"number"}},"required":["prompt","targetSeq","head"],"additionalProperties":false},
           },
         },
       ],
@@ -5496,7 +5496,7 @@ const $remote = createTypertRemoteInfo({
         mode: 'strict',
         typeSymbol: '@one-person-lab/dsh-opl/types#MessageEditState',
         create: _one_person_lab_dsh_opl_oplExecution_message_edit_state_result$schema,
-        jsonSchema: {"type":"object","properties":{"sessionId":{"type":"string"},"supported":{"type":"boolean"},"busy":{"type":"boolean"},"head":{"type":"number"},"pending":{"type":"boolean"},"recovery":{"type":"object","properties":{"prompt":{"type":"object","properties":{"requestId":{"type":"string","description":"Client-minted identity persisted on the exact accepted user message."},"sessionId":{"type":"string"},"mode":{"type":"string","enum":["queue","steer"]},"content":{"type":"array","items":{"oneOf":[{"type":"object","properties":{"type":{"type":"string","const":"text"},"text":{"type":"string"}},"required":["type","text"],"additionalProperties":true},{"type":"object","properties":{"type":{"type":"string","const":"image"},"mediaType":{"type":"string","enum":["image/png","image/jpeg","image/webp","image/gif"]},"data":{"type":"string"},"name":{"type":"string"}},"required":["type","mediaType","data"],"additionalProperties":true},{"type":"object","properties":{"type":{"type":"string","const":"file"},"receiptId":{"type":"string"}},"required":["type","receiptId"],"additionalProperties":true}]},"description":"At least one non-whitespace text part or attachment."},"clientTimeZone":{"type":"string"}},"required":["requestId","sessionId","mode","content"],"additionalProperties":true},"targetSeq":{"type":"number"},"head":{"type":"number"}},"required":["prompt","targetSeq","head"],"additionalProperties":true,"description":"Exact durable input for an explicit retry; never submitted by a state read."},"unavailable":{"type":"object","properties":{"reason":{"type":"string","enum":["history-unavailable","history-busy","mapping-unavailable","model-unavailable"]},"retryable":{"type":"boolean"}},"required":["reason","retryable"],"additionalProperties":true,"description":"A supported engine can temporarily lack a verified editable history."},"choices":{"type":"array","items":{"type":"object","properties":{"seq":{"type":"number"},"text":{"type":"string"}},"required":["seq","text"],"additionalProperties":true}}},"required":["sessionId","supported","busy","head","pending","choices"],"additionalProperties":true},
+        jsonSchema: {"type":"object","properties":{"sessionId":{"type":"string"},"supported":{"type":"boolean"},"busy":{"type":"boolean"},"head":{"type":"number"},"pending":{"type":"boolean"},"recovery":{"type":"object","properties":{"prompt":{"type":"object","properties":{"requestId":{"type":"string","description":"Client-minted identity persisted on the accepted inbox input, including empty continuation."},"sessionId":{"type":"string"},"mode":{"type":"string","enum":["queue","steer"]},"content":{"type":"array","items":{"oneOf":[{"type":"object","properties":{"type":{"type":"string","const":"text"},"text":{"type":"string"}},"required":["type","text"],"additionalProperties":true},{"type":"object","properties":{"type":{"type":"string","const":"image"},"mediaType":{"type":"string","enum":["image/png","image/jpeg","image/webp","image/gif"]},"data":{"type":"string"},"name":{"type":"string"}},"required":["type","mediaType","data"],"additionalProperties":true},{"type":"object","properties":{"type":{"type":"string","const":"file"},"receiptId":{"type":"string"}},"required":["type","receiptId"],"additionalProperties":true}]},"description":"Non-whitespace text or attachments; an empty array continues an eligible failed idle Session."},"clientTimeZone":{"type":"string"}},"required":["requestId","sessionId","mode","content"],"additionalProperties":true},"targetSeq":{"type":"number"},"head":{"type":"number"}},"required":["prompt","targetSeq","head"],"additionalProperties":true,"description":"Exact durable input for an explicit retry; never submitted by a state read."},"unavailable":{"type":"object","properties":{"reason":{"type":"string","enum":["history-unavailable","history-busy","mapping-unavailable","model-unavailable"]},"retryable":{"type":"boolean"}},"required":["reason","retryable"],"additionalProperties":true,"description":"A supported engine can temporarily lack a verified editable history."},"choices":{"type":"array","items":{"type":"object","properties":{"seq":{"type":"number"},"text":{"type":"string"}},"required":["seq","text"],"additionalProperties":true}}},"required":["sessionId","supported","busy","head","pending","choices"],"additionalProperties":true},
       },
       sourceLocation: {"file":"src/execution/host/service.ts","line":73,"column":3},
     },

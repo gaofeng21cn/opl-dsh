@@ -1,6 +1,6 @@
+import { LlmError } from '../../shared/llm-error.ts'
 /** Check OFM's current directory before native request validation or vendor history changes. */
 import type { Context } from '@deepseek-ai/cordis'
-import { LlmError } from '@deepseek-ai/dsh-llm'
 import type { ModelRef } from '../contracts/catalog.ts'
 import { OFM_PROVIDERS } from './ofm-source/provider.ts'
 import { ofmModelReadiness } from './ofm-source/readiness.ts'

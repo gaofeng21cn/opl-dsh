@@ -11,11 +11,12 @@
 
 - Host/Client 类型检查、RPC、模块边界、格式、构建与自动测试：通过
 - macOS 更新控制通道真实 server/client 回归：通过
-- macOS arm64 与 Windows x64 官方桌面隔离验收：待发布流程完成
+- macOS arm64 官方桌面隔离验收：发布硬门槛
+- Windows x64 官方桌面使用自身 feed（\`{{OFFICIAL_WINDOWS_VERSION}}\`）尽力验收；结果写入审计，不阻断 macOS 发布
 
 ### 已知限制
 
-- 官方桌面两平台 feed 必须收敛到同一版本后，联合 Release 才能公开。
+- macOS feed 作为发布主版本（\`{{OFFICIAL_VERSION}}\`）；Windows feed 可暂时落后，按自身版本记录并尽力 patch 对齐。
 
 ### 升级
 

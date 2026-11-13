@@ -1,5 +1,5 @@
-/** Project official message blocks without flattening images into text or filesystem paths. */
-import { LlmError, offloadedImageText, type GenerateOptions } from '@deepseek-ai/dsh-llm'
+import { LlmError } from '../../shared/llm-error.ts' /** Project official message blocks without flattening images into text or filesystem paths. */
+import { offloadedImageText, type GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { HarnessPromptPart } from '../contracts/prompt.ts'
 import type { AcpPromptPart } from './adapters/types.ts'

@@ -12,11 +12,16 @@ export function stripDuplicateReleaseHeading(body, title) {
   return newline < 0 ? '' : trimmed.slice(newline + 1).replace(/^(?:[ \t]*\r?\n)+/, '')
 }
 
-export function renderReleaseNotes(template, { version, officialVersion, sourceCommit }) {
+export function renderReleaseNotes(
+  template,
+  { version, officialVersion, officialVersions = {}, sourceCommit },
+) {
   let notes = template
   for (const [key, value] of Object.entries({
     VERSION: version,
     OFFICIAL_VERSION: officialVersion,
+    OFFICIAL_MAC_VERSION: officialVersions['mac-arm64'] ?? officialVersion,
+    OFFICIAL_WINDOWS_VERSION: officialVersions['win-x64'] ?? officialVersion,
     SOURCE_COMMIT: sourceCommit,
   }))
     notes = notes.replaceAll(`{{${key}}}`, value)

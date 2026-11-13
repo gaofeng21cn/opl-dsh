@@ -4,7 +4,7 @@
 
 Linux CI 继续运行 Host / Client 类型检查、构建与全部自动测试。官方桌面兼容工作流在 macOS arm64 与 Windows 上下载并运行未修改的官方桌面，用独立数据目录验证增强包；它不需要模型账号，不访问实际用户 profile。
 
-开发依赖统一固定为 DSH `0.2.2-rc.1`、Cordis `4.1.0` API cohort，具体版本以 `package.json` 与锁文件为准。官方桌面以两个安装 feed 的实时版本为准，联合稳定 Release 同时记录实际官方版本与 OPL 增强版本。官方版本带 `-rc` 时仍属于上游候选阶段。macOS arm64 与 Windows 分别验收同一份交付增强包，任一平台未通过均不公开本次 Release；最终资格以该 Release 的双平台证据 JSON 为准。
+开发依赖统一固定为 DSH `0.2.2-rc.2`、Cordis `4.1.0` API cohort，具体版本以 `package.json` 与锁文件为准。官方桌面以两个安装 feed 的实时版本为准，macOS 主版本当前为 `0.2.2-rc.2`、Windows 为 `0.2.2-rc.1`，联合稳定 Release 分别记录实际官方版本与 OPL 增强版本。官方版本带 `-rc` 时仍属于上游候选阶段。macOS arm64 是发布硬门槛；Windows 尽力验收，失败或缺失写入审计，不阻断 macOS Release。
 
 安装器使用官方插件管理器把 Agent Team profile 与 Auto Review bundle 纳入首次迁移。它会校验 bundle 与桌面版本属于同一官方 cohort，并只在没有迁移回执时写入一次；已有明确禁用项不重新启用，后续套件修复也保留官方插件管理器的启用状态。官方插件管理器拥有这些 bundle 的启用、禁用、卸载和生命周期，OPL 不修改应用资源或代管插件状态。
 

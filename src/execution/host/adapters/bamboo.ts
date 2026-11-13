@@ -1,5 +1,5 @@
-/** Native tool-free adapter for BambooNode's StartLux decision endpoint. */
-import { attributionHeaders, LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
+import { LlmError } from '../../../shared/llm-error.ts' /** Native tool-free adapter for BambooNode's StartLux decision endpoint. */
+import { attributionHeaders, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 
 export const BAMBOO_STARTLUX_MODEL = {

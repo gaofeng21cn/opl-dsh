@@ -35,7 +35,5 @@ export async function readOfficialDesktopFeeds(request = fetch) {
       }),
     ),
   )
-  if (new Set(Object.values(feeds).map((feed) => feed.version)).size !== 1)
-    throw Error('Official desktop feeds disagree')
   return feeds
 }

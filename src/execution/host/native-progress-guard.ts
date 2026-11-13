@@ -1,9 +1,9 @@
+import { LlmError } from '../../shared/llm-error.ts'
 import '@deepseek-ai/dsh-agent'
 import '@deepseek-ai/dsh-tools'
 import '@deepseek-ai/dsh-user-approval'
 import '@deepseek-ai/dsh-user-questions'
 import { ProgressWatchdog } from './progress-watchdog.js'
-import { LlmError } from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 
 /** Timer ownership supplied by the logical-turn owner, shared across retries. */

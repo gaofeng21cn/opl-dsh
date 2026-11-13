@@ -44,9 +44,9 @@ Issue 在实现前记录这些判断，PR 在合并前核对实现与用户目�
 
 开发与验证使用 TypeScript 7、React 19 和当前 Zod。TypeScript 7 的 AST 检查通过公开 snapshot API 读取真实源码；测试转译复用构建所用的 esbuild。官方 Typert 生成器继续使用它声明的编译器依赖。Client 产物仍把 React 留给官方加载器；本地 React 19 测试不代表替换了官方桌面的 React。
 
-增强包显式安装自己的 Zod 4.6.7。官方 0.2.2-rc.1 的 projection/storage-domain 声明绑定其私有 Zod 4.4.3，但运行边界只读取 `parse/safeParse`；`compat/host/validation-schema.ts` 在此处保留实际解析结果、转换、默认值和错误，不把 Zod 内部身份交给官方服务。此适配不用于工具 schema、JSON Schema 转换或 schema 组合。官方桌面资格会回读增强包与两个官方消费者各自解析的 Zod 路径和版本，并继续校验官方应用未被修改。
+增强包显式安装自己的 Zod 4.6.7。官方 0.2.2-rc.2 的 projection/storage-domain 声明绑定其私有 Zod 4.6.6，但运行边界只读取 `parse/safeParse`；`compat/host/validation-schema.ts` 在此处保留实际解析结果、转换、默认值和错误，不把 Zod 内部身份交给官方服务。此适配不用于工具 schema、JSON Schema 转换或 schema 组合。官方桌面资格会回读增强包与两个官方消费者各自解析的 Zod 路径和版本，并继续校验官方应用未被修改。
 
-截至 2026-11-09，官方 0.2.2-rc.1 私有依赖中的 Zod 4.4.3、Undici 8.11.2 和 MCP SDK 2.2.0 仍由官方应用负责解析；profile 依赖或 override 不能替换这些内部导入。OPL 自有 Zod 4.6.7 让已声明的集合上限在元素解析前拒绝超限输入；它不为官方无界历史、模型或 checkpoint 集合增加上限，也不代表官方依赖图已完成安全修复。
+截至 2026-11-13，官方 0.2.2-rc.2 私有依赖中的 Zod 4.6.6、Undici 8.11.2 和 MCP SDK 仍由官方应用负责解析；profile 依赖或 override 不能替换这些内部导入。OPL 自有 Zod 4.6.7 让已声明的集合上限在元素解析前拒绝超限输入；它不为官方无界历史、模型或 checkpoint 集合增加上限，也不代表官方依赖图已完成安全修复。
 
 官方 HTTP MCP 客户端没有公开自定义 fetch 或重定向控制入口。双 loopback 验证已确认，跨 origin 的 HTTP 307 可以继续携带自定义 header、MCP session ID 和请求 body，Authorization 会被移除；这是传输行为验证，并非真实远程泄露事件。SDK 2.3.0 起已有对应修复，官方当前仍固定 2.2.0。仅把配置改成一次观察到的最终 URL 无法阻止服务以后再次重定向；只有具体服务提供等价 stdio 入口时，才可按该服务实际合同改用 stdio。
 

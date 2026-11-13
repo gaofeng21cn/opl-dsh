@@ -7,7 +7,7 @@ interface ValidationSchema<T> {
 }
 
 /**
- * Official DSH 0.2.2-rc.1 declares its private Zod 4.4.3 identity here, but its
+ * Official DSH 0.2.2-rc.2 declares its private Zod 4.6.6 identity here, but its
  * projection and storage-domain consumers use only parse/safeParse. Keep that
  * declaration adaptation at this boundary: the real parser remains the OPL
  * plugin's current Zod, and no Zod internals cross into the official services.

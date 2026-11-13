@@ -1,4 +1,4 @@
-/**
+import { LlmError } from '../../../shared/llm-error.ts' /**
  * Native DSH model-catalog projection of the MiniMax Code models.
  *
  * `buildModelCatalog` and `modelAvailable` in the official session controller only read
@@ -16,7 +16,7 @@
  *  - M3 exposes the thinking switch only; the CLI advertises no effort for it, so the
  *    catalog must not invent `low`/`high` style tiers that nothing would apply.
  */
-import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
   LlmModelReasoningInfo,

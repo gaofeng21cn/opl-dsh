@@ -1,3 +1,4 @@
+import { LlmError } from '../../shared/llm-error.ts'
 import type { MiniMaxAccountLoginRequest } from '../contracts/minimax-account.ts'
 import { MiniMaxAccount } from './minimax-account.ts'
 import { ProgressWatchdog, type ProgressWatchdogLimits } from './progress-watchdog.ts'
@@ -87,7 +88,6 @@ import { homedir } from 'node:os'
 import { EventEmitter } from 'node:events'
 import {
   ToolCallId,
-  LlmError,
   ReasoningEffortId,
   type GenerateOptions,
   type StreamChunk,

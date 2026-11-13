@@ -1,3 +1,4 @@
+import { LlmError } from '../../shared/llm-error.ts'
 import { gatewayGroupEnabled } from './group-settings.ts'
 import {
   ensureAutoReviewProvider,
@@ -7,12 +8,7 @@ import {
 /** OPL-owned credentials and model-group routing over official DSH adapters. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import {
-  assertUsableApiKey,
-  LlmAdapter,
-  LlmError,
-  resolveImageAttachmentAccess,
-} from '@deepseek-ai/dsh-llm'
+import { assertUsableApiKey, LlmAdapter, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
 import type { LlmProviderInfo } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-attachment'
 import {

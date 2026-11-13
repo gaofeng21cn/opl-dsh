@@ -102,15 +102,14 @@ test('an official-only update prepares one new patch, resumes it and skips after
 const feed = (version) =>
   `version: ${version}\npath: https://download.deepseek.com/desktop\nsha512: ${Buffer.alloc(64, 1).toString('base64')}\n`
 
-test('upstream detection rejects incomplete, unavailable or divergent platform feeds', async () => {
+test('upstream detection retains independently versioned platform feeds', async () => {
   const feeds = await readOfficialDesktopFeeds(async () => new Response(feed('0.2.2-rc.1')))
   assert.equal(feeds['mac-arm64'].version, '0.2.2-rc.1')
-  await assert.rejects(
-    readOfficialDesktopFeeds(
-      async (url) => new Response(feed(url.includes('mac-arm64') ? '0.2.2-rc.1' : '0.2.1-rc.5')),
-    ),
-    /disagree/,
+  const divergent = await readOfficialDesktopFeeds(
+    async (url) => new Response(feed(url.includes('mac-arm64') ? '0.2.2-rc.2' : '0.2.2-rc.1')),
   )
+  assert.equal(divergent['mac-arm64'].version, '0.2.2-rc.2')
+  assert.equal(divergent['win-x64'].version, '0.2.2-rc.1')
   await assert.rejects(
     readOfficialDesktopFeeds(async () => new Response('', { status: 503 })),
     /读取失败/,

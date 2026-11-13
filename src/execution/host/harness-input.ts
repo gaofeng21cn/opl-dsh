@@ -1,5 +1,5 @@
+import { LlmError } from '../../shared/llm-error.ts'
 /** Validate external input without changing text or including its contents in errors. */
-import { LlmError } from '@deepseek-ai/dsh-llm'
 
 export const HARNESS_INPUT_MAX_LENGTH = 200_000
 

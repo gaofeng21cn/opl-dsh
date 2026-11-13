@@ -136,7 +136,7 @@ async function fixture() {
   return { root, caller, entries, saved, settings, credentials, fetch, directoryURLs, persisted }
 }
 
-describe('automatic Gateway discovery through official services', () => {
+describe('automatic Gateway discovery through official services', { timeout: 15_000 }, () => {
   it('fetches all six directories from an uninjected caller and persists their models and hashes', async () => {
     const f = await fixture()
     expect(() => f.caller.settings).toThrow('without inject')

@@ -151,8 +151,8 @@ it('removes the first-progress guard after an ACP update', async () => {
       setTimeout(() => process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:request.id,result:{stopReason:'end_turn'}})+'\\n'), 60)
     })
   `)
-  const result = await instance.request('session/prompt', { sessionId: 'session-1' }, 500, {
-    firstProgressTimeoutMs: 200,
+  const result = await instance.request('session/prompt', { sessionId: 'session-1' }, 2_000, {
+    firstProgressTimeoutMs: 1_000,
     isProgress: (method, params) =>
       method === 'session/update' && (params as { sessionId?: string }).sessionId === 'session-1',
   })

@@ -14,10 +14,10 @@ const enhancementVersion = artifact.enhancementVersion ?? project.version
 if (artifact.updateProtocolVersion !== 1) throw new Error('构建包未声明安全的延后更新协议')
 const officialVersion = artifact.officialVersion
 const officialFeeds = await readOfficialDesktopFeeds()
-for (const [platform, feed] of Object.entries(officialFeeds)) {
-  if (feed.version !== officialVersion)
-    throw new Error(`官方 ${platform} 清单为 ${feed.version}，构建基线为 ${officialVersion}`)
-}
+if (officialFeeds['mac-arm64'].version !== officialVersion)
+  throw new Error(
+    `官方 mac-arm64 清单为 ${officialFeeds['mac-arm64'].version}，构建基线为 ${officialVersion}`,
+  )
 const manifest = {
   schemaVersion: 1,
   channel: 'stable',
@@ -26,6 +26,7 @@ const manifest = {
   official: {
     product: 'DeepSeek Harness',
     version: officialVersion,
+    primaryPlatform: 'mac-arm64',
     feeds: officialFeeds,
   },
   enhancement: {

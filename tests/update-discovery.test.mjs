@@ -128,6 +128,48 @@ test('official version and supported platform determine enhancement compatibilit
   assert.equal((await checkRelease(current)).release.compatibility, 'full-suite')
 })
 
+test('platform feeds select their own official version when macOS leads Windows', async (t) => {
+  const sha512 = Buffer.alloc(64, 1).toString('base64')
+  const value = fixture({
+    officialVersion: '0.2.2-rc.2',
+    manifestPatch: {
+      official: {
+        version: '0.2.2-rc.2',
+        feeds: {
+          'mac-arm64': {
+            version: '0.2.2-rc.2',
+            url: 'https://example.test/mac-feed',
+            path: 'https://example.test/mac.dmg',
+            sha512,
+          },
+          'win-x64': {
+            version: '0.2.2-rc.1',
+            url: 'https://example.test/win-feed',
+            path: 'https://example.test/win.exe',
+            sha512,
+          },
+        },
+      },
+    },
+  })
+  remote(t, value)
+  assert.equal(
+    (await checkRelease({ ...current, officialVersion: '0.2.2-rc.1' })).release.officialVersion,
+    '0.2.2-rc.1',
+  )
+  assert.equal(
+    (
+      await checkRelease({
+        ...current,
+        platform: 'darwin',
+        arch: 'arm64',
+        officialVersion: '0.2.2-rc.2',
+      })
+    ).release.officialVersion,
+    '0.2.2-rc.2',
+  )
+})
+
 test('draft, prerelease and missing stable releases return no candidate', async (t) => {
   const value = fixture(),
     calls = remote(t, value)

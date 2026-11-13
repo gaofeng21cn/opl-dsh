@@ -29,6 +29,7 @@ import {
   validateReleaseMetadata,
   releaseForInstallation,
 } from './update-discovery.mjs'
+import { officialVersionForPlatform } from './release-manifest.mjs'
 
 export { checkRelease, newer } from './update-discovery.mjs'
 
@@ -319,7 +320,10 @@ function artifactManifest(bytes, expected) {
     !hashPattern.test(artifact.sha256) ||
     artifact.payloadFiles[artifact.name] !== artifact.sha256 ||
     (expected &&
-      (version !== expected.version || artifact.officialVersion !== expected.officialVersion))
+      (version !== expected.version ||
+        (!expected.allowOfficialVersionMismatch &&
+          artifact.officialVersion !==
+            (expected.artifactOfficialVersion ?? expected.officialVersion))))
   )
     throw Error('增强安装清单无效')
   const seen = new Set()
@@ -403,9 +407,14 @@ function validatePending(plan) {
   )
     throw Error('待安装更新计划无效')
   const metadata = validateReleaseMetadata(plan.metadata)
+  const platformOfficialVersion = officialVersionForPlatform(
+    metadata.manifest,
+    process.platform,
+    process.arch,
+  )
   if (
     plan.version !== metadata.manifest.enhancement.version ||
-    plan.officialVersion !== metadata.manifest.official.version
+    plan.officialVersion !== platformOfficialVersion
   )
     throw Error('待安装更新版本不符')
   return { ...plan, metadata }
@@ -440,6 +449,7 @@ export async function prepareUpdate(root, application, { signal, expectedVersion
     const previous = await verifyDirectory(current.release, {
       version: current.suiteVersion,
       officialVersion,
+      allowOfficialVersionMismatch: true,
     })
     if (previous.artifact.updateProtocolVersion !== 1)
       throw Error('原安装需要重新安装完整套件以启用安全更新')
@@ -452,7 +462,10 @@ export async function prepareUpdate(root, application, { signal, expectedVersion
     let entries, artifact
     try {
       entries = unpackPayload(archive)
-      artifact = verifyEntries(entries, release)
+      artifact = verifyEntries(entries, {
+        ...release,
+        artifactOfficialVersion: metadata.manifest.official.version,
+      })
       if (artifact.updateProtocolVersion !== 1)
         throw Error('增强包不支持安全更新协议，请安装完整套件')
     } catch (error) {
@@ -577,6 +590,7 @@ async function confirmInstalled(root, application, expected, original) {
   await verifyDirectory(current.release, {
     version: current.suiteVersion,
     officialVersion: current.officialVersion,
+    allowOfficialVersionMismatch: true,
   })
 }
 
@@ -620,6 +634,7 @@ export async function refreshEnhancements(root, application, { transaction } = {
     const previous = await verifyDirectory(current.release, {
       version: current.suiteVersion,
       officialVersion: current.officialVersion,
+      allowOfficialVersionMismatch: true,
     })
     if (previous.artifact.updateProtocolVersion !== 1) throw Error('原安装不支持安全更新协议')
     if (
@@ -641,6 +656,7 @@ export async function refreshEnhancements(root, application, { transaction } = {
     const artifact = verifyEntries(entries, {
       version: plan.version,
       officialVersion: plan.officialVersion,
+      artifactOfficialVersion: plan.metadata.manifest.official.version,
     })
     if (artifact.updateProtocolVersion !== 1) throw Error('待安装文件不支持安全更新协议')
     if (
@@ -652,6 +668,7 @@ export async function refreshEnhancements(root, application, { transaction } = {
     const staged = await verifyDirectory(payload, {
       version: plan.version,
       officialVersion: plan.officialVersion,
+      artifactOfficialVersion: plan.metadata.manifest.official.version,
     })
     if (staged.artifactSha256 !== plan.artifactSha256) throw Error('待安装文件已改变')
     const profileReceipt = join(current.profileHome, 'opl-dsh/installation.json')

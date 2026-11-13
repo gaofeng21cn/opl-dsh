@@ -1,5 +1,5 @@
-/** Tool-free Jev decisions over OpenCode's published System One endpoint. */
-import { attributionHeaders, LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
+import { LlmError } from '../../../shared/llm-error.ts' /** Tool-free Jev decisions over OpenCode's published System One endpoint. */
+import { attributionHeaders, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 
 export const JEV_DECISION_MODEL = {

@@ -1,6 +1,6 @@
 /** Read stable release metadata without downloading an enhancement payload. */
 import { createHash } from 'node:crypto'
-import { validateReleaseManifest } from './release-manifest.mjs'
+import { officialVersionForPlatform, validateReleaseManifest } from './release-manifest.mjs'
 import { updateFailureError } from './update-errors.mjs'
 
 const repository = 'https://github.com/gaofeng21cn/opl-dsh'
@@ -112,15 +112,20 @@ function compatiblePlatform(platform, arch) {
 /** Derive display metadata from a validated release and the installed runtime. */
 export function releaseForInstallation(current, metadata) {
   const { manifest } = metadata
+  const officialVersion = officialVersionForPlatform(
+    manifest,
+    current.platform ?? process.platform,
+    current.arch ?? process.arch,
+  )
   return {
     version: manifest.enhancement.version,
-    officialVersion: manifest.official.version,
+    officialVersion,
     url: metadata.url,
     publishedAt: metadata.publishedAt,
     compatibility:
       manifest.enhancement.updateProtocolVersion === 1 &&
       manifest.enhancement.unattendedUpdateProtocolVersion === 1 &&
-      current.officialVersion === manifest.official.version &&
+      current.officialVersion === officialVersion &&
       compatiblePlatform(current.platform ?? process.platform, current.arch ?? process.arch)
         ? 'enhancement'
         : 'full-suite',

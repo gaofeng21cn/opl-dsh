@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { performance } from 'node:perf_hooks'
 import { installationPaths } from './installation-paths.mjs'
 import { newer, validateReleaseMetadata } from './update-discovery.mjs'
+import { officialVersionForPlatform } from './release-manifest.mjs'
 import { launchIndependent, quoteWindowsArgument } from './windows-lifecycle.mjs'
 import {
   acquireUpdateTransaction,
@@ -129,10 +130,10 @@ async function verifyArtifact(path) {
   return { artifact, artifactSha256: digest(artifactBytes) }
 }
 
-function releaseIdentity(artifact, artifactSha256) {
+function releaseIdentity(artifact, artifactSha256, officialVersion = artifact.officialVersion) {
   return {
     suiteVersion: artifact.enhancementVersion ?? artifact.version,
-    officialVersion: artifact.officialVersion,
+    officialVersion,
     suiteSha256: artifact.suiteSha256,
     enhancementSha256: artifact.sha256,
     artifactSha256,
@@ -158,7 +159,7 @@ async function installed(root, application, profileHome) {
     throw failure('installation-identity-mismatch')
   await directory(join(root, 'releases'))
   const { artifact, artifactSha256 } = await verifyArtifact(current.release)
-  const identity = releaseIdentity(artifact, artifactSha256)
+  const identity = releaseIdentity(artifact, artifactSha256, current.officialVersion)
   for (const key of ['suiteVersion', 'officialVersion', 'suiteSha256', 'enhancementSha256'])
     if (current[key] !== identity[key]) throw failure('installation-receipt-changed')
   return { current, receiptBytes, identity }
@@ -186,11 +187,16 @@ async function updateInputs(root, application, profileHome, options = {}) {
   )
     throw failure('prepared-update-changed')
   const metadata = validateReleaseMetadata(pending.metadata)
+  const platformOfficialVersion = officialVersionForPlatform(
+    metadata.manifest,
+    process.platform,
+    process.arch,
+  )
   if (
     metadata.manifest.enhancement.updateProtocolVersion !== 1 ||
     metadata.manifest.enhancement.unattendedUpdateProtocolVersion !== 1 ||
     metadata.manifest.enhancement.version !== pending.version ||
-    metadata.manifest.official.version !== pending.officialVersion
+    platformOfficialVersion !== pending.officialVersion
   )
     throw failure('unattended-update-unsupported')
   await directory(join(root, 'updates'))
@@ -203,7 +209,7 @@ async function updateInputs(root, application, profileHome, options = {}) {
   )
     throw failure('prepared-archive-changed')
   const { artifact, artifactSha256 } = await verifyArtifact(join(stage, 'payload'))
-  const target = releaseIdentity(artifact, artifactSha256)
+  const target = releaseIdentity(artifact, artifactSha256, current.officialVersion)
   if (
     target.suiteVersion !== pending.version ||
     target.officialVersion !== pending.officialVersion ||

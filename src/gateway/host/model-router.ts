@@ -1,5 +1,5 @@
-/** A logical source over explicit, independently credentialed model routes. */
-import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { LlmError } from '../../shared/llm-error.ts' /** A logical source over explicit, independently credentialed model routes. */
+import { LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { GatewayGroupId } from '../contracts/groups.ts'
 import { modelDefaultEffort } from '../../shared/model-reasoning.ts'

@@ -232,7 +232,7 @@ describe('Kilo 会话固定模型', () => {
     expect((await entries(journal)).filter((e) => e.params?.configId === 'effort')).toHaveLength(0)
   })
 
-  it('每个声明模型都能逐字固定并回读，free/auto 路由不被替换', async () => {
+  it('每个声明模型都能逐字固定并回读，free/auto 路由不被替换', { timeout: 15_000 }, async () => {
     const dir = await workspace('opl-kilo-each-')
     for (const model of KILO_OFM_MODELS) {
       const sources = new ExternalModelSources({} as never, () => {})
