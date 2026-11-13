@@ -232,9 +232,11 @@ describe('Kilo 会话固定模型', () => {
     expect((await entries(journal)).filter((e) => e.params?.configId === 'effort')).toHaveLength(0)
   })
 
-  it('每个声明模型都能逐字固定并回读，free/auto 路由不被替换', { timeout: 15_000 }, async () => {
-    const dir = await workspace('opl-kilo-each-')
-    for (const model of KILO_OFM_MODELS) {
+  it.each(KILO_OFM_MODELS)(
+    '%s 能逐字固定并回读，free/auto 路由不被替换',
+    { timeout: 15_000 },
+    async (model) => {
+      const dir = await workspace('opl-kilo-each-')
       const sources = new ExternalModelSources({} as never, () => {})
       sources.register({ effect: (fn: () => unknown) => fn() } as never, {
         provider: KILO_OFM_PROVIDER,
@@ -275,8 +277,8 @@ describe('Kilo 会话固定模型', () => {
       )
       const readBack = (configured as any).configOptions.find((o: any) => o.id === 'model')
       expect(readBack.currentValue).toBe(value)
-    }
-  })
+    },
+  )
 
   it('恢复会话后模型回到官方默认值，适配器必须重新固定而不是沿用', async () => {
     const dir = await workspace('opl-kilo-load-')

@@ -50,6 +50,12 @@
  * reasoning is not offered for this family. The pinned Kilo ACP custom-provider surface does
  * not expose a writable effort option, so this adapter keeps that upstream default and refuses
  * explicit effort requests instead of inventing a Kilo mapping.
+ *
+ * The Kilo Gateway entries `particle-ai/particle-1:free` and `apodex/apodex-1.1-mini:free`
+ * are admitted on the same terms: the exact id the source published, the same Chat route, and
+ * no capability the measured surface does not offer. The pinned CLI advertises no writable
+ * effort option for any declared model, so neither entry gets an invented reasoning tier and
+ * an explicit effort request is refused before launch rather than silently dropped.
  */
 import type { ModelRef } from '../../../contracts/catalog.ts'
 
@@ -90,6 +96,8 @@ export const KILO_OFM_MODELS: readonly string[] = [
   'liquid/lfm-3-1.7b:free',
   'thinkingmachines/inkling-2-small:free',
   'baidu/ernie-5.5-flash-preview:free',
+  'particle-ai/particle-1:free',
+  'apodex/apodex-1.1-mini:free',
   'kilo-auto/free',
   'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
   'nvidia/nemotron-3-super-120b-a12b:free',
