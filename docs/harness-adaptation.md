@@ -55,6 +55,8 @@ OFM 来源统一使用 `Our Free Model` 写法，区域渠道保留 `region-limi
 
 Kilo ERNIE-5.5-Flash-Preview 使用精确 ID `baidu/ernie-5.5-flash-preview:free`，通过 Kilo Code 和 OFM Chat 转发执行；默认推荐该组合。来源目录声明推理能力，但 Kilo ACP 自定义 provider 未提供可写档位，因此保持来源默认思考设置，不显示推理档位菜单。
 
+当前另支持 Kilo Particle-1（`particle-ai/particle-1:free`）和 Kilo Apodex 1.1 Mini（`apodex/apodex-1.1-mini:free`）：两者保留精确 ID，通过 Kilo Code 和 OFM Chat 转发执行，默认推荐 Kilo Code，不显示推理档位。
+
 OFM 的 Kilo 目录对 `liquid/lfm-3-1.7b:free` 声明 `low`、`medium`、`high` 三档推理强度，默认 `high`，且不提供关闭思考。当前 OPL 适配使用的官方 Kilo ACP 自定义 provider 没有可写的 effort 配置项，因此不把来源档位伪装成 Kilo 选项；显式档位请求会在发送前拒绝，未指定档位时保留上游默认设置。
 
 EAC 的 `opencode/nemotron-3.5-lightning-free`、`opencode/nemotron-3.5-super-vl-free` 和 `opencode/flint-40b-free` 保留完整 ID，使用 OFM 转发，不改成裸 ID 的 OpenCode 直连通道。Pi 的 `thinkingmachines/inkling:free` 与已有的 `thinkingmachines/inkling-small:free` 分开配置；Kilo 的 `thinkingmachines/inkling-2-small:free` 是独立的 Kilo Gateway 免费路由；`google/gemma-4-31b-it:free` 不提供推理档位菜单。EAC 的 `deepseek-ai/deepseek-v4.1-flash` 在新模型发现中推荐 DSH；其他未知模型不会因此变成推荐项，组合仍需用户选择添加。
