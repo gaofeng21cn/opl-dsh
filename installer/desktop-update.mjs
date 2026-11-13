@@ -3,7 +3,16 @@ import { createServer, connect } from 'node:net'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile, rename, unlink, mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { tmpdir } from 'node:os'
+
+/** Keep Unix socket paths below macOS's AF_UNIX limit even with a long TMPDIR. */
+export function desktopUpdateEndpoint({
+  platform = process.platform,
+  pid = process.pid,
+  nonce = randomUUID(),
+} = {}) {
+  if (platform === 'win32') return String.raw`\\.\pipe\opl-update-${pid}-${nonce}`
+  return join('/tmp', `opl-u-${nonce}.sock`)
+}
 
 export async function atomicUpdateJson(path, value) {
   const temporary = path + '.' + randomUUID() + '.tmp'
@@ -20,10 +29,12 @@ export async function atomicUpdateJson(path, value) {
 /** Call the owned launcher without publishing its authentication fields. */
 export async function requestDesktopUpdate(root, identity, method, input = {}) {
   const launch = JSON.parse(await readFile(join(root, 'desktop-launch.json'), 'utf8'))
+  const application = identity.application ?? identity.app
   if (
     launch.schemaVersion !== 1 ||
     resolve(launch.profileHome) !== resolve(identity.profileHome) ||
-    resolve(launch.application) !== resolve(identity.app) ||
+    typeof application !== 'string' ||
+    resolve(launch.application) !== resolve(application) ||
     launch.suiteSha256 !== identity.suiteSha256 ||
     typeof launch.endpoint !== 'string' ||
     typeof launch.nonce !== 'string'
@@ -61,10 +72,7 @@ export async function requestDesktopUpdate(root, identity, method, input = {}) {
 /** Start a private authenticated pipe; no TCP port or public update action is exposed. */
 export async function serveDesktopUpdate(root, identity, handler) {
   const nonce = randomUUID()
-  const endpoint =
-    process.platform === 'win32'
-      ? String.raw`\\.\pipe\opl-update-${process.pid}-${nonce}`
-      : join(tmpdir(), `opl-update-${process.pid}-${nonce}.sock`)
+  const endpoint = desktopUpdateEndpoint({ nonce })
   const sockets = new Set()
   const server = createServer({ allowHalfOpen: true }, (socket) => {
     sockets.add(socket)
