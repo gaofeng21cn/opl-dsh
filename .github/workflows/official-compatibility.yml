@@ -62,6 +62,11 @@ jobs:
         run: |
           node node_modules/vitest/vitest.mjs run tests/collaboration/official-tools.spec.ts tests/collaboration/external-wait.spec.ts tests/collaboration/suite-control.spec.ts tests/execution/permission-memory.spec.ts tests/updates/admission.spec.ts
           node --test --test-concurrency=1 tests/artifact.test.mjs tests/split-plugins.test.mjs tests/profile.test.mjs tests/superagent.test.mjs
+      - name: Verify macOS session recycling with disposable profiles
+        if: matrix.os == 'macos-15'
+        run: |
+          node --test tests/macos-cleanup.test.mjs
+          node node_modules/vitest/vitest.mjs run tests/setup/cleanup-macos-io.spec.ts tests/setup/cleanup-transaction.spec.ts
       - name: Verify shared SuperAgent tests on Windows
         if: matrix.os == 'windows-latest'
         # Bound parallel SQLite/fixture I/O on the hosted Windows disk; retain test deadlines.

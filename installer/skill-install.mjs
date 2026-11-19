@@ -101,6 +101,7 @@ export function installCleanupSkill({
     'cleanup.mjs',
     'snapshot.mjs',
     'windows-io.mjs',
+    'macos-io.mjs',
     'agents/openai.yaml',
     'references/windows-recycling.md',
     'references/provider-contract.md',
