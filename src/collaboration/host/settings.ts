@@ -46,7 +46,7 @@ export async function coordinationAction(
       autoStart: config.autoStart !== false,
       version: process.env.OPL_OFFICIAL_VERSION ?? installed.officialVersion ?? 'unknown',
       enhancementVersion: installed.suiteVersion ?? 'unknown',
-      sessionRecycleSupported: process.platform === 'win32',
+      sessionRecycleSupported: ['win32', 'darwin'].includes(process.platform),
       superagentSupported: process.platform === 'darwin' || process.platform === 'linux',
       update: { ...JSON.parse(state), checkTrigger: 'maintenance-launcher' },
       paths: {

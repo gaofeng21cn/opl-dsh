@@ -41,6 +41,14 @@ vi.mock('../../installer/cleanup-skill/windows-io.mjs', () => ({
     expect(tree(receipt.recyclePath)).toEqual(target.tree)
   },
 }))
+vi.mock('../../installer/cleanup-skill/macos-io.mjs', async () => {
+  // @ts-expect-error Installer JavaScript has no declaration file.
+  const fixture = await import('../../installer/cleanup-skill/windows-io.mjs')
+  return {
+    assertDesktopStopped: fixture.assertDesktopStopped,
+    currentMacTrash: () => ({ ...fixture, preflight: () => {} }),
+  }
+})
 // @ts-expect-error Installer JavaScript has no declaration file.
 import {
   previewCleanup,

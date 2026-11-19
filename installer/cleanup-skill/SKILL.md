@@ -9,7 +9,7 @@ description: 按用户指定范围精确识别并清理 OPL DSH 会话、外部�
 
 ## 删除模式
 
-- 默认使用 `recycle`：将精确文件或目录移入 Windows 回收站，逐项核验回收内容、原路径和 SHA-256，并保留恢复清单。
+- 默认使用 `recycle`：将精确文件或目录移入 Windows 回收站或 macOS 废纸篓，逐项核验回收内容、原路径和 SHA-256，并保留恢复清单。
 - 只有用户明确要求永久删除时才使用 `permanent`。永久删除前仍必须生成并复核清单；没有可靠的当前存储删除协议时停止，不把“删除列表行”或“隐藏会话”称为永久删除。
 - 目标可以是精确会话 ID、精确外部 Harness ID、明确的工作区成员集合或归档集合。模糊标题、模糊路径、全量“看起来像测试”的规则必须先转为清单并等待用户确认。
 - 用户指定“清空已归档”时，使用本次运行的官方 `WorkspaceRegistry.archivedSessionIds` 作为唯一目标来源。先冻结该集合为 `archivedTargetIds`，再读取当前 Session 列表建立 `protectedSessionIds = allSessionIds - archivedTargetIds`。不能根据侧边栏筛选结果、标题、时间或“删除候选”猜测归档状态。
@@ -41,3 +41,7 @@ description: 按用户指定范围精确识别并清理 OPL DSH 会话、外部�
 ## 性能实现
 
 预览与执行前各读取一次完整快照；执行后的检查只比较冻结清单中的文件元数据、引用目录清单和索引摘要，不重复解压全部历史日志。执行阶段只在开始、索引提交前和结束时检查桌面进程，避免按目标重复调用系统进程查询。
+
+## macOS 废纸篓
+
+从安装回执取得 Desktop 应用包内的 Contents/MacOS 可执行文件和实际 profile 路径，退出 Desktop。使用 cleanup.mjs 的 preview、execute、resume 和 verify 命令。每项会话文件或目录保存在当前用户 ~/.Trash 下独立的 OPL DSH 文件夹中。工具仅支持同卷移动，废纸篓访问被拒时停止。恢复时根据 cleanup-history 日志中的 originalPath 和 recyclePath 核对原位置及索引快照。

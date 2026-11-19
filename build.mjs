@@ -265,6 +265,7 @@ for (const file of [
   'cleanup-skill/cleanup.mjs',
   'cleanup-skill/snapshot.mjs',
   'cleanup-skill/windows-io.mjs',
+  'cleanup-skill/macos-io.mjs',
   'cleanup-skill/agents/openai.yaml',
   'cleanup-skill/references/windows-recycling.md',
   'cleanup-skill/references/provider-contract.md',
