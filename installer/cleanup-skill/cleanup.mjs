@@ -18,14 +18,12 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { performance } from 'node:perf_hooks'
 import { loadDshSnapshot } from './snapshot.mjs'
-import {
-  assertDesktopStopped,
-  safeTree,
-  assertSafePath,
-  recycleTarget,
-  findRecycledTarget,
-  verifyRecycledTarget,
-} from './windows-io.mjs'
+import * as windows from './windows-io.mjs'
+import { assertDesktopStopped as macDesktopStopped, currentMacTrash } from './macos-io.mjs'
+const { safeTree, assertSafePath } = windows
+const assertDesktopStopped = process.platform === 'darwin' ? macDesktopStopped : windows.assertDesktopStopped
+const recycleIO = () => process.platform === 'darwin' ? currentMacTrash() : windows
+
 
 const digest = (value) => createHash('sha256').update(value).digest('hex')
 const canonical = (value) =>
@@ -399,6 +397,9 @@ export async function executeDshCleanup({ plan, expectedHash, mode = 'recycle', 
   await assertDesktopStopped(plan.executable, plan.home)
   for (const target of plan.targets)
     if (existsSync(target.path)) await assertSafePath(target.path, plan.home)
+  const io = recycleIO()
+  if (process.platform === 'darwin')
+    for (const target of plan.targets) if (existsSync(target.path)) io.preflight(target.path)
   const history = join(plan.home, 'cleanup-history')
   mkdirSync(history, { recursive: true, mode: 0o700 })
   await assertSafePath(history, plan.home)
@@ -427,8 +428,8 @@ export async function executeDshCleanup({ plan, expectedHash, mode = 'recycle', 
     for (const target of plan.targets) {
       const item = state.items[targetKey(target)]
       if (item && !existsSync(target.path)) {
-        item.receipt ??= await findRecycledTarget(target, item.sinceMs)
-        await verifyRecycledTarget(target, item.receipt)
+        item.receipt ??= await io.findRecycledTarget(target, item.sinceMs, item.operationId)
+        await io.verifyRecycledTarget(target, item.receipt, item.operationId)
         item.completed = true
         save(journal, state)
       }
@@ -441,16 +442,16 @@ export async function executeDshCleanup({ plan, expectedHash, mode = 'recycle', 
     for (const target of plan.targets) {
       const key = targetKey(target)
       if (state.items[key]?.completed) {
-        await verifyRecycledTarget(target, state.items[key].receipt)
+        await io.verifyRecycledTarget(target, state.items[key].receipt, state.items[key].operationId)
         continue
       }
       checkIndices(plan, false)
       if (!equal(await safeTree(target.path), target.tree))
         throw Error('目标内容已变化: ' + target.id)
-      state.items[key] = { sinceMs: Date.now() }
+      state.items[key] = { sinceMs: Date.now(), operationId: randomUUID() }
       save(journal, state)
-      state.items[key].receipt = await recycleTarget(target)
-      await verifyRecycledTarget(target, state.items[key].receipt)
+      state.items[key].receipt = await io.recycleTarget(target, state.items[key].operationId)
+      await io.verifyRecycledTarget(target, state.items[key].receipt, state.items[key].operationId)
       state.items[key].completed = true
       save(journal, state)
     }
@@ -483,7 +484,8 @@ export async function verifyCleanup({ plan, expectedHash, skipProcessCheck = fal
     throw Error('清理尚未完成，请使用 resume')
   for (const target of plan.targets) {
     if (existsSync(target.path)) throw Error('目标仍存在: ' + target.id)
-    await verifyRecycledTarget(target, state.items[targetKey(target)]?.receipt)
+    const item = state.items[targetKey(target)]
+    await recycleIO().verifyRecycledTarget(target, item?.receipt, item?.operationId)
   }
   for (const index of plan.indices)
     if (digest(readFileSync(index.path)) !== index.afterSha256) throw Error('索引验收失败')
