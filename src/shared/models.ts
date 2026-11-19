@@ -46,6 +46,7 @@ export const GATEWAY_ANTIGRAVITY_GEMINI_MODELS = [
 export function displayModelName(ref: ModelRef, name?: string): string {
   const id = ref.model.includes('::') ? ref.model.slice(ref.model.lastIndexOf('::') + 2) : ref.model
   if (ref.provider === 'our-free-model') {
+    if (id === 'moonshotai/kimi-k3.1-pro') return 'EAC Kimi K3.1 Pro'
     if (id === 'amd/Qwen3.8-27B') return 'EAC Qwen3.8 27B（AMD）'
     if (id === 'amd/DeepSeek-V4.1-Flash') return 'EAC DeepSeek V4.1 Flash（AMD）'
     if (id === 'amd/DeepSeek-V4-Flash') return 'EAC DeepSeek V4 Flash（AMD）'
