@@ -4,7 +4,6 @@ import {
   mkdtempSync,
   mkdirSync,
   lstatSync,
-  existsSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -34,24 +33,6 @@ it('recovers the exact trash receipt after interruption and rejects another inte
     expect(readFileSync(join(receipt.recyclePath, 'log'), 'utf8')).toBe('fixture')
     writeFileSync(join(receipt.recyclePath, 'log'), 'changed')
     expect(() => io.verifyRecycledTarget(target, receipt, id)).toThrow()
-  } finally {
-    rmSync(root, { force: true, recursive: true })
-  }
-})
-it('reuses an intent folder left behind before the move', () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'mac-trash-resume-')))
-  try {
-    const trash = join(root, '.Trash')
-    mkdirSync(trash)
-    const io = macTrash(trash, lstatSync(trash).uid)
-    const path = join(root, 'archived session')
-    mkdirSync(path)
-    writeFileSync(join(path, 'log'), 'fixture')
-    const id = randomUUID()
-    mkdirSync(join(trash, 'OPL DSH-' + id))
-    const target = { path, tree: safeTree(path) }
-    expect(io.recycleTarget(target, id).operationId).toBe(id)
-    expect(existsSync(path)).toBe(false)
   } finally {
     rmSync(root, { force: true, recursive: true })
   }

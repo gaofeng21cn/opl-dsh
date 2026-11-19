@@ -81,7 +81,7 @@ export function macTrash(trash, uid) {
     checkTrash(target.path)
     const receipt = paths(target, id)
     if (!isDeepStrictEqual(safeTree(target.path), target.tree)) throw Error('目标文件已变化')
-    mkdirSync(dirname(receipt.recyclePath), { mode: 0o700, recursive: true })
+    mkdirSync(dirname(receipt.recyclePath), { mode: 0o700 })
     renameSync(target.path, receipt.recyclePath)
     verifyRecycledTarget(target, receipt, id)
     return receipt
