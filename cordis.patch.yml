@@ -12,6 +12,9 @@
     provider: opl-gateway
     model: deepseek-flash
     reasoningEffort: max
+- id: web
+  config:
+    searchProvider: opl-gateway
 - id: llm-pi-ai
   config:
     providers:
