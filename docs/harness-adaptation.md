@@ -24,7 +24,7 @@ OFM 来源统一使用 `Our Free Model` 写法，区域渠道保留 `region-limi
 
 | 模型                                                                                                                          | 首选 Harness                    | 协议      |
 | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | --------- |
-| Kimi K2.6、K3                                                                                                                 | Kimi Code                       | Messages  |
+| Kimi K2.6、K3、K3.1 Pro（K3.1 Pro 必须保持思考开启）                                                                          | Kimi Code                       | Messages  |
 | MiMo v2.6 Flash（mimo-v2.6-flash-free）                                                                                       | OpenCode，官方免费通道          | Chat      |
 | Laguna S、XS 2.1                                                                                                              | Poolside                        | Chat      |
 | GLM 5.3、5.3 Flash（z-ai 原始 ID）                                                                                            | ZCode                           | Chat      |
