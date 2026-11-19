@@ -110,6 +110,7 @@ export const OFM_PINNED_HARNESS_MODELS: Readonly<Record<string, readonly string[
     'openrouter/free',
     'big-pickle',
     'hy4-flash-free',
+    'tidepool-alpha-free',
     'flint-40b-free',
   ],
   pi: [

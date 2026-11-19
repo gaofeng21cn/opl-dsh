@@ -55,6 +55,14 @@ const snapshot = (options = config()): AcpSessionSnapshot => ({
 })
 
 describe('new OFM channel pairings', () => {
+  it('pins Tidepool Alpha Free to the official OpenCode free channel', () => {
+    const model = ref('tidepool-alpha-free')
+    expect(automaticHarness(model)).toBe('opencode')
+    expect(adapterFor('opencode', model)?.matches(model)).toBe(true)
+    expect(ofmHarnessPinsModel('opencode', model.model)).toBe(true)
+    expect(officialOpenCodeModel(model)).toBe('opencode/tidepool-alpha-free')
+    expect(displayModelName(model)).toBe('Tidepool Alpha Free')
+  })
   it.each(lanes)('routes %s through %s without changing the channel', (model, harness, label) => {
     expect(automaticHarness(ref(model))).toBe(harness)
     expect(adapterFor(harness, ref(model))?.matches(ref(model))).toBe(true)
