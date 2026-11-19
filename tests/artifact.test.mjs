@@ -1,5 +1,6 @@
 /** The release must carry only OPL code and explicit official runtime peers. */
 import { test } from 'node:test'
+import { parse } from 'yaml'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
@@ -36,6 +37,11 @@ test('tarball checksum and contents bind the installer to an external plugin', a
     'muse-endpoint.mjs',
   ])
     assert.ok(executionFiles.includes(`package/lib/${bridge}`), `missing packaged bridge ${bridge}`)
+  const overlay = parse(await readFile(new URL('package/cordis.patch.yml', output), 'utf8'))
+  for (const entry of overlay.filter((entry) => entry.id === 'web')) {
+    assert.equal(entry.config?.searchProvider, undefined)
+    assert.equal(entry.config?.fetchProvider, undefined)
+  }
   const pkg = JSON.parse(await readFile(new URL('package/package.json', output), 'utf8'))
   assert.equal(pkg.name, '@one-person-lab/dsh-opl')
   assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-llm'], '*')
