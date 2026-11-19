@@ -15,6 +15,7 @@
 - id: web
   config:
     searchProvider: opl-gateway
+    fetchProvider: http
 - id: llm-pi-ai
   config:
     providers:

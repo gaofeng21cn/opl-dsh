@@ -9,7 +9,6 @@ import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import { launchIndependent, windowsSuiteLauncher } from './windows-lifecycle.mjs'
-import { ensureGatewaySearchProvider } from './profile-search.mjs'
 const [app, root, payload, ...flags] = process.argv.slice(2)
 // The official desktop resolves the same default when DSH_HOME is unset.
 const home = process.env.OPL_DSH_HOME?.trim() || join(homedir(), '.dsh')
@@ -139,9 +138,6 @@ if (!existsSync(patch))
     '- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n    compression: gzip\n    compressionLevel: 1\n    compressionThresholdBytes: 1024\n',
     { mode: 0o600, flag: 'wx' },
   )
-const currentPatch = readFileSync(patch, 'utf8')
-const gatewayPatch = ensureGatewaySearchProvider(currentPatch)
-if (gatewayPatch !== currentPatch) writeFileSync(patch, gatewayPatch, { mode: 0o600 })
 const featurePlugins = artifact.plugins ?? []
 if (
   featurePlugins.length &&

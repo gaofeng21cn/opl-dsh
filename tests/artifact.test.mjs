@@ -40,7 +40,7 @@ test('tarball checksum and contents bind the installer to an external plugin', a
   const overlay = parse(await readFile(new URL('package/cordis.patch.yml', output), 'utf8'))
   const web = overlay.find((entry) => entry.id === 'web')
   assert.equal(web?.config?.searchProvider, 'opl-gateway')
-  assert.equal(web.config.fetchProvider, undefined)
+  assert.equal(web?.config?.fetchProvider, 'http')
   const pkg = JSON.parse(await readFile(new URL('package/package.json', output), 'utf8'))
   assert.equal(pkg.name, '@one-person-lab/dsh-opl')
   assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-llm'], '*')
