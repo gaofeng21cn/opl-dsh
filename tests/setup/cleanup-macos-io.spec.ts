@@ -37,6 +37,24 @@ it('recovers the exact trash receipt after interruption and rejects another inte
     rmSync(root, { force: true, recursive: true })
   }
 })
+it('reuses an intent folder left behind before the move', () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'mac-trash-resume-')))
+  try {
+    const trash = join(root, '.Trash')
+    mkdirSync(trash)
+    const io = macTrash(trash, lstatSync(trash).uid)
+    const path = join(root, 'archived session')
+    mkdirSync(path)
+    writeFileSync(join(path, 'log'), 'fixture')
+    const id = randomUUID()
+    mkdirSync(join(trash, 'OPL DSH-' + id))
+    const target = { path, tree: safeTree(path) }
+    expect(io.recycleTarget(target, id).operationId).toBe(id)
+    expect(existsSync(path)).toBe(false)
+  } finally {
+    rmSync(root, { force: true, recursive: true })
+  }
+})
 it('blocks Desktop and detached profile users and refuses an incomplete process list', () => {
   const check = (text: string) =>
     checkMacProcesses(
@@ -47,8 +65,14 @@ it('blocks Desktop and detached profile users and refuses an incomplete process 
     )
   const self = ' 42 node cleanup.mjs --home /Users/test/.dsh'
   expect(() => check(self)).not.toThrow()
+  expect(() =>
+    check(
+      self + '\n99 /Users/other/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness',
+    ),
+  ).not.toThrow()
   for (const process of [
     '99 /Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness',
+    '99 /Applications/DeepSeek Harness.app/Contents/Frameworks/DeepSeek Harness Helper.app/Contents/MacOS/DeepSeek Harness Helper',
     '99 node host --home /Users/test/.dsh',
   ]) {
     expect(() => check(self + '\n' + process)).toThrow()

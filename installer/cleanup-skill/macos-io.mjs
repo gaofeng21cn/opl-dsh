@@ -8,6 +8,10 @@ import { assertSafePath, safeTree } from './windows-io.mjs'
 /** ps must enumerate even orphaned profile users. Never expose argv in diagnostics. */
 export function checkMacProcesses(output, self, executable, home) {
   const rows = output.trimEnd().split('\n')
+  const bundleContents = dirname(dirname(executable))
+  const helpers = bundleContents.endsWith('.app/Contents')
+    ? join(bundleContents, 'Frameworks') + '/'
+    : null
   let sawSelf = false
   for (const row of rows) {
     const match = /^\s*(\d+)\s+(.+)$/.exec(row)
@@ -18,8 +22,9 @@ export function checkMacProcesses(output, self, executable, home) {
     }
     const args = match[2]
     if (
-      args.includes(executable) ||
-      args.includes('DeepSeek Harness.app/Contents/') ||
+      args === executable ||
+      args.startsWith(executable + ' ') ||
+      (helpers && args.startsWith(helpers)) ||
       args.includes(home)
     )
       throw Error('请退出使用此配置的 DeepSeek Harness 后重试')
@@ -76,7 +81,7 @@ export function macTrash(trash, uid) {
     checkTrash(target.path)
     const receipt = paths(target, id)
     if (!isDeepStrictEqual(safeTree(target.path), target.tree)) throw Error('目标文件已变化')
-    mkdirSync(dirname(receipt.recyclePath), { mode: 0o700 })
+    mkdirSync(dirname(receipt.recyclePath), { mode: 0o700, recursive: true })
     renameSync(target.path, receipt.recyclePath)
     verifyRecycledTarget(target, receipt, id)
     return receipt
