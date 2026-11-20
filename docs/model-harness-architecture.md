@@ -60,7 +60,9 @@ DeepSeek 4.1 Flash 的 DeepSeek 与 OpenAI 协议渠道默认推理档位为 `hi
 
 对话输入栏复用官方模型目录、模型选择投影、菜单组件与 Slot；OPL 的组合选择菜单显示“模型 · Harness”，来源仅作为展开菜单的分组标题。没有凭据的官方 DeepSeek 模型不作为可选项。DSH 原生组合调用官方 Session 的模型选择接口；外部 Harness 组合绑定到当前官方 Session，由 Host 在 `llm/stream` 阶段转发同一轮请求并把文本流回官方 Session。自动生成组合的权限只作为新委派任务的缺省值，切换模型保留当前会话选择的权限；显式只读组合通过官方只读预设同时设置 sandbox 与审批策略，不产生两者混用的 custom 状态，也不会静默扩大当前权限。原生会话列表不增加第二套 OPL 管理页面。普通原生子任务的目标入口是官方 Subagent/Team；OPL 委派工具负责跨 Harness 与显式交付验收所需的额外语义。
 
-自动组合只来自预先维护的“Harness + 官配模型”表，并在对应模型已经就绪后启用。DSH 的官配是 DeepSeek 自家模型；Codex、Claude、Grok Build、MiniMax、ZCode、Kimi、MiMo、Poolside、StepCode、Muse 只在厂商自家模型与对应 CLI 配对时自动生成。OpenCode、Kilo、Pi 等通用执行器没有自己的模型，官配列表为空，不会因为适配器支持某模型就生成内置组合；需要时可在“添加执行组合”中手动选择模型与执行器，跨厂商或通用执行器配对会标记为“自定义”。经 OFM 本地转发执行的手动外部组合还要求 OFM 本地转发已启用并运行。组合设置页会把“可启用但当前停用”的项目折叠；用户手动停用后，自动投影不会重新打开该组合。
+厂商官配自动组合来自预先维护的“Harness + 官配模型”表，并在对应模型已经就绪后启用。DSH 的官配是 DeepSeek 自家模型；Codex、Claude、Grok Build、MiniMax、ZCode、Kimi、MiMo、Poolside、StepCode、Muse 只在厂商自家模型与对应 CLI 配对时自动生成。OpenCode、Kilo、Pi 等通用执行器没有自己的模型，官配列表为空，不会因为适配器支持某模型就生成内置组合；需要时可在“添加执行组合”中手动选择模型与执行器，跨厂商或通用执行器配对会标记为“自定义”。经 OFM 本地转发执行的手动外部组合还要求 OFM 本地转发已启用并运行。组合设置页会把“可启用但当前停用”的项目折叠；用户手动停用后，自动投影不会重新打开该组合。
+
+除官配外，独立配置的原生 Provider 还有一种 DSH fallback：官方 `ctx.llm.listProviders()`、`listModels()` 与 `listConfigurableProviders()` 投影确认 Provider 已进入可配置目录、模型可用，并且该模型既没有官配也没有自动外部 Harness 推荐时，OPL 自动生成只读 DSH 组合，让启用执行插件后的官方对话有可选入口。OPL Gateway 及其内部路由、OFM 和外部 CLI 账号专属来源不使用此 fallback；已有外部推荐仍保持推荐，不会自动改走 DSH。fallback 只保存原始 `provider` / `model` 引用与 `dsh` 绑定，模型连接、协议和凭据仍由原 Provider 及官方模型设置负责，不复制模型配置，也不改变连接 owner。已有自定义默认、显式停用与 `defaultDisabled` 选择优先；已保存的自动行再次解析时保持身份，不做无谓清理、重建或重复持久化。
 
 每个原生对话选中的组合 ID 保存在 OPL 自有的 `combination-selection.json`，用于重启后区分同一模型的多个自定义组合。它只关联官方会话 ID，不改变官方会话格式。模型选择以官方 live/cold 投影为准，冷会话通过公开 `session.projections` 读取，不借用新建会话激活历史；组合停用或模型被其他入口切换后，不再采用失配的关联。
 
