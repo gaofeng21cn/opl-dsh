@@ -160,6 +160,10 @@ export const isMinimaxCodeModel = (ref: ModelRef): boolean =>
   ref.provider === MINIMAX_CODE_PROVIDER &&
   minimaxCodeCombinations().some((item) => item.model === ref.model)
 
+/** Any saved pairing that could enter the dedicated mcode process or native source. */
+export const isMiniMaxCodeRoute = (route: { harnessRef: string; modelRef: ModelRef }): boolean =>
+  route.harnessRef === MINIMAX_CODE_HARNESS || route.modelRef.provider === MINIMAX_CODE_PROVIDER
+
 /**
  * Build the encoded `model` config value for a reasoning choice.
  *

@@ -455,12 +455,12 @@ describe('MiniMax official account card', () => {
 
   it('starts a login, keeps cancel available immediately, and ignores the late login after cancel', async () => {
     const login = deferred<MiniMaxAccountStatus>()
+    const cancelRpc = deferred<MiniMaxAccountStatus>()
     const { call, calls } = fixture(async (method, request) => {
       if (method === 'minimax-account-status')
         return status({ region: request.region, loginState: 'signed-out' })
       if (method === 'minimax-account-login') return login.promise
-      if (method === 'minimax-account-cancel')
-        return status({ region: request.region, loginState: 'signed-out' })
+      if (method === 'minimax-account-cancel') return cancelRpc.promise
       throw new Error(`unexpected RPC ${method}`)
     })
     const view = await mount(call)
@@ -484,6 +484,15 @@ describe('MiniMax official account card', () => {
       request: { region: 'cn' },
     })
     expect(calls).not.toContainEqual(expect.objectContaining({ method: 'minimax-account-logout' }))
+    // The independent cancel RPC is still pending. Keep the cancelling control and
+    // feedback visible instead of briefly presenting a signed-out idle card.
+    expect(control(view.container, 'data-opl-cancel')).toBeDefined()
+    expect(disabled(control(view.container, 'data-opl-cancel'))).toBe(true)
+    expect(text(view.container)).toContain('正在取消…')
+    expect(text(view.container)).not.toContain('已取消本次官方登录')
+    await act(async () => {
+      cancelRpc.resolve(status({ region: 'cn', loginState: 'signed-out' }))
+    })
     expect(text(view.container)).toContain('未登录')
     expect(text(view.container)).toContain('已取消本次官方登录')
 

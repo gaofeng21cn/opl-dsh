@@ -72,7 +72,7 @@ OPL 领域智能体预设是可选集成：需要另外安装 OPL Framework 和�
 - **Codex ↔ DSH 协作**：自动安装 `opl-dsh-official` Skill，支持跨 Harness 派发、续作、读取结果与交付验收；主动回传需配置通知桥。见[协作说明](docs/collaboration-implementation.md)。
 - **SuperAgent 仓库协作**：继承 DeepSeek SuperAgent 原型的 GitHub／可选飞书接单、授权策略、工单、执行和管理面板。macOS 和 Linux 在“协作与自动化”打开独立页面后配置。见[SuperAgent](docs/superagent.md)。
 - **Auto Review 工具审批**：使用官方自动审批，每个会话需选择官方 `auto` 权限预设。OPL reviewer 默认关闭，启用后可配置独立 reviewer、预算和 ZCode 外部审批；关闭后官方 Auto 继续使用当前会话模型。支持专用 codex-auto-review、[BambooNode StartLux](docs/bamboo-startlux-auto-review.md) 和 [Jev](docs/jev-auto-review.md) 决策模型。见[工具审批](docs/auto-review.md)。
-- **MiniMax 官方账号**：通过 mcode 登录中国站或国际站，支持登录状态、退出、取消授权与超时处理。见[MiniMax 账号与 mcode](docs/minimax-code.md)。
+- **MiniMax 官方账号**：通过 mcode 登录中国站或国际站，支持登录状态、退出、取消授权与超时处理。官方 mcode 集成默认开启，可在“执行与组合”停用；停用会移除模型、组合和账号卡片并拒绝新轮次，但保留组合、凭据和历史会话，重新启用可恢复。见[MiniMax 账号与 mcode](docs/minimax-code.md)。
 - **对话体验**：不选工作区也可开始新对话；支持[编辑消息并原地重发](docs/stop-edit.md)，轮次与步数可选当前对话或历史累计；[Todo](docs/todo-status.md)展示真实记录状态；可启用[后台任务系统通知](docs/desktop-notifications.md)。
 - **Agent 应用交接**：`inspect_mcp_app_host` 按当前对话检查工具和资源能力；无嵌入式 UI 时保留原 owner 的结构化结果与专业应用入口。见 [MCP Apps 支持范围](docs/mcp-apps.md)。
 - **网页搜索**：登录 OPL Gateway 后，网页搜索默认通过 Gateway 使用 GPT-6.1 Sol。可在官方「网页搜索与获取」设置中选择其他搜索提供方。

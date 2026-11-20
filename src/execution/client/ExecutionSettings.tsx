@@ -9,6 +9,12 @@ import {
 import { ExecutionCatalogSection } from './ExecutionCatalogSection.tsx'
 import { HarnessSettings } from './HarnessSettings.tsx'
 import { ExecutionLimitsSection } from './ExecutionLimitsSection.tsx'
+import {
+  MiniMaxIntegrationPreference,
+  miniMaxIntegrationEnabled,
+  useMiniMaxIntegrationSnapshot,
+  type MiniMaxIntegrationSeat,
+} from './MiniMaxIntegration.tsx'
 import css from '../../shared/client/SettingsSection.module.css'
 import type { ExecutionCall as Call } from '../../shared/client/remote-call.ts'
 
@@ -26,10 +32,13 @@ export interface AutoReviewSettingsSeat {
 export function ExecutionSettings({
   call,
   autoReview,
+  minimax,
 }: {
   call: Call
   autoReview?: AutoReviewSettingsSeat
+  minimax: MiniMaxIntegrationSeat
 }) {
+  const minimaxSnapshot = useMiniMaxIntegrationSnapshot(minimax.form)
   return (
     <div className={css.section} data-opl-panel="execution">
       <h2 className={css.title}>执行与组合</h2>
@@ -37,7 +46,12 @@ export function ExecutionSettings({
         为模型绑定 Harness
         与权限，并在同一页维护执行程序、独立网络代理和工具审批。已启用的组合显示在官方会话输入框中；模型与账号仍在对应来源页面管理。
       </p>
-      <ExecutionCatalogSection call={call} embedded />
+      <MiniMaxIntegrationPreference form={minimax.form} t={minimax.t} />
+      <ExecutionCatalogSection
+        call={call}
+        embedded
+        refreshKey={miniMaxIntegrationEnabled(minimaxSnapshot)}
+      />
       <ExecutionLimitsSection call={call} />
       <details className={css.details} data-opl-panel="execution-settings">
         <summary>执行引擎与网络代理</summary>

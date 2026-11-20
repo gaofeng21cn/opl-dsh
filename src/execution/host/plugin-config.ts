@@ -6,10 +6,17 @@ export interface Config {
   executionLimits: Volatile<ExecutionLimits>
   /** Persist explicit native permission choices as the official future-session default. */
   rememberPermissionPreset: Volatile<boolean>
+  /** Project the dedicated official mcode integration; saved routes survive opt-out. */
+  minimaxCodeEnabled: Volatile<boolean>
   toolAutoReview: Volatile<import('../../auto-review/host/settings.ts').Config>
 }
+export function minimaxCodeConfigChanged(paths: readonly (readonly string[])[]): boolean {
+  return paths.some((path) => path.length === 1 && path[0] === 'minimaxCodeEnabled')
+}
+
 export const Config = z.object({
   executionLimits: executionLimitsSchema.volatile(),
   rememberPermissionPreset: z.boolean().default(false).volatile(),
+  minimaxCodeEnabled: z.boolean().default(true).volatile(),
   toolAutoReview: AutoReviewConfig.default({}).volatile(),
 })

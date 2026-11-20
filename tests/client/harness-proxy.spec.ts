@@ -313,7 +313,24 @@ async function open(call: ExecutionCall, component = HarnessSettings) {
     }),
   )
   await act(async () => {
-    root.render(React.createElement(component as never, { call }))
+    const minimaxSnapshot = {
+      status: 'ready',
+      value: { minimaxCodeEnabled: true },
+      writable: false,
+    }
+    const minimax = {
+      form: {
+        getSnapshot: () => minimaxSnapshot,
+        subscribe: () => () => {},
+      },
+      t: (key: string) => key,
+    }
+    root.render(
+      React.createElement(component as never, {
+        call,
+        ...(component === ExecutionSettings ? { minimax } : {}),
+      }),
+    )
   })
   return container
 }

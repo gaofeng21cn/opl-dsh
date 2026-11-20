@@ -1,9 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
-import { Config } from '../../src/execution/host/plugin-config.ts'
+import { Config, minimaxCodeConfigChanged } from '../../src/execution/host/plugin-config.ts'
 import { executionLimitsSchema } from '../../src/execution/contracts/limits.ts'
 import { ProgressWatchdog } from '../../src/execution/host/progress-watchdog.ts'
 
 describe('execution progress limits', () => {
+  it('defaults the dedicated MiniMax integration on and preserves an explicit opt-out', () => {
+    expect(Config({}).minimaxCodeEnabled.get()).toBe(true)
+    expect(Config({ minimaxCodeEnabled: true }).minimaxCodeEnabled.get()).toBe(true)
+    expect(Config({ minimaxCodeEnabled: false }).minimaxCodeEnabled.get()).toBe(false)
+    expect(minimaxCodeConfigChanged([['minimaxCodeEnabled']])).toBe(true)
+    expect(minimaxCodeConfigChanged([['executionLimits'], ['toolAutoReview']])).toBe(false)
+    expect(minimaxCodeConfigChanged([['nested', 'minimaxCodeEnabled']])).toBe(false)
+  })
+
   it('keeps OPL deadlines disabled even when old profiles contain explicit durations', () => {
     expect(Config({}).executionLimits.get().enabled).toBe(false)
     expect(
