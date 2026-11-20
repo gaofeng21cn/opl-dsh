@@ -221,6 +221,81 @@ it('preserves hidden rows when re-enabled while a disabled catalog save is await
   expect(persisted.combinations.some((item) => item.id === 'saved-custom-mcode-race')).toBe(true)
 })
 
+it('retains custom mcode rows when a hidden view is saved after re-enabling', async () => {
+  const { service, store, setEnabled } = await fixture()
+  const enabled = await service.executionCatalog()
+  await store.set({
+    ...enabled,
+    combinations: [
+      ...enabled.combinations,
+      {
+        id: 'custom-mcode-hidden-view',
+        name: 'My custom mcode',
+        modelRef: { provider: 'opl-gateway', model: 'deepseek-flash' },
+        harnessRef: MINIMAX_CODE_HARNESS,
+        permissionPolicy: 'full-access',
+        isDefault: false,
+        enabled: true,
+      },
+    ],
+  })
+
+  await setEnabled(false)
+  const hidden = await service.executionCatalog()
+  expect(hidden.minimaxCodeEnabled).toBe(false)
+  expect(hidden.combinations.some((item) => item.id === 'custom-mcode-hidden-view')).toBe(false)
+  await setEnabled(true)
+  const saved = await service.saveExecutionCatalog({
+    ...hidden,
+    combinations: hidden.combinations.map((item) =>
+      item.id === DSH_COMBINATION ? { ...item, name: 'Changed while refreshing' } : item,
+    ),
+  })
+  expect(saved.minimaxCodeEnabled).toBe(true)
+  const persisted = await store.get()
+  expect(
+    persisted.combinations.find((item) => item.id === 'custom-mcode-hidden-view'),
+  ).toMatchObject({
+    name: 'My custom mcode',
+    enabled: true,
+    permissionPolicy: 'full-access',
+  })
+  expect(persisted.combinations.find((item) => item.id === DSH_COMBINATION)?.name).toBe(
+    'Changed while refreshing',
+  )
+  expect(persisted.minimaxCodeEnabled).toBeUndefined()
+})
+
+it('allows an enabled view to remove a custom mcode row normally', async () => {
+  const { service, store } = await fixture()
+  const initial = await service.executionCatalog()
+  await store.set({
+    ...initial,
+    combinations: [
+      ...initial.combinations,
+      {
+        id: 'custom-mcode-visible-view',
+        name: 'Remove this custom mcode',
+        modelRef: { provider: 'opl-gateway', model: 'deepseek-flash' },
+        harnessRef: MINIMAX_CODE_HARNESS,
+        permissionPolicy: 'full-access',
+        isDefault: false,
+        enabled: true,
+      },
+    ],
+  })
+  const visible = await service.executionCatalog()
+  expect(visible.minimaxCodeEnabled).toBe(true)
+  expect(visible.combinations.some((item) => item.id === 'custom-mcode-visible-view')).toBe(true)
+  await service.saveExecutionCatalog({
+    ...visible,
+    combinations: visible.combinations.filter((item) => item.id !== 'custom-mcode-visible-view'),
+  })
+  expect(
+    (await store.get()).combinations.some((item) => item.id === 'custom-mcode-visible-view'),
+  ).toBe(false)
+})
+
 it('rejects a hidden native mcode selection that is disabled during catalog waiting', async () => {
   const { service, store, setEnabled } = await fixture()
   const enabled = await service.executionCatalog()

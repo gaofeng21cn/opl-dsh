@@ -1148,9 +1148,13 @@ export class HarnessService {
     }
   }
   async saveExecutionCatalog(value: unknown): Promise<ExecutionCatalog> {
-    // Preserve hidden rows according to the admission snapshot. Re-enabling while
-    // this save is awaited must not make a disabled projection delete their persisted rows.
-    const preserveMiniMaxRows = !this.isMinimaxCodeEnabled()
+    // A disabled projection can still be on screen after re-enabling. Preserve its
+    // hidden rows according to that view as well as the current admission snapshot.
+    const hiddenMiniMaxProjection =
+      value !== null &&
+      typeof value === 'object' &&
+      (value as { minimaxCodeEnabled?: unknown }).minimaxCodeEnabled === false
+    const preserveMiniMaxRows = !this.isMinimaxCodeEnabled() || hiddenMiniMaxProjection
     await this.ready
     this.runtimeMaintenance.assertAvailable()
     const previous = await this.catalogStore.get()

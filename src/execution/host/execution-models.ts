@@ -680,6 +680,7 @@ export class ExecutionModelResolver {
         status,
       }
     })
+    catalog.minimaxCodeEnabled = miniMaxEnabled
     return catalog
   }
 }

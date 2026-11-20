@@ -3,7 +3,7 @@ export const minimaxAccountZh = {
   title: 'MiniMax 官方账号（mcode）',
   integration: 'MiniMax 官方 mcode 集成',
   integrationDescription:
-    '默认开启。停用后移除 MiniMax 模型、执行组合和账号卡片，并拒绝新的 mcode 轮次；已有组合、凭据和历史会话保留，重新启用可恢复。',
+    '默认开启。停用后移除 MiniMax 模型和账号卡片，所有使用 mcode 的组合（包括其他模型来源的自定义组合）也会停用，不能发起新轮次；已有组合、凭据和历史会话保留，重新启用可恢复。',
   integrationSaveFailed: 'MiniMax 集成设置未能保存，请重试。',
   integrationLoading: '正在读取 MiniMax 集成设置…',
   integrationUnavailable: '当前客户端无法读取执行设置，请重新连接后再试。',
@@ -72,7 +72,7 @@ export const minimaxAccountEn: Record<MiniMaxAccountLocaleKey, string> = {
   title: 'MiniMax account (mcode)',
   integration: 'MiniMax official mcode integration',
   integrationDescription:
-    'On by default. Opting out removes MiniMax models, combinations and the account card and rejects new mcode turns. Saved combinations, credentials and conversation history are retained and restored when re-enabled.',
+    'On by default. Opting out removes MiniMax models and the account card and disables every mcode combination, including custom combinations using other model sources. New mcode turns are blocked. Saved combinations, credentials and conversation history are retained and restored when re-enabled.',
   integrationSaveFailed: 'Could not save the MiniMax integration setting. Please try again.',
   integrationLoading: 'Reading the MiniMax integration setting…',
   integrationUnavailable:
