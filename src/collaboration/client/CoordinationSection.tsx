@@ -23,6 +23,7 @@ export function CoordinationSection({
     busy: cooperationBusy,
     loading: cooperationLoading,
     save: saveCooperation,
+    reload: reloadCooperation,
   } = useCooperationSettings(executionCall)
   const hooks = useCoordinatorHooks(call)
   const executableId = useId()
@@ -101,7 +102,38 @@ export function CoordinationSection({
         {cooperationError && <p role="alert">{cooperationError}</p>}
       </section>
       <section className={css.collaborationGroup}>
-        <h3 className={css.name}>Codex 任务委派</h3>
+        <div className={css.row}>
+          <h3 className={css.name}>Codex 任务委派</h3>
+          <Button
+            variant="outline"
+            disabled={busy || cooperationBusy || !status}
+            onClick={async () => {
+              setBusy(true)
+              setNotice('')
+              try {
+                const result = await call('delegation-setup')
+                await load()
+                await reloadCooperation()
+                await hooks.run('status')
+                setNotice(result)
+              } catch (error) {
+                setNotice(error instanceof Error ? error.message : '配置未完成，请重试。')
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
+            一键配置
+          </Button>
+        </div>
+        <p className={css.muted}>
+          配置任务委派、完成通知和项目续作，并启动用于异常恢复的 Codex 本地后台服务。
+        </p>
+        {notice && (
+          <p className={css.notice} role="status">
+            {notice}
+          </p>
+        )}
         <div className={css.detailsBody}>
           {cooperation && (
             <div className={css.row}>
@@ -153,14 +185,14 @@ export function CoordinationSection({
                 {notificationConfigured === undefined
                   ? '状态未知'
                   : notificationConfigured
-                    ? '已配置'
-                    : '未配置'}
+                    ? '已配置队列桥'
+                    : '未开启，需主动查询结果'}
               </span>
             </summary>
             <div className={css.detailsBody}>
               <p className={css.muted}>
-                任务反馈始终保存在本机。主动唤醒 Codex 需要可用的队列桥；未配置时可在 Codex
-                中等待或读取反馈。
+                一键配置会自动查找支持任务完成通知的 Codex。使用自定义安装位置或 WSL
+                时，也可以在这里手动指定。
               </p>
               {status && (
                 <div className={css.form}>
@@ -292,11 +324,6 @@ export function CoordinationSection({
           <p className={css.muted}>在独立窗口管理 GitHub 仓库、飞书机器人和授权名单。</p>
         )}
       </section>
-      {notice && (
-        <p className={css.notice} role={status ? 'status' : 'alert'}>
-          {notice}
-        </p>
-      )}
     </div>
   )
 }

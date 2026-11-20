@@ -1,7 +1,8 @@
-/** Read-only Windows backend identity; process age and leases never establish an exit. */
+/** Identify a Codex backend instance and observe its exit without signalling it. */
 import { execFile, spawn as spawnProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { supportsBackendVersion } from './hooks.mjs'
 
 const MAX_ANCESTORS = 8
@@ -11,6 +12,11 @@ const INSPECT_TIMEOUT = 1500
 const WAIT_START_TIMEOUT = 2500
 const WAIT_OUTPUT_BYTES = 4096
 const activeWaiters = new Set()
+const macHelper = fileURLToPath(new URL('./macos-process', import.meta.url))
+const supportedPlatform = (platform) => platform === 'win32' || platform === 'darwin'
+const isBackend = (name, platform) =>
+  platform === 'darwin' ? name === 'codex' : name.toLowerCase() === 'codex.exe'
+const pathIdentity = (value, platform) => (platform === 'darwin' ? value : value?.toLowerCase())
 const validPid = (pid) => Number.isSafeInteger(pid) && pid > 0 && pid <= 0xffffffff
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 const unknown = (reason) => ({ status: 'unknown', reason })
@@ -25,8 +31,12 @@ function defaultRun(file, args, options) {
   })
 }
 
-function executablePath(value) {
+function executablePath(value, platform) {
   if (typeof value !== 'string' || value.length > 32768 || /[\0\r\n]/.test(value)) return null
+  if (platform === 'darwin') {
+    if (!path.posix.isAbsolute(value) || path.posix.basename(value) !== 'codex') return null
+    return path.posix.normalize(value)
+  }
   let normalized = value.replaceAll('\\', '/')
   if (normalized.startsWith('//?/')) normalized = normalized.slice(4)
   if (!/^[A-Za-z]:\//.test(normalized) || normalized.slice(2).includes(':')) return null
@@ -47,14 +57,14 @@ function birth(value) {
   return value
 }
 
-function processRow(value) {
+function processRow(value, platform) {
   if (
     !isObject(value) ||
     !validPid(value.pid) ||
     !Number.isSafeInteger(value.parentPid) ||
     value.parentPid < 0 ||
     value.parentPid > 0xffffffff ||
-    !birth(value.processBirth)
+    !validBirth(value.processBirth, platform)
   )
     return null
   if (
@@ -78,6 +88,35 @@ function processRow(value) {
     executable: value.executable,
     name: value.name,
   }
+}
+
+function validBirth(value, platform) {
+  if (platform !== 'darwin') return birth(value)
+  return typeof value === 'string' && /^[1-9]\d{0,11}:\d{6}$/.test(value)
+}
+
+function birthAfter(a, b, platform) {
+  if (platform !== 'darwin') return a > b
+  const [seconds, micros] = a.split(':').map(Number)
+  const [otherSeconds, otherMicros] = b.split(':').map(Number)
+  return seconds > otherSeconds || (seconds === otherSeconds && micros > otherMicros)
+}
+
+function parseMacRows(stdout) {
+  if (!stdout) return []
+  return stdout.split('\n').map((line) => {
+    const fields = /^(\d+)\t(\d+)\t([1-9]\d{0,11})\t(\d{1,6})\t((?:[0-9a-f]{2})+)$/.exec(line)
+    if (!fields) return null
+    const executable = Buffer.from(fields[5], 'hex').toString('utf8')
+    if (!path.posix.isAbsolute(executable) || executable.includes('\uFFFD')) return null
+    return {
+      pid: Number(fields[1]),
+      parentPid: Number(fields[2]),
+      processBirth: fields[3] + ':' + fields[4].padStart(6, '0'),
+      name: path.posix.basename(executable),
+      executable,
+    }
+  })
 }
 
 // -NoProfile prevents loading user shell startup code. The projection excludes arguments/env.
@@ -127,24 +166,26 @@ async function command(run, file, args, timeout, maxBuffer) {
   }
 }
 
-async function query(run, pid, ancestors, timeout) {
+async function query(run, pid, ancestors, timeout, platform) {
   const stdout = await command(
     run,
-    'powershell.exe',
-    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', queryScript(pid, ancestors)],
+    platform === 'darwin' ? macHelper : 'powershell.exe',
+    platform === 'darwin'
+      ? [ancestors ? 'ancestors' : 'inspect', String(pid)]
+      : ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', queryScript(pid, ancestors)],
     timeout,
     QUERY_BYTES,
   )
   if (stdout === null) return { status: 'unknown', reason: 'process-query-failed' }
   let parsed
   try {
-    parsed = JSON.parse(stdout)
+    parsed = platform === 'darwin' ? parseMacRows(stdout) : JSON.parse(stdout)
   } catch {
     return unknown('invalid-process-metadata')
   }
   if (!Array.isArray(parsed) || parsed.length > (ancestors ? MAX_ANCESTORS : 1))
     return unknown('invalid-process-metadata')
-  const rows = parsed.map(processRow)
+  const rows = parsed.map((row) => processRow(row, platform))
   if (rows.some((row) => row === null)) return unknown('invalid-process-metadata')
   return { status: 'known', rows }
 }
@@ -159,20 +200,21 @@ export async function findBackendProcess({
   run = defaultRun,
   platform = process.platform,
 } = {}) {
-  if (platform !== 'win32') return unknown('unsupported-platform')
+  if (!supportedPlatform(platform)) return unknown('unsupported-platform')
   if (!validPid(startPid) || typeof run !== 'function') return unknown('invalid-process-identity')
   const deadline = performance.now() + CAPTURE_TIMEOUT
-  const result = await query(run, startPid, true, CAPTURE_TIMEOUT)
+  const result = await query(run, startPid, true, CAPTURE_TIMEOUT, platform)
   if (result.status !== 'known') return result
   const seen = new Set()
   let expectedPid = startPid,
     childBirth = null
   for (const row of result.rows) {
     if (row.pid !== expectedPid || seen.has(row.pid)) return unknown('invalid-ancestor-chain')
-    if (childBirth !== null && row.processBirth > childBirth) return unknown('ancestor-pid-reused')
+    if (childBirth !== null && birthAfter(row.processBirth, childBirth, platform))
+      return unknown('ancestor-pid-reused')
     seen.add(row.pid)
-    if (row.name.toLowerCase() === 'codex.exe') {
-      const executable = executablePath(row.executable)
+    if (isBackend(row.name, platform)) {
+      const executable = executablePath(row.executable, platform)
       if (!executable) return unknown('backend-path-unavailable')
       const version = await command(
         run,
@@ -184,7 +226,11 @@ export async function findBackendProcess({
       if (version === null) return unknown('backend-version-unavailable')
       const backendVersion = version.startsWith('codex-cli ') ? version.slice(10) : null
       if (!supportsBackendVersion(backendVersion)) return unknown('unsupported-backend-version')
-      const fingerprint = JSON.stringify([row.pid, row.processBirth, executable.toLowerCase()])
+      const fingerprint = JSON.stringify([
+        row.pid,
+        row.processBirth,
+        pathIdentity(executable, platform),
+      ])
       return {
         status: 'known',
         pid: row.pid,
@@ -214,24 +260,25 @@ export async function inspectProcess({
   run = defaultRun,
   platform = process.platform,
 } = {}) {
-  if (platform !== 'win32') return unknown('unsupported-platform')
+  if (!supportedPlatform(platform)) return unknown('unsupported-platform')
   if (
     !validPid(pid) ||
-    !birth(processBirth) ||
+    !validBirth(processBirth, platform) ||
     typeof run !== 'function' ||
-    (executable !== null && !executablePath(executable))
+    (executable !== null && !executablePath(executable, platform))
   )
     return unknown('invalid-process-identity')
-  const result = await query(run, pid, false, INSPECT_TIMEOUT)
+  const result = await query(run, pid, false, INSPECT_TIMEOUT, platform)
   if (result.status !== 'known') return result
   if (result.rows.length === 0) return { status: 'exited', reason: 'process-missing' }
   const row = result.rows[0]
   if (row.pid !== pid) return unknown('invalid-process-metadata')
   if (row.processBirth !== processBirth) return { status: 'exited', reason: 'pid-reused' }
   if (
-    row.name.toLowerCase() !== 'codex.exe' ||
+    !isBackend(row.name, platform) ||
     (executable !== null &&
-      executablePath(row.executable)?.toLowerCase() !== executablePath(executable).toLowerCase())
+      pathIdentity(executablePath(row.executable, platform), platform) !==
+        pathIdentity(executablePath(executable, platform), platform))
   )
     return unknown('process-identity-mismatch')
   return { status: 'alive' }
@@ -261,13 +308,15 @@ function waitScript(pid, processBirth) {
   ].join('\n')
 }
 
-function waitWithHelper({ pid, processBirth, signal, spawn }) {
+function waitWithHelper({ pid, processBirth, signal, spawn, platform }) {
   return new Promise((resolve) => {
     let child
     try {
       child = spawn(
-        'powershell.exe',
-        ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', waitScript(pid, processBirth)],
+        platform === 'darwin' ? macHelper : 'powershell.exe',
+        platform === 'darwin'
+          ? ['wait', String(pid), ...processBirth.split(':')]
+          : ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', waitScript(pid, processBirth)],
         { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], shell: false },
       )
     } catch {
@@ -329,10 +378,8 @@ function waitWithHelper({ pid, processBirth, signal, spawn }) {
 }
 
 /**
- * Wait for one saved Windows process instance without polling. Only one waiter per PID/birth
- * may run in this module instance. Abort stops and awaits the owned PowerShell helper only.
- * The helper pins a process handle before checking CIM birth and waiting; post-inspection,
- * rather than helper exit, establishes that the saved backend exited. Unknown grants no takeover.
+ * Wait for one saved process instance without polling. Abort stops only the owned helper.
+ * The helper attaches before checking process birth. A fresh identity query confirms exit.
  */
 export async function waitBackendExit({
   pid,
@@ -343,13 +390,13 @@ export async function waitBackendExit({
   spawn = spawnProcess,
   platform = process.platform,
 } = {}) {
-  if (platform !== 'win32') return unknown('unsupported-platform')
+  if (!supportedPlatform(platform)) return unknown('unsupported-platform')
   if (
     !validPid(pid) ||
-    !birth(processBirth) ||
+    !validBirth(processBirth, platform) ||
     typeof run !== 'function' ||
     typeof spawn !== 'function' ||
-    (executable !== null && !executablePath(executable))
+    (executable !== null && !executablePath(executable, platform))
   )
     return unknown('invalid-process-identity')
   if (
@@ -368,7 +415,7 @@ export async function waitBackendExit({
     const before = await inspectProcess(identity)
     if (before.status !== 'alive') return before
     if (signal?.aborted) return unknown('wait-aborted')
-    const failure = await waitWithHelper({ pid, processBirth, signal, spawn })
+    const failure = await waitWithHelper({ pid, processBirth, signal, spawn, platform })
     if (signal?.aborted || failure === 'wait-aborted') return unknown('wait-aborted')
     const after = await inspectProcess(identity)
     if (signal?.aborted) return unknown('wait-aborted')

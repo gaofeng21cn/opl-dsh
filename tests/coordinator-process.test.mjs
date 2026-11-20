@@ -203,7 +203,6 @@ test('executable names, local absolute paths and supported version are mandatory
     'codex-cli 0.168.0',
     'codex-cli 0.170.0',
     'codex-cli 0.169.0-beta',
-    'codex-cli 0.169.1',
     'codex-cli 0.167.0-beta',
     `codex-cli 0.167.0\n${PRIVATE}`,
     PRIVATE,
@@ -265,7 +264,10 @@ test('inspect cannot use kill0, clock age, inaccessible metadata or wrong execut
       .reason,
     'invalid-process-identity',
   )
-  assert.equal((await inspect(runner().run, { platform: 'darwin' })).reason, 'unsupported-platform')
+  assert.equal(
+    (await inspect(runner().run, { platform: 'freebsd' })).reason,
+    'unsupported-platform',
+  )
   assert.equal(
     (await inspect(runner().run, { executable: 'codex.exe' })).reason,
     'invalid-process-identity',
@@ -473,4 +475,56 @@ test('helper startup failure stays unknown if the backend is still alive', async
   })
   assert.deepEqual(result, { status: 'unknown', reason: 'wait-helper-failed' })
   assert.ok(!JSON.stringify(result).includes(PRIVATE))
+})
+
+test('macOS binds the ChatGPT backend and requires a fresh identity check after the exit event', async () => {
+  const executable = '/Applications/ChatGPT.app/Contents/Resources/codex'
+  const birth = '1795000000:123456'
+  const line = (pid, parentPid, micros, pathname) =>
+    [pid, parentPid, '1795000000', micros, Buffer.from(pathname).toString('hex')].join('\t')
+  const backend = line(41, 10, '123456', executable)
+  let inspected = 0
+  const run = async (file, args) => {
+    if (file === executable) {
+      assert.deepEqual(args, ['--version'])
+      return { stdout: 'codex-cli 0.169.1' }
+    }
+    assert.ok(file.endsWith('macos-process'))
+    if (args[0] === 'ancestors') {
+      assert.equal(args[1], '42')
+      return { stdout: [line(42, 41, '123457', '/bin/sh'), backend].join('\n') }
+    }
+    assert.deepEqual(args, ['inspect', '41'])
+    return { stdout: inspected++ === 0 ? backend : line(41, 10, '123458', executable) }
+  }
+  const owner = await findBackendProcess({ startPid: 42, platform: 'darwin', run })
+  assert.equal(owner.status, 'known')
+  assert.equal(owner.executable, executable)
+  assert.equal(owner.processBirth, birth)
+  assert.equal(owner.backendVersion, '0.169.1')
+  const spawn = (file, args) => {
+    assert.ok(file.endsWith('macos-process'))
+    assert.deepEqual(args, ['wait', '41', '1795000000', '123456'])
+    const child = fakeWaiter()
+    queueMicrotask(() => {
+      child.stdout.write('waiting\nfinished\n')
+      child.emit('close', 0, null)
+    })
+    return child
+  }
+  assert.deepEqual(await waitBackendExit({ ...owner, platform: 'darwin', run, spawn }), {
+    status: 'exited',
+    reason: 'pid-reused',
+  })
+  assert.equal(inspected, 2)
+  assert.equal(
+    (
+      await inspectProcess({
+        ...owner,
+        platform: 'darwin',
+        run: async () => ({ code: 1, stdout: '' }),
+      })
+    ).status,
+    'unknown',
+  )
 })
