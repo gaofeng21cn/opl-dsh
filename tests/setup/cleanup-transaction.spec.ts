@@ -45,6 +45,7 @@ vi.mock('../../installer/cleanup-skill/macos-io.mjs', async () => {
   // @ts-expect-error Installer JavaScript has no declaration file.
   const fixture = await import('../../installer/cleanup-skill/windows-io.mjs')
   return {
+    acquireMacSessionLocks: () => () => {},
     assertDesktopStopped: fixture.assertDesktopStopped,
     currentMacTrash: () => ({ ...fixture, preflight: () => {} }),
   }
