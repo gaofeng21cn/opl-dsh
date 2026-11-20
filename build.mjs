@@ -217,6 +217,23 @@ await cp(join(root, 'installer'), installer, { recursive: true })
 await cp(join(output, name), join(installer, name))
 for (const plugin of plugins) await cp(join(output, plugin.name), join(installer, plugin.name))
 await cp(join(output, superagent.name), join(installer, superagent.name))
+const macProcess = 'skill/coordinator/macos-process'
+if (process.platform === 'darwin')
+  execFileSync(
+    '/usr/bin/clang',
+    [
+      '-arch',
+      'arm64',
+      '-O2',
+      '-Wall',
+      '-Wextra',
+      '-Werror',
+      join(installer, macProcess + '.c'),
+      '-o',
+      join(installer, macProcess),
+    ],
+    { stdio: 'inherit' },
+  )
 const payloadFiles = {}
 for (const file of [
   'official-feed.awk',
@@ -229,6 +246,7 @@ for (const file of [
   'profile.cjs',
   'model-plugins.cjs',
   'split-plugins.cjs',
+  'queue-onboarding.cjs',
   'ofm-upgrade.cjs',
   'ofm-owner.cjs',
   'kimi-cu.mjs',
@@ -259,6 +277,8 @@ for (const file of [
   'skill/coordinator/feedback.mjs',
   'skill/coordinator/hooks.mjs',
   'skill/coordinator/process.mjs',
+  'skill/coordinator/macos-process.c',
+  ...(process.platform === 'darwin' ? [macProcess] : []),
   'skill/coordinator/runtime.mjs',
   'skill/coordinator/state.mjs',
   'cleanup-skill/SKILL.md',

@@ -254,8 +254,16 @@ export function runProcess(command, args, { timeoutMs = 15000, maxBuffer = 8 * 1
       command,
       args,
       { encoding: 'utf8', shell: false, windowsHide: true, timeout: timeoutMs, maxBuffer },
-      (error, stdout) => {
-        if (!error) return resolve({ outcome: 'exited', code: 0, stdout })
+      (error, stdout, stderr) => {
+        if (!error)
+          return resolve({
+            outcome: 'exited',
+            code: 0,
+            stdout,
+            ...(/^Warning: message was queued, but could not resume thread /m.test(stderr)
+              ? { resumeUnavailable: true }
+              : {}),
+          })
         if (['ENOENT', 'EACCES', 'ENOEXEC'].includes(error.code))
           return resolve({ outcome: 'not-started', code: null, stdout: '' })
         resolve({
@@ -368,7 +376,7 @@ export function resolveQueueConfig(settings) {
  * @param {object} options Resolved config, stable intent, and optional process adapter.
  * @returns {Promise<object>} Accepted, refused-before-start, or uncertain; all require owner reconciliation before retry.
  */
-export async function sendQueueIntent({ config, intent, run = runProcess }) {
+export async function sendQueueIntent({ config, intent, resumeExited = false, run = runProcess }) {
   if (
     !intent ||
     !textId(intent.intentId) ||
@@ -397,6 +405,7 @@ export async function sendQueueIntent({ config, intent, run = runProcess }) {
       'Reconcile the registered project; verify current authority and pause state before acting.',
   })
   const args = ['queue', '--thread', intent.threadId, '--message', message]
+  if (resumeExited) args.push('--resume')
   const command = validated.execution === 'wsl' ? 'wsl' : validated.executable
   const argv =
     validated.execution === 'wsl'
@@ -404,7 +413,10 @@ export async function sendQueueIntent({ config, intent, run = runProcess }) {
       : args
   try {
     const sent = await run(command, argv, { timeoutMs: validated.timeoutMs })
-    if (sent?.outcome === 'exited' && sent.code === 0) return result('accepted')
+    if (sent?.outcome === 'exited' && sent.code === 0)
+      return resumeExited && sent.resumeUnavailable
+        ? { ...result('accepted'), reason: 'queued-resume-unavailable' }
+        : result('accepted')
     return result(sent?.outcome === 'not-started' ? 'refused' : 'uncertain')
   } catch {
     return result('uncertain')

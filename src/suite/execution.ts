@@ -12,8 +12,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { UpdateRuntime } from '../updates/host/runtime-admission.ts'
 import { createHarnessService } from '../execution/host/harness.ts'
 import { installConversationRequest } from '../execution/host/conversation-request.ts'
-import { MiniMaxCodeModelAdapter } from '../execution/host/adapters/minimax-models.ts'
-import { MINIMAX_CODE_PROVIDER } from '../execution/host/adapters/minimax.ts'
 import { installPermissionMemory } from '../compat/host/permission-memory.ts'
 import { installComputerUse } from '../computer-use/host/index.ts'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
@@ -31,11 +29,14 @@ export interface Config {
   executionLimits: ProgressWatchdogLimits
   /** Opt in to remembering native permission selections for future Sessions. */
   rememberPermissionPreset: boolean
+  /** Initial value; the package entry replaces it with its live volatile source. */
+  minimaxCodeEnabled: boolean
   ofmConnectionTimeoutMs: number
 }
 export const Config = z.object({
   executionLimits: executionLimitsSchema,
   rememberPermissionPreset: z.boolean().default(false),
+  minimaxCodeEnabled: z.boolean().default(true),
   ofmConnectionTimeoutMs: z.number().step(1).min(100).max(120_000).default(10_000),
 })
 
@@ -65,6 +66,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const ofmOwner = createOfmOwnerApiReader(ctx, config.ofmConnectionTimeoutMs)
   const harness = createHarnessService(ctx, {
     readOfm: () => ofmOwner.read('/summary'),
+    minimaxCodeEnabled: () => config.minimaxCodeEnabled,
   })
   ctx.provide('oplHarness', harness)
   let updateRuntime: UpdateRuntime | undefined
@@ -113,10 +115,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     (options) => !options.purpose,
     () => harness.executionLimits().enabled,
   )
-  // Register the official MiniMax Code account models through the public LLM extension
-  // point. Without this the two models exist in the execution catalog but the official
-  // session controller cannot list or select them, so no message would ever route.
-  ctx.llm.registerAdapter([MINIMAX_CODE_PROVIDER], new MiniMaxCodeModelAdapter())
   new ExecutionService(ctx, harness)
   ctx.effect(() => async () => {
     await harness.dispose()

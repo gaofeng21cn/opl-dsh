@@ -253,9 +253,22 @@ export class Coordinator {
       if (priorBinding && !same(priorBinding.transcriptPath, binding.transcriptPath))
         return { status: 'unknown', reason: 'transcript-rebind-required' }
       const cold = !state.runtime.cursor
+      const received = state.intents.findLast(
+        (intent) =>
+          intent.via === 'queue' &&
+          intent.reason === 'recovery_audit' &&
+          intent.status === 'received' &&
+          intent.authorityEpoch === state.authorityEpoch &&
+          intent.receivedTurnId,
+      )
+      const handoff =
+        state.mode === 'active' && state.runtime.exitedCursorTurn && received
+          ? { from: state.runtime.exitedCursorTurn, to: received.receivedTurnId }
+          : null
       const delta = await readTranscriptDelta(
         cold ? { ...binding, turnId: null } : binding,
         state.runtime.cursor ?? null,
+        handoff,
       )
       if (delta.status === 'unknown') {
         await this.store.apply(
@@ -436,7 +449,13 @@ export class Coordinator {
     if (!bound.ok) return noAction(bound.reason)
     const binding = bound.binding
     // Drain the old file before a resume supplies a new rollout segment.
-    if (state.runtime.binding) {
+    if (
+      state.runtime.binding &&
+      !(
+        state.runtime.runId !== owner.runId &&
+        same(state.runtime.binding.transcriptPath, binding.transcriptPath)
+      )
+    ) {
       const previous = await this.observe(state.projectId, state.runtime.binding)
       if (!['observed'].includes(previous.status))
         return noAction(previous.reason ?? previous.status)
@@ -597,17 +616,23 @@ export class Coordinator {
     if (state.mode !== 'active') return noAction(state.mode)
     if (state.runtime.enteringTurnId) return noAction('runtime_entering')
     if (!state.runtime.runId || !state.runtime.binding) return noAction('runtime-unbound')
-    if (state.runtime.terminal !== true) {
+    let resumeExited = false
+    if (
+      state.runtime.terminal !== true ||
+      (state.runtime.status === 'failed' && state.runtime.reason === 'registered_process_exited')
+    ) {
       const observed = await this.inspect(state.runtime)
       if (observed.status !== 'exited') return noAction('runtime-not-terminal')
-      state = await this.store.apply(
-        projectId,
-        stableEvent(state, 'runtime.failed', {
-          runId: state.runtime.runId,
-          terminal: true,
-          reason: 'registered_process_exited',
-        }),
-      )
+      resumeExited = true
+      if (!state.runtime.terminal)
+        state = await this.store.apply(
+          projectId,
+          stableEvent(state, 'runtime.failed', {
+            runId: state.runtime.runId,
+            terminal: true,
+            reason: 'registered_process_exited',
+          }),
+        )
     }
     const queue = this.queue ?? (await this.queueSettings({ controlPath: this.controlPath })).queue
     if (!queue) return noAction('wake-settings-unavailable')
@@ -626,7 +651,10 @@ export class Coordinator {
       return pending
         ? {
             status: 'attention',
-            reason: 'continuation-not-confirmed',
+            reason:
+              pending.evidence === 'queued-resume-unavailable'
+                ? pending.evidence
+                : 'continuation-not-confirmed',
             intentId: pending.intentId,
             deliveryStatus: pending.status,
           }
@@ -641,21 +669,33 @@ export class Coordinator {
       intent.status !== 'reserved'
     )
       return noAction('stale-continuation')
-    const sent = await this.send({ config: queue, intent: { ...intent, projectId } })
+    const sent = await this.send({
+      config: queue,
+      resumeExited:
+        resumeExited &&
+        latest.runtime.runId === state.runtime.runId &&
+        latest.runtime.status === 'failed' &&
+        latest.runtime.reason === 'registered_process_exited',
+      intent: { ...intent, projectId },
+    })
     const type = sent.status === 'accepted' ? 'intent.accepted' : 'intent.uncertain'
     try {
       await this.store.apply(
         projectId,
         stableEvent(latest, type, {
           intentId: intent.intentId,
-          evidence: `queue transport ${sent.status}`,
+          evidence: sent.reason ?? `queue transport ${sent.status}`,
         }),
       )
     } catch (error) {
       if (!['STALE_EPOCH', 'STALE_INTENT'].includes(error.code)) throw error
       // A user pause won the race. The old queued message cannot grant fresh authority.
     }
-    return { status: sent.status, intentId: intent.intentId }
+    return {
+      status: sent.status,
+      intentId: intent.intentId,
+      ...(sent.reason ? { reason: sent.reason } : {}),
+    }
   }
 
   /**

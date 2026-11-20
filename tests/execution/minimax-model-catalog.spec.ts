@@ -34,7 +34,10 @@ import {
   minimaxCodeModels,
 } from '../../src/execution/host/adapters/minimax.ts'
 import { executablePath } from '../../src/execution/host/harness-registry.ts'
-import { MiniMaxCodeModelAdapter } from '../../src/execution/host/adapters/minimax-models.ts'
+import {
+  createMiniMaxCodeModelRegistration,
+  MiniMaxCodeModelAdapter,
+} from '../../src/execution/host/adapters/minimax-models.ts'
 import { adapterFor, defaultHarness } from '../../src/execution/host/adapters/index.ts'
 import {
   ExecutionCatalogStore,
@@ -167,6 +170,7 @@ async function resolverFixture(
     models?: ModelRef[]
     providers?: readonly string[]
     probe?: (ref: ModelRef) => Promise<ProbeResult>
+    minimaxCodeEnabled?: () => boolean
   } = {},
 ) {
   const home = await temp('opl-minimax-catalog-')
@@ -178,10 +182,16 @@ async function resolverFixture(
   const probe =
     options.probe ??
     (async (): Promise<ProbeResult> => ({ available: false, reason: 'mcode 未安装或未登录' }))
-  const resolver = new ExecutionModelResolver(ctx as unknown as Context, store, async (ref) => {
-    probes.push(ref)
-    return probe(ref)
-  })
+  const resolver = new ExecutionModelResolver(
+    ctx as unknown as Context,
+    store,
+    async (ref) => {
+      probes.push(ref)
+      return probe(ref)
+    },
+    undefined,
+    options.minimaxCodeEnabled,
+  )
   return { home, store, resolver, probes, credentialLookups }
 }
 
@@ -277,6 +287,33 @@ describe('MiniMax Code native model adapter', () => {
   })
 })
 
+/* ------------------------------------------------------- optional registration lifecycle */
+
+describe('MiniMax Code provider registration lifecycle', () => {
+  it('removes and restores the real native provider idempotently', async () => {
+    const ctx = new CordisContext() as Context & { llm: LlmRuntime }
+    await ctx.plugin(LlmRuntime)
+    cleanups.push(() => ctx.fiber.dispose())
+    let enabled = true
+    const sync = createMiniMaxCodeModelRegistration(ctx, () => enabled)
+    sync()
+    expect(ctx.llm.listProviders().map((item) => item.id)).toEqual([PROVIDER])
+    sync()
+    expect(await ctx.llm.listModels(PROVIDER)).toHaveLength(2)
+
+    enabled = false
+    sync()
+    sync()
+    expect(ctx.llm.listProviders()).toEqual([])
+
+    enabled = true
+    sync()
+    sync()
+    expect(ctx.llm.listProviders().map((item) => item.id)).toEqual([PROVIDER])
+    expect((await ctx.llm.listModels(PROVIDER)).map((item) => item.id)).toEqual(FIXED_MODELS)
+  })
+})
+
 /* ------------------------------------------------------------------ the execution catalog */
 
 describe('MiniMax Code execution catalog wiring', () => {
@@ -352,6 +389,59 @@ describe('MiniMax Code execution catalog wiring', () => {
     const again = await resolver.resolve()
     expect(combinationsFor(again, { provider: PROVIDER, model: M3_FLASH })).toHaveLength(1)
     expect(combinationsFor(again, { provider: PROVIDER, model: M3 })).toHaveLength(1)
+  })
+
+  it('hides the complete catalog projection while preserving official and custom mcode rows', async () => {
+    const registered = {
+      models: registry({
+        registered: true,
+        gatewayModels: [{ provider: 'opl-gateway', model: 'deepseek-flash' }],
+      }),
+      providers: ['opl-gateway', PROVIDER],
+    }
+    const initial = await resolverFixture({
+      ...registered,
+      probe: async () => ({ available: true }),
+    })
+    const enabled = await initial.resolver.resolve()
+    await initial.store.set({
+      ...enabled,
+      combinations: [
+        ...enabled.combinations,
+        {
+          id: 'custom-mcode-route',
+          name: 'Saved custom mcode route',
+          modelRef: { provider: 'opl-gateway', model: 'deepseek-flash' },
+          harnessRef: MINIMAX_CODE_HARNESS,
+          permissionPolicy: 'full-access',
+          isDefault: false,
+          enabled: true,
+        },
+      ],
+    })
+
+    const disabled = await resolverFixture({
+      ...registered,
+      store: initial.store,
+      minimaxCodeEnabled: () => false,
+      probe: async () => ({ available: true }),
+    })
+    const projected = await disabled.resolver.resolve()
+    expect(projected.models.some((item) => item.ref.provider === PROVIDER)).toBe(false)
+    expect(
+      projected.combinations.some(
+        (item) => item.modelRef.provider === PROVIDER || item.harnessRef === MINIMAX_CODE_HARNESS,
+      ),
+    ).toBe(false)
+    expect(disabled.probes.filter((ref) => ref.provider === PROVIDER)).toEqual([])
+
+    const persisted = await initial.store.get()
+    expect(combinationsFor(persisted, { provider: PROVIDER, model: M3_FLASH })).toHaveLength(1)
+    expect(combinationsFor(persisted, { provider: PROVIDER, model: M3 })).toHaveLength(1)
+    expect(persisted.combinations.find((item) => item.id === 'custom-mcode-route')).toMatchObject({
+      harnessRef: MINIMAX_CODE_HARNESS,
+      enabled: true,
+    })
   })
 
   it('publishes the fixed combinations even when the official CLI is not reachable', async () => {

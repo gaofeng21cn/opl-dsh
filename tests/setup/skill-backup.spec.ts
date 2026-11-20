@@ -60,6 +60,7 @@ test('cleanup Skill upgrades an unowned legacy copy into an installer-managed Sk
     writeFileSync(join(cleanupSource, 'snapshot.mjs'), 'export {}\n')
     writeFileSync(join(cleanupSource, 'windows-io.mjs'), 'export {}\n')
     writeFileSync(join(cleanupSource, 'macos-io.mjs'), 'export {}\n')
+    writeFileSync(join(cleanupSource, 'quit-windows.ps1'), 'exit 0\n')
     writeFileSync(
       join(cleanupSource, 'agents/openai.yaml'),
       'interface:\n  display_name: current\n',
@@ -95,6 +96,7 @@ test('cleanup Skill can add packaged resources to an older managed copy', () => 
       ['snapshot.mjs', 'export {}\n'],
       ['windows-io.mjs', 'export {}\n'],
       ['macos-io.mjs', 'export {}\n'],
+      ['quit-windows.ps1', 'exit 0\n'],
       ['agents/openai.yaml', 'interface:\n  display_name: current\n'],
       ['references/windows-recycling.md', 'recycling\n'],
       ['references/provider-contract.md', 'provider\n'],
@@ -138,6 +140,7 @@ test('cleanup Skill refuses to overwrite changes to an installer-managed file', 
       'snapshot.mjs',
       'windows-io.mjs',
       'macos-io.mjs',
+      'quit-windows.ps1',
       'agents/openai.yaml',
       'references/windows-recycling.md',
       'references/provider-contract.md',

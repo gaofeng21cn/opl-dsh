@@ -321,6 +321,27 @@ it('allows only the project list and rejects unsupported moves', async () => {
   }
 })
 
+it('lets the Skill read notification settings through the authenticated control bridge', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'opl-control-coordination-'))
+  const file = join(dir, 'control.json')
+  const settings = { wakeTransport: 'codex-queue', wakeExecution: 'native' }
+  const invoke = vi.fn(async () => settings)
+  const stop = await startBridge({ invoke } as unknown as TypertGateway, file)
+  try {
+    const binding = readBinding(file)
+    const request = { namespace: 'oplCoordination', method: 'coordination-status', args: {} }
+    const status = await rpc(binding, request)
+    expect(status).toEqual({ status: 200, json: { ok: true, value: settings } })
+    expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ ...request, peer }))
+    const update = await rpc(binding, { ...request, method: 'wake-settings' })
+    expect(update.status).toBe(403)
+    expect(invoke).toHaveBeenCalledTimes(1)
+  } finally {
+    await stop()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 it('reports a caller deadline as a timeout rather than as the cancelled call', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'opl-control-timeout-'))
   const file = join(dir, 'control.json')

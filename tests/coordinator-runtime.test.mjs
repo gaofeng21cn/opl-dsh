@@ -58,8 +58,8 @@ async function fixture(
     feedback: feedback ?? (async () => empty),
     send:
       send ??
-      (async ({ intent }) => {
-        sent.push(intent)
+      (async ({ intent, resumeExited }) => {
+        sent.push({ ...intent, resumeExited })
         return { status: 'accepted' }
       }),
   })
@@ -365,6 +365,7 @@ test('only exact process exit permits an unfinished turn recovery audit', async 
   f.runtime.inspect = async () => ({ status: 'exited', reason: 'pid-reused' })
   assert.equal((await f.runtime.reconcile('project-a')).status, 'accepted')
   assert.equal(f.sent.length, 1)
+  assert.equal(f.sent[0].resumeExited, true)
 })
 
 test('feedback null claims and object evidence integrate with state; stale snapshots cannot lift human wait', async (t) => {
@@ -744,4 +745,94 @@ test('concurrent registrations in the same chief reserve one project identity', 
     'thread-already-registered',
   )
   assert.equal((await runtime.status()).length, 1)
+})
+
+test('a crashed reviewer hands the same rollout and receipt to the acknowledged recovery turn', async (t) => {
+  const f = await liveReview(t)
+  const checkpoint = {
+    artifactRevision: 'marker',
+    checks: [{ id: 'bytes', result: 'passed', evidence: 'identical' }],
+  }
+  await f.runtime.event('project-a', 'review.checkpoint', {
+    reviewRunId: 'review-a',
+    consumerId: 'reviewer-a',
+    claimEpoch: 1,
+    workId: 'work-a',
+    checkpoint,
+  })
+  f.runtime.inspect = async () => ({ status: 'exited' })
+  assert.equal((await f.runtime.reconcile('project-a')).status, 'accepted')
+  const replacement = {
+    ...owner,
+    runId: 'daemon-b',
+    pid: owner.pid + 1,
+    processBirth: 'fixture-birth-b',
+  }
+  f.runtime.owner = async () => replacement
+  await f.append('task_started', 'turn-b')
+  const continuation = { projectId: 'project-a', intentId: f.sent[0].intentId, authorityEpoch: 1 }
+  const result = await f.hook('UserPromptSubmit', { turnId: 'turn-b', continuation })
+  assert.equal(result.status, 'observed', JSON.stringify(result))
+  const state = await f.runtime.status('project-a')
+  assert.equal(state.runtime.runId, replacement.runId)
+  assert.equal(state.runtime.cursor.activeTurnId, 'turn-b')
+  assert.equal(state.reviews[0].status, 'fenced')
+  assert.deepEqual(state.reviews[0].checkpoint, checkpoint)
+  await f.runtime.event('project-a', 'review.started', {
+    reviewRunId: 'review-b',
+    consumerId: 'reviewer-a',
+    claimEpoch: 1,
+    deliveryId: 'delivery-a',
+    runId: replacement.runId,
+  })
+  await f.runtime.event('project-a', 'review.finished', {
+    reviewRunId: 'review-b',
+    consumerId: 'reviewer-a',
+    claimEpoch: 1,
+    workId: 'work-a',
+    status: 'accepted',
+    evidence: 'marker verified',
+  })
+  assert.equal(
+    (
+      await f.runtime.reviewAction('project-a', {
+        ...f.request,
+        reviewRunId: 'review-b',
+        kind: 'consume',
+      })
+    ).status,
+    'accepted',
+  )
+  f.setConsumed()
+  assert.equal(
+    (
+      await f.runtime.reviewAction('project-a', {
+        ...f.request,
+        reviewRunId: 'review-b',
+        kind: 'consume',
+      })
+    ).alreadyConsumed,
+    true,
+  )
+  assert.equal(f.calls.length, 1)
+  assert.equal(f.sent.length, 1)
+})
+
+test('receiving a recovery notice does not permit a different overlapping turn', async (t) => {
+  const f = await liveReview(t)
+  f.runtime.inspect = async () => ({ status: 'exited' })
+  await f.runtime.reconcile('project-a')
+  f.runtime.owner = async () => ({
+    ...owner,
+    runId: 'daemon-b',
+    pid: owner.pid + 1,
+    processBirth: 'fixture-birth-b',
+  })
+  await f.append('task_started', 'unrelated')
+  const result = await f.hook('UserPromptSubmit', {
+    turnId: 'turn-b',
+    continuation: { projectId: 'project-a', intentId: f.sent[0].intentId, authorityEpoch: 1 },
+  })
+  assert.equal(result.reason, 'overlapping-turn-start')
+  assert.equal(f.calls.length, 0)
 })

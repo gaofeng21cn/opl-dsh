@@ -40,12 +40,14 @@ export function FeatureSwitch<T>({
   title,
   description,
   saveFailed,
+  busyLabel,
 }: {
   form: ConfigForm<T>
   field: keyof T & string
   title: string
   description: string
   saveFailed: string
+  busyLabel?: string
 }) {
   const source = useRef({
     subscribe: (listener: () => void) => form.subscribe(listener),
@@ -91,6 +93,11 @@ export function FeatureSwitch<T>({
           }}
         />
       </div>
+      {busy && busyLabel && (
+        <p role="status" className={css.muted}>
+          {busyLabel}
+        </p>
+      )}
       {failed && (
         <p role="alert" className={css.error}>
           {saveFailed}

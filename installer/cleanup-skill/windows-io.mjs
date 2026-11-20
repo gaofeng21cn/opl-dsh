@@ -131,6 +131,7 @@ const RECYCLE_CENSUS_SCRIPT = String.raw`
       if ([string]::IsNullOrWhiteSpace($original)) { throw 'Empty recycle metadata path' }
       $deletedAt = [DateTime]::FromFileTimeUtc([BitConverter]::ToInt64($bytes, 16))
       $recycle = [IO.Path]::Combine($directory, '$R' + $metadata.Name.Substring(2))
+      if (([DateTimeOffset]$deletedAt).ToUnixTimeMilliseconds() -lt $request.sinceMs -or ![String]::Equals($original,$originalPath,[StringComparison]::OrdinalIgnoreCase)) { continue }
       $results += [PSCustomObject]@{
         metadataPath = $metadata.FullName
         recyclePath = $recycle

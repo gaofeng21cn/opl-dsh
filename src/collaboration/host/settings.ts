@@ -3,6 +3,7 @@ import { coordinatorHooks } from './hook-settings.ts'
 /** Manage the installed collaboration Skill without changing the desktop profile. */
 import { readFile, writeFile, rename } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import { installationPaths } from '../../../installer/installation-paths.mjs'
@@ -25,7 +26,19 @@ export async function coordinationAction(
     action === 'coordinator-hooks' &&
     (payload === 'status' || payload === 'install' || payload === 'remove')
   ) {
-    return coordinatorHooks(installed.skillDir, payload)
+    const settings = featureSettings(ctx, 'opl-collaboration')?.value as
+      { wakeExecution?: string; wakeExecutable?: string } | undefined
+    const configured = settings?.wakeExecution === 'native' ? settings.wakeExecutable?.trim() : ''
+    const candidates = configured ? [configured] : []
+    if (process.platform === 'darwin') {
+      const helperPath = pathToFileURL(join(installed.release, 'queue-onboarding.cjs')).href
+      const helper = (await import(helperPath).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === 'ERR_MODULE_NOT_FOUND') return null
+        throw error
+      })) as { default: { macQueueCandidates(home: string): string[] } } | null
+      if (helper) candidates.push(...helper.default.macQueueCandidates(homedir()))
+    }
+    return coordinatorHooks(installed.skillDir, payload, candidates)
   }
   if (action === 'coordination-status') {
     const config = JSON.parse(
@@ -65,6 +78,35 @@ export async function coordinationAction(
       pathToFileURL(join(installed.release, 'superagent.mjs')).href
     )) as { openSuperagent: (installation: object) => Promise<{ state: string }> }
     return module.openSuperagent(installed)
+  }
+  if (action === 'delegation-setup') {
+    const descriptor = featureSettings(ctx, 'opl-collaboration')
+    if (!descriptor) throw Error('无法读取协作设置。')
+    const status = (await coordinationAction(ctx, 'coordination-status', undefined)) as {
+      autoStart: boolean
+    }
+    const { default: helper } = await import(
+      pathToFileURL(join(installed.release, 'queue-onboarding.cjs')).href
+    )
+    return helper.completeDelegation({
+      settings: descriptor.value,
+      profileHome: installed.profileHome,
+      codexHome: dirname(dirname(installed.skillDir)),
+      supportedVersion: (
+        await import(pathToFileURL(join(installed.release, 'skill/coordinator/hooks.mjs')).href)
+      ).supportsBackendVersion,
+      installHooks: (path?: string) =>
+        coordinatorHooks(installed.skillDir, 'install', path ? [path] : []),
+      autoStart: status.autoStart,
+      install: () => coordinationAction(ctx, 'skill-install', undefined),
+      enableAutoStart: () => coordinationAction(ctx, 'auto-start', true),
+      save: (patch: Record<string, unknown>) =>
+        ctx.settings.mutate(
+          descriptor.ns,
+          Object.entries(patch).map(([key, value]) => ({ op: 'set' as const, path: [key], value })),
+          descriptor.revision,
+        ),
+    })
   }
   if (action === 'skill-install') {
     const module = (await import(

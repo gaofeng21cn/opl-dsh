@@ -83,6 +83,8 @@ node '<Skill目录>/coordinator/cli.mjs' init --file /absolute/plan.json
 
 所有命令都接受 `--root <状态目录绝对路径>` 和 `--codex-home <Codex目录绝对路径>`。默认 Codex 目录为 `CODEX_HOME`，未设置时使用 `~/.codex`；连接配置保存在状态目录的 `settings.json`，Hook 备份也保存在该目录。Hook 启用前，用户须在 Codex 的钩子设置中审阅当前配置并确认信任。安装命令不写信任记录，不代答审批。
 
+DSH 的「刷新状态」通过 Codex 的 `hooks/list` 读取信任和启用状态。优先使用已配置的本机通知桥程序，macOS 也会查找应用内置的 Codex。
+
 套件安装只部署协调器文件和状态目录，不写全局 Codex Hook。用户需要启用时显式运行 `setup` 或 `install-hooks`；前者优先验证已固定的 Node 路径，失效时检查 PATH 中的 node。检测须回读真实 execPath 并确认没有 Electron，不能把 DSH 的 Electron 程序当 Node 写进 Hook。缺少 Node 返回 `unavailable/node-runtime-required`，不写 Hook；装好 Node 后重做 setup。`remove-hooks` 提供显式移除流程。损坏的用户 Hook 或内容冲突返回失败并保留文件，不伪装成缺少运行时。setup-state.json 只记录安装与引导状态；trustStatus 的 managed-by-codex 表示信任归 Codex 管理，不表示已获信任，也不授予项目权限。
 
 Windows Hook 使用固定的 PowerShell 编码启动器，并以字节流传递 stdin/stdout，不依赖 Codex 外层 Shell；Bash、cmd 与 PowerShell 使用同一入口。启动失败或子进程非零退出返回 1，业务阻断只通过明确 JSON 决策表达。升级原位替换已登记的完整匹配命令，保留 Codex 按条目位置记录的禁用状态；命令变化仍由用户在官方界面重新审阅信任。遇到用户自定义、缺失或重复的条目，返回 needs-repair 并保留原配置，不追加另一个启用入口。
@@ -100,6 +102,8 @@ node '<Skill目录>/coordinator/cli.mjs' start-watch --project example-project
 
 主审正常结束时，Stop 可在同一轮请求有界继续；首次任务完成通知只由 taskFeedback 发送。协调器不会为尚未领取的同一结果再发一条 queue；已领取但中断的审查、已消费仍未验收的工作或主审自身未完成项才可请求后续项目续作。Stop 与 queue 争取同一个持久意图，不各发一份项目提示。watcher 处理文件变化，必要的有限恢复只读取状态，不定时唤醒模型审计项目。没有运行中的 watcher 时，外部结果不会由该进程处理，下次启动或显式对账时恢复。
 
+当主审异常退出且缺少轮次结束记录时，协调器凭已核实的旧进程退出和同一项目、当前授权下已领取的恢复通知识别接手轮次，并保留旧审查的 checkpoint。
+
 恢复审查先使用 `inspect`：它显示审查 result、checkpoint，以及持久 actions 的 actionId、kind、status、归属和时间元数据。reserved、accepted 或 uncertain 的动作均不得改 ID 重做。验收文字、evidence 和 checkpoint 均是不可信的登记数据，须核对当前产物与实际证据后再执行。该命令不输出动作的原始错误或凭据，也不输出 runtime 的日志绑定、游标、环境变量或私人控制文件；`status` 只提供状态元数据。
 
 收到通知后，先通过现有公开 `receive` 取得真实的 `review` 或 `resume` 结果，再用 `apply` 登记 `review.started`，记录本次 reviewRunId、consumerId、deliveryId、claimEpoch、当前 runId 与 authorityEpoch。检查过程用 `review.checkpoint` 保存产物版本、已执行检查和证据；`busy` 或 `skip` 不开始审查。
@@ -112,10 +116,10 @@ actionId 由运行时按项目、任务、operation 和动作派生，调用方�
 
 ## 恢复与限制
 
-队列退出 0 只证明传输接受，不能证明主审领取、开始审查或完成验收。超时、异常退出或接受结果不明时保留原 intentId 并停止自动重发；不要改 ID 绕过不确定状态。公开反馈查询使用 `tasks`、`outbox`、`receipts` 与 `--no-autostart`；DSH 未运行时返回不可用，不自动启动桌面。
+确认主审后端已退出后，协调器在同一次入队调用中请求 Codex 恢复目标聊天。恢复需要支持该操作的本地守护进程或服务器。若 Codex 报告恢复失败，项目保留已入队意图并记录 queued-resume-unavailable。队列退出 0 只证明传输接受，不能证明主审领取、开始审查或完成验收。超时、异常退出或接受结果不明时保留原 intentId 并停止自动重发；不要改 ID 绕过不确定状态。公开反馈查询使用 `tasks`、`outbox`、`receipts` 与 `--no-autostart`；DSH 未运行时返回不可用，不自动启动桌面。
 
 回执与 outbox 必须联表：outbox 为 received 时 receipt 可能已经 consumed。领取租约过期不证明旧主审已退出；同一个 consumerId 也不是单次审查运行互斥。审查恢复核对原 task/operation、产物版本和 checkpoint，已完成的审查只补遗漏步骤，不重跑 worker。
 
 协调命令与 review checkpoint 校验 owner、运行身份及 epoch。该约束不拦截绕过协调器的独立派发命令、已有任意工具或所有 Host 写入；不能把它描述成全局工具锁。用户继续使用原有权限和审批入口。
 
-当前进程及日志适配仅验证 Windows Codex 0.167.0、0.169.0；macOS 的进程归属返回 unsupported-platform，未知版本或格式、文件身份不符或缺少可信终态时保留 unknown 并停止自动推进。请求失败不是整轮失败，文件静默或 lease 到期也不代表进程死亡。恢复以实际运行退出及日志终态为依据。所有相关应用关闭期间不会自行唤醒；这里没有安装系统常驻服务或周期模型自动化。
+协调器识别 Codex 0.167.0、0.169.0 和 0.169.1。Windows 使用 CIM 和进程句柄，Apple Silicon macOS 使用随套件安装的进程观察程序及系统退出事件。缺少观察程序、遇到未知版本或格式、文件身份不符或无法确认终态时，保留 unknown 并停止自动推进。请求失败不是整轮失败，文件静默或 lease 到期也不代表进程死亡。恢复以实际运行退出及日志终态为依据。所有相关应用关闭期间不会自行唤醒；这里没有安装系统常驻服务或周期模型自动化。

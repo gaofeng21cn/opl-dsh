@@ -52,6 +52,8 @@ export interface ExecutionCatalog {
   models: ModelDefinition[]
   harnesses: HarnessDefinition[]
   combinations: CombinationDefinition[]
+  /** Live projection snapshot; absent from persisted catalog references. */
+  minimaxCodeEnabled?: boolean
   /** Available, explicitly adapted channel pairings offered for manual addition. */
   recommendations?: Array<{ modelRef: ModelRef; harnessRef: string; name: string }>
   /** Live adapter compatibility for the manual pairing form; not a readiness verdict. */

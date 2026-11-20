@@ -5,6 +5,7 @@ import {
   readdirSync,
   mkdirSync,
   cpSync,
+  chmodSync,
   writeFileSync,
   renameSync,
   rmSync,
@@ -39,6 +40,8 @@ export function installSkill({
   const skillStage = skillDir + '.stage-' + process.pid
   mkdirSync(skillStage, { recursive: true, mode: 0o700 })
   cpSync(join(release, 'skill'), skillStage, { recursive: true })
+  const macProcess = join(skillStage, 'coordinator/macos-process')
+  if (process.platform === 'darwin' && existsSync(macProcess)) chmodSync(macProcess, 0o700)
   // control.mjs imports ./windows-lifecycle.mjs; the Skill is copied out of the
   // release root, so the shared module has to travel with it.
   cpSync(join(release, 'windows-lifecycle.mjs'), join(skillStage, 'windows-lifecycle.mjs'))
@@ -77,6 +80,12 @@ export function installSkill({
     )
   ) {
     rmSync(skillStage, { recursive: true })
+    const installedMacProcess = join(skillDir, 'coordinator/macos-process')
+    if (
+      process.platform === 'darwin' &&
+      existsSync(join(release, 'skill/coordinator/macos-process'))
+    )
+      chmodSync(installedMacProcess, 0o700)
   } else {
     if (existsSync(skillDir)) {
       // Backups outside skills must not be discovered as additional active Skills.
@@ -102,6 +111,7 @@ export function installCleanupSkill({
     'snapshot.mjs',
     'windows-io.mjs',
     'macos-io.mjs',
+    'quit-windows.ps1',
     'agents/openai.yaml',
     'references/windows-recycling.md',
     'references/provider-contract.md',

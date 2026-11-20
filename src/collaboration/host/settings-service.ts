@@ -25,6 +25,10 @@ export class CoordinationService extends TypertRemoteService {
       undefined,
     )) as CoordinationStatus
   }
+  @Remote('delegation-setup')
+  async setupDelegation(): Promise<string> {
+    return (await coordinationAction(this.ctx, 'delegation-setup', undefined)) as string
+  }
   @Remote('skill-install')
   async installSkill(): Promise<null> {
     await coordinationAction(this.ctx, 'skill-install', undefined)

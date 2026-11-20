@@ -17,6 +17,8 @@ Windows 自动启动通过 WMI 的 `Win32_Process.Create` 创建套件启动器�
 
 新任务未指定模型或 Harness 时，先读取 `config.json` 的 `preferredDelegation`（`harness`、`model`、`reasoningEffort`），按该偏好选择组合入口；用户明确指定时以用户选择为准。先查询 `delegate-list` 确认实际组合 ID、可用状态与固定参数，再使用 `delegate`。偏好为 MiniMax M3.1-Flash/max 时走官方 mcode 账号和 ACP，未显式选择时默认 max；权限仍须符合下文完整访问授权要求。偏好模型不可用时报告具体原因，不自动回退 DeepSeek 或其他模型。现有 Session 和 operation 的重试保留原模型与身份；此偏好只决定新任务。赞助或免费额度不代替任务权限，也不授权自动向厂商发送仓库、对话或诊断。
 
+本次对话首次成功委派后，用 `control.mjs coordination-status --no-autostart` 查看任务完成通知设置。若未配置队列桥，在告知用户任务已派发时一并提示：“任务完成后不会自动通知这个对话。可以随时让我查结果，也可以在 DSH 的「设置 → 协作与自动化 → Codex 任务委派」点击「一键配置」。”同一对话不重复提示。若查询失败，说明通知状态未知。已填写路径只代表已配置。
+
 派发前，为任务选择绝对工作目录，把提示词保存为 UTF-8 文件。提示词引用工作目录之外的审查报告、负例或交付目录时，写明绝对路径；不要用“本目录”混指仓库和报告目录。使用稳定的 task 与 operation ID；对同一次失败重试必须沿用原 ID，不得换 ID重复执行。
 
 ```sh
@@ -187,9 +189,9 @@ Todo 面板只读取官方记录的 todos 投影。停止后未完成项静态�
 
 协调器复用 DSH「协作与自动化」中现有通知桥，通过 `control.mjs coordination-status --no-autostart` 读取公开 wake 设置，不另存 queue 配置，不启动 DSH。首次结果通知只由 taskFeedback 发送；已领取但中断的审查、已消费而未验收的工作及主审自身未完成项才可产生后续项目续作。Stop 与 queue 共用一个持久 intent，未知发送结果不换 ID 重发；用户停止后持久暂停，用户明确恢复前不自动推进。
 
-`inspect --project <id>` 读取计划、验收与 checkpoint；`status` 只读元数据；`pause`、`resume`、`reconcile`、`start-watch`、`stop-watch` 管理暂停和文件事件监听。默认状态在 `CODEX_HOME/opl-dsh-coordinator`。watcher 是自有独立 Node 进程，不是模型 heartbeat；当前进程及日志适配仅验证 Windows Codex 0.167.0、0.169.0，未知版本保持 unknown。它不自动重派 worker、不代答审批，也不把通知 consumed 当作项目验收完成。
+`inspect --project <id>` 读取计划、验收与 checkpoint；`status` 只读元数据；`pause`、`resume`、`reconcile`、`start-watch`、`stop-watch` 管理暂停和文件事件监听。默认状态在 `CODEX_HOME/opl-dsh-coordinator`。watcher 是自有独立 Node 进程，不是模型 heartbeat；进程监听支持 Windows 和 Apple Silicon macOS，协调器识别 Codex 0.167.0、0.169.0 和 0.169.1，未知版本保持 unknown。它不自动重派 worker、不代答审批，也不把通知 consumed 当作项目验收完成。
 
-真实领取须先 `receive` 并确认 review/resume，随后经 `apply --project <id> --file <event.json>` 登记 `review.started` 和 checkpoint。外部验收及通知消费经 `review-action --project <id> --file <request.json>` 校验 authorityEpoch、run/turn、consumerId 和 claimEpoch；未知、旧身份或重复动作不执行。已验收未消费时只补 consume，不重跑 worker 或验收。完整计划、命令与限制见仓库 `docs/project-coordinator.md`。
+真实领取须先 `receive` 并确认 review/resume，随后经 `apply --project <id> --file <event.json>` 登记 `review.started` 和 checkpoint。外部验收及通知消费经 `review-action --project <id> --file <request.json>` 校验 authorityEpoch、run/turn、consumerId 和 claimEpoch；未知、旧身份或重复动作不执行。原主审退出后，旧审查的 fenced 状态保留。接手的主审核对 checkpoint 和当前领取身份，用自己的 runId、一个新的 reviewRunId 登记 review.started，完成 review.finished 后消费同一 delivery。已验收未消费时只补 consume，不重跑 worker 或验收。完整计划、命令与限制见仓库 `docs/project-coordinator.md`。
 
 ## Codex Git Bash 运行时交付
 

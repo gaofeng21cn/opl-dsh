@@ -13,9 +13,12 @@ import listCss from './CombinationRows.module.css'
 export function ExecutionCatalogSection({
   call,
   embedded = false,
+  refreshKey,
 }: {
   call: RemoteCallInput<TypertRemoteNamespace<'oplExecution'>>
   embedded?: boolean
+  /** Reload the projection without discarding drafts or in-flight save feedback. */
+  refreshKey?: unknown
 }) {
   const {
     catalog,
@@ -30,7 +33,7 @@ export function ExecutionCatalogSection({
     update,
     add,
     addRecommendations,
-  } = useExecutionCatalog(call)
+  } = useExecutionCatalog(call, refreshKey)
   const supportedHarnesses =
     catalog?.supportedPairings?.find((item) => modelRefKey(item.modelRef) === draft.model)
       ?.harnessRefs ?? []

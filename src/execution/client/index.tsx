@@ -4,7 +4,7 @@ import {
   MINIMAX_ACCOUNT_NAMESPACE,
   type MiniMaxAccountLocaleKey,
 } from './minimax-account-locales.ts'
-import { MiniMaxAccountSection } from './MiniMaxAccountSection.tsx'
+import { MiniMaxAccountGate, type MiniMaxIntegrationSettings } from './MiniMaxIntegration.tsx'
 import { QueueStatus } from './QueueStatus.tsx'
 import { installHarnessContextMeter } from './HarnessContextMeter.tsx'
 import {
@@ -123,13 +123,16 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
   )
   const composerText = ctx.locale.bind(PROJECTLESS_COMPOSER_NAMESPACE)
   const call = remoteCall(ctx.remote.oplExecution)
-  ctx.slots.inject('settings.models.footer', () =>
-    ctx.slots.register({ name: 'settings.models.footer', id: 'opl-minimax-account' }, () => (
-      <MiniMaxAccountSection call={call} t={ctx.locale.bind(MINIMAX_ACCOUNT_NAMESPACE)} />
-    )),
-  )
   ctx.inject(['configForms'], (settings) => {
-    const permissionsForm = settings.configForms.get<PermissionMemorySettings>('opl-execution')
+    const executionForm = settings.configForms.get<
+      PermissionMemorySettings & MiniMaxIntegrationSettings
+    >('opl-execution')
+    const minimaxT = ctx.locale.bind(MINIMAX_ACCOUNT_NAMESPACE)
+    ctx.slots.inject('settings.models.footer', () =>
+      ctx.slots.register({ name: 'settings.models.footer', id: 'opl-minimax-account' }, () => (
+        <MiniMaxAccountGate form={executionForm} call={call} t={minimaxT} />
+      )),
+    )
     settings.slots.inject('settings.general.item', () =>
       settings.slots.register(
         {
@@ -137,9 +140,25 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
           id: 'opl-remember-permission-preset',
           order: 36,
           locale: SUITE_FEATURE_NAMESPACE,
-          inject: () => ({ form: permissionsForm }),
+          inject: () => ({ form: executionForm }),
         },
         PermissionMemoryPreference,
+      ),
+    )
+    ctx.slots.inject('settings.section', () =>
+      ctx.slots.register(
+        {
+          name: 'settings.section',
+          id: 'opl-execution',
+          order: SETTINGS_ORDER['opl-execution'],
+          label: () => '执行与组合',
+          inject: () => ({
+            call,
+            minimax: { form: executionForm, t: minimaxT },
+            ...(config.autoReview ? { autoReview: config.autoReview } : {}),
+          }),
+        },
+        ExecutionSettings,
       ),
     )
   })
@@ -276,21 +295,6 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
         }),
       },
       MessageEditControl,
-    ),
-  )
-  ctx.slots.inject('settings.section', () =>
-    ctx.slots.register(
-      {
-        name: 'settings.section',
-        id: 'opl-execution',
-        order: SETTINGS_ORDER['opl-execution'],
-        label: () => '执行与组合',
-        inject: () => ({
-          call,
-          ...(config.autoReview ? { autoReview: config.autoReview } : {}),
-        }),
-      },
-      ExecutionSettings,
     ),
   )
   const slots = ctx.slots
