@@ -229,6 +229,10 @@ export function installProjectlessWorkspaceChoice(
       if (!props.open || !menuAnchor) return picker
       // The official menu is portaled. Its CSS anchor identifies this picker;
       // only the injected first row in its scrollable group gets a new glyph.
+      // The picker supplies the folder SVG. Use the official IconCloseOutline16 paths as its replacement mask.
+      const closeIcon = encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M14.1168 13.197L13.197 14.1167L1.8833 2.80303L2.80309 1.88324L14.1168 13.197Z"/><path d="M13.197 1.88326L14.1168 2.80305L2.80309 14.1168L1.8833 13.197L13.197 1.88326Z"/></svg>',
+      )
       const icon = `[role="menu"][style*="position-anchor: ${CSS.escape(menuAnchor)};"] > :nth-child(1 of [role="presentation"]) > :first-child [role="menuitem"] > [aria-hidden="true"]:first-child`
       return createElement(
         Fragment,
@@ -237,7 +241,7 @@ export function installProjectlessWorkspaceChoice(
         createElement(
           'style',
           null,
-          `${icon} > svg { display: none } ${icon}::before { content: "×"; font: 16px/1 sans-serif }`,
+          `${icon} > svg { display: none } ${icon}::before { content: ""; display: inline-block; width: 16px; height: 16px; background-color: currentColor; mask: url("data:image/svg+xml,${closeIcon}") center / contain no-repeat }`,
         ),
       )
     }
