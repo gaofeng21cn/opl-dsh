@@ -1,8 +1,10 @@
+import { execFileSync } from 'node:child_process'
 /** Plan-bound DSH cleanup. It only recycles an exact, offline-verified target set. */
 import { createHash, randomUUID } from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   writeFileSync,
   lstatSync,
@@ -17,13 +19,18 @@ import {
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { performance } from 'node:perf_hooks'
+import { homedir, tmpdir } from 'node:os'
 import { loadDshSnapshot } from './snapshot.mjs'
 import * as windows from './windows-io.mjs'
-import { assertDesktopStopped as macDesktopStopped, currentMacTrash } from './macos-io.mjs'
+import {
+  acquireMacSessionLocks,
+  assertDesktopStopped as macDesktopStopped,
+  currentMacTrash,
+} from './macos-io.mjs'
 const { safeTree, assertSafePath } = windows
-const assertDesktopStopped = process.platform === 'darwin' ? macDesktopStopped : windows.assertDesktopStopped
-const recycleIO = () => process.platform === 'darwin' ? currentMacTrash() : windows
-
+const assertDesktopStopped =
+  process.platform === 'darwin' ? macDesktopStopped : windows.assertDesktopStopped
+const recycleIO = () => (process.platform === 'darwin' ? currentMacTrash() : windows)
 
 const digest = (value) => createHash('sha256').update(value).digest('hex')
 const canonical = (value) =>
@@ -229,6 +236,15 @@ export function buildCleanupPlan(input) {
     version: 2,
     home: input.home,
     selector,
+    sessions: sessions.map((row) => ({
+      id: row.id,
+      title: row.title ?? null,
+      archived: input.workspace?.archivedSessionIds?.includes(row.id) ?? false,
+      workspace:
+        Object.entries(input.workspace?.workspaces ?? {}).find(([, w]) =>
+          w.sessionIds?.includes(row.id),
+        )?.[0] ?? null,
+    })),
     targetSessionIds: [...accepted].sort(),
     protectedSessionIds: sessions
       .filter((session) => !accepted.has(session.id))
@@ -303,15 +319,17 @@ const save = (path, value) => atomicWrite(path, JSON.stringify(value, null, 2) +
 const equal = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b))
 const targetKey = (target) => target.kind + ':' + target.id
 /** Preview reads real storage while the specified Desktop is stopped. */
-export async function previewCleanup({ home, selector, planFile, executable }) {
+export async function previewCleanup({ home, selector, planFile, executable, title }) {
   const started = performance.now()
   if (!home || !executable) throw Error('必须指定数据根和 Desktop 可执行文件')
   home = resolve(home)
   executable = resolve(executable)
   await assertDesktopStopped(executable, home)
-  const snapshot = await loadDshSnapshot({ home, selector })
+  const snapshot = await loadDshSnapshot({ home, selector, title })
+  selector = snapshot.selector
   await assertDesktopStopped(executable, home)
   const plan = buildCleanupPlan({ ...snapshot, home, selector })
+  if (process.platform === 'darwin') acquireMacSessionLocks(plan.targets)()
   plan.executable = executable
   attachReferenceDirectories(plan)
   if (planFile) {
@@ -407,7 +425,16 @@ export async function executeDshCleanup({ plan, expectedHash, mode = 'recycle', 
   const lock = join(history, 'operation.lock')
   acquireLock(lock, plan.planHash, resume)
   const started = performance.now()
+  const timings = {}
+  let checkpoint = started
+  const mark = (key) => {
+    const now = performance.now()
+    timings[key] = Math.round(now - checkpoint)
+    checkpoint = now
+  }
+  let releaseSessionLocks
   try {
+    if (process.platform === 'darwin') releaseSessionLocks = acquireMacSessionLocks(plan.targets)
     let state
     if (existsSync(journal)) {
       if (!resume) throw Error('已有执行记录，请使用 resume')
@@ -424,6 +451,7 @@ export async function executeDshCleanup({ plan, expectedHash, mode = 'recycle', 
       state = { planHash: plan.planHash, plan, items: {}, indicesCommitted: false }
       save(journal, state)
     }
+    mark('prepareMs')
     // Recover a receipt if the process stopped after the recycle call.
     for (const target of plan.targets) {
       const item = state.items[targetKey(target)]
@@ -442,7 +470,11 @@ export async function executeDshCleanup({ plan, expectedHash, mode = 'recycle', 
     for (const target of plan.targets) {
       const key = targetKey(target)
       if (state.items[key]?.completed) {
-        await io.verifyRecycledTarget(target, state.items[key].receipt, state.items[key].operationId)
+        await io.verifyRecycledTarget(
+          target,
+          state.items[key].receipt,
+          state.items[key].operationId,
+        )
         continue
       }
       checkIndices(plan, false)
@@ -451,10 +483,11 @@ export async function executeDshCleanup({ plan, expectedHash, mode = 'recycle', 
       state.items[key] = { sinceMs: Date.now(), operationId: randomUUID() }
       save(journal, state)
       state.items[key].receipt = await io.recycleTarget(target, state.items[key].operationId)
-      await io.verifyRecycledTarget(target, state.items[key].receipt, state.items[key].operationId)
+      // recycleTarget returns only after validating the original path and recycled tree.
       state.items[key].completed = true
       save(journal, state)
     }
+    mark('recycleMs')
     checkInventoryFast(plan, plan.targets.map(targetKey))
     checkIndices(plan, true)
     await assertDesktopStopped(plan.executable, plan.home)
@@ -467,9 +500,12 @@ export async function executeDshCleanup({ plan, expectedHash, mode = 'recycle', 
     }
     state.indicesCommitted = true
     save(journal, state)
+    mark('indexMs')
     const report = await verifyCleanup({ plan, expectedHash, skipProcessCheck: true })
-    return { ...report, journal, elapsedMs: Math.round(performance.now() - started) }
+    mark('verifyMs')
+    return { ...report, journal, timings, elapsedMs: Math.round(performance.now() - started) }
   } finally {
+    releaseSessionLocks?.()
     unlinkSync(lock)
   }
 }
@@ -498,36 +534,227 @@ export async function verifyCleanup({ plan, expectedHash, skipProcessCheck = fal
   }
 }
 export { loadDshSnapshot }
+export function discoverCleanupInstall() {
+  const root =
+    process.env.OPL_SUITE_ROOT ??
+    (process.platform === 'win32'
+      ? join(process.env.APPDATA, 'OPL DSH Suite')
+      : join(homedir(), 'Library/Application Support/OPL DSH Suite'))
+  const home = process.env.OPL_DSH_HOME ?? join(homedir(), '.dsh')
+  const paths = [join(root, 'installation.json'), join(home, 'opl-dsh', 'installation.json')]
+  let result
+  for (const path of paths) {
+    let raw
+    try {
+      raw = readFileSync(path, 'utf8')
+    } catch (error) {
+      if (error.code === 'ENOENT') continue
+      throw error
+    }
+    const r = JSON.parse(raw)
+    if (
+      ![r.profileHome, r.app, r.cleanupSkillDir].every(
+        (s) => typeof s === 'string' && isAbsolute(s),
+      )
+    )
+      throw Error('安装回执缺少有效路径：' + path)
+    const next = {
+      home: r.profileHome,
+      executable: join(
+        r.app,
+        process.platform === 'win32' ? 'DeepSeek Harness.exe' : 'Contents/MacOS/DeepSeek Harness',
+      ),
+      launcher: r.launcher,
+      version: r.suiteVersion,
+      skill: r.cleanupSkillDir,
+    }
+    if (result && !equal(result, next)) throw Error('安装回执不一致，请指定 --home 和 --executable')
+    result = next
+  }
+  if (!result) throw Error('未找到安装回执：' + paths.join('；'))
+  return result
+}
+async function desktopStatus() {
+  const install = discoverCleanupInstall()
+  try {
+    await assertDesktopStopped(install.executable, install.home)
+    return { desktop: 'stopped' }
+  } catch {
+    /* An existing Desktop requires a positive live activity observation. */
+  }
+  const b = JSON.parse(readFileSync(join(install.home, 'profiles/desktop/control.json'), 'utf8'))
+  const url = new URL(b.endpoint)
+  if (url.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+    throw Error('无效的本地 Desktop 接口')
+  const query = async (namespace, method, args) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      redirect: 'error',
+      headers: { authorization: 'Bearer ' + b.token, 'content-type': 'application/json' },
+      body: JSON.stringify({ namespace, method, args, timeoutMs: 10000 }),
+      signal: AbortSignal.timeout(12000),
+    })
+    const body = await res.json()
+    if (!res.ok || !body.ok) throw Error('无法核实 ' + namespace + ' 状态')
+    return body.value
+  }
+  const [native, external, tasks] = await Promise.all([
+    query('session', 'list', { _request: {} }),
+    query('harness', 'list', {}),
+    query('taskFeedback', 'tasks', {}),
+  ])
+  const terminal = (state) => ['completed', 'cancelled', 'failed'].includes(state)
+  const active =
+    native.items.filter((s) => s.running !== false).length +
+    external.sessions.filter(
+      (s) =>
+        !(terminal(s.state) || s.state === 'idle') ||
+        !Array.isArray(s.approvals) ||
+        s.approvals.length ||
+        !Array.isArray(s.turns) ||
+        s.turns.some((t) => !terminal(t.state) && t.state !== 'idle'),
+    ).length +
+    tasks.filter((t) => !terminal(t.state)).length
+  return {
+    desktop: 'running',
+    activity: active ? 'busy-or-unknown' : 'idle',
+    active,
+    native: native.items.length,
+    external: external.sessions.length,
+    tasks: tasks.length,
+  }
+}
+async function quitWindowsDesktop() {
+  if (process.platform !== 'win32') throw Error('该命令仅用于 Windows')
+  const install = discoverCleanupInstall()
+  const bindingPath = join(install.home, 'profiles/desktop/control.json')
+  const before = readFileSync(bindingPath)
+  const status = await desktopStatus()
+  if (status.desktop === 'stopped') return status
+  if (status.activity !== 'idle' || !before.equals(readFileSync(bindingPath)))
+    throw Error('Desktop 状态已变化或有活动任务')
+  const pid = JSON.parse(before).pid
+  if (!Number.isSafeInteger(pid) || pid <= 0) throw Error('Desktop PID 无效')
+  execFileSync(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      fileURLToPath(new URL('./quit-windows.ps1', import.meta.url)),
+      String(pid),
+      install.executable,
+    ],
+    { windowsHide: true, timeout: 35000 },
+  )
+  await assertDesktopStopped(install.executable, install.home)
+  return { desktop: 'stopped' }
+}
+const help =
+  'status | quit --confirmed (Windows) | preview (--archived | --title 精确标题 | --id 会话ID | --selector-file 文件) [--plan 文件] [--home 路径 --executable 路径]\nexecute [--reopen] | resume | verify --plan 文件 --hash 预览哈希'
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, ...args] = process.argv.slice(2)
-  const value = (flag) => {
-    const index = args.indexOf(flag)
-    return index < 0 ? undefined : args[index + 1]
-  }
   const run = async () => {
+    if (!command || command === '--help' || args.includes('--help')) return help
+    if (command === 'quit' && args.length === 1 && args[0] === '--confirmed')
+      return quitWindowsDesktop()
+    if (command === 'status' && !args.length) return desktopStatus()
+    if (!['preview', 'execute', 'resume', 'verify'].includes(command)) throw Error(help)
+    const options = new Map()
+    const allowed =
+      command === 'preview'
+        ? ['--archived', '--title', '--id', '--selector-file', '--home', '--executable', '--plan']
+        : command === 'execute'
+          ? ['--plan', '--hash', '--reopen']
+          : ['--plan', '--hash']
+    for (let i = 0; i < args.length; i++) {
+      const key = args[i]
+      if (!allowed.includes(key) || options.has(key)) throw Error('未知或重复参数：' + key)
+      const v = ['--archived', '--reopen'].includes(key) ? true : args[++i]
+      if (!v || (typeof v === 'string' && v.startsWith('--'))) throw Error('缺少参数值：' + key)
+      options.set(key, v)
+    }
+    const value = (key) => options.get(key)
     if (command === 'preview') {
+      if (
+        ['--archived', '--title', '--id', '--selector-file'].filter((key) => options.has(key))
+          .length !== 1
+      )
+        throw Error('请指定一个预览范围：--archived、--title、--id 或 --selector-file')
+      if (options.has('--home') !== options.has('--executable'))
+        throw Error('--home 和 --executable 必须一起指定')
+      const install = options.has('--home')
+        ? { home: value('--home'), executable: value('--executable') }
+        : discoverCleanupInstall()
+      const planFile =
+        value('--plan') ?? join(mkdtempSync(join(tmpdir(), 'opl-cleanup-')), 'plan.json')
       const plan = await previewCleanup({
-        home: value('--home'),
-        executable: value('--executable'),
-        selector: JSON.parse(readFileSync(value('--selector-file'), 'utf8')),
-        planFile: value('--plan'),
+        ...install,
+        title: value('--title'),
+        planFile,
+        selector: options.has('--selector-file')
+          ? JSON.parse(readFileSync(value('--selector-file'), 'utf8'))
+          : options.has('--id')
+            ? { kind: 'ids', sessionIds: [value('--id')] }
+            : { kind: 'archived' },
       })
       return {
         planHash: plan.planHash,
+        planFile,
+        sessionCount: plan.sessions.length,
+        sessions: plan.sessions,
+        protectedSessionIds: plan.protectedSessionIds,
         targets: plan.targets.map(({ id, kind }) => ({ id, kind })),
         skipped: plan.skipped,
         blockers: plan.blockers,
         stats: plan.stats,
       }
     }
+    if (!value('--plan') || !value('--hash')) throw Error('必须指定 --plan 和 --hash')
     const plan = JSON.parse(readFileSync(value('--plan'), 'utf8'))
-    const options = { plan, expectedHash: value('--hash'), resume: command === 'resume' }
-    if (command === 'execute' || command === 'resume') return executeDshCleanup(options)
-    if (command === 'verify') return verifyCleanup(options)
+    const request = { plan, expectedHash: value('--hash'), resume: command === 'resume' }
+    if (command === 'execute' && options.has('--reopen')) {
+      const install = discoverCleanupInstall()
+      if (
+        process.platform !== 'win32' ||
+        !isAbsolute(install.launcher ?? '') ||
+        !install.launcher.toLowerCase().endsWith('.vbs') ||
+        !existsSync(install.launcher) ||
+        resolve(plan.home) !== resolve(install.home) ||
+        resolve(plan.executable) !== resolve(install.executable)
+      )
+        throw Error('重开入口与计划不一致')
+      const report = await executeDshCleanup(request)
+      try {
+        execFileSync('wscript.exe', [install.launcher], { windowsHide: true, timeout: 30000 })
+        const deadline = Date.now() + 30000
+        do {
+          try {
+            if ((await desktopStatus()).desktop === 'running') return { ...report, reopened: true }
+          } catch {
+            /* Host is starting. */
+          }
+          await new Promise((done) => setTimeout(done, 500))
+        } while (Date.now() < deadline)
+      } catch {
+        /* Report cleanup independently from launcher failure. */
+      }
+      return {
+        ...report,
+        reopened: false,
+        warning: '回收已验证，未确认 Desktop 重新打开；请勿重复回收',
+      }
+    }
+    if (command === 'execute' || command === 'resume') return executeDshCleanup(request)
+    if (command === 'verify') return verifyCleanup(request)
     throw Error('用法: preview | execute | resume | verify')
   }
   run()
-    .then((result) => console.log(JSON.stringify(result, null, 2)))
+    .then((result) =>
+      console.log(typeof result === 'string' ? result : JSON.stringify(result, null, 2)),
+    )
     .catch((error) => {
       console.error(error.message)
       process.exitCode = 1

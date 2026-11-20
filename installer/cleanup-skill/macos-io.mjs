@@ -1,16 +1,25 @@
 import { execFileSync } from 'node:child_process'
-import { lstatSync, mkdirSync, realpathSync, renameSync } from 'node:fs'
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  realpathSync,
+  renameSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, posix } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { assertSafePath, safeTree } from './windows-io.mjs'
 
 /** ps must enumerate even orphaned profile users. Never expose argv in diagnostics. */
 export function checkMacProcesses(output, self, executable, home) {
   const rows = output.trimEnd().split('\n')
-  const bundleContents = dirname(dirname(executable))
+  const bundleContents = posix.dirname(posix.dirname(executable))
   const helpers = bundleContents.endsWith('.app/Contents')
-    ? join(bundleContents, 'Frameworks') + '/'
+    ? posix.join(bundleContents, 'Frameworks') + '/'
     : null
   let sawSelf = false
   for (const row of rows) {
@@ -96,4 +105,34 @@ export function macTrash(trash, uid) {
 
 export function currentMacTrash() {
   return macTrash(join(realpathSync(homedir()), '.Trash'), process.getuid())
+}
+
+/** Darwin O_EXLOCK acquires flock(LOCK_EX) as part of open; closing releases it. */
+export function acquireMacSessionLocks(targets) {
+  const descriptors = []
+  const release = () => {
+    while (descriptors.length) closeSync(descriptors.pop())
+  }
+  try {
+    for (const target of targets) {
+      if (target.kind !== 'session') continue
+      const path = join(target.path, 'session.lock')
+      const st = lstatSync(path, { throwIfNoEntry: false })
+      if (!st) continue
+      if (!st.isFile() || st.nlink !== 1) throw Error('无法核验会话锁：' + target.id)
+      const fd = openSync(
+        path,
+        0x20 | constants.O_NONBLOCK | constants.O_NOFOLLOW | constants.O_RDONLY,
+      )
+      descriptors.push(fd)
+      const held = fstatSync(fd)
+      if (held.dev !== st.dev || held.ino !== st.ino) throw Error('会话锁已变化：' + target.id)
+    }
+    return release
+  } catch (error) {
+    release()
+    if (['EAGAIN', 'EWOULDBLOCK'].includes(error.code))
+      throw Error('会话仍被占用，请先退出写入该会话的程序')
+    throw error
+  }
 }

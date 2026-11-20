@@ -8,12 +8,16 @@ import {
   readFileSync,
   writeFileSync,
   existsSync,
+  closeSync,
+  constants,
+  openSync,
   rmSync,
   readdirSync,
 } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { zstdCompressSync } from 'node:zlib'
 
 test(
   'macOS cleanup CLI recycles only archived sessions in a disposable user home',
@@ -26,12 +30,18 @@ test(
       mkdirSync(trash)
       const executable = join(root, 'Desktop')
       writeFileSync(executable, '')
-      const records = (id) => join(home, 'sessions/ns', id, 'session.v4.jsonl')
+      const records = (id) => join(home, 'sessions/ns', id, 'session.v4.jsonl.zstd')
       for (const id of ['a', 'b']) {
         mkdirSync(join(home, 'sessions/ns', id), { recursive: true })
+        writeFileSync(join(home, 'sessions/ns', id, 'session.lock'), '')
         writeFileSync(
           records(id),
-          JSON.stringify({ type: 'session', version: 4, id, createdAt: 1, isSeeded: false }) + '\n',
+          Buffer.concat(
+            [
+              { type: 'session', version: 4, id, createdAt: 1, isSeeded: false },
+              { type: 'session/title', data: { title: '聊天-' + id } },
+            ].map((row) => zstdCompressSync(Buffer.from(JSON.stringify(row) + '\n'))),
+          ),
         )
       }
       mkdirSync(join(home, 'storages'))
@@ -69,6 +79,18 @@ test(
         plan,
       )
       assert.deepEqual(preview.blockers, [])
+      assert.deepEqual(preview.protectedSessionIds, ['b'])
+      assert.equal(preview.sessions.find((s) => s.id === 'a').title, '聊天-a')
+      const fd = openSync(join(home, 'sessions/ns/a/session.lock'), 0x20 | constants.O_NONBLOCK)
+      try {
+        assert.throws(
+          () => run('execute', '--plan', plan, '--hash', preview.planHash),
+          /会话仍被占用/,
+        )
+        assert.equal(existsSync(records('a')), true)
+      } finally {
+        closeSync(fd)
+      }
       for (const command of ['execute', 'verify'])
         assert.equal(run(command, '--plan', plan, '--hash', preview.planHash).verified, true)
       assert.equal(existsSync(records('a')), false)

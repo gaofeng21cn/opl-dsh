@@ -37,6 +37,7 @@ const MAX_HEADER_BYTES = 1024 * 1024
 export async function loadDshSnapshot({
   home = process.env.DSH_HOME ?? join(homedir(), '.dsh'),
   selector,
+  title,
 } = {}) {
   if (!selector || typeof selector !== 'object') throw new Error('selector is required')
   validateSelectorIds(selector)
@@ -71,6 +72,19 @@ export async function loadDshSnapshot({
       continue
     }
     const namespacePath = join(sessionRoot, namespace.name)
+    if (namespace.name === '.index-dirty') {
+      // Index invalidations are owned by DSH. Preserve them, including for retained sessions.
+      for (const marker of await readDirectory(namespacePath, blockers, 'dirty-index-unreadable')) {
+        const path = join(namespacePath, marker.name)
+        if (
+          !marker.isFile() ||
+          !/^session[_-][0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.\d{13}$/i.test(marker.name) ||
+          (await lstat(path)).size !== 0
+        )
+          blockers.push({ code: 'unknown-dirty-index-entry', path })
+      }
+      continue
+    }
     const entries = await readDirectory(namespacePath, blockers, 'session-namespace-unreadable')
     for (const entry of entries) {
       await ensureSafeEntry(namespacePath, entry, blockers)
@@ -106,6 +120,20 @@ export async function loadDshSnapshot({
   const sidecarRefs = await inspectSidecars(root, blockers)
   applyReferences(sessions, externalRecords, taskState, sidecarRefs)
 
+  for (const session of sessions) {
+    if (!session.legacy && session.header) await validateTargetLogs(session, stats, blockers)
+  }
+  if (title !== undefined) {
+    const matches = sessions.filter((s) => s.title === title)
+    if (matches.length !== 1)
+      throw Error(
+        '标题未唯一匹配，请用精确 ID：' +
+          JSON.stringify(
+            (matches.length ? matches : sessions).map(({ id, title }) => ({ id, title })),
+          ),
+      )
+    selector = { kind: 'ids', sessionIds: [matches[0].id] }
+  }
   const selection = resolveSelection(selector, workspace, sessions, externalRecords, blockers)
   const targetNativeIds = new Set(selection.nativeIds)
   const targetExternalIds = new Set(selection.externalIds)
@@ -120,9 +148,6 @@ export async function loadDshSnapshot({
     const targeted = targetNativeIds.has(session.id)
     if (!session.legacy && session.header !== undefined) {
       if (targeted) session.tree = await hashTree(session.path, stats)
-      // Read every generation to discover references from retained sessions;
-      // only selected trees are hashed for the plan.
-      await validateTargetLogs(session, stats, blockers)
     }
   }
   rebuildLogLineage(sessions, blockers)
@@ -181,6 +206,7 @@ export async function loadDshSnapshot({
 
   return {
     home: root,
+    selector,
     workspace: {
       path: workspacePath,
       archivedSessionIds: workspace.archivedSessionIds,
@@ -460,7 +486,10 @@ async function inspectSession(path, directoryId, blockers, stats) {
     .filter((entry) => entry.isFile() && SESSION_FILE_RE.test(entry.name))
     .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }))
   const unknownSidecars = entries.filter(
-    (entry) => entry.isFile() && !SESSION_FILE_RE.test(entry.name),
+    (entry) =>
+      entry.isFile() &&
+      !SESSION_FILE_RE.test(entry.name) &&
+      !(process.platform === 'darwin' && entry.name === 'session.lock'),
   )
   const legacy = directoryId.startsWith('session_')
   if (legacy) {
@@ -1044,7 +1073,10 @@ async function hashTree(root, stats) {
 
 async function validateTargetLogs(session, stats, blockers) {
   const entries = await readdir(session.path, { withFileTypes: true })
-  for (const entry of entries.filter((item) => item.isFile() && SESSION_FILE_RE.test(item.name))) {
+  const generations = entries
+    .filter((item) => item.isFile() && SESSION_FILE_RE.test(item.name))
+    .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }))
+  for (const entry of generations) {
     const path = join(session.path, entry.name)
     try {
       const lines = await readLogLines(path, stats)
@@ -1052,6 +1084,12 @@ async function validateTargetLogs(session, stats, blockers) {
         throw new Error('session generation header does not match selected session')
       }
       for (const item of lines) {
+        if (
+          entry === generations.at(-1) &&
+          item?.type === 'session/title' &&
+          typeof item.data?.title === 'string'
+        )
+          session.title = item.data.title
         if (
           !item ||
           typeof item !== 'object' ||
