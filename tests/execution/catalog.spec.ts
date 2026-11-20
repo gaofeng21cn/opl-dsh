@@ -1,11 +1,12 @@
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   defaultExecutionCatalog,
   ExecutionCatalogStore,
   normalizeCatalog,
+  type ExecutionCatalog,
 } from '../../src/execution/host/catalog.ts'
 const roots: string[] = []
 afterEach(async () => {
@@ -16,6 +17,30 @@ async function root() {
   roots.push(dir)
   return dir
 }
+const neutralProvider = 'neutral-provider'
+const neutralModel = 'neutral-chat'
+const neutralRef = { provider: neutralProvider, model: neutralModel }
+const neutralAutoId = 'auto:' + JSON.stringify([neutralProvider, neutralModel])
+const nativeFixture = (models = [{ id: neutralModel, name: 'Neutral Chat' }]) => ({
+  get: () => undefined,
+  llm: {
+    listProviders: () => [{ id: neutralProvider, name: 'Neutral Native Provider' }],
+    listConfigurableProviders: () => [
+      {
+        provider: neutralProvider,
+        displayName: 'Neutral Native Provider',
+        settingsNs: 'llm-pi-ai',
+        settingsPath: ['providers', neutralProvider],
+        declared: true,
+      },
+    ],
+    listModels: async () => models,
+  },
+})
+const neutralRoutes = (catalog: ExecutionCatalog, model = neutralModel) =>
+  catalog.combinations.filter(
+    (item) => item.modelRef.provider === neutralProvider && item.modelRef.model === model,
+  )
 describe('combination authority', () => {
   it('orders the directory around common engines while preserving every adapter', () => {
     const catalog = defaultExecutionCatalog()
@@ -202,6 +227,252 @@ describe('user model choices', () => {
       projected.combinations.find((item) => item.id === 'user-default')?.permissionPolicy,
     ).toBe('workspace')
   })
+
+  it('generates a DSH fallback for a configured native model without naming a vendor', async () => {
+    const { ExecutionModelResolver } = await import('../../src/execution/host/execution-models.ts')
+    const projected = await new ExecutionModelResolver(
+      nativeFixture() as never,
+      { get: async () => defaultExecutionCatalog() } as never,
+    ).resolve()
+    expect(neutralRoutes(projected)).toEqual([
+      expect.objectContaining({
+        id: neutralAutoId,
+        name: 'Neutral Chat + DSH',
+        modelRef: neutralRef,
+        harnessRef: 'dsh',
+        permissionPolicy: 'read-only',
+        isDefault: true,
+        enabled: true,
+        generated: true,
+      }),
+    ])
+    expect(
+      projected.recommendations?.some((item) => item.modelRef.provider === neutralProvider),
+    ).toBe(false)
+  })
+
+  it('keeps a newly generated native row after a real save and reload without cleanup or rewriting', async () => {
+    const { ExecutionModelResolver } = await import('../../src/execution/host/execution-models.ts')
+    const dir = await root()
+    const store = new ExecutionCatalogStore(dir)
+    const initial = await new ExecutionModelResolver(nativeFixture() as never, store).resolve()
+    const automatic = neutralRoutes(initial)[0]!
+    expect(automatic).toMatchObject({ id: neutralAutoId, generated: true, enabled: true })
+    // `generated` is the live projection marker; older persisted automatic rows omit it.
+    const { generated: _generated, ...savedAutomatic } = automatic
+    await store.set({
+      ...initial,
+      combinations: initial.combinations.map((item) =>
+        item.id === neutralAutoId ? savedAutomatic : item,
+      ),
+    })
+    const savedBytes = await readFile(store.filename, 'utf8')
+
+    for (const current of [store, new ExecutionCatalogStore(dir)]) {
+      const clean = vi.spyOn(current, 'cleanLegacyCombinations')
+      const set = vi.spyOn(current, 'set')
+      const projected = await new ExecutionModelResolver(
+        nativeFixture() as never,
+        current,
+      ).resolve()
+      expect(neutralRoutes(projected)).toEqual([
+        expect.objectContaining({
+          id: neutralAutoId,
+          harnessRef: 'dsh',
+          enabled: true,
+          generated: true,
+        }),
+      ])
+      expect(clean).not.toHaveBeenCalled()
+      expect(set).not.toHaveBeenCalled()
+      expect(await readFile(current.filename, 'utf8')).toBe(savedBytes)
+      await current.dispose()
+    }
+  })
+
+  it('preserves native explicit stops, custom defaults and defaultDisabled choices', async () => {
+    const { ExecutionModelResolver } = await import('../../src/execution/host/execution-models.ts')
+    const store = new ExecutionCatalogStore(await root())
+    const saved = defaultExecutionCatalog()
+    saved.combinations.push(
+      {
+        id: 'auto:' + JSON.stringify([neutralProvider, 'disabled-model']),
+        name: 'Explicitly disabled',
+        modelRef: { provider: neutralProvider, model: 'disabled-model' },
+        harnessRef: 'dsh',
+        permissionPolicy: 'read-only',
+        isDefault: true,
+        enabled: false,
+        generated: false,
+        autoEnabled: false,
+        autoEnabledDisabled: true,
+      },
+      {
+        id: 'user-native-default',
+        name: 'My native default',
+        modelRef: { provider: neutralProvider, model: 'default-model' },
+        harnessRef: 'dsh',
+        permissionPolicy: 'workspace',
+        isDefault: true,
+        enabled: true,
+        autoEnabled: false,
+        autoEnabledDisabled: true,
+        defaultDisabled: false,
+      },
+      {
+        id: 'auto:' + JSON.stringify([neutralProvider, 'alternative-model']),
+        name: 'Automatic native alternative',
+        modelRef: { provider: neutralProvider, model: 'alternative-model' },
+        harnessRef: 'dsh',
+        permissionPolicy: 'workspace',
+        isDefault: false,
+        enabled: true,
+        autoEnabled: true,
+        defaultDisabled: true,
+      },
+    )
+    await store.set(saved)
+    const clean = vi.spyOn(store, 'cleanLegacyCombinations')
+    const set = vi.spyOn(store, 'set')
+    const projected = await new ExecutionModelResolver(
+      nativeFixture([
+        { id: 'disabled-model', name: 'Disabled' },
+        { id: 'default-model', name: 'Default' },
+        { id: 'alternative-model', name: 'Alternative' },
+      ]) as never,
+      store,
+    ).resolve()
+    expect(neutralRoutes(projected, 'disabled-model')).toEqual([
+      expect.objectContaining({ enabled: false, generated: false, autoEnabledDisabled: true }),
+    ])
+    expect(neutralRoutes(projected, 'default-model')).toEqual([
+      expect.objectContaining({
+        id: 'user-native-default',
+        permissionPolicy: 'workspace',
+        isDefault: true,
+        defaultDisabled: false,
+      }),
+    ])
+    const alternatives = neutralRoutes(projected, 'alternative-model')
+    expect(alternatives).toEqual([
+      expect.objectContaining({
+        id: 'auto:' + JSON.stringify([neutralProvider, 'alternative-model']),
+        permissionPolicy: 'workspace',
+        isDefault: false,
+        defaultDisabled: true,
+        generated: true,
+      }),
+    ])
+    expect(alternatives[0]?.autoEnabledDisabled).not.toBe(true)
+    expect(clean).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+    await store.dispose()
+  })
+
+  it('does not replace official pairings or external recommendations with the native fallback', async () => {
+    const { ExecutionModelResolver } = await import('../../src/execution/host/execution-models.ts')
+    const officialRef = { provider: 'opl-gateway', model: 'codex::gpt-6' }
+    const recommendedRef = {
+      provider: 'our-free-model',
+      model: 'nvidia/nemotron-3.5-super-vl:free',
+    }
+    const ctx = {
+      get: () => undefined,
+      llm: {
+        listProviders: () => [
+          { id: officialRef.provider, name: 'Gateway' },
+          { id: recommendedRef.provider, name: 'OFM' },
+        ],
+        listConfigurableProviders: () =>
+          [officialRef, recommendedRef].map((item) => ({
+            provider: item.provider,
+            displayName: item.provider,
+            settingsNs: 'test-models',
+            settingsPath: [item.provider],
+          })),
+        listModels: async (provider: string) =>
+          provider === officialRef.provider
+            ? [{ id: officialRef.model, name: 'GPT 6' }]
+            : [{ id: recommendedRef.model, name: 'Nemotron' }],
+      },
+    }
+    const projected = await new ExecutionModelResolver(
+      ctx as never,
+      { get: async () => defaultExecutionCatalog() } as never,
+    ).resolve()
+    expect(
+      projected.combinations.filter(
+        (item) =>
+          item.modelRef.provider === officialRef.provider &&
+          item.modelRef.model === officialRef.model,
+      ),
+    ).toEqual([expect.objectContaining({ harnessRef: 'codex', generated: true, enabled: true })])
+    expect(
+      projected.combinations.some(
+        (item) =>
+          item.modelRef.provider === recommendedRef.provider &&
+          item.modelRef.model === recommendedRef.model,
+      ),
+    ).toBe(false)
+    expect(projected.recommendations).toContainEqual(
+      expect.objectContaining({ modelRef: recommendedRef, harnessRef: 'opencode' }),
+    )
+  })
+
+  it.each([
+    {
+      modelRef: { provider: 'opl-gateway', model: 'codex::deepseek-flash' },
+      advertised: true,
+    },
+    {
+      modelRef: { provider: 'opl-gateway-openai', model: 'internal-only-model' },
+      advertised: false,
+    },
+    {
+      modelRef: { provider: 'our-free-model', model: 'unadapted-ofm-model' },
+      advertised: true,
+    },
+    {
+      modelRef: { provider: 'minimax-official', model: 'external-cli-only-model' },
+      advertised: true,
+    },
+  ])(
+    'does not treat owned source $modelRef.provider as a native custom fallback',
+    async ({ modelRef, advertised }) => {
+      const { ExecutionModelResolver } =
+        await import('../../src/execution/host/execution-models.ts')
+      const ctx = {
+        get: () => undefined,
+        llm: {
+          listProviders: () => [{ id: modelRef.provider, name: modelRef.provider }],
+          listConfigurableProviders: () => [
+            {
+              provider: modelRef.provider,
+              displayName: modelRef.provider,
+              settingsNs: 'test-models',
+              settingsPath: [modelRef.provider],
+            },
+          ],
+          listModels: async () => [{ id: modelRef.model, name: modelRef.model }],
+        },
+      }
+      const projected = await new ExecutionModelResolver(
+        ctx as never,
+        { get: async () => defaultExecutionCatalog() } as never,
+        async () => ({ available: true }),
+      ).resolve()
+      expect(
+        projected.models.some(
+          (item) => JSON.stringify(item.ref) === JSON.stringify(modelRef) && item.available,
+        ),
+      ).toBe(advertised)
+      expect(
+        projected.combinations.filter(
+          (item) => JSON.stringify(item.modelRef) === JSON.stringify(modelRef),
+        ),
+      ).toEqual([])
+    },
+  )
 
   it('excludes unconfigured providers and preserves explicit same-model channels', async () => {
     const { selectableModels } = await import('../../src/execution/contracts/catalog.ts')

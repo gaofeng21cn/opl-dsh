@@ -66,7 +66,7 @@ OPL 领域智能体预设是可选集成：需要另外安装 OPL Framework 和�
 
 - **OPL Gateway**：应用内登录，管理账户、余额和分组权限；可用模型进入统一选择器，左下角显示登录邮箱。
 - **Our Free Model**：保留[上游插件](https://github.com/Ebony-Vinyl/dsh-our-free-model)的渠道、登录、模型发现和更新功能。执行设置提示新模型及适配状态，不自动启用未知路线。见[模型插件](docs/model-plugins.md)。
-- **模型 + Harness 组合**：同一个输入框和消息流中使用 DSH、Codex CLI、Claude Code、OpenCode 等执行引擎；在“执行与组合”中按 Harness 批量选择，或手动添加已适配搭配。见[适配与支持范围](docs/harness-adaptation.md)。
+- **模型 + Harness 组合**：同一个输入框和消息流中使用 DSH、Codex CLI、Claude Code、OpenCode 等执行引擎；在“执行与组合”中按 Harness 批量选择，或手动添加已适配搭配。独立配置且模型可用的原生 Provider 在没有官配或自动外部推荐时自动生成只读 DSH fallback；模型连接与凭据仍归原来源，OPL Gateway、OFM 和外部 CLI 账号来源不适用。见[适配与支持范围](docs/harness-adaptation.md)。
 - **DSH 官方智能体团队**：在“协作与自动化 → 角色与执行”给官方角色绑定 DSH、Codex 或 Claude Code 组合。角色、人设、Skills、成员身份、消息和任务板归官方管理，OPL 关联外部执行会话并接入官方协作工具。绑定适用于新会话与新成员。见[跨 Harness 团队接入](docs/cross-harness-team.md)。
 - **OPL 领域智能体**：读取本机 App/Framework 的 `agent_packages` 投影，把已安装、已激活且允许启动的标准智能体注册为官方 Agent 预设。新会话选择 MAS、MAG、OBF 等预设，主 Skill 由官方 Skill 系统加载；在“角色与执行”为交互会话绑定已就绪的 DSH、Codex 或 Claude 组合，正式 StageRun 的 executor 仍由 Package 合同决定。未就绪或被隐藏的 Package 不会显示为可用，不复制 Package 清单或领域执行状态。见[跨 Harness 团队接入](docs/cross-harness-team.md#opl-领域智能体预设)。
 - **Codex ↔ DSH 协作**：自动安装 `opl-dsh-official` Skill，支持跨 Harness 派发、续作、读取结果与交付验收；主动回传需配置通知桥。见[协作说明](docs/collaboration-implementation.md)。

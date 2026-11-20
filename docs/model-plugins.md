@@ -10,7 +10,7 @@ OPL 为 OFM 使用 profile 内的独立程序目录，通过官方插件管理�
 
 OPL 从官方 LLM 注册表读取所有插件公开的 Provider 和模型，以原始 `provider` 与 `model` 保存组合引用。模型目录不复制到 OPL 配置，密钥也不导入 OPL Gateway。
 
-已适配的模型按精确 Provider、模型 ID 与适配器选择默认 Harness；没有外部配对的模型使用 DSH，已有自定义默认组合优先。OFM 首选配对集中列在[外部 Harness 适配](harness-adaptation.md#our-free-model-组合)，不会因为模型同名就替换渠道。账号渠道尚未登录、上游不提供或被插件关闭的模型，以插件实际公开的目录为准。
+已适配的模型按精确 Provider、模型 ID 与适配器选择默认 Harness；独立配置的原生 Provider 在没有官配或自动外部推荐、Provider 已进入官方可配置目录且模型可用时使用 DSH fallback，已有自定义默认组合优先。OPL Gateway、OFM 和外部 CLI 账号专属来源不适用此 fallback。OFM 首选配对集中列在[外部 Harness 适配](harness-adaptation.md#our-free-model-组合)，不会因为模型同名就替换渠道。账号渠道尚未登录、上游不提供或被插件关闭的模型，以插件实际公开的目录为准。
 
 插件的 `combo:` 降级与轮换链由 OFM 管理，不作为可执行模型加入 OPL 对话选择器；外部 Harness 需要绑定已适配的具体模型。
 

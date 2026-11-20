@@ -57,6 +57,29 @@ export class ExecutionModelResolver {
   ) {}
   async resolve(): Promise<ExecutionCatalog> {
     let catalog = await this.store.get()
+    const providers = this.ctx.llm?.listProviders() ?? []
+    const configurable = this.ctx.llm?.listConfigurableProviders() ?? []
+    const nativeCustomProviders = new Set(
+      configurable.flatMap((item) =>
+        item.provider !== 'opl-gateway' &&
+        !internalGatewayProvider(item.provider) &&
+        !OFM_PROVIDERS.includes(item.provider) &&
+        item.provider !== MINIMAX_CODE_PROVIDER
+          ? [item.provider]
+          : [],
+      ),
+    )
+    // An independently configured native protocol provider remains directly usable by
+    // DSH when no vendor-owned or recommended external Harness exists. Suite-owned
+    // Gateway/OFM routes and CLI-account providers are not native custom fallbacks.
+    // Generation and cleanup share this decision so a saved row is not removed first.
+    const automaticCombinationHarness = (ref: ModelRef) => {
+      const official = officialHarnessFor(ref)
+      const automatic = automaticHarness(ref)
+      if (automatic !== official) return undefined
+      if (official === undefined && nativeCustomProviders.has(ref.provider)) return 'dsh'
+      return official
+    }
     // Remove combinations from old releases before projecting the live model
     // registry. The write is idempotent and keeps the on-disk catalog clean so
     // retired entries cannot return after a restart.
@@ -79,9 +102,7 @@ export class ExecutionModelResolver {
       item.modelRef.model === 'nvidia/nemotron-3-super-120b-a12b:free' &&
       item.harnessRef === 'opencode'
     const staleAutomatic = (item: CombinationDefinition) =>
-      unmodifiedAutomatic(item) &&
-      (officialHarnessFor(item.modelRef) !== item.harnessRef ||
-        automaticHarness(item.modelRef) !== item.harnessRef)
+      unmodifiedAutomatic(item) && automaticCombinationHarness(item.modelRef) !== item.harnessRef
     const stalePersisted = staleAutomatic
     if (retired.length || legacyDefault || catalog.combinations.some(stalePersisted)) {
       catalog = await this.store.cleanLegacyCombinations(stalePersisted)
@@ -101,8 +122,6 @@ export class ExecutionModelResolver {
       })
     }
     catalog.combinations = catalog.combinations.filter((item) => !stalePersisted(item))
-    const providers = this.ctx.llm?.listProviders() ?? []
-    const configurable = this.ctx.llm?.listConfigurableProviders() ?? []
     const settings = this.ctx.get('settings')
     const externalAvailability = new Map<string, Promise<{ available: boolean; reason?: string }>>()
     const probeExternal = (ref: ModelRef) => {
@@ -476,6 +495,27 @@ export class ExecutionModelResolver {
               item.harnessRef === official,
           )
         : false
+      const harnessRef = automaticCombinationHarness(model.ref)
+      const nativeCustom = official === undefined && harnessRef === 'dsh'
+      const existingNative = nativeCustom
+        ? catalog.combinations.find(
+            (item) =>
+              item.enabled &&
+              !isRetiredModel(item.modelRef) &&
+              modelRefKey(item.modelRef) === modelRefKey(model.ref) &&
+              item.harnessRef === 'dsh',
+          )
+        : undefined
+      const disabledNative = nativeCustom
+        ? catalog.combinations.some(
+            (item) =>
+              !item.enabled &&
+              (item.autoEnabledDisabled === true || item.id === 'auto:' + modelRefKey(model.ref)) &&
+              !isRetiredModel(item.modelRef) &&
+              modelRefKey(item.modelRef) === modelRefKey(model.ref) &&
+              item.harnessRef === 'dsh',
+          )
+        : false
       // Older releases saved an exact official pairing as a user-created row with
       // isDefault=false. Promote that row only when the model has no other default.
       // Once the user explicitly selects another default, defaultDisabled preserves it.
@@ -484,8 +524,14 @@ export class ExecutionModelResolver {
         existingOfficial.defaultDisabled = false
         defaultMigrationChanged = true
       }
-      const hasResolvedDefault = hasDefault || existingOfficial !== undefined || disabledOfficial
-      const harnessRef = automaticHarness(model.ref) === official ? official : undefined
+      // Native fallback respects an existing exact DSH choice without promoting it or
+      // adding a persistence side effect. defaultDisabled and explicit stops stay intact.
+      const hasResolvedDefault =
+        hasDefault ||
+        existingOfficial !== undefined ||
+        disabledOfficial ||
+        existingNative !== undefined ||
+        disabledNative
       if (!isRetiredModel(model.ref) && model.available && !hasResolvedDefault && harnessRef) {
         const harnessName = catalog.harnesses.find((h) => h.id === harnessRef)?.name ?? 'DSH'
         catalog.combinations.push({
