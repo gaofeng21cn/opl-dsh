@@ -297,7 +297,7 @@ test('0.169.0 attestation binds and reads lifecycle records while unknown versio
     ['started', 'completed', 'started', 'aborted'],
   )
   assert.equal(delta.events.at(-1).reason, 'interrupted')
-  for (const backendVersion of ['0.168.0', '0.170.0', '0.169.0-beta', '0.169.1']) {
+  for (const backendVersion of ['0.168.0', '0.170.0', '0.169.0-beta']) {
     assert.equal(
       (await bindHookTranscript(f.observation, { ...f.registration, backendVersion })).reason,
       'unsupported-backend-version',
@@ -755,4 +755,46 @@ test('malformed or oversized hook configs and backups fail before any mutation',
     () => restoreHooksBackup('{}', { version: 1, installedHash: 'bad' }),
     /invalid-hooks-backup/,
   )
+})
+
+test('a baseline inside the bound turn recovers its terminal and later complete turns', async (t) => {
+  const f = await fixture(t, {
+    records: started() + line({ type: 'agent_message', message: PRIVATE }),
+  })
+  const baseline = await readTranscriptDelta({ ...f.binding, turnId: null })
+  await appendFile(
+    f.transcript,
+    completed() + started('b') + completed('b') + started('c') + completed('c'),
+  )
+  const delta = await readTranscriptDelta(f.binding, baseline.cursor)
+  assert.equal(delta.status, 'ok')
+  assert.deepEqual(
+    delta.events.map((e) => [e.kind, e.turnId]),
+    [
+      ['completed', 'turn-a'],
+      ['started', 'b'],
+      ['completed', 'b'],
+      ['started', 'c'],
+      ['completed', 'c'],
+    ],
+  )
+  assert.deepEqual((await readTranscriptDelta(f.binding, delta.cursor)).events, [])
+})
+test('baseline repair preserves an interrupt and rejects duplicate or unrelated terminals', async (t) => {
+  for (const [history, expected] of [
+    [started(), 'ok'],
+    [started() + completed(), 'unknown'],
+    [started('b'), 'unknown'],
+  ]) {
+    const f = await fixture(t, { records: history })
+    const baseline = await readTranscriptDelta({ ...f.binding, turnId: null })
+    await appendFile(
+      f.transcript,
+      line({ type: 'turn_aborted', turn_id: 'turn-a', reason: 'interrupted' }),
+    )
+    const result = await readTranscriptDelta(f.binding, baseline.cursor)
+    assert.equal(result.status, expected)
+    if (expected === 'ok') assert.equal(result.events[0].reason, 'interrupted')
+    else assert.equal(result.reason, 'unmatched-turn-terminal')
+  }
 })

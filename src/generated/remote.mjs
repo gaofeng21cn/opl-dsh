@@ -198,6 +198,8 @@ const _one_person_lab_dsh_opl_oplCoordination_coordinator_hooks_result$schema = 
   'trusted': z.number(),
   'disabled': z.number(),
 }))
+let _one_person_lab_dsh_opl_oplCoordination_delegation_setup_result$schema$value
+const _one_person_lab_dsh_opl_oplCoordination_delegation_setup_result$schema = () => (_one_person_lab_dsh_opl_oplCoordination_delegation_setup_result$schema$value ??= z.string())
 let _one_person_lab_dsh_opl_oplCoordination_skill_install_result$schema$value
 const _one_person_lab_dsh_opl_oplCoordination_skill_install_result$schema = () => (_one_person_lab_dsh_opl_oplCoordination_skill_install_result$schema$value ??= z.literal(null))
 let _one_person_lab_dsh_opl_oplCoordination_superagent_open_result$schema$value
@@ -5194,7 +5196,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         create: _one_person_lab_dsh_opl_oplCoordination_auto_start_result$schema,
         jsonSchema: {"type":"null","const":null},
       },
-      sourceLocation: {"file":"src/collaboration/host/settings-service.ts","line":46,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/settings-service.ts","line":50,"column":9},
     },
     'oplCoordination/coordination-status': {
       service: 'oplCoordination',
@@ -5238,7 +5240,21 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         create: _one_person_lab_dsh_opl_oplCoordination_coordinator_hooks_result$schema,
         jsonSchema: {"type":"object","properties":{"installed":{"type":"boolean"},"total":{"type":"number"},"registered":{"type":"number"},"verified":{"type":"number"},"trusted":{"type":"number"},"disabled":{"type":"number"}},"required":["installed","total","registered","verified","trusted","disabled"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"src/collaboration/host/settings-service.ts","line":34,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/settings-service.ts","line":38,"column":9},
+    },
+    'oplCoordination/delegation-setup': {
+      service: 'oplCoordination',
+      implementation: 'setupDelegation',
+      invocation: { kind: 'direct' },
+      parameters: [
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@one-person-lab/dsh-opl#oplCoordination/delegation-setup:result',
+        create: _one_person_lab_dsh_opl_oplCoordination_delegation_setup_result$schema,
+        jsonSchema: {"type":"string"},
+      },
+      sourceLocation: {"file":"src/collaboration/host/settings-service.ts","line":29,"column":9},
     },
     'oplCoordination/skill-install': {
       service: 'oplCoordination',
@@ -5252,7 +5268,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         create: _one_person_lab_dsh_opl_oplCoordination_skill_install_result$schema,
         jsonSchema: {"type":"null","const":null},
       },
-      sourceLocation: {"file":"src/collaboration/host/settings-service.ts","line":29,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/settings-service.ts","line":33,"column":9},
     },
     'oplCoordination/superagent-open': {
       service: 'oplCoordination',
@@ -5266,7 +5282,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         create: _one_person_lab_dsh_opl_oplCoordination_superagent_open_result$schema,
         jsonSchema: {"type":"object","properties":{"state":{"type":"string"}},"required":["state"],"additionalProperties":true},
       },
-      sourceLocation: {"file":"src/collaboration/host/settings-service.ts","line":42,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/settings-service.ts","line":46,"column":9},
     },
     'oplCoordination/wake-settings': {
       service: 'oplCoordination',
@@ -5296,7 +5312,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
         create: _one_person_lab_dsh_opl_oplCoordination_wake_settings_result$schema,
         jsonSchema: {"type":"null","const":null},
       },
-      sourceLocation: {"file":"src/collaboration/host/settings-service.ts","line":51,"column":9},
+      sourceLocation: {"file":"src/collaboration/host/settings-service.ts","line":55,"column":9},
     },
     'oplExecution/answer': {
       service: 'oplExecution',

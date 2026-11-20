@@ -28,6 +28,7 @@ const allowed: Readonly<Record<string, readonly string[]>> = {
   workspace: ['follow'],
   oplSuite: ['setupUrl', 'setupStatus', 'finishSetup'],
   oplGatewayAccount: ['status', 'refresh'],
+  oplCoordination: ['coordination-status'],
   taskFeedback: [
     'register',
     'task',

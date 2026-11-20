@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { createInterface } from 'node:readline'
-import { join, dirname, resolve } from 'node:path'
+import { join, dirname, resolve, isAbsolute } from 'node:path'
 import { promisify } from 'node:util'
 import type { CoordinatorHooksStatus } from '../../contracts/types.ts'
 
@@ -27,7 +27,10 @@ async function listHooks(home: string, executable: string): Promise<Listed[]> {
       stdio: ['pipe', 'pipe', 'ignore'],
     })
     const lines = createInterface({ input: p.stdout })
+    let finished = false
     const finish = () => {
+      if (finished) return
+      finished = true
       clearTimeout(timer)
       lines.close()
       p.stdin.end()
@@ -46,6 +49,7 @@ async function listHooks(home: string, executable: string): Promise<Listed[]> {
     p.stdin.on('error', fail)
     const send = (v: object) => p.stdin.write(JSON.stringify(v) + '\n')
     lines.on('line', (line) => {
+      if (finished) return
       try {
         const m = JSON.parse(line)
         if (m.id === 1 && m.result) {
@@ -70,6 +74,7 @@ async function listHooks(home: string, executable: string): Promise<Listed[]> {
 export async function coordinatorHooks(
   skillDir: string,
   action: 'status' | 'install' | 'remove',
+  nativeCandidates: readonly string[] = [],
 ): Promise<CoordinatorHooksStatus> {
   const home = dirname(dirname(skillDir)),
     root = join(home, 'opl-dsh-coordinator'),
@@ -123,13 +128,14 @@ export async function coordinatorHooks(
         throw e
       }),
     ).hooks ?? {}
-  let listed = await listHooks(home, process.platform === 'win32' ? 'codex.exe' : 'codex').catch(
-    () => [],
-  )
-  if (
-    process.platform === 'win32' &&
-    !listed.some((h) => h.sourcePath && samePath(h.sourcePath, file))
-  ) {
+  const fromInstalledFile = (hook: Listed) => hook.sourcePath && samePath(hook.sourcePath, file)
+  let listed: Listed[] = []
+  const cliName = process.platform === 'win32' ? 'codex.exe' : 'codex'
+  for (const executable of new Set([...nativeCandidates.filter(isAbsolute), cliName])) {
+    listed = await listHooks(home, executable).catch(() => [])
+    if (listed.some(fromInstalledFile)) break
+  }
+  if (process.platform === 'win32' && !listed.some(fromInstalledFile)) {
     const script =
       "$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value; Get-CimInstance Win32_Process -Filter \"Name='codex.exe'\" | Where-Object { $_.CommandLine -match '\\bapp-server\\b' -and (Invoke-CimMethod -InputObject $_ -MethodName GetOwnerSid).Sid -eq $sid } | Select-Object -ExpandProperty ExecutablePath -Unique"
     const shell = join(

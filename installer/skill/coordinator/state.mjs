@@ -1095,6 +1095,10 @@ export class ProjectStore {
           status: 'idle',
           terminal: true,
           recovery: true,
+          exitedCursorTurn:
+            state.runtime.cursor?.activeTurnId === state.runtime.turnId
+              ? state.runtime.turnId
+              : null,
           runId: string(event.runId, 'runId', 256),
           pid: event.pid === undefined ? undefined : integer(event.pid, 'pid', 1),
           processBirth:
@@ -1176,7 +1180,11 @@ export class ProjectStore {
           state.seenEvents.push({ eventId: child.eventId, fingerprint: childFingerprint })
         }
         if (binding) state.runtime.binding = binding
-        if (cursor) state.runtime.cursor = cursor
+        if (cursor) {
+          state.runtime.cursor = cursor
+          if (cursor.activeTurnId !== state.runtime.exitedCursorTurn)
+            delete state.runtime.exitedCursorTurn
+        }
         state.runtime.lastObservationId = observationId
         state.runtime.lastObservationFingerprint = fingerprint
         state.runtime.observationRevision = (state.runtime.observationRevision ?? 0) + 1
@@ -1207,6 +1215,7 @@ export class ProjectStore {
         state.runtime.binding = binding
         state.runtime.transcriptPath = binding.transcriptPath
         delete state.runtime.cursor
+        delete state.runtime.exitedCursorTurn
         delete state.runtime.lastObservationId
         delete state.runtime.lastObservationFingerprint
         delete state.runtime.turnId

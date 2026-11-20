@@ -16,6 +16,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'auto-start': (enabled: boolean) => Promise<RemoteResult<null>>
     'coordination-status': () => Promise<RemoteResult<CoordinationStatus>>
     'coordinator-hooks': (action: string) => Promise<RemoteResult<CoordinatorHooksStatus>>
+    'delegation-setup': () => Promise<RemoteResult<string>>
     'skill-install': () => Promise<RemoteResult<null>>
     'superagent-open': () => Promise<RemoteResult<{ state: string; }>>
     'wake-settings': (settings: WakeSettings) => Promise<RemoteResult<null>>
@@ -126,6 +127,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplCoordination/auto-start': (enabled: boolean) => Promise<RemoteResult<null>>
     'oplCoordination/coordination-status': () => Promise<RemoteResult<CoordinationStatus>>
     'oplCoordination/coordinator-hooks': (action: string) => Promise<RemoteResult<CoordinatorHooksStatus>>
+    'oplCoordination/delegation-setup': () => Promise<RemoteResult<string>>
     'oplCoordination/skill-install': () => Promise<RemoteResult<null>>
     'oplCoordination/superagent-open': () => Promise<RemoteResult<{ state: string; }>>
     'oplCoordination/wake-settings': (settings: WakeSettings) => Promise<RemoteResult<null>>
@@ -235,6 +237,7 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'oplCoordination/auto-start': TypertRemoteMethod<{ readonly 'enabled': boolean }, null>
   readonly 'oplCoordination/coordination-status': TypertRemoteMethod<{  }, CoordinationStatus>
   readonly 'oplCoordination/coordinator-hooks': TypertRemoteMethod<{ readonly 'action': string }, CoordinatorHooksStatus>
+  readonly 'oplCoordination/delegation-setup': TypertRemoteMethod<{  }, string>
   readonly 'oplCoordination/skill-install': TypertRemoteMethod<{  }, null>
   readonly 'oplCoordination/superagent-open': TypertRemoteMethod<{  }, { state: string; }>
   readonly 'oplCoordination/wake-settings': TypertRemoteMethod<{ readonly 'settings': WakeSettings }, null>

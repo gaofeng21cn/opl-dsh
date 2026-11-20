@@ -515,3 +515,24 @@ test('queue settings follow the public DSH status on every read without caching 
   assert.equal(unavailable.status, 'unavailable')
   assert.equal(JSON.stringify(unavailable).includes(secret), false)
 })
+
+test('owner exit asks for resume once and preserves accepted queue on resume warning', async () => {
+  const calls = []
+  const sent = await sendQueueIntent({
+    config,
+    intent,
+    resumeExited: true,
+    run: async (_, args) => {
+      calls.push(args)
+      return { outcome: 'exited', code: 0, resumeUnavailable: true }
+    },
+  })
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].at(-1), '--resume')
+  assert.deepEqual(sent, {
+    intentId: intent.intentId,
+    status: 'accepted',
+    retryable: false,
+    reason: 'queued-resume-unavailable',
+  })
+})

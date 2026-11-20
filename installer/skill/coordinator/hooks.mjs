@@ -1,10 +1,10 @@
-/** Bounded metadata adapter for the tested Codex 0.167.0 and 0.169.0 hooks and rollout files. */
+/** Bounded metadata adapter for supported Codex hooks and rollout files. */
 import { constants } from 'node:fs'
 import { lstat, open, realpath } from 'node:fs/promises'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 
-const SUPPORTED_BACKEND_VERSIONS = new Set(['0.167.0', '0.169.0'])
+const SUPPORTED_BACKEND_VERSIONS = new Set(['0.167.0', '0.169.0', '0.169.1'])
 
 /** Return whether the exact backend version has a verified Hook and rollout adapter. */
 export const supportsBackendVersion = (version) => SUPPORTED_BACKEND_VERSIONS.has(version)
@@ -421,13 +421,29 @@ function validCursor(cursor) {
   )
 }
 
+// A SessionStart hook can take its EOF baseline after the current turn has started.
+async function precedingStartMatches(handle, headerEnd, offset, turnId) {
+  const start = Math.max(headerEnd, offset - HOOK_LIMITS.readBytes)
+  const bytes = await readBytes(handle, start, offset - start)
+  if (bytes.length !== offset - start || bytes.at(-1) !== 10) return false
+  let end = bytes.length - 1
+  while (end > 0) {
+    const newline = end > 0 ? bytes.lastIndexOf(10, end - 1) : -1
+    if (newline < 0 && start !== headerEnd) return false
+    const event = parseTranscriptLine(bytes.subarray(newline + 1, end))
+    if (event.kind !== 'ignored') return event.kind === 'started' && event.turnId === turnId
+    end = newline
+  }
+  return false
+}
+
 /**
  * Read complete appended lifecycle records for one registered thread, returning no transcript text.
  * Commit events and cursor together. Unknown results commit neither. An initial null-turn
  * read starts after the final newline, without interpreting inherited history. Identity
  * changes require explicit rebinding; recovery must retain the prior turn and cursor.
  */
-export async function readTranscriptDelta(binding, cursor = null) {
+export async function readTranscriptDelta(binding, cursor = null, handoff = null) {
   const unknown = (reason) => ({
     status: 'unknown',
     reason,
@@ -478,11 +494,21 @@ export async function readTranscriptDelta(binding, cursor = null) {
       if (event.kind === 'session') return unknown('unexpected-session-header')
       if (event.kind !== 'ignored') {
         if (event.kind === 'started') {
-          if (activeTurnId !== null && activeTurnId !== event.turnId)
-            return unknown('overlapping-turn-start')
+          if (activeTurnId !== null && activeTurnId !== event.turnId) {
+            if (events.length || handoff?.from !== activeTurnId || handoff.to !== event.turnId)
+              return unknown('overlapping-turn-start')
+          }
           activeTurnId = event.turnId
         } else {
-          if (activeTurnId !== event.turnId) return unknown('unmatched-turn-terminal')
+          if (activeTurnId !== event.turnId) {
+            const matchesBaseline =
+              cursor &&
+              activeTurnId === null &&
+              events.length === 0 &&
+              binding.turnId === event.turnId &&
+              (await precedingStartMatches(handle, header.length, offset, event.turnId))
+            if (!matchesBaseline) return unknown('unmatched-turn-terminal')
+          }
           activeTurnId = null
         }
         events.push({

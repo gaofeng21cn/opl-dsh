@@ -37,5 +37,8 @@ export function useCooperationSettings(call?: ExecutionCall) {
       setBusy(false)
     }
   }
-  return { cooperation: value, error, busy, loading: !!call && !value && !error, save }
+  const reload = async () => {
+    if (call) setValue(await call('cooperation-settings'))
+  }
+  return { reload, cooperation: value, error, busy, loading: !!call && !value && !error, save }
 }
