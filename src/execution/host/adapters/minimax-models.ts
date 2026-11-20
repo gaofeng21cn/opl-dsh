@@ -17,6 +17,8 @@ import { LlmError } from '../../../shared/llm-error.ts' /**
  *    catalog must not invent `low`/`high` style tiers that nothing would apply.
  */
 import { LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { AdapterRegistrationHandle } from '@deepseek-ai/dsh-llm'
+import type { Context } from '@deepseek-ai/cordis'
 import type {
   GenerateOptions,
   LlmModelReasoningInfo,
@@ -47,6 +49,29 @@ function reasoningOf(spec: MinimaxCombination): LlmModelReasoningInfo {
       ...(option.description ? { description: option.description } : {}),
     })),
     defaultEffort: ReasoningEffortId(spec.fallback),
+  }
+}
+
+/**
+ * Keep the dedicated mcode provider in the official registry only while enabled.
+ * One Cordis-owned registration changes its route set in place, so repeated syncs
+ * are idempotent and fiber disposal still releases whichever routes remain.
+ */
+export function createMiniMaxCodeModelRegistration(
+  ctx: Context,
+  enabled: () => boolean,
+): () => void {
+  let registration: AdapterRegistrationHandle | undefined
+  let active = false
+  const adapter = new MiniMaxCodeModelAdapter()
+  return () => {
+    const next = enabled()
+    if (next === active && (registration || !next)) return
+    if (next) {
+      if (registration) registration.replace([MINIMAX_CODE_PROVIDER])
+      else registration = ctx.llm.registerAdapter([MINIMAX_CODE_PROVIDER], adapter)
+    } else registration?.replace([])
+    active = next
   }
 }
 

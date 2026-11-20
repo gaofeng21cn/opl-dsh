@@ -166,7 +166,9 @@ export function MiniMaxAccountSection({
   const serverPendingOther = pendingRegion !== undefined && pendingRegion !== region
   const localPendingCurrent = localPendingRegion === region
   const localPendingOther = localPendingRegion !== undefined && localPendingRegion !== region
-  const pendingCurrent = serverPendingCurrent || localPendingCurrent
+  // Keep the cancelling control and feedback mounted after the local login
+  // pending flag is cleared, until the independent cancel RPC actually settles.
+  const pendingCurrent = serverPendingCurrent || localPendingCurrent || cancelBusy
   const pendingOther = serverPendingOther || localPendingOther
   const signingOut = status?.loginState === 'signing-out'
   const otherRegion = serverPendingOther

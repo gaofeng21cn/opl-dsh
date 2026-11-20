@@ -1,6 +1,14 @@
 /** Account status describes the official CLI's saved sign-in, never API-key configuration. */
 export const minimaxAccountZh = {
   title: 'MiniMax 官方账号（mcode）',
+  integration: 'MiniMax 官方 mcode 集成',
+  integrationDescription:
+    '默认开启。停用后移除 MiniMax 模型、执行组合和账号卡片，并拒绝新的 mcode 轮次；已有组合、凭据和历史会话保留，重新启用可恢复。',
+  integrationSaveFailed: 'MiniMax 集成设置未能保存，请重试。',
+  integrationLoading: '正在读取 MiniMax 集成设置…',
+  integrationUnavailable: '当前客户端无法读取执行设置，请重新连接后再试。',
+  integrationReadOnly: '当前执行设置为只读，无法在此修改。',
+  integrationSaving: '正在保存 MiniMax 集成设置…',
   region: '地区',
   regionCn: '中国大陆',
   regionGlobal: '国际版',
@@ -62,6 +70,15 @@ export const minimaxAccountZh = {
 export type MiniMaxAccountLocaleKey = keyof typeof minimaxAccountZh
 export const minimaxAccountEn: Record<MiniMaxAccountLocaleKey, string> = {
   title: 'MiniMax account (mcode)',
+  integration: 'MiniMax official mcode integration',
+  integrationDescription:
+    'On by default. Opting out removes MiniMax models, combinations and the account card and rejects new mcode turns. Saved combinations, credentials and conversation history are retained and restored when re-enabled.',
+  integrationSaveFailed: 'Could not save the MiniMax integration setting. Please try again.',
+  integrationLoading: 'Reading the MiniMax integration setting…',
+  integrationUnavailable:
+    'Execution settings are unavailable in this client. Reconnect and try again.',
+  integrationReadOnly: 'Execution settings are read-only in this client.',
+  integrationSaving: 'Saving the MiniMax integration setting…',
   region: 'Region',
   regionCn: 'China',
   regionGlobal: 'Global',

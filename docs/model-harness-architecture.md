@@ -64,6 +64,8 @@ DeepSeek 4.1 Flash 的 DeepSeek 与 OpenAI 协议渠道默认推理档位为 `hi
 
 除官配外，独立配置的原生 Provider 还有一种 DSH fallback：官方 `ctx.llm.listProviders()`、`listModels()` 与 `listConfigurableProviders()` 投影确认 Provider 已进入可配置目录、模型可用，并且该模型既没有官配也没有自动外部 Harness 推荐时，OPL 自动生成只读 DSH 组合，让启用执行插件后的官方对话有可选入口。OPL Gateway 及其内部路由、OFM 和外部 CLI 账号专属来源不使用此 fallback；已有外部推荐仍保持推荐，不会自动改走 DSH。fallback 只保存原始 `provider` / `model` 引用与 `dsh` 绑定，模型连接、协议和凭据仍由原 Provider 及官方模型设置负责，不复制模型配置，也不改变连接 owner。已有自定义默认、显式停用与 `defaultDisabled` 选择优先；已保存的自动行再次解析时保持身份，不做无谓清理、重建或重复持久化。
 
+MiniMax 的官方账号模型与 mcode ACP 路线是一条专用集成，不走通用 custom-provider 配置。`opl-execution.minimaxCodeEnabled` 是唯一偏好，默认开启；Host 通过官方 volatile 更新事件增删原生 Provider 路由，目录 Resolver 只在最终投影隐藏官方 Provider 或 mcode Harness 的组合，持久文件仍保留原行。执行页和 `settings.models.footer` 账号 Gate 读取同一个官方 `ConfigForm`，没有第二份 enabled 状态。停用后的 start、resume、prompt、连接和原生流门禁拒绝新 mcode 工作，旧原生选择不会 fall through 到其他 Provider；重新启用恢复原引用，凭据和历史不归该开关删除。
+
 每个原生对话选中的组合 ID 保存在 OPL 自有的 `combination-selection.json`，用于重启后区分同一模型的多个自定义组合。它只关联官方会话 ID，不改变官方会话格式。模型选择以官方 live/cold 投影为准，冷会话通过公开 `session.projections` 读取，不借用新建会话激活历史；组合停用或模型被其他入口切换后，不再采用失配的关联。
 
 执行器使用官方 DSH、Grok Build、本机 Codex CLI 的 app-server，以及官方 Claude Agent SDK 驱动的本机 Claude Code。OPL 只做协议、权限、显示和协作映射，不实现 Agent 循环。Codex 与 Claude 的配置及会话保存在套件自有目录，不改日常 CLI 配置。OpenCode 也可承载 OPL Gateway Gemini 的两个固定组合：Gemini 4 Carbon 和 Gemini 4 Hydrogen；它们仍从 Gateway 读取凭据和 OpenAI Chat Completions 路由，OpenCode 只负责 Agent 循环与工具执行。OFM 的 `big-pickle` 与官方 OpenCode 免费车道同样由 OpenCode 执行；OpenCode 不广告推理档位，这些组合不显示推理强度。Kilo 频道的 `nvidia/nemotron-3-super-120b-a12b:free`、`recursive/flint-v1.0:free` 和 `liquid/lfm-3-1.7b:free` 由 Kilo 读取 OFM Chat 端点；`flint-40b-free` 由 OpenCode 读取 OFM Chat 端点。它们保留 OFM 作为模型来源。Antigravity 暂仅支持本机管理。

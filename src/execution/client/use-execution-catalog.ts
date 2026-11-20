@@ -20,7 +20,10 @@ export type SaveResult =
   | { status: 'saved'; catalog: ExecutionCatalog }
   | { status: 'failed'; message: string }
   | { status: 'blocked' }
-export function useExecutionCatalog(call: RemoteCallInput<TypertRemoteNamespace<'oplExecution'>>) {
+export function useExecutionCatalog(
+  call: RemoteCallInput<TypertRemoteNamespace<'oplExecution'>>,
+  refreshKey?: unknown,
+) {
   const [catalog, setCatalog] = useState<ExecutionCatalog>()
   const [availability, setAvailability] = useState<HarnessCatalog['combinations']>([])
   const [busy, setBusy] = useState(false),
@@ -29,9 +32,18 @@ export function useExecutionCatalog(call: RemoteCallInput<TypertRemoteNamespace<
   const [draft, setDraft] = useState({ model: '', harness: 'dsh' })
   const [editing, setEditing] = useState<string>()
   const running = useRef(false),
-    mounted = useRef(true)
+    mounted = useRef(true),
+    refreshAfterSave = useRef(false)
   useEffect(() => {
     mounted.current = true
+    if (running.current) {
+      // A MiniMax projection change must not race an ordinary catalog save.
+      // Preserve the component and reload only after that save has settled.
+      refreshAfterSave.current = true
+      return () => {
+        mounted.current = false
+      }
+    }
     let cancelled = false
     void (async () => {
       for (let attempt = 0; attempt < 3 && !cancelled; attempt++) {
@@ -59,7 +71,7 @@ export function useExecutionCatalog(call: RemoteCallInput<TypertRemoteNamespace<
       cancelled = true
       mounted.current = false
     }
-  }, [call, loadRevision])
+  }, [call, loadRevision, refreshKey])
   const persist = async (operation: () => Promise<ExecutionCatalog>): Promise<SaveResult> => {
     if (running.current) {
       if (mounted.current) setNotice('另一个配置正在保存，请稍后再试。')
@@ -88,6 +100,10 @@ export function useExecutionCatalog(call: RemoteCallInput<TypertRemoteNamespace<
     } finally {
       running.current = false
       if (mounted.current) setBusy(false)
+      if (mounted.current && refreshAfterSave.current) {
+        refreshAfterSave.current = false
+        setLoadRevision((revision) => revision + 1)
+      }
     }
   }
   const save = (next: ExecutionCatalog) => persist(() => call('save-catalog', { catalog: next }))

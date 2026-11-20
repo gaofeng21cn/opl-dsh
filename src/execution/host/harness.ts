@@ -170,6 +170,7 @@ import { connectDsh } from './adapters/dsh.ts'
 import {
   MINIMAX_CODE_HARNESS,
   MINIMAX_CODE_PROVIDER,
+  isMiniMaxCodeRoute,
   minimaxCodeModels,
   minimaxReasoning,
 } from './adapters/minimax.ts'
@@ -343,6 +344,8 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 export class HarnessService {
+  private minimaxCodeEnabledSource: (() => boolean) | undefined
+  private minimaxIntegrationEnabled: boolean | undefined
   private minimaxLoginAttempt:
     { region: MiniMaxAccountLoginRequest['region']; cancelled: boolean } | undefined
   private readonly minimaxAccount = new MiniMaxAccount(async () => {
@@ -354,15 +357,45 @@ export class HarnessService {
       ...(harness?.prefix ? { prefix: harness.prefix } : {}),
     }
   })
+  isMinimaxCodeEnabled(): boolean {
+    return this.minimaxCodeEnabledSource?.() ?? true
+  }
+  configureMiniMaxCodeIntegration(enabled: () => boolean): void {
+    this.minimaxCodeEnabledSource = enabled
+  }
+  private assertMinimaxCodeEnabled(): void {
+    if (!this.isMinimaxCodeEnabled())
+      throw new HarnessConfigurationError(
+        'MiniMax 官方 mcode 集成已停用；原配置、凭据和会话仍保留，不会自动改用其他路线。',
+      )
+  }
+  private assertMiniMaxCodeRouteEnabled(route: { harnessRef: string; modelRef: ModelRef }): void {
+    if (isMiniMaxCodeRoute(route)) this.assertMinimaxCodeEnabled()
+  }
+  /** Apply the accepted volatile value and cooperatively stop an owned pending login. */
+  async synchronizeMiniMaxCodeIntegration(): Promise<void> {
+    const enabled = this.isMinimaxCodeEnabled()
+    if ((this.minimaxIntegrationEnabled ?? true) === enabled) return
+    this.minimaxIntegrationEnabled = enabled
+    this.events.emit('catalog')
+    if (enabled) return
+    const attempt = this.minimaxLoginAttempt
+    if (!attempt) return
+    attempt.cancelled = true
+    await this.minimaxAccount.cancel(attempt.region)
+  }
   minimaxAccountStatus(request: MiniMaxAccountLoginRequest) {
+    this.assertMinimaxCodeEnabled()
     return this.minimaxAccount.status(request.region)
   }
   minimaxAccountCancel(request: MiniMaxAccountLoginRequest) {
+    // Cancellation owns cleanup, so it must remain available after opt-out.
     if (this.minimaxLoginAttempt?.region === request.region)
       this.minimaxLoginAttempt.cancelled = true
     return this.minimaxAccount.cancel(request.region)
   }
   async minimaxAccountLogout(request: MiniMaxAccountLoginRequest) {
+    this.assertMinimaxCodeEnabled()
     await this.ready
     return this.runtimeMaintenance.change(
       () => this.runtimeBusy(),
@@ -373,17 +406,20 @@ export class HarnessService {
     )
   }
   async minimaxAccountLogin(request: MiniMaxAccountLoginRequest) {
+    this.assertMinimaxCodeEnabled()
     if (this.minimaxLoginAttempt) throw Error('官方登录尚未结束')
     const attempt = { region: request.region, cancelled: false }
     this.minimaxLoginAttempt = attempt
     try {
       await this.ready
-      if (attempt.cancelled) return this.minimaxAccount.status(request.region)
+      if (attempt.cancelled || !this.isMinimaxCodeEnabled())
+        return this.minimaxAccount.status(request.region)
       return await this.runtimeMaintenance.change(
         () => this.runtimeBusy(),
         async () => {
           await this.assertNoGlobalActivity()
-          if (attempt.cancelled) return this.minimaxAccount.status(request.region)
+          if (attempt.cancelled || !this.isMinimaxCodeEnabled())
+            return this.minimaxAccount.status(request.region)
           return this.minimaxAccount.login(request.region)
         },
       )
@@ -461,7 +497,8 @@ export class HarnessService {
   private readonly catalogStore: ExecutionCatalogStore
   private readonly modelResolver: ExecutionModelResolver
   /** Share one catalog build among the parallel catalog/combination/selection reads. */
-  private executionCatalogPending: Promise<ExecutionCatalog> | undefined
+  private executionCatalogPending:
+    { minimaxCodeEnabled: boolean; promise: Promise<ExecutionCatalog> } | undefined
   private readonly availabilityPending = new WeakMap<
     ExecutionCatalog,
     Promise<Map<string, { available: boolean; reason?: string }>>
@@ -487,9 +524,12 @@ export class HarnessService {
       prefix?: string[]
       resolveKey?: () => Promise<string | undefined>
       readOfm?: () => Promise<unknown>
+      minimaxCodeEnabled?: () => boolean
     } = {},
     private readonly conversations?: NativeHarnessConversations,
   ) {
+    this.minimaxCodeEnabledSource = options.minimaxCodeEnabled
+    this.minimaxIntegrationEnabled = this.isMinimaxCodeEnabled()
     this.directory = options.home ?? dshHomePath()
     this.modelSources = new ExternalModelSources(ctx, () => this.events.emit('catalog'))
     this.sessionStore = new HarnessSessionStore(this.directory)
@@ -499,6 +539,7 @@ export class HarnessService {
       this.catalogStore,
       (ref) => this.probeExternalModel(ref),
       options.readOfm,
+      () => this.isMinimaxCodeEnabled(),
     )
     this.events.setMaxListeners(100)
     this.stopEditIntents = new StopEditIntentStore(this.directory)
@@ -1049,7 +1090,9 @@ export class HarnessService {
   }
   async executionCatalog(): Promise<ExecutionCatalog> {
     if (this.disposed) throw Error('组合服务已关闭')
-    if (this.executionCatalogPending) return this.executionCatalogPending
+    const minimaxCodeEnabled = this.isMinimaxCodeEnabled()
+    if (this.executionCatalogPending?.minimaxCodeEnabled === minimaxCodeEnabled)
+      return this.executionCatalogAfter(this.executionCatalogPending.promise, minimaxCodeEnabled)
     const pending = this.modelResolver.resolve().then((catalog) => ({
       ...catalog,
       supportedPairings: catalog.models.map((model) => ({
@@ -1059,16 +1102,27 @@ export class HarnessService {
           .map((harness) => harness.id),
       })),
     }))
-    this.executionCatalogPending = pending
+    this.executionCatalogPending = { minimaxCodeEnabled, promise: pending }
     void pending.then(
       () => {
-        if (this.executionCatalogPending === pending) this.executionCatalogPending = undefined
+        if (this.executionCatalogPending?.promise === pending)
+          this.executionCatalogPending = undefined
       },
       () => {
-        if (this.executionCatalogPending === pending) this.executionCatalogPending = undefined
+        if (this.executionCatalogPending?.promise === pending)
+          this.executionCatalogPending = undefined
       },
     )
-    return pending
+    return this.executionCatalogAfter(pending, minimaxCodeEnabled)
+  }
+  private async executionCatalogAfter(
+    pending: Promise<ExecutionCatalog>,
+    minimaxCodeEnabled: boolean,
+  ): Promise<ExecutionCatalog> {
+    const catalog = await pending
+    // Every caller sharing a pending read gets the same post-resolution check.
+    // Never publish a projection accepted before an opt-out/opt-in completed.
+    return this.isMinimaxCodeEnabled() === minimaxCodeEnabled ? catalog : this.executionCatalog()
   }
   /**
    * Availability of a model owned by an external official CLI rather than by the OPL
@@ -1094,11 +1148,25 @@ export class HarnessService {
     }
   }
   async saveExecutionCatalog(value: unknown): Promise<ExecutionCatalog> {
+    // Preserve hidden rows according to the admission snapshot. Re-enabling while
+    // this save is awaited must not make a disabled projection delete their persisted rows.
+    const preserveMiniMaxRows = !this.isMinimaxCodeEnabled()
     await this.ready
     this.runtimeMaintenance.assertAvailable()
     const previous = await this.catalogStore.get()
     this.runtimeMaintenance.assertAvailable()
-    const next = normalizeCatalog(value)
+    const supplied = normalizeCatalog(value)
+    // Hidden integration rows are not editable in this projection. Restore their
+    // persisted values so an unrelated catalog save cannot delete or replace them.
+    const next = !preserveMiniMaxRows
+      ? supplied
+      : normalizeCatalog({
+          ...supplied,
+          combinations: [
+            ...supplied.combinations.filter((item) => !isMiniMaxCodeRoute(item)),
+            ...previous.combinations.filter(isMiniMaxCodeRoute),
+          ],
+        })
     for (const combination of next.combinations) {
       const old = previous.combinations.find((item) => item.id === combination.id)
       const unchanged =
@@ -1198,6 +1266,7 @@ export class HarnessService {
   }
   /** Publish the verified candidate into the actual catalog; receipts do not select it. */
   async selectMiniMaxCandidate(request: MiniMaxCandidateRequest): Promise<MiniMaxCandidateResult> {
+    this.assertMinimaxCodeEnabled()
     await this.ready
     return this.runtimeMaintenance.change(
       () => this.runtimeBusy(),
@@ -1304,6 +1373,7 @@ export class HarnessService {
       ? { ...frozen, enabled: true, permissionPolicy: frozen.sandbox, name: frozen.title }
       : catalog.combinations.find((x) => x.id === input?.combination && x.enabled)
     if (!definition) throw Error('未知或已停用的模型 + Harness 组合')
+    this.assertMiniMaxCodeRouteEnabled(definition)
     const harness = catalog.harnesses.find((item) => item.id === definition.harnessRef)
     if (!harness || !adapterFor(harness.id, definition.modelRef, this.modelSources))
       throw Error('该组合已保存，但尚未安装对应 Harness 适配器')
@@ -1434,6 +1504,7 @@ export class HarnessService {
     return connection
   }
   private async openConnection(record: HarnessSession, provisional = false) {
+    this.assertMiniMaxCodeRouteEnabled(record)
     const chosenHarness = (await this.catalogStore.get()).harnesses.find(
       (h) => h.id === record.harnessRef,
     )
@@ -2071,6 +2142,7 @@ export class HarnessService {
     if (this.disposed) throw Error('组合服务已关闭')
     const record = this.records.get(required(input?.sessionId, 'sessionId'))
     if (!record) throw Error('组合会话不存在')
+    this.assertMiniMaxCodeRouteEnabled(record)
     const edit = record.nativeSessionId
       ? this.externalMessageEdits.intent(record.nativeSessionId)
       : undefined
@@ -2196,6 +2268,9 @@ export class HarnessService {
   private async runConversation(record: HarnessSession, active: Active, turn: HarnessTurn) {
     try {
       if (active.cancelled) return await this.run(record, active, turn)
+      // A queued native turn may have waited through opt-out. Recheck before
+      // writing a new user turn into the official Session, not only in llm/stream.
+      this.assertMiniMaxCodeRouteEnabled(record)
       await this.native('prompt', {
         sessionId: record.nativeSessionId,
         requestId: harnessRequestId(record, turn),
@@ -2299,6 +2374,7 @@ export class HarnessService {
     let editBefore: Pick<ExternalEditHistory, 'sessionId' | 'boundaries'> | undefined
     if (record.harnessRef === 'qwen-code') active.qwenUsage = new QwenTurnUsage()
     try {
+      this.assertMiniMaxCodeRouteEnabled(record)
       delete active.deadlineError
       delete active.deadlineCleanup
       delete active.inputReceiptError
@@ -2396,6 +2472,9 @@ export class HarnessService {
           prompt,
         )
         active.vibeUsage?.beginTurn()
+        // A queued turn may have waited through an opt-out; recheck at the last
+        // synchronous boundary before any new prompt reaches mcode.
+        this.assertMiniMaxCodeRouteEnabled(record)
         const result = object(
           await active.acp!.request(
             'session/prompt',
@@ -2548,6 +2627,7 @@ export class HarnessService {
           { global: true },
         )
         try {
+          this.assertMiniMaxCodeRouteEnabled(record)
           await this.native('prompt', {
             sessionId: record.acpSessionId,
             requestId: 'opl-harness-' + hash([record.id, turn.operationId]),
@@ -5415,12 +5495,24 @@ export class HarnessService {
     agent.model.select(await this.normalizeConversationSelection(definition.modelRef, definition))
     await this.bindSelection(agent.id, definition.id)
   }
+  private async assertMiniMaxNativeSelectionEnabled(sessionId: string): Promise<void> {
+    const selectedId = this.selections[sessionId]
+    if (!selectedId) return
+    const selected = (await this.catalogStore.get()).combinations.find(
+      (item) => item.id === selectedId,
+    )
+    if (selected) this.assertMiniMaxCodeRouteEnabled(selected)
+  }
+
   /** Bridge external official Harness output through the official conversation stream. */
   async *conversationStream(
     options: GenerateOptions,
     next: () => AsyncIterable<StreamChunk>,
   ): AsyncIterable<StreamChunk> {
     await this.ready
+    if (options.provider === MINIMAX_CODE_PROVIDER) this.assertMinimaxCodeEnabled()
+    if (options.sessionId && !options.purpose)
+      await this.assertMiniMaxNativeSelectionEnabled(options.sessionId)
     if (options.sessionId && !options.purpose) {
       const waited = await this.waitForSelectionChange(options.sessionId)
       if (waited) {
@@ -5434,6 +5526,10 @@ export class HarnessService {
       }
     }
     const catalog = options.sessionId ? await this.executionCatalog() : undefined
+    if (options.sessionId && !options.purpose)
+      // The first admission may have waited through opt-out. Re-read the saved
+      // selection before any fallback can choose a native DSH route instead.
+      await this.assertMiniMaxNativeSelectionEnabled(options.sessionId)
     if (options.sessionId && !options.purpose && catalog) {
       const selectedId = this.selections[options.sessionId]
       const selected = catalog.combinations.find((item) => item.id === selectedId)
@@ -5468,6 +5564,8 @@ export class HarnessService {
           'HARNESS_BINDING',
         )
     }
+    if (options.provider === MINIMAX_CODE_PROVIDER) this.assertMinimaxCodeEnabled()
+    if (definition) this.assertMiniMaxCodeRouteEnabled(definition)
     if (!options.sessionId || options.purpose || !definition || definition.harnessRef === 'dsh') {
       if (
         options.sessionId &&
@@ -5849,5 +5947,8 @@ export class HarnessService {
 }
 export const createHarnessService = (
   ctx: Context,
-  options: { readOfm?: () => Promise<unknown> } = {},
+  options: {
+    readOfm?: () => Promise<unknown>
+    minimaxCodeEnabled?: () => boolean
+  } = {},
 ) => new HarnessService(ctx, options, new NativeHarnessConversations(ctx))

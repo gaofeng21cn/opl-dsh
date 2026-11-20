@@ -8,4 +8,6 @@ Codex、Claude Code 等执行程序需要在本机就绪。可用范围以组合
 
 配合 **OPL 跨引擎协作**，可给官方角色绑定执行组合并接入官方团队通信。OPL Gateway 账号由 **OPL DSH 基础增强** 管理，其他模型来源由各自插件管理。
 
+MiniMax 官方 mcode 集成默认开启，可在本页停用。停用会移除对应 Provider、模型与组合投影及模型供应商页的账号卡片，并拒绝新的 mcode 轮次；已有组合、官方凭据和历史会话保留，其他目录保存不会删除隐藏行。重新启用可恢复；在途官方网页登录会收到协作取消。
+
 由 **One Person Lab** 维护。[项目与使用说明](https://github.com/gaofeng21cn/opl-dsh)

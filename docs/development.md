@@ -124,6 +124,8 @@ CLI 维护回读绕过版本缓存，并检查安装器返回的实际安装目�
 
 组合目录只保存模型引用、Harness 引用、默认/启用状态和权限。`ExecutionModelResolver` 从官方模型注册表和 Gateway 读取投影，不另存模型连接。新增执行器应提供一个适配器及其协议/权限/恢复测试，不在中心服务增加账户或 Provider 配置分支。
 
+MiniMax 官方 mcode 路线继续由专用 ACP 适配器拥有，不并入通用 native custom-provider。它的 opt-out 归 `opl-execution` 的 volatile `minimaxCodeEnabled`（默认 `true`）：Host 只在对应 changed path 到达时同步官方 adapter registration 的空/固定路由集，Client 的执行页开关、目录重载和账号 Gate 共用官方 `configForms` snapshot，不新增读写 RPC。停用仅过滤最终实时投影；持久化迁移和普通目录保存保留隐藏行。账号新操作与 mcode 新轮次受门禁，已有登录的协作取消不受门禁。
+
 DSH 内部新子任务由官方 Subagent/Team 管理。OPL 协作后台只为跨 Harness 任务保留父子映射、明确任务、验收要求、执行状态、交付和回传状态，并兼容已有 OPL 原生任务。执行完成不等于验收通过。普通会话不因使用同一目录而排队，只读任务可并行；只有双方显式声明且范围重叠的 `writeScope` 才等待，并行 Git 写任务优先使用官方 worktree。取消父任务传递给后代，子任务不能扩大权限。主界面保持官方 DSH 会话 UI，不渲染第二套外部会话列表；外部 Codex 开关只限制外部桥接，不关闭内部 Codex CLI 组合。
 
 TaskFeedback 的事件投影、纯状态决策、持久回执与投递调度分别位于 `session-facts.ts`、`state.ts`、`receipts.ts`、`delivery.ts`。Remote 服务仍负责唯一的恢复与编排，不再增加一套通知数据库。
