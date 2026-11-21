@@ -27,7 +27,14 @@ const codexHome =
     ? dirname(dirname(previousInstallation.skillDir))
     : join(homedir(), '.codex'))
 // Refuse a modified or foreign Skill before changing the official profile.
-verifySkill(join(codexHome, 'skills/opl-dsh-official'))
+verifySkill(
+  join(codexHome, 'skills/opl-dsh-official'),
+  process.platform === 'darwin'
+    ? [payload, previousInstallation?.release, previousInstallation?.previousRelease].filter(
+        Boolean,
+      )
+    : [],
+)
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex')
 const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'"
 function run(command, args, env = {}) {
