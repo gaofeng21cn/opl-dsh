@@ -23,7 +23,7 @@
  * launch environment. The file therefore contains no secret, and no literal key is
  * written, logged, or placed in an argument vector.
  */
-import { PI_PROVIDER, piLane, type PiThinkingLevelMap } from './pi-models.ts'
+import { PI_PROVIDER, piGatewayGeminiLane, piLane, type PiThinkingLevelMap } from './pi-models.ts'
 
 /** Official environment variable that redirects the agent directory. */
 export const PI_AGENT_DIR_ENV = 'PI_CODING_AGENT_DIR'
@@ -108,7 +108,10 @@ export function buildPiModelsConfig(options: {
 }): Record<string, unknown> {
   const thinkingLevelMap =
     options.reasoning === true
-      ? piLane({ provider: PI_PROVIDER, model: options.model })?.thinkingLevelMap
+      ? (options.api === 'google-generative-ai'
+          ? piGatewayGeminiLane({ provider: 'opl-gateway', model: `gemini::${options.model}` })
+          : piLane({ provider: PI_PROVIDER, model: options.model })
+        )?.thinkingLevelMap
       : undefined
   const entry: PiProviderEntry = {
     baseUrl: options.baseURL,

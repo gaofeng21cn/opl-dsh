@@ -114,9 +114,10 @@ describe('Pi adapter capabilities', () => {
     expect(piApiForProtocol('chat')).toBe('openai-completions')
     expect(piApiForProtocol('responses')).toBe('openai-responses')
     expect(piApiForProtocol('messages')).toBe('anthropic-messages')
+    expect(piApiForProtocol('gemini-native')).toBe('google-generative-ai')
     // Never rounded to the nearest one, which would run a different route.
     expect(() => piApiForProtocol('grpc')).toThrow(/官方 Pi 不支持该协议/)
-    expect(PI_PROTOCOLS).toEqual(['chat', 'responses', 'messages'])
+    expect(PI_PROTOCOLS).toEqual(['chat', 'responses', 'messages', 'gemini-native'])
   })
 
   it('declares reasoning per lane, which decides what the CLI advertises', () => {

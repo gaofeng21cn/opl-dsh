@@ -619,6 +619,20 @@ export class ExecutionModelResolver {
           name: model.name + ' + ' + alternativeHarness.name + '（备用）',
         })
       }
+      const pi = catalog.harnesses.find((harness) => harness.id === 'pi')
+      if (
+        model.available &&
+        official === 'antigravity' &&
+        nativeGemini &&
+        pi &&
+        adapterFor(pi.id, model.ref)
+      ) {
+        recommendations.push({
+          modelRef: model.ref,
+          harnessRef: pi.id,
+          name: model.name + ' + ' + pi.name,
+        })
+      }
       return recommendations
     })
     const advertisedOfmModels = new Set(

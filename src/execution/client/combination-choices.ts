@@ -1,5 +1,9 @@
 import { modelRefKey } from '../contracts/catalog.ts'
-import type { CombinationDefinition, ExecutionCatalog } from '../contracts/catalog.ts'
+import type {
+  CombinationDefinition,
+  CombinationPermissionPolicy,
+  ExecutionCatalog,
+} from '../contracts/catalog.ts'
 
 type Pairing = Pick<CombinationDefinition, 'modelRef' | 'harnessRef'>
 
@@ -19,6 +23,32 @@ export const savedChoiceKey = (id: string): string => JSON.stringify(['saved', i
 /** New recommendations have a stable key before a configuration id exists. */
 export const recommendationChoiceKey = (item: Pairing): string =>
   JSON.stringify(['recommended', pairingKey(item)])
+
+export const COMBINATION_PERMISSION_LABELS: Readonly<Record<CombinationPermissionPolicy, string>> =
+  {
+    'read-only': '仅可查看',
+    workspace: '工作区内修改',
+    'full-access': '完全权限',
+  }
+
+/** Resolve the Host-advertised permissions, retaining the older workspace default. */
+export function pairingPermissionPolicies(
+  catalog: ExecutionCatalog,
+  modelKey: string,
+  harnessRef: string,
+): CombinationPermissionPolicy[] {
+  const pairing = catalog.supportedPairings?.find((item) => modelRefKey(item.modelRef) === modelKey)
+  if (!pairing?.permissionPolicies) return ['workspace']
+  return pairing.permissionPolicies[harnessRef] ?? []
+}
+
+/** Prefer the least permissive familiar preset the adapter can actually honour. */
+export function defaultPermissionPolicy(
+  policies: readonly CombinationPermissionPolicy[],
+): CombinationPermissionPolicy | undefined {
+  const priority = ['workspace', 'read-only', 'full-access'] as const
+  return priority.find((policy) => policies.includes(policy))
+}
 
 /** Available saved configurations plus recommendations without a saved pairing. */
 export function combinationChoices(catalog: ExecutionCatalog) {

@@ -105,3 +105,18 @@
 .editor {
   padding: 8px 0 14px;
 }
+.modelDetails {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+.modelDetails dt {
+  color: var(--dsw-alias-label-secondary);
+}
+.modelDetails dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
