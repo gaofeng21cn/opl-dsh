@@ -1,6 +1,6 @@
 import { access, constants, opendir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, delimiter, isAbsolute, extname, resolve, dirname } from 'node:path'
+import { join, delimiter, isAbsolute, extname, resolve, dirname, relative, sep } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { HarnessDefinition } from '../contracts/catalog.ts'
@@ -12,6 +12,30 @@ type DetectedCommand = {
 }
 type NativeCodexEntries = { entries: DetectedCommand[]; limited?: boolean }
 const installedRoots = new Set<string>()
+
+/** Recognize the suite's versioned installations, including its two-line Windows launchers. */
+export async function suiteMaintenanceInstructions(
+  path: string,
+  root: string,
+): Promise<string | undefined> {
+  const owned = (target: string) => {
+    const p = resolve(target).toLowerCase()
+    for (const family of ['OFM', 'MiniMax Code']) {
+      const prefix = resolve(root, family).toLowerCase() + '\\'
+      if (p.startsWith(prefix))
+        return family === 'OFM'
+          ? '当前使用 OPL 套件的固定版本，可在执行引擎更新中检查兼容版本。'
+          : '当前使用 OPL Git Bash 定制版本。升级请更换定制版本；官方安装器不会更新此入口。'
+    }
+  }
+  const direct = owned(path)
+  if (direct || !/\.cmd$/i.test(path)) return direct
+  const size = (await stat(path).catch(() => undefined))?.size
+  if (!size || size > 4096) return
+  const shim = await readFile(path, 'utf8').catch(() => '')
+  const match = /^@echo off\r?\n"([^"\r\n]+)"(?: "([^"\r\n]+)")? %\*\s*$/i.exec(shim)
+  if (match) return owned(match[2] ?? match[1])
+}
 
 /** npm puts global launchers directly in the prefix on Windows, and in bin elsewhere. */
 export function npmGlobalBin(prefix: string, platform: NodeJS.Platform = process.platform): string {
@@ -28,7 +52,7 @@ const info: Record<
   { command: string; website: string; instructions: string; installable?: boolean }
 > = {
   'grok-build': {
-    command: join(homedir(), '.grok/bin/grok'),
+    command: 'grok',
     website: 'https://grok.com/build',
     instructions: '使用 Grok Build 官方安装器安装或更新；安装后重新检测。',
   },
@@ -195,6 +219,7 @@ const knownRoots = (id: string, env: NodeJS.ProcessEnv = process.env): string[] 
   if (id === 'minimax-code') roots.push(...minimaxCodeRoots(env))
   if (id === 'mimo-code') roots.push(join(home, '.mimocode/bin'))
   if (id === 'kimi-code') roots.push(join(home, '.local/bin'), join(home, '.kimi-code/bin'))
+  if (id === 'grok-build') roots.unshift(join(home, '.grok/bin'))
   if (id === 'step-code') roots.push(join(home, '.stepcode/bin'))
   return [...new Set(roots.filter(Boolean))]
 }
@@ -576,22 +601,44 @@ export async function inspectHarness(
   }
   const selectionRequired =
     !path && command === 'codex' && (native.entries.length > 1 || native.limited)
-  const maintenanceAction = selectionRequired
-    ? undefined
-    : entry?.installable
-      ? path
-        ? 'update'
-        : 'install'
-      : path && ['grok-build', 'antigravity'].includes(harness.id)
-        ? 'update'
-        : undefined
+  const managedRoot = join(
+    process.env.LOCALAPPDATA ?? join(homedir(), '.local', 'share'),
+    'OPL DSH Suite',
+    'engine-updates',
+    harness.id,
+  )
+  const managedRelative = path && relative(managedRoot, path)
+  const staged =
+    managedRelative &&
+    !isAbsolute(managedRelative) &&
+    managedRelative !== '..' &&
+    !managedRelative.startsWith('..' + sep)
+  const suiteInstructions = staged
+    ? '此版本由执行引擎更新管理，可在上方检查或安装更新。'
+    : path && process.platform === 'win32' && process.env.APPDATA
+      ? await suiteMaintenanceInstructions(
+          path,
+          join(process.env.APPDATA, 'OPL DSH Suite', 'harnesses'),
+        )
+      : undefined
+  const maintenanceAction =
+    selectionRequired || suiteInstructions
+      ? undefined
+      : entry?.installable
+        ? path
+          ? 'update'
+          : 'install'
+        : path && ['grok-build', 'antigravity'].includes(harness.id)
+          ? 'update'
+          : undefined
   const supported = harness.kind === 'grok-build' || Object.hasOwn(info, harness.id)
   const base = {
     id: harness.id,
     name: harness.name,
     installed: !!path || (!!selectionRequired && native.entries.length > 0),
     runnable: false,
-    instructions: entry?.instructions ?? '使用此 Harness 的官方安装与更新方式。',
+    instructions:
+      suiteInstructions ?? entry?.instructions ?? '使用此 Harness 的官方安装与更新方式。',
     website: entry?.website ?? '',
     ...(entry?.installable ? { installable: true } : {}),
     ...(maintenanceAction ? { maintenanceAction: maintenanceAction as 'install' | 'update' } : {}),
@@ -599,17 +646,19 @@ export async function inspectHarness(
       ? { discovery: { otherPaths, ...(native.limited ? { limited: true } : {}) } }
       : {}),
   }
-  if (!path)
+  if (!path) {
+    const error =
+      command && configuredPath(command)
+        ? `配置的启动入口不存在或不是可执行文件：${command}。安装后仍需确认此路径。`
+        : selectionRequired
+          ? 'Codex 桌面安装目录中有多个入口或搜索达到上限，请在“可执行文件路径”中确认要使用的 codex.exe 绝对路径后重新检测。'
+          : undefined
     return {
       ...base,
       verification: 'failed',
-      error:
-        command && configuredPath(command)
-          ? `配置的启动入口不存在或不是可执行文件：${command}。安装后仍需确认此路径。`
-          : selectionRequired
-            ? 'Codex 桌面安装目录中有多个入口或搜索达到上限，请在“可执行文件路径”中确认要使用的 codex.exe 绝对路径后重新检测。'
-            : '未找到可执行文件；可使用一键安装或查看官方入口',
+      ...(error ? { error } : {}),
     }
+  }
   // ZCode's launcher is a desktop entry point on some installations. Running
   // `zcode --version` during settings discovery can briefly open its window.
   // Presence is enough for the settings card; version discovery belongs to the

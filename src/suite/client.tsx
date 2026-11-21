@@ -48,7 +48,7 @@ export async function apply(ctx: Context): Promise<void> {
   }
   ctx.plugin(settingsNavigation)
   let openModels: (() => void) | undefined
-  let openSettings: (() => void) | undefined
+  let openSettings: ((section?: 'engines') => void) | undefined
   ctx.plugin(gateway, { openModels: () => openModels?.() })
   ctx.plugin(notifications)
   ctx.effect(() => ctx.locale.register(SUITE_FEATURE_NAMESPACE, labels))
@@ -94,14 +94,20 @@ export async function apply(ctx: Context): Promise<void> {
       ...(updateConnection ? { connection: updateConnection } : {}),
       subscribe: (listener: () => void) =>
         subscribeUpdateWatch(() => updateRemote.watch(), listener, updateConnection),
-      openSettings: () => openSettings?.(),
+      openSettings: (section) => openSettings?.(section),
+      engineCount: async () => {
+        const execution = optionalRemote(ctx, 'oplExecution')
+        if (!execution) return 0
+        const state = await remoteCall(execution)('engine-updates')
+        return state.items.filter((item) => item.status === 'available').length
+      },
     })
   }
   ctx.plugin(setup, {
     bindModelNavigation: (navigate: (() => void) | undefined) => {
       openModels = navigate
     },
-    bindSettingsNavigation: (navigate: (() => void) | undefined) => {
+    bindSettingsNavigation: (navigate: ((section?: 'engines') => void) | undefined) => {
       openSettings = navigate
     },
   })

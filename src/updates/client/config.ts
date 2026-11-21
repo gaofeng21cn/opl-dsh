@@ -14,5 +14,6 @@ export interface Config {
   /** Observe Host status changes; the Client reads status without scheduling discovery. */
   subscribe?: (listener: () => void) => () => void
   /** Open the existing General settings section when supplied by its navigation owner. */
-  openSettings?: () => void
+  openSettings?: (section?: 'engines') => void
+  engineCount?: () => Promise<number>
 }

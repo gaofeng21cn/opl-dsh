@@ -307,11 +307,18 @@ export class ExecutionCatalogStore {
     return write
   }
   /** Publish one verified launch command without overwriting concurrent proxy settings. */
-  async setHarnessLaunch(harnessId: string, command: string, prefix: string[]) {
+  async setHarnessLaunch(
+    harnessId: string,
+    command: string,
+    prefix: string[],
+    expected?: { definition: ExecutionCatalog['harnesses'][number] },
+  ) {
     await this.ready
     const write = this.queue.then(async () => {
       if (!this.value.harnesses.some((h) => h.id === harnessId)) throw Error('Harness 不存在')
       const previous = this.value.harnesses.find((h) => h.id === harnessId)!
+      if (expected && JSON.stringify(expected.definition) !== JSON.stringify(previous))
+        throw Error('启动入口配置已变化，请重新检查')
       const value = normalizeCatalog({
         ...this.value,
         harnesses: this.value.harnesses.map((h) =>

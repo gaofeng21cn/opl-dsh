@@ -45,6 +45,7 @@ export function apply(ctx: Context, config: Config): void {
         inject: () => ({
           controller,
           navigation,
+          ...(config.engineCount ? { engineCount: config.engineCount } : {}),
           ...(config.openSettings ? { openSettings: config.openSettings } : {}),
         }),
       },

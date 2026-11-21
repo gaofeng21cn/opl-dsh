@@ -10,6 +10,27 @@ import {
   maintainHarness,
 } from '../../src/execution/host/harness-maintenance.ts'
 import type { HarnessInstallation } from '../../src/execution/contracts/installations.ts'
+import { suiteMaintenanceInstructions } from '../../src/execution/host/harness-registry.ts'
+it.runIf(process.platform === 'win32')(
+  'distinguishes versioned suite launchers from ordinary npm commands',
+  async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opl-runtime-owner-'))
+    roots.push(dir)
+    const shim = join(dir, 'pi.cmd')
+    await writeFile(
+      shim,
+      `@echo off\r\n"node.exe" "${join(dir, 'OFM', 'Pi', '1.2.0', 'cli.js')}" %*\r\n`,
+    )
+    expect(await suiteMaintenanceInstructions(shim, dir)).toContain('固定版本')
+    await writeFile(shim, `@echo off\r\n"node.exe" "${join(dir, 'OFM-other', 'cli.js')}" %*\r\n`)
+    expect(await suiteMaintenanceInstructions(shim, dir)).toBeUndefined()
+    expect(
+      await suiteMaintenanceInstructions(join(dir, 'MiniMax Code', 'candidate', 'mcode.exe'), dir),
+    ).toContain('定制版本')
+    vi.stubEnv('PROCESSOR_ARCHITECTURE', '')
+    expect(maintenanceEnvironment().PROCESSOR_ARCHITECTURE).toMatch(/^(AMD64|ARM64)$/)
+  },
+)
 const roots: string[] = []
 const exec = promisify(execFile)
 afterEach(async () => {

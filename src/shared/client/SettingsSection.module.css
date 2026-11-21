@@ -286,6 +286,17 @@ select.input {
   justify-content: space-between;
   gap: 16px;
 }
+.engineUpdateName {
+  flex: 1;
+  text-align: start;
+}
+.engineBatch {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
 .row > div {
   min-width: 0;
 }
@@ -293,6 +304,27 @@ select.input {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.details .engineUpdateToolbar,
+[data-opl-panel='execution-limits'] > .detailsBody > .actions {
+  margin-top: 0;
+}
+[data-opl-panel='execution-limits'] > .detailsBody > .preferenceRow {
+  padding-block: 0 8px;
+}
+.section[data-opl-panel='execution'] .intro,
+.engineCheckResults > p {
+  font-size: 12px;
+  line-height: 18px;
+}
+.engineCheckResults[open] > summary {
+  margin-bottom: 8px;
+}
+.engineCheckResults > p + p {
+  margin-top: 4px;
+}
+.engineUpdatePanel > .preferenceRow:first-child {
+  padding-top: 0;
 }
 .details .detailsBody button {
   margin-top: 0;
