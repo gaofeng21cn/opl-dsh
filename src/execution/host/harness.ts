@@ -1,5 +1,9 @@
 import { EngineUpdates } from './engine-updates.ts'
-import { checkEngineUpdate, applyEngineUpdate } from './engine-update-sources.ts'
+import {
+  checkEngineUpdate,
+  applyEngineUpdate,
+  usesPrivateUpdateDirectory,
+} from './engine-update-sources.ts'
 import { featureSettings } from '../../shared/host/feature-settings.ts'
 import { withoutRememberingPermission } from '../../compat/host/permission-memory.ts'
 import { LlmError } from '../../shared/llm-error.ts'
@@ -511,10 +515,15 @@ export class HarnessService {
     return (
       this.engineAdmissions.has(id) ||
       this.maintenanceJobs.has(id) ||
+      (id === MINIMAX_CODE_HARNESS &&
+        (!!this.minimaxLoginAttempt || this.minimaxAccount.updateBusy())) ||
       [...this.records.values()].some(
         (r) =>
           r.harnessRef === id &&
           (this.externalEditing.has(r.id) ||
+            this.finalizing.has(r.id) ||
+            this.stopEdits.editing(r.acpSessionId) ||
+            (r.nativeSessionId && this.stopEdits.editing(r.nativeSessionId)) ||
             this.connecting.has(r.id) ||
             this.active.get(r.id)?.turn ||
             r.turns.some((t) =>
@@ -532,7 +541,11 @@ export class HarnessService {
     )
   }
   private async enterEngine<T>(id: string, operation: () => Promise<T>): Promise<T> {
-    while (this.engineUpdates.lock(id)) await this.engineUpdates.lock(id)
+    let update = this.engineUpdates.lock(id) ?? this.maintenanceJobs.get(id)
+    while (update) {
+      await update
+      update = this.engineUpdates.lock(id) ?? this.maintenanceJobs.get(id)
+    }
     this.engineAdmissions.set(id, (this.engineAdmissions.get(id) ?? 0) + 1)
     try {
       return await operation()
@@ -540,6 +553,12 @@ export class HarnessService {
       const count = (this.engineAdmissions.get(id) ?? 1) - 1
       if (count) this.engineAdmissions.set(id, count)
       else this.engineAdmissions.delete(id)
+    }
+  }
+  private async closeIdleEngineConnections(id: string) {
+    for (const [sessionId, connection] of this.active) {
+      const record = this.records.get(sessionId)
+      if (record?.harnessRef === id) await this.disconnectIdleConnection(record, connection)
     }
   }
   private readonly maintenanceJobs = new Map<string, Promise<void>>()
@@ -666,11 +685,13 @@ export class HarnessService {
           const fresh = await inspectHarness(def, this.directory, this.command(), { fresh: true })
           if (fresh.path !== item.path || fresh.version !== item.version)
             throw Error('启动入口或版本已变化，请重新检查')
+          if (!usesPrivateUpdateDirectory(fresh)) await this.closeIdleEngineConnections(item.id)
           const result = await applyEngineUpdate({ ...fresh, definition: def }, target, (message) =>
             this.ctx.logger.warn(message),
           )
           if (result.path && result.path !== fresh.path)
             await this.catalogStore.setHarnessLaunch(item.id, result.path, [], { definition: def })
+          this.events.emit('catalog')
           return result.version
         }),
       log: (message) => this.ctx.logger.warn(message),
@@ -945,19 +966,13 @@ export class HarnessService {
     )
   }
   async updateHarness(id: string) {
-    return this.enterEngine(id, () =>
-      this.runtimeMaintenance.admit(() => this.updateHarnessAdmitted(id)),
-    )
+    return this.runtimeMaintenance.admit(() => this.updateHarnessAdmitted(id))
   }
   private async updateHarnessAdmitted(id: string) {
     await this.ready
     if (this.disposed) throw Error('Harness 服务已关闭')
     if (this.maintenanceJobs.has(id)) return this.maintenance.get(id)
-    if (
-      [...this.records.values()].some(
-        (record) => record.harnessRef === id && this.active.get(record.id)?.turn,
-      )
-    )
+    if (this.engineBusy(id) || this.engineUpdates.lock(id))
       throw Error('此 Harness 正在执行任务，请完成后更新')
     const catalog = await this.catalogStore.get(),
       definition = catalog.harnesses.find((item) => item.id === id)
@@ -968,6 +983,8 @@ export class HarnessService {
     if (!item.maintenanceAction) throw Error('请使用此 Harness 的官方安装与更新入口')
     // Recheck after discovery so concurrent clicks cannot launch two updaters.
     if (this.maintenanceJobs.has(id)) return this.maintenance.get(id)
+    if (this.engineBusy(id) || this.engineUpdates.lock(id))
+      throw Error('此 Harness 正在执行任务或更新，请完成后再试')
     const state: NonNullable<HarnessInstallation['maintenance']> = {
       state: 'running',
       message: '正在运行官方安装或更新器…',
@@ -976,7 +993,10 @@ export class HarnessService {
     this.maintenance.set(id, state)
     const job = (async () => {
       try {
-        const result = await maintainHarness(item, definition.proxy)
+        const result = await this.engineUpdates.runExternalInstaller(async () => {
+          await this.closeIdleEngineConnections(id)
+          return maintainHarness(item, definition.proxy)
+        })
         const fresh = await inspectInstalledHarness(
           definition,
           this.directory,
@@ -1614,17 +1634,19 @@ export class HarnessService {
         : undefined
   }
   private connect(record: HarnessSession): Promise<void> {
-    return this.enterEngine(record.harnessRef, () =>
-      this.runtimeMaintenance.admit(() => this.connectAdmitted(record)),
-    )
+    return this.runtimeMaintenance.admit(() => this.connectAdmitted(record))
   }
   private connectAdmitted(record: HarnessSession): Promise<void> {
-    if (this.disposed) return Promise.reject(Error('组合服务已关闭'))
-    const pending = this.connecting.get(record.id)
-    if (pending) return pending
-    const connection = this.openConnection(record).finally(() => this.connecting.delete(record.id))
-    this.connecting.set(record.id, connection)
-    return connection
+    return this.enterEngine(record.harnessRef, () => {
+      if (this.disposed) return Promise.reject(Error('组合服务已关闭'))
+      const pending = this.connecting.get(record.id)
+      if (pending) return pending
+      const connection = this.openConnection(record).finally(() =>
+        this.connecting.delete(record.id),
+      )
+      this.connecting.set(record.id, connection)
+      return connection
+    })
   }
   private async openConnection(record: HarnessSession, provisional = false) {
     this.assertMiniMaxCodeRouteEnabled(record)
@@ -3177,7 +3199,7 @@ export class HarnessService {
           configOptions: current.configOptions,
         }
       },
-      disconnect: () => this.disconnectForEdit(record, active),
+      disconnect: () => this.disconnectIdleConnection(record, active),
       reconnect: async (id) => {
         if (id !== record.acpSessionId) throw Error('新会话身份必须先持久保存')
         await this.connectAdmitted(record)
@@ -3211,7 +3233,7 @@ export class HarnessService {
   }
 
   /** Release only the idle connection observed here, after its owned process and bridge have exited. */
-  private async disconnectForEdit(record: HarnessSession, expected?: Active): Promise<void> {
+  private async disconnectIdleConnection(record: HarnessSession, expected?: Active): Promise<void> {
     const current = this.active.get(record.id)
     if (current && expected && current !== expected) throw Error('外部会话连接已变化')
     if (current?.turn || this.connecting.has(record.id)) throw Error('外部会话仍在执行或连接')
@@ -3226,7 +3248,7 @@ export class HarnessService {
   private async externalHistory(record: HarnessSession): Promise<ExternalEditHistory> {
     const active = this.active.get(record.id)
     const stored = record.harnessRef === 'kilo' && (!active?.acp || active.acp.closed)
-    if (stored && active) await this.disconnectForEdit(record, active)
+    if (stored && active) await this.disconnectIdleConnection(record, active)
     if (!stored) await this.connectAdmitted(record)
     const fingerprint = externalEditRecordFingerprint(record)
     const cached = this.externalHistories.get(record.id)
@@ -3294,7 +3316,7 @@ export class HarnessService {
     if (!driver) throw Error('此执行引擎尚不支持编辑消息')
     const active = this.active.get(record.id)
     if (record.harnessRef === 'kilo' && (!active?.acp || active.acp.closed)) {
-      if (active) await this.disconnectForEdit(record, active)
+      if (active) await this.disconnectIdleConnection(record, active)
       return this.storedKiloHistory({ ...record, turns: record.turns.slice(0, -1) })
     }
     await this.connectAdmitted(record)
@@ -3750,10 +3772,10 @@ export class HarnessService {
           if (!fresh && !empty) await this.connectAdmitted(record)
           signal.throwIfAborted()
           const allocateEmpty = async () => {
-            await this.disconnectForEdit(record)
+            await this.disconnectIdleConnection(record)
             signal.throwIfAborted()
             const allocation = { ...record, acpSessionId: '', turns: [] }
-            await this.openConnection(allocation, true)
+            await this.enterEngine(record.harnessRef, () => this.openConnection(allocation, true))
             return { sessionId: allocation.acpSessionId, retained: [], ephemeral: true }
           }
           const result = fresh

@@ -56,6 +56,7 @@ it('fills three install slots and keeps external installers separate when a job 
   const home = await mkdtemp(join(tmpdir(), 'engine-parallel-'))
   const ids = ['claude', 'grok-build', 'opencode', 'pi', 'kilo']
   const gates = new Map(ids.map((id) => [id, Promise.withResolvers<string>()]))
+  const legacy = Promise.withResolvers<void>()
   const calls: string[] = []
   const service = new EngineUpdates(home, {
     list: async () =>
@@ -78,20 +79,30 @@ it('fills three install slots and keeps external installers separate when a job 
   try {
     await service.check()
     await vi.waitFor(async () => expect((await service.snapshot()).checking).toBe(false))
+    const legacyUpdate = service.runExternalInstaller(async () => {
+      calls.push('single-engine')
+      await legacy.promise
+    })
     const batch = await service.install(ids)
     expect(batch.items.filter((i) => i.status === 'installing').map((i) => i.id)).toEqual([
       'claude',
       'opencode',
       'pi',
     ])
+    expect(calls).toEqual(['single-engine', 'opencode', 'pi'])
+    legacy.resolve()
+    await legacyUpdate
+    await vi.waitFor(() => expect(calls).toContain('claude'))
     const first = service.lock('opencode')!
     gates.get('opencode')!.reject(Error('fixture failed'))
     await first
-    expect(calls).toEqual(['claude', 'opencode', 'pi', 'kilo'])
+    expect(calls).toEqual(['single-engine', 'opencode', 'pi', 'claude', 'kilo'])
     const external = service.lock('claude')!
     gates.get('claude')!.resolve('2.0.0')
     await external
-    expect(calls).toEqual(['claude', 'opencode', 'pi', 'kilo', 'grok-build'])
+    await vi.waitFor(() =>
+      expect(calls).toEqual(['single-engine', 'opencode', 'pi', 'claude', 'kilo', 'grok-build']),
+    )
     for (const gate of gates.values()) gate.resolve('2.0.0')
     await Promise.all(ids.map((id) => service.lock(id)))
     expect((await service.snapshot()).items.map((i) => i.status)).toEqual([
@@ -102,6 +113,7 @@ it('fills three install slots and keeps external installers separate when a job 
       'updated',
     ])
   } finally {
+    legacy.resolve()
     for (const gate of gates.values()) gate.resolve('2.0.0')
     await service.dispose()
     await rm(home, { recursive: true, force: true })

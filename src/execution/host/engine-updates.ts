@@ -18,6 +18,7 @@ export class EngineUpdates {
   private plan = new Map<string, HarnessInstallation>()
   private waiting = new Map<string, boolean>()
   private running = new Map<string, Promise<void>>()
+  private externalInstaller = Promise.resolve()
   private ready: Promise<void>
   private timer: NodeJS.Timeout
   private stopped = false
@@ -168,7 +169,10 @@ export class EngineUpdates {
       this.waiting.delete(id)
       row.status = 'installing'
       const job = Promise.resolve()
-        .then(() => this.ops.install(item, target))
+        .then(() => {
+          const install = () => this.ops.install(item, target)
+          return external ? this.runExternalInstaller(install) : install()
+        })
         .then((version) => {
           row.status = 'updated'
           row.current = version
@@ -186,6 +190,15 @@ export class EngineUpdates {
   }
   lock(id: string) {
     return this.running.get(id)
+  }
+  /** Legacy single-engine actions and batch updates share external installer state. */
+  runExternalInstaller<T>(operation: () => Promise<T>): Promise<T> {
+    const job = this.externalInstaller.then(operation)
+    this.externalInstaller = job.then(
+      () => {},
+      () => {},
+    )
+    return job
   }
   get active() {
     return this.running.size > 0
