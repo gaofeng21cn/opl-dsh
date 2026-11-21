@@ -29,14 +29,44 @@ const POLL_INTERVAL_MS = 2000
  * for; a status response names its region and a pending authorization names its
  * own, so a stale or cross-region answer cannot be shown as this region's action.
  */
-export function MiniMaxAccountSection({
-  call,
-  t,
-}: {
-  call: ExecutionCall
-  t: (key: MiniMaxAccountLocaleKey) => string
-}) {
-  const [region, setRegion] = useState<Region>('cn')
+type AccountProps = { call: ExecutionCall; t: (key: MiniMaxAccountLocaleKey) => string }
+export function MiniMaxAccountSection(props: AccountProps) {
+  const [selected, setSelected] = useState<Region>()
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    let current = true
+    setFailed(false)
+    void props
+      .call('minimax-execution-region')
+      .then((value) => {
+        if (current) setSelected(value.region)
+      })
+      .catch(() => {
+        if (current) setFailed(true)
+      })
+    return () => {
+      current = false
+    }
+  }, [props.call, attempt])
+  if (!selected)
+    return (
+      <section className={css.section}>
+        {props.t('title')} ·{' '}
+        {failed ? (
+          <button onClick={() => setAttempt((n) => n + 1)}>{props.t('refresh')}</button>
+        ) : (
+          props.t('reading')
+        )}
+      </section>
+    )
+  return <RegionAccount {...props} initialRegion={selected} />
+}
+
+function RegionAccount({ call, t, initialRegion }: AccountProps & { initialRegion: Region }) {
+  const [region, setRegion] = useState<Region>(initialRegion)
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
   const [status, setStatus] = useState<MiniMaxAccountStatus>()
   const [reading, setReading] = useState(false)
   const [loginBusy, setLoginBusy] = useState(false)
@@ -199,8 +229,21 @@ export function MiniMaxAccountSection({
     return () => clearInterval(timer)
   }, [polling, region, call])
 
-  const chooseRegion = (next: Region) => {
-    if (next === region) return
+  const chooseRegion = async (next: Region) => {
+    if (next === region || savingRef.current) return
+    savingRef.current = true
+    setSaving(true)
+    try {
+      const value = await call('minimax-select-region', { region: next })
+      if (value.region !== next) throw Error()
+    } catch {
+      if (mounted.current) setNotice({ tone: 'error', text: t('regionSaveFailed') })
+      return
+    } finally {
+      savingRef.current = false
+      if (mounted.current) setSaving(false)
+    }
+    if (!mounted.current) return
     // The old region's reads, logout and cancel answers are no longer this view.
     epoch.current++
     logoutToken.current++
@@ -217,6 +260,7 @@ export function MiniMaxAccountSection({
   }
 
   const login = async () => {
+    if (savingRef.current) return
     if (
       !status?.installed ||
       status.loginState === 'signed-in' ||
@@ -288,6 +332,7 @@ export function MiniMaxAccountSection({
   }
 
   const logout = async () => {
+    if (savingRef.current) return
     if (
       !status ||
       !status.installed ||
@@ -533,14 +578,14 @@ export function MiniMaxAccountSection({
 
   return (
     <section
-      className={`${css.section} ${css.card}`}
+      className={css.section}
       data-opl-panel="minimax-account"
       data-opl-region={region}
       data-opl-login-state={status?.loginState ?? (reading ? 'reading' : 'unknown')}
       aria-busy={reading || loginBusy || logoutBusy || cancelBusy}
     >
       <div className={css.header}>
-        <span className={css.name}>{t('title')}</span>
+        <span>{t('accountStatus')}</span>
         <span className={css.muted} title={stateHint}>
           {stateLabel}
         </span>
@@ -557,6 +602,7 @@ export function MiniMaxAccountSection({
           className={css.input}
           style={{ width: 140, height: 28, fontSize: 12 }}
           data-opl-region-select
+          disabled={saving || loginBusy || logoutBusy || cancelBusy}
           value={region}
           title={t('regionHint')}
           onChange={(event) => chooseRegion(event.target.value as Region)}
@@ -567,6 +613,7 @@ export function MiniMaxAccountSection({
             </option>
           ))}
         </select>
+        <span className={css.muted}>{t('regionHint')}</span>
       </div>
       {region === 'global' && <p className={css.muted}>{t('globalNetworkHint')}</p>}
       <p className={css.muted} title={t('hint')}>

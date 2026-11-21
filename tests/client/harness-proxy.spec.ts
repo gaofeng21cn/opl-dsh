@@ -782,7 +782,11 @@ describe('每个外部 Harness 独立的代理设置', () => {
       node.getAttribute?.('data-opl-recommendation-item')?.includes('gemini-4-carbon'),
     )!
     expect(text(piChoice.parentNode)).toContain('Gemini 4 Carbon + Pi Coding Agent')
-    expect(text(piChoice.parentNode)).toContain('完全权限')
+    expect(text(piChoice.parentNode)).not.toContain('仅支持完全权限')
+    const group = walk(picker).find(
+      (node) => node.getAttribute?.('data-opl-recommendation-group') === 'pi',
+    )!
+    expect(text(group.parentNode)).toContain('仅支持完全权限')
     await act(async () => {
       piChoice.checked = true
       piChoice.click()
@@ -800,6 +804,37 @@ describe('每个外部 Harness 独立的代理设置', () => {
     expect(stored().combinations.find((item) => item.harnessRef === 'antigravity')?.isDefault).toBe(
       true,
     )
+  })
+
+  it('marks only the restricted pairing in a mixed group regardless of saved permissions', async () => {
+    const data = catalog()
+    const original = data.combinations[0]
+    const second = { ...original.modelRef, model: 'codex::second' }
+    const { call } = fixture({
+      ...data,
+      models: [data.models[0], { ...data.models[0], ref: second, available: true }],
+      combinations: [
+        { ...original, permissionPolicy: 'workspace' },
+        { ...original, id: 'multi', modelRef: second, permissionPolicy: 'full-access' },
+      ],
+      supportedPairings: [
+        {
+          modelRef: original.modelRef,
+          harnessRefs: [original.harnessRef],
+          permissionPolicies: { [original.harnessRef]: ['full-access'] },
+        },
+        {
+          modelRef: second,
+          harnessRefs: [original.harnessRef],
+          permissionPolicies: { [original.harnessRef]: ['workspace', 'full-access'] },
+        },
+      ],
+    })
+    const view = await open(call, ExecutionCatalogSection)
+    const choice = (id: string) =>
+      walk(view).find((n) => n.getAttribute?.('data-opl-recommendation-item')?.includes(id))!
+    expect(text(choice(original.id).parentNode)).toContain('仅支持完全权限')
+    expect(text(choice('multi').parentNode)).not.toContain('仅支持完全权限')
   })
 
   it('手动添加 Pi 时使用 Host 广告的完全权限', async () => {

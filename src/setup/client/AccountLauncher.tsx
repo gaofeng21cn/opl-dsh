@@ -25,14 +25,16 @@ export function AccountLauncher({
   PropsLocale<'settings.oplGateway'> & {
     readAccount: () => Promise<GatewayAccountStatus>
     bindModelNavigation: (navigate: (() => void) | undefined) => void
-    bindSettingsNavigation?: (navigate: (() => void) | undefined) => void
+    bindSettingsNavigation?: (navigate: ((section?: 'engines') => void) | undefined) => void
   }) {
   useEffect(() => {
     bindModelNavigation(() => openOnboarding('opl-model-navigation'))
     return () => bindModelNavigation(undefined)
   }, [bindModelNavigation, openOnboarding])
   useEffect(() => {
-    bindSettingsNavigation?.(() => openOnboarding('opl-update-navigation'))
+    bindSettingsNavigation?.((section) =>
+      openOnboarding(section === 'engines' ? 'opl-engine-navigation' : 'opl-update-navigation'),
+    )
     return () => bindSettingsNavigation?.(undefined)
   }, [bindSettingsNavigation, openOnboarding])
   const [open, setOpen] = useState(false)

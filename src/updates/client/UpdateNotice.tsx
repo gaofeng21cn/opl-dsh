@@ -1,6 +1,6 @@
 /** A persistent status at the official sidebar foot; no toast or system notification. */
-import { useSyncExternalStore } from 'react'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useSyncExternalStore, useEffect, useState } from 'react'
+import { Button, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { UpdateController } from './controller.ts'
 import { useUpdateCountdown } from './countdown.ts'
@@ -11,11 +11,19 @@ export type UpdateNoticeProps = PropsRuntime<'sidebar.footer.action'> &
   PropsLocale<'settings.oplUpdates'> & {
     controller: UpdateController
     navigation?: UpdateNavigation
-    openSettings?: () => void
+    openSettings?: (section?: 'engines') => void
+    engineCount?: () => Promise<number>
   }
 
 /** @param props - Sidebar geometry, shared status, and existing settings navigation. @returns Release notice. */
-export function UpdateNotice({ controller, navigation, openSettings, wide, t }: UpdateNoticeProps) {
+export function UpdateNotice({
+  controller,
+  navigation,
+  openSettings,
+  engineCount,
+  wide,
+  t,
+}: UpdateNoticeProps) {
   const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
   const status = view.status
   const restart = status?.restart
@@ -23,7 +31,41 @@ export function UpdateNotice({ controller, navigation, openSettings, wide, t }: 
     status?.pendingVersion && restart?.phase === 'countdown' ? restart.dueAt : null,
     view.connected && view.confirmed && !view.uncertain && !view.failure,
   )
-  if (!status || (!status.release && !status.pendingVersion)) return null
+  const [count, setCount] = useState(0)
+  const [menu, setMenu] = useState(false)
+  useEffect(() => {
+    if (!engineCount) return
+    let alive = true
+    const read = () =>
+      void engineCount()
+        .then((n) => {
+          if (alive) setCount(n)
+        })
+        .catch(() => {
+          if (alive) setCount(0)
+        })
+    read()
+    const timer = setInterval(read, 15000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [engineCount])
+  const hasRelease = !!(status?.release || status?.pendingVersion)
+  if (!hasRelease)
+    return count && openSettings ? (
+      <Button
+        className={css.notice}
+        variant="ghost"
+        size="sm"
+        title={t('engineNotice', { count })}
+        aria-label={t('engineNotice', { count })}
+        onClick={() => openSettings('engines')}
+      >
+        ↑{wide && ' ' + t('noticeShort')}
+      </Button>
+    ) : null
+  if (!status) return null
   const version = status.pendingVersion ?? status.release!.version
   const label = t(
     status.localCandidate
@@ -45,10 +87,11 @@ export function UpdateNotice({ controller, navigation, openSettings, wide, t }: 
           : 'noticeAvailable',
     { version, seconds: countdown ?? 0 },
   )
-  const title =
+  const releaseTitle =
     view.failure || status.error || !view.connected || !view.confirmed || view.uncertain
       ? `${label} ${t('noticeStale')}`
       : label
+  const title = count ? releaseTitle + ' · ' + t('engineNotice', { count }) : releaseTitle
   const content = (
     <>
       {(wide || countdown === null) && <span aria-hidden="true">↑</span>}
@@ -70,6 +113,10 @@ export function UpdateNotice({ controller, navigation, openSettings, wide, t }: 
       aria-label={title}
       data-opl-update-notice={version}
       onClick={() => {
+        if (count) {
+          setMenu(true)
+          return
+        }
         navigation?.request()
         openSettings()
       }}
@@ -95,7 +142,30 @@ export function UpdateNotice({ controller, navigation, openSettings, wide, t }: 
   )
   return (
     <div className={css.noticeGroup}>
-      {notice}
+      {count && openSettings ? (
+        <Menu
+          open={menu}
+          side="top"
+          portal
+          autoFocus
+          anchor={notice}
+          items={[
+            { id: 'suite', label: t('suiteMenu') },
+            { id: 'engines', label: t('engineMenu', { count }) },
+          ]}
+          onClose={() => setMenu(false)}
+          onSelect={(id) => {
+            setMenu(false)
+            if (id === 'engines') openSettings('engines')
+            else {
+              navigation?.request()
+              openSettings()
+            }
+          }}
+        />
+      ) : (
+        notice
+      )}
       {wide && restart?.phase === 'countdown' && (
         <Button
           variant="ghost"

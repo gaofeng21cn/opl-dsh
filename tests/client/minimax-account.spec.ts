@@ -195,6 +195,8 @@ type Handler = (method: string, request: { region: Region }) => Promise<MiniMaxA
 function fixture(handler: Handler) {
   const calls: { method: string; request: { region: Region } }[] = []
   const call = (async (method: string, request: { region: Region }) => {
+    if (method === 'minimax-execution-region') return { region: 'cn' }
+    if (method === 'minimax-select-region') return { region: request.region }
     calls.push({ method, request })
     return handler(method, request)
   }) as unknown as ExecutionCall
@@ -611,7 +613,7 @@ describe('MiniMax official account card', () => {
     expect(text(view.container)).not.toContain('已退出官方账号')
   })
 
-  it('does not let a login started in cn overwrite the global view after switching region', async () => {
+  it('keeps the selected region while its sign-in is running', async () => {
     const login = deferred<MiniMaxAccountStatus>()
     const { call } = fixture(async (method, request) => {
       if (method === 'minimax-account-status')
@@ -623,21 +625,15 @@ describe('MiniMax official account card', () => {
     await press(view.container, 'data-opl-login')
     expect(text(view.container)).toContain('等待官方授权')
 
-    await chooseRegion(view.container, 'global')
-    expect(text(view.container)).toContain('另一地区正在等待官方授权')
-    expect(control(view.container, 'data-opl-region-select').value).toBe('global')
-
-    // The cn login belongs to the previous region; its late success is not global.
+    expect(disabled(control(view.container, 'data-opl-region-select'))).toBe(true)
     await act(async () => {
       login.resolve(status({ region: 'cn', loginState: 'signed-in' }))
     })
-    expect(text(view.container)).toContain('未登录')
-    expect(text(view.container)).not.toContain('已登录')
-    expect(has(view.container, 'data-opl-other-pending')).toBe(false)
-
-    await chooseRegion(view.container, 'cn')
-    expect(text(view.container)).toContain('未登录')
-    expect(text(view.container)).not.toContain('已登录')
+    expect(disabled(control(view.container, 'data-opl-region-select'))).toBe(false)
+    await chooseRegion(view.container, 'global')
+    expect(control(view.container, 'data-opl-region').getAttribute('data-opl-region')).toBe(
+      'global',
+    )
   })
 
   it('switches to the region that owns a pending authorization and cancels only there', async () => {
@@ -960,6 +956,7 @@ it('install: shows install button when mcode is not installed, then re-reads sta
     },
   }
   const call = (async (method: string, request: unknown) => {
+    if (method === 'minimax-execution-region') return { region: 'cn' }
     if (method === 'minimax-account-status')
       return statusAfterInstall.promise.constructor === Promise && pollCount === 0
         ? Promise.resolve(status({ installed: false }))

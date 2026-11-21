@@ -1,6 +1,6 @@
 /** Official CLI updaters only. The plugin never accepts an arbitrary shell command. */
 import { execFile } from 'node:child_process'
-import { homedir } from 'node:os'
+import { homedir, machine } from 'node:os'
 import { delimiter, dirname, isAbsolute } from 'node:path'
 import { promisify } from 'node:util'
 import type { HarnessInstallation } from '../contracts/installations.ts'
@@ -52,6 +52,11 @@ export function maintenanceEnvironment(): NodeJS.ProcessEnv {
     ].flatMap((key) => (process.env[key] ? [[key, process.env[key]]] : [])),
   ) as NodeJS.ProcessEnv
   env.PATH = harnessSearchPath()
+  if (process.platform === 'win32' && !env.PROCESSOR_ARCHITECTURE) {
+    const arch = machine().toLowerCase()
+    env.PROCESSOR_ARCHITECTURE =
+      arch === 'x86_64' || arch === 'amd64' ? 'AMD64' : arch.toUpperCase()
+  }
   env.CI = '1'
   env.NO_COLOR = '1'
   env.npm_config_yes = 'true'
@@ -228,8 +233,18 @@ export interface MaintenanceResult {
 export async function maintainHarness(
   item: HarnessInstallation,
   proxy?: HarnessProxy,
+  targetVersion?: string,
 ): Promise<MaintenanceResult> {
   const plan = maintenancePlan(item)
+  if (targetVersion) {
+    if (!/^\d+\.\d+\.\d+$/.test(targetVersion)) throw Error('更新目标版本无效')
+    if (item.id === 'kimi-code')
+      plan.environment = { ...plan.environment, KIMI_VERSION: targetVersion }
+    if (item.id === 'step-code')
+      plan.environment = { ...plan.environment, STEP_VERSION: targetVersion }
+    if (item.id === 'mimo-code') plan.environment = { ...plan.environment, VERSION: targetVersion }
+    plan.expectedVersion = targetVersion
+  }
   const installerEnv = maintenanceEnvironment()
   if (plan.environment) Object.assign(installerEnv, plan.environment)
   const env = harnessProxyEnvironment(installerEnv, proxy)
@@ -299,8 +314,15 @@ export async function maintainHarness(
       : typeof detail.code === 'number'
         ? `退出码 ${detail.code}`
         : `启动失败${detail.code ? ` ${detail.code}` : ''}`
+    const output =
+      harnessDiagnostic((detail.stderr ?? '') + '\n' + (detail.stdout ?? '')) ||
+      harnessDiagnostic(detail.message ?? '')
+    const certificate =
+      /self[- ]signed certificate|UNTRUSTED_ROOT|unable to verify the first certificate/i.test(
+        output,
+      )
     throw Error(
-      `${stage}未完成（${reason}）：${harnessDiagnostic((detail.stderr ?? '') + '\n' + (detail.stdout ?? '')) || harnessDiagnostic(detail.message ?? '')}\n启动入口：${command}${installRoots ? `\nnpm 全局启动目录：${installRoots.join('、')}` : ''}`,
+      `${certificate ? '更新服务器的证书未受信任。请检查网络代理或受信任根证书后重试。\n' : ''}${stage}未完成（${reason}）：${output}\n启动入口：${command}${installRoots ? `\nnpm 全局启动目录：${installRoots.join('、')}` : ''}`,
     )
   }
 }

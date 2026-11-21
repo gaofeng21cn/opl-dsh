@@ -33,7 +33,7 @@
  * same Chat Completions surface, so the adapter pins the official `opencode/big-pickle`
  * wire value instead of refusing it. The id and attribution stay OFM's.
  */
-import { GATEWAY_ANTIGRAVITY_GEMINI_MODELS } from '../../../../shared/models.ts'
+import { EAC_OPENCODE_NAMES, GATEWAY_ANTIGRAVITY_GEMINI_MODELS } from '../../../../shared/models.ts'
 import type { ModelRef } from '../../../contracts/catalog.ts'
 
 /** Harness id; the adapter's `id`, and the key a source registers `supports` against. */
@@ -106,9 +106,7 @@ export const OPENCODE_OFM_MODELS: readonly string[] = [
   'tidepool-alpha-free',
   'flint-40b-free',
   // EAC's qualified ids use OFM forwarding and retain their complete channel identities.
-  'opencode/nemotron-3.5-lightning-free',
-  'opencode/nemotron-3.5-super-vl-free',
-  'opencode/flint-40b-free',
+  ...EAC_OPENCODE_NAMES.keys(),
   'opencode/glm-5.3-flash-free',
   'opencode/deepseek-v4.1-flash-free',
 ]

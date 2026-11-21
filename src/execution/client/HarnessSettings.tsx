@@ -1,3 +1,4 @@
+import { EngineUpdates } from './EngineUpdates.tsx'
 import { useHarnessSettings } from './use-harness-settings.ts'
 import { ExecutableBrowser } from '../../shared/client/ExecutableBrowser.tsx'
 import { HarnessProxySection } from './HarnessProxySection.tsx'
@@ -139,7 +140,9 @@ function HarnessRow({
                 ? '官方安装器正在运行，请保持应用打开。'
                 : item.maintenance.state === 'completed'
                   ? '已完成，并重新核验了启动入口。'
-                  : '未完成，可以重新检测或重试。'}
+                  : item.maintenance.message.startsWith('更新服务器的证书未受信任')
+                    ? item.maintenance.message.split('\n')[0]
+                    : '未完成，可以重新检测或重试。'}
             </p>
             <details>
               <summary>更新详情</summary>
@@ -217,12 +220,15 @@ export function HarnessSettings({ call, embedded = false }: { call: Call; embedd
   }
   return (
     <div className={css.section} data-opl-panel="execution-settings" aria-busy={busy}>
-      <div className={css.header}>
-        {embedded ? null : <h2 className={css.title}>执行引擎</h2>}
-        <Button variant="outline" disabled={busy} onClick={() => void load()}>
-          {busy ? '检测中…' : '重新检测'}
-        </Button>
-      </div>
+      {embedded ? null : <h2 className={css.title}>执行引擎</h2>}
+      <EngineUpdates
+        call={call}
+        detectButton={
+          <Button variant="outline" disabled={busy} onClick={() => void load()}>
+            {busy ? '检测中…' : '重新检测'}
+          </Button>
+        }
+      />
       <p className={css.intro}>
         自动发现本机执行引擎，并管理版本、安装入口与网络代理。常用的直接列出，其余按需展开。
       </p>

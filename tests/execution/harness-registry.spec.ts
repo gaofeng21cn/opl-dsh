@@ -16,6 +16,30 @@ afterEach(async () => {
 })
 
 describe('Harness executable discovery', () => {
+  it('discovers Grok without treating its default location as an explicit choice', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opl-grok-discovery-'))
+    roots.push(root)
+    vi.stubEnv('USERPROFILE', root)
+    vi.stubEnv('HOME', root)
+    vi.stubEnv('PATH', root)
+    vi.stubEnv('SHELL', join(root, 'no-login-shell'))
+    const harness = { id: 'grok-build', name: 'Grok Build', kind: 'grok-build' } as const
+    const missing = await inspectHarness(harness, root)
+    expect(missing.installed).toBe(false)
+    expect(missing.error).toBeUndefined()
+    expect(missing.maintenanceAction).toBeUndefined()
+    const dir = join(root, '.grok/bin')
+    await mkdir(dir, { recursive: true })
+    const bin = process.platform === 'win32' ? 'grok.cmd' : 'grok'
+    const script = process.platform === 'win32' ? '@echo grok 1.2.3' : '#!/bin/sh\necho grok 1.2.3'
+    const known = join(dir, bin)
+    await writeFile(known, script, { mode: 0o700 })
+    expect(await executablePath('grok')).toBe(known)
+    await writeFile(join(root, bin), script, { mode: 0o700 })
+    expect((await inspectHarness(harness, root)).path).toBe(join(root, bin))
+    const invalid = join(root, 'missing', bin)
+    expect((await inspectHarness({ ...harness, command: invalid }, root)).error).toContain(invalid)
+  })
   it.skipIf(process.platform === 'win32')('uses the same discovered CLI in execution', async () => {
     const root = await mkdtemp(join(tmpdir(), 'opl-harness-registry-'))
     roots.push(root)

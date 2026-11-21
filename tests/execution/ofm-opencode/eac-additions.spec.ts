@@ -37,6 +37,13 @@ const MODELS = [
   'opencode/nemotron-3.5-lightning-free',
   'opencode/nemotron-3.5-super-vl-free',
   'opencode/flint-40b-free',
+  'opencode/longcat-2.5-free',
+  'opencode/mimo-v2.6-flash-free',
+  'opencode/hy4-flash-free',
+  'opencode/tidepool-alpha-free',
+  'opencode/beam-free',
+  'opencode/iceman-free',
+  'opencode/big-pickle',
 ] as const
 const OWNER_ORIGIN = 'http://127.0.0.1:32124'
 const FORWARD_ORIGIN = 'http://127.0.0.1:32123'

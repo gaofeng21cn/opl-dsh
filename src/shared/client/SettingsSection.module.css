@@ -26,6 +26,10 @@
   flex-direction: column;
 }
 
+[data-opl-preference='minimax-integration'] > .officialRow {
+  padding-top: 0;
+}
+
 .officialRow p {
   margin: 0;
 }
@@ -286,6 +290,17 @@ select.input {
   justify-content: space-between;
   gap: 16px;
 }
+.engineUpdateName {
+  flex: 1;
+  text-align: start;
+}
+.engineBatch {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
 .row > div {
   min-width: 0;
 }
@@ -293,6 +308,27 @@ select.input {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.details .engineUpdateToolbar,
+[data-opl-panel='execution-limits'] > .detailsBody > .actions {
+  margin-top: 0;
+}
+[data-opl-panel='execution-limits'] > .detailsBody > .preferenceRow {
+  padding-block: 0 8px;
+}
+.section[data-opl-panel='execution'] .intro,
+.engineCheckResults > p {
+  font-size: 12px;
+  line-height: 18px;
+}
+.engineCheckResults[open] > summary {
+  margin-bottom: 8px;
+}
+.engineCheckResults > p + p {
+  margin-top: 4px;
+}
+.engineUpdatePanel > .preferenceRow:first-child {
+  padding-top: 0;
 }
 .details .detailsBody button {
   margin-top: 0;
@@ -409,15 +445,50 @@ select.input {
   border-radius: var(--dsw-radius-lg);
 }
 
-.advancedLink {
-  align-self: flex-start;
-  border: 0;
-  background: none;
-  padding: 0;
-  color: var(--dsw-alias-label-tertiary);
+.providerAction {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
   font: inherit;
   font-size: 12px;
+  line-height: 18px;
   cursor: pointer;
+}
+
+@media (hover: hover) {
+  .providerAction:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover-solid);
+  }
+}
+
+.providerAction:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+}
+
+.providerAction:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+[data-opl-managed-models] > .modelRows:empty {
+  display: none;
+}
+[data-opl-managed-models] > .modelRows > .modelRow:first-child {
+  padding-top: 0;
+}
+[data-opl-managed-models] > .modelRows > .modelRow:last-child {
+  padding-bottom: 0;
+}
+[data-opl-managed-models] > .error {
+  margin: 0;
 }
 
 .taskRow {

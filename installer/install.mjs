@@ -26,8 +26,6 @@ const codexHome =
   (previousInstallation?.skillDir
     ? dirname(dirname(previousInstallation.skillDir))
     : join(homedir(), '.codex'))
-// Refuse a modified or foreign Skill before changing the official profile.
-verifySkill(join(codexHome, 'skills/opl-dsh-official'))
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex')
 const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'"
 function run(command, args, env = {}) {
@@ -91,15 +89,6 @@ async function closeDesktop(pid) {
     await new Promise((resolve) => setTimeout(resolve, 250))
   if (alive(pid) || desktopProcessesAlive()) throw new Error('DSH 无法退出，已停止安装')
 }
-if (existsSync(bindingPath)) {
-  const binding = JSON.parse(readFileSync(bindingPath, 'utf8'))
-  if (alive(binding.pid)) {
-    if (flags.includes('--update-if-stopped'))
-      throw new Error('Desktop 仍在运行，已保留待更新包；退出后重新启动再更新')
-    await idleTasks(binding)
-    await closeDesktop(binding.pid)
-  }
-}
 const artifact = JSON.parse(readFileSync(join(payload, 'artifact.json'), 'utf8'))
 if (!/^opl-dsh-enhancements-[a-zA-Z0-9.-]+\.tgz$/.test(artifact.name))
   throw new Error('安装清单无效')
@@ -118,6 +107,25 @@ for (const [file, expected] of Object.entries(artifact.payloadFiles)) {
     throw new Error('套件路径无效')
   if (digest(readFileSync(join(payload, file))) !== expected)
     throw new Error('套件文件校验失败：' + file)
+}
+const desktopBinding = existsSync(bindingPath)
+  ? JSON.parse(readFileSync(bindingPath, 'utf8'))
+  : undefined
+const desktopRunning = desktopBinding && alive(desktopBinding.pid)
+if (desktopRunning && flags.includes('--update-if-stopped'))
+  throw new Error('Desktop 仍在运行，已保留待更新包；退出后重新启动再更新')
+// Preflight managed Skill state only after the payload passes verification.
+verifySkill(
+  join(codexHome, 'skills/opl-dsh-official'),
+  process.platform === 'darwin'
+    ? [payload, previousInstallation?.release, previousInstallation?.previousRelease].filter(
+        Boolean,
+      )
+    : [],
+)
+if (desktopRunning) {
+  await idleTasks(desktopBinding)
+  await closeDesktop(desktopBinding.pid)
 }
 const release = join(root, 'releases', artifact.suiteSha256)
 if (existsSync(release)) {

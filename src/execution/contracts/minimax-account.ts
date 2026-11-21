@@ -9,7 +9,7 @@ export interface MiniMaxAccountStatus {
   loginDeadline?: number
 }
 
-/** Region selects the account being viewed or managed, without changing execution routing. */
+/** Public region identifier shared by account actions and DSH execution settings. */
 export interface MiniMaxAccountLoginRequest {
   region: 'cn' | 'global'
 }

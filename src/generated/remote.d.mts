@@ -5,7 +5,7 @@ import type {
   TypertRemoteInfo,
   TypertRemoteMethod,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, CodexRuntimeRequest, CodexRuntimeResult, CooperationSettings, CoordinationStatus, CoordinatorHooksStatus, DelegateRequest, DeliveryRecord, ExecutionCatalog, ExecutionLimits, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewayRememberedLogin, GatewaySignInResult, HarnessCatalog, HarnessContextReading, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessReasoningPreflight, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, MessageEditSend, MessageEditState, MiniMaxAccountLoginRequest, MiniMaxAccountStatus, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, NativeShellStatus, OplUpdatePolicy, OplUpdateStatus, ReportRequest, ReviewRequest, RoleExecutionCatalog, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
+import type { AutoReviewSaveRequest, AutoReviewSaveResult, AutoReviewStatus, CodexRuntimeRequest, CodexRuntimeResult, CooperationSettings, CoordinationStatus, CoordinatorHooksStatus, DelegateRequest, DeliveryRecord, EngineUpdateSettings, EngineUpdateState, ExecutionCatalog, ExecutionLimits, GatewayAccountStatus, GatewayModelEdit, GatewayModelSettings, GatewayRememberedLogin, GatewaySignInResult, HarnessCatalog, HarnessContextReading, HarnessDetailPage, HarnessDetailRequest, HarnessInstallation, HarnessOrigin, HarnessPromptRequest, HarnessProxy, HarnessReasoningPreflight, HarnessSelection, HarnessSessionsPage, HarnessSessionsRequest, HarnessSnapshot, HarnessStartRequest, HarnessTaskSummary, LoginChoice, MessageEditSend, MessageEditState, MiniMaxAccountLoginRequest, MiniMaxAccountStatus, MiniMaxCandidateRequest, MiniMaxCandidateResult, ModelDraft, NativeShellStatus, OplUpdatePolicy, OplUpdateStatus, ReportRequest, ReviewRequest, RoleExecutionCatalog, SessionRequest, SetupStatus, StopEditRequest, StopEditResult, StopEditState, StopEditStateRequest, TaskAckRequest, TaskAckValue, TaskConsumeRequest, TaskConsumeValue, TaskFlushValue, TaskLookupRequest, TaskReceipt, TaskReceiveRequest, TaskReceiveValue, TaskRecord, TaskRegistration, TaskRegistrationValue, TaskResumeRequest, TaskResumeValue, WakeSettings, WakeStatus } from '@one-person-lab/dsh-opl/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$6f706c4175746f526576696577 {
@@ -31,6 +31,10 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'cooperation-settings': () => Promise<RemoteResult<CooperationSettings>>
     delegate: (request: DelegateRequest, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
     detail: (request: HarnessDetailRequest) => Promise<RemoteResult<HarnessDetailPage>>
+    'engine-updates': () => Promise<RemoteResult<EngineUpdateState>>
+    'engine-updates-check': () => Promise<RemoteResult<EngineUpdateState>>
+    'engine-updates-install': (request: { ids: string[]; }) => Promise<RemoteResult<EngineUpdateState>>
+    'engine-updates-settings': (request: EngineUpdateSettings) => Promise<RemoteResult<EngineUpdateState>>
     'execution-limits': () => Promise<RemoteResult<ExecutionLimits>>
     'harness-installations': () => Promise<RemoteResult<HarnessInstallation[]>>
     'harness-update': (request: { id: string; }) => Promise<RemoteResult<null>>
@@ -41,6 +45,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'minimax-account-login': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
     'minimax-account-logout': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
     'minimax-account-status': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
+    'minimax-execution-region': () => Promise<RemoteResult<MiniMaxAccountLoginRequest>>
+    'minimax-select-region': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountLoginRequest>>
     'model-selection': (request: SessionRequest) => Promise<RemoteResult<HarnessSelection>>
     'projectless-session': () => Promise<RemoteResult<{ sessionId: string; cwd: string; }>>
     prompt: (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
@@ -140,6 +146,10 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/cooperation-settings': () => Promise<RemoteResult<CooperationSettings>>
     'oplExecution/delegate': (request: DelegateRequest, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
     'oplExecution/detail': (request: HarnessDetailRequest) => Promise<RemoteResult<HarnessDetailPage>>
+    'oplExecution/engine-updates': () => Promise<RemoteResult<EngineUpdateState>>
+    'oplExecution/engine-updates-check': () => Promise<RemoteResult<EngineUpdateState>>
+    'oplExecution/engine-updates-install': (request: { ids: string[]; }) => Promise<RemoteResult<EngineUpdateState>>
+    'oplExecution/engine-updates-settings': (request: EngineUpdateSettings) => Promise<RemoteResult<EngineUpdateState>>
     'oplExecution/execution-limits': () => Promise<RemoteResult<ExecutionLimits>>
     'oplExecution/harness-installations': () => Promise<RemoteResult<HarnessInstallation[]>>
     'oplExecution/harness-update': (request: { id: string; }) => Promise<RemoteResult<null>>
@@ -150,6 +160,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/minimax-account-login': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
     'oplExecution/minimax-account-logout': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
     'oplExecution/minimax-account-status': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
+    'oplExecution/minimax-execution-region': () => Promise<RemoteResult<MiniMaxAccountLoginRequest>>
+    'oplExecution/minimax-select-region': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountLoginRequest>>
     'oplExecution/model-selection': (request: SessionRequest) => Promise<RemoteResult<HarnessSelection>>
     'oplExecution/projectless-session': () => Promise<RemoteResult<{ sessionId: string; cwd: string; }>>
     'oplExecution/prompt': (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
@@ -250,6 +262,10 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'oplExecution/cooperation-settings': TypertRemoteMethod<{  }, CooperationSettings>
   readonly 'oplExecution/delegate': TypertRemoteMethod<{ readonly 'request': DelegateRequest }, HarnessSnapshot>
   readonly 'oplExecution/detail': TypertRemoteMethod<{ readonly 'request': HarnessDetailRequest }, HarnessDetailPage>
+  readonly 'oplExecution/engine-updates': TypertRemoteMethod<{  }, EngineUpdateState>
+  readonly 'oplExecution/engine-updates-check': TypertRemoteMethod<{  }, EngineUpdateState>
+  readonly 'oplExecution/engine-updates-install': TypertRemoteMethod<{ readonly 'request': { ids: string[]; } }, EngineUpdateState>
+  readonly 'oplExecution/engine-updates-settings': TypertRemoteMethod<{ readonly 'request': EngineUpdateSettings }, EngineUpdateState>
   readonly 'oplExecution/execution-limits': TypertRemoteMethod<{  }, ExecutionLimits>
   readonly 'oplExecution/harness-installations': TypertRemoteMethod<{  }, HarnessInstallation[]>
   readonly 'oplExecution/harness-update': TypertRemoteMethod<{ readonly 'request': { id: string; } }, null>
@@ -260,6 +276,8 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'oplExecution/minimax-account-login': TypertRemoteMethod<{ readonly 'request': MiniMaxAccountLoginRequest }, MiniMaxAccountStatus>
   readonly 'oplExecution/minimax-account-logout': TypertRemoteMethod<{ readonly 'request': MiniMaxAccountLoginRequest }, MiniMaxAccountStatus>
   readonly 'oplExecution/minimax-account-status': TypertRemoteMethod<{ readonly 'request': MiniMaxAccountLoginRequest }, MiniMaxAccountStatus>
+  readonly 'oplExecution/minimax-execution-region': TypertRemoteMethod<{  }, MiniMaxAccountLoginRequest>
+  readonly 'oplExecution/minimax-select-region': TypertRemoteMethod<{ readonly 'request': MiniMaxAccountLoginRequest }, MiniMaxAccountLoginRequest>
   readonly 'oplExecution/model-selection': TypertRemoteMethod<{ readonly 'request': SessionRequest }, HarnessSelection>
   readonly 'oplExecution/projectless-session': TypertRemoteMethod<{  }, { sessionId: string; cwd: string; }>
   readonly 'oplExecution/prompt': TypertRemoteMethod<{ readonly 'request': HarnessPromptRequest }, HarnessSnapshot>

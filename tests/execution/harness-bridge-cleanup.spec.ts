@@ -77,8 +77,10 @@ interface FixtureActive {
 }
 interface Owner {
   openConnection(record: HarnessSession): Promise<void>
-  disconnectForEdit(record: HarnessSession, expected: FixtureActive): Promise<void>
+  disconnectIdleConnection(record: HarnessSession, expected: FixtureActive): Promise<void>
+  closeIdleEngineConnections(id: string): Promise<void>
   externalHistory(record: HarnessSession): Promise<ExternalEditHistory>
+  records: Map<string, HarnessSession>
   active: Map<string, FixtureActive>
 }
 
@@ -98,6 +100,9 @@ const record = (): HarnessSession => ({
   turns: [],
 })
 
+vi.mock('../../src/execution/host/minimax-execution-region.ts', () => ({
+  minimaxExecutionRegion: async () => 'global',
+}))
 function lifecycleOwner() {
   const adapter: HarnessAdapter = {
     id: 'fixture',
@@ -120,6 +125,7 @@ function lifecycleOwner() {
   vi.mocked(adapterFor).mockReturnValue(adapter)
   const active = new Map<string, FixtureActive>()
   const service = Object.assign(Object.create(HarnessService.prototype) as HarnessService, {
+    options: {},
     ctx: { connection: testPeerConnection },
     active,
     records: new Map(),
@@ -133,6 +139,30 @@ function lifecycleOwner() {
 }
 
 describe('owned bridge cleanup', () => {
+  it('releases the updated engine process without dropping its saved session or another engine', async () => {
+    vi.mocked(startControlBridge).mockResolvedValue(async () => {})
+    const owner = lifecycleOwner()
+    const session = record()
+    const other = { ...record(), id: 'other-engine', harnessRef: 'opencode' }
+    owner.records.set(session.id, session)
+    owner.records.set(other.id, other)
+    await owner.openConnection(session)
+    await owner.openConnection(other)
+    const oldProcess = owner.active.get(session.id)!.acp
+    const otherProcess = owner.active.get(other.id)!.acp
+
+    await owner.closeIdleEngineConnections(session.harnessRef)
+
+    expect(oldProcess.closed).toBe(true)
+    expect(owner.active.has(session.id)).toBe(false)
+    expect(owner.records.get(session.id)?.acpSessionId).toBe('same-acp-session')
+    expect(owner.active.get(other.id)?.acp).toBe(otherProcess)
+    expect(otherProcess.closed).toBe(false)
+    await owner.openConnection(session)
+    expect(owner.active.get(session.id)?.acp).not.toBe(oldProcess)
+    expect(session.acpSessionId).toBe('same-acp-session')
+  })
+
   it('keeps disconnect pending until cleanup started by the ACP exit callback finishes', async () => {
     const gate = deferred()
     const cleanup = vi.fn(() => gate.promise)
@@ -143,7 +173,7 @@ describe('owned bridge cleanup', () => {
     const active = owner.active.get(session.id)!
     fixture.instances[0]!.exit()
     const first = active.bridgeStop()
-    const disconnect = owner.disconnectForEdit(session, active)
+    const disconnect = owner.disconnectIdleConnection(session, active)
     let disconnected = false
     void disconnect.then(() => {
       disconnected = true
@@ -172,7 +202,7 @@ describe('owned bridge cleanup', () => {
     const first = active.bridgeStop()
     void first.catch(() => undefined)
     fixture.instances[0]!.exit()
-    const disconnect = owner.disconnectForEdit(session, active)
+    const disconnect = owner.disconnectIdleConnection(session, active)
     const failure = new Error('owned cleanup failed')
     const failed = expect(disconnect).rejects.toBe(failure)
     gate.reject(failure)

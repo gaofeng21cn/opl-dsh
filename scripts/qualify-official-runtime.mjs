@@ -129,6 +129,7 @@ const environment = {
   OPL_SUITE_ROOT: suite,
   OPL_CODEX_HOME: join(root, 'codex'),
   MINIMAX_DATA_DIR: join(root, 'minimax-fixture-data'),
+  MAVIS_REGION: 'en',
   OPL_APPLICATIONS_DIR: join(root, 'applications'),
   OPL_INSTALL_NO_LAUNCH: '1',
   OPL_QUALIFICATION_SKIP_PROVIDER_SECRET_WRITE: '1',
@@ -485,11 +486,24 @@ async function stopDesktop() {
   desktop = undefined
 }
 try {
-  // Only the fixture CLI is used below. Keep its login-presence hint isolated
-  // from the operator's account; no real credential contents are needed.
-  const minimaxAuth = join(environment.MINIMAX_DATA_DIR, 'auth', 'en', 'mcode-public')
+  // The fixture CLI uses only the official account-state metadata for the selected region.
+  const minimaxAuth = join(environment.MINIMAX_DATA_DIR, 'auth', 'prod', 'en', 'mcode-public')
   await mkdir(minimaxAuth, { recursive: true })
-  await writeFile(join(minimaxAuth, 'auth.json'), '', { mode: 0o600 })
+  await writeFile(
+    join(minimaxAuth, 'auth-state.json'),
+    JSON.stringify({
+      schemaVersion: 2,
+      storeKind: 'file',
+      clientId: 'mcode-public',
+      audience: 'agent-backend',
+      scopes: [],
+      buildEnv: 'prod',
+      region: 'en',
+      generation: 1,
+      status: 'authenticated',
+    }),
+    { mode: 0o600 },
+  )
   // An existing empty migration source takes precedence over every user legacy path.
   await mkdir(environment.OPL_LEGACY_HOME, { recursive: true })
   await writeFile(environment.OPL_DESKTOP_LAUNCHER, 'Qualification owns launch and cleanup.\n', {

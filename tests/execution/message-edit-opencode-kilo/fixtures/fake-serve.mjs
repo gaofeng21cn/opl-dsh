@@ -5,7 +5,7 @@
  * and enforces the same Basic authentication as the official CLI.
  */
 import { createServer } from 'node:http'
-import { writeFileSync } from 'node:fs'
+import { appendFileSync, writeFileSync } from 'node:fs'
 
 const kind = process.env.FAKE_VENDOR_KIND === 'kilo' ? 'kilo' : 'opencode'
 const passwordEnv = kind === 'kilo' ? 'KILO_SERVER_PASSWORD' : 'OPENCODE_SERVER_PASSWORD'
@@ -83,8 +83,6 @@ const server = createServer(async (request, response) => {
   }
   const forkMatch = url.pathname.match(/^\/session\/([^/]+)\/fork$/)
   if (request.method === 'POST' && forkMatch) {
-    if (process.env.FAKE_FORK_ENTERED_FILE)
-      writeFileSync(process.env.FAKE_FORK_ENTERED_FILE, 'entered')
     const body = await new Promise((resolveBody) => {
       let raw = ''
       request.on('data', (chunk) => {
@@ -102,10 +100,10 @@ const server = createServer(async (request, response) => {
     try {
       messageID = JSON.parse(body).messageID
     } catch {}
-    if (process.env.FAKE_FORK_DELAY_MS)
-      await new Promise((resolveDelay) =>
-        setTimeout(resolveDelay, Number(process.env.FAKE_FORK_DELAY_MS)),
-      )
+    if (process.env.FAKE_FORK_ENTERED_FILE)
+      appendFileSync(process.env.FAKE_FORK_ENTERED_FILE, 'entered\n')
+    // Leave the received request open so the client controls when it aborts.
+    if (process.env.FAKE_HOLD_FORK === '1') return
     const index = source.findIndex((message) => message.info.id === messageID)
     const prefix = index < 0 ? source : source.slice(0, index)
     const forkId = `ses_fake_${next('fork')}`
