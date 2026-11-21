@@ -47,7 +47,7 @@ OFM 来源统一使用 `Our Free Model` 写法，区域渠道保留 `region-limi
 | GPT-OSS 20B                                                                                                                   | Codex CLI                       | Responses |
 | Kilo Step 5 Preview（stepfun/step-5-preview-free）                                                                            | StepCode                        | Chat      |
 | Ling、LongCat、North Mini Code、Nemotron 3.5、Space Bunny、OpenRouter Free                                                    | OpenCode                        | Chat      |
-| OPL Gateway Gemini 3.8 Flash、4 Argon、4 Carbon、4 Hydrogen | Antigravity CLI（默认），OpenCode（手动添加） | Gemini 原生；备选 Chat |
+| OPL Gateway Gemini | Antigravity CLI（默认），Carbon、Hydrogen 可选 Pi，OpenCode 可手动添加 | Gemini 原生（Antigravity、Pi），Chat（OpenCode） |
 | Nemotron Nano Omni、LFM2.5、Inkling Small、Inkling、Gemma 4 31B                                                               | Pi Coding Agent                 | Chat      |
 | Dots、Glyph、Kilo Auto Free、Kilo Beam、Xing 4.0                                                                              | Kilo Code                       | Chat      |
 
@@ -76,6 +76,8 @@ EAC 的 `opencode/nemotron-3.5-lightning-free`、`opencode/nemotron-3.5-super-vl
 `step-5-preview-free` 与 `muse-spark-1.2-contributor-free` 当前从 OPL 选择器隐藏；Jev 与 Content Safety 不作为编码组合提供。Muse Code 没有可用默认组合，不默认登记或提示安装，已有程序与显式配置保留。
 
 OPL Gateway 的 Gemini 3.8 Flash、4 Argon、4 Carbon 和 4 Hydrogen 默认搭配官方 Antigravity CLI，通过 Gateway 原生 Gemini 接口使用该分组凭据，无需 Google 账号登录。新建和恢复均先固定模型及 CLI 实际广告的推理档位并回读（Gemini 4 Carbon 支持 `low`、`medium`、`high`，Gemini 4 Hydrogen 支持 `low`、`medium`、`high`、`xhigh`）；没有指定档位时明确使用 `high`。支持来源声明的图片输入，Windows 命令通过独占 profile 的官方 Hook 使用 Git Bash。只支持明确选择的完全权限，不支持 Auto Review。Token 账单取本轮 ACP 用量，上下文占用另取最后一次模型请求的估计，不混用累计用量。
+
+使用默认 OPL Gateway 地址时，可在「执行与组合」中启用 Carbon 或 Hydrogen 的 Pi Coding Agent 组合。Pi 通过原生 Gemini 协议复用现有 Gemini 分组凭据，使用独立会话目录。当前 Pi 组合接收文本，需要会话明确选择完全权限。
 
 需要 OpenCode 时，可在“执行与组合 → 手动添加组合”中选择 Gemini 模型和 OpenCode。已有会话及用户设置的默认组合保留绑定。Antigravity 当前只支持首条消息编辑重开，底层旧会话保留且不撤销文件；中途编辑可选 OpenCode。自定义 Chat 地址不能推断原生 Gemini 地址，需使用 OPL 默认原生端点或保留 OpenCode 组合。
 

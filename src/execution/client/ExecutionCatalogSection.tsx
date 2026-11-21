@@ -1,10 +1,23 @@
+import { useEffect, useState } from 'react'
 import { isDisabledManualAlternative } from './combination-choices.ts'
 import { RecommendationPicker } from './RecommendationPicker.tsx'
 import { ModelAvailabilityStatus } from './ModelAvailabilityStatus.tsx'
 import { useExecutionCatalog } from './use-execution-catalog.ts'
 import { Button, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
-import { displayModelSource, selectableModels, modelRefKey } from '../contracts/catalog.ts'
+import {
+  displayModelName,
+  displayModelSource,
+  selectableModels,
+  modelRefKey,
+} from '../contracts/catalog.ts'
 import { isOfficialPairing } from '../contracts/official-harnesses.ts'
+import {
+  COMBINATION_PERMISSION_LABELS,
+  combinationChoices,
+  defaultPermissionPolicy,
+  pairingPermissionPolicies,
+  recommendationChoiceKey,
+} from './combination-choices.ts'
 import type { CombinationDefinition, ExecutionCatalog } from '../contracts/catalog.ts'
 import type { HarnessCatalog } from '../../contracts/types.ts'
 import type { RemoteCallInput } from '../../shared/client/remote-call.ts'
@@ -35,6 +48,17 @@ export function ExecutionCatalogSection({
     add,
     addRecommendations,
   } = useExecutionCatalog(call, refreshKey)
+  const [recommendationsOpen, setRecommendationsOpen] = useState(false)
+  const choices = catalog ? combinationChoices(catalog) : []
+  const availableRecommendations = new Set(
+    catalog?.recommendations?.map(recommendationChoiceKey) ?? [],
+  )
+  const recommendationCount = choices.filter((choice) =>
+    availableRecommendations.has(choice.key),
+  ).length
+  useEffect(() => {
+    if (recommendationCount > 0) setRecommendationsOpen(true)
+  }, [recommendationCount])
   const supportedHarnesses =
     catalog?.supportedPairings?.find((item) => modelRefKey(item.modelRef) === draft.model)
       ?.harnessRefs ?? []
@@ -48,6 +72,11 @@ export function ExecutionCatalogSection({
       ),
   )
   const selectedHarness = remainingHarnesses.includes(draft.harness) ? draft.harness : ''
+  const permissionPolicies =
+    catalog && draft.model ? pairingPermissionPolicies(catalog, draft.model, selectedHarness) : []
+  const selectedPermission = permissionPolicies.includes(draft.permissionPolicy)
+    ? draft.permissionPolicy
+    : defaultPermissionPolicy(permissionPolicies)
   return (
     <div className={css.section} data-opl-panel="catalog" aria-busy={busy || (!catalog && !notice)}>
       {embedded ? null : <h2 className={css.title}>执行组合</h2>}
@@ -91,8 +120,13 @@ export function ExecutionCatalogSection({
       )}
       {catalog &&
         (catalog.combinations.length > 0 || (catalog.recommendations?.length ?? 0) > 0) && (
-          <details className={css.details} data-opl-panel="recommended-combinations">
-            <summary>选择与添加组合</summary>
+          <details
+            className={css.details}
+            data-opl-panel="recommended-combinations"
+            open={recommendationsOpen}
+            onToggle={(event) => setRecommendationsOpen(event.currentTarget.open)}
+          >
+            <summary>启用与添加组合（{choices.length}）</summary>
             <div className={css.detailsBody}>
               <RecommendationPicker catalog={catalog} busy={busy} onAdd={addRecommendations} />
             </div>
@@ -101,18 +135,35 @@ export function ExecutionCatalogSection({
       {catalog && (
         <details className={css.details} data-opl-panel="custom-combinations">
           <summary>手动添加组合</summary>
-          <div className={css.detailsBody}>
+          <form
+            className={css.detailsBody}
+            aria-label="手动添加组合"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void add()
+            }}
+          >
             <label className={css.field}>
               模型
               <select
                 className={css.input}
+                name="model"
+                required
                 value={draft.model}
-                onChange={(e) => setDraft({ ...draft, model: e.target.value, harness: '' })}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    model: e.target.value,
+                    harness: '',
+                    permissionPolicy: 'workspace',
+                  })
+                }
               >
                 <option value="">选择模型</option>
                 {selectableModels(catalog.models).map((model) => (
                   <option key={modelRefKey(model.ref)} value={modelRefKey(model.ref)}>
-                    {displayModelSource(model.ref, model.source)} · {model.name}
+                    {displayModelSource(model.ref, model.source)} ·{' '}
+                    {displayModelName(model.ref, model.name)}
                   </option>
                 ))}
               </select>
@@ -121,9 +172,17 @@ export function ExecutionCatalogSection({
               Harness
               <select
                 className={css.input}
+                name="harness"
+                required
                 value={selectedHarness}
                 disabled={busy || !draft.model || !remainingHarnesses.length}
-                onChange={(e) => setDraft({ ...draft, harness: e.target.value })}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    harness: e.target.value,
+                    permissionPolicy: 'workspace',
+                  })
+                }
               >
                 <option value="">
                   {!draft.model
@@ -141,10 +200,43 @@ export function ExecutionCatalogSection({
                   ))}
               </select>
             </label>
-            <Button disabled={busy || !draft.model || !selectedHarness} onClick={() => void add()}>
+            <label className={css.field}>
+              权限
+              <select
+                className={css.input}
+                name="permission"
+                required
+                value={selectedPermission ?? ''}
+                disabled={busy || permissionPolicies.length < 2}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    permissionPolicy: e.target.value as typeof draft.permissionPolicy,
+                  })
+                }
+              >
+                <option value="">选择权限</option>
+                {permissionPolicies.map((policy) => (
+                  <option key={policy} value={policy}>
+                    {COMBINATION_PERMISSION_LABELS[policy]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {permissionPolicies.length === 1 && selectedPermission && (
+              <p className={css.muted}>
+                此执行引擎仅支持{COMBINATION_PERMISSION_LABELS[selectedPermission]}。
+                {selectedPermission === 'full-access' && '运行前请在当前会话选择此权限。'}
+              </p>
+            )}
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={busy || !draft.model || !selectedHarness || !selectedPermission}
+            >
               保存执行组合
             </Button>
-          </div>
+          </form>
         </details>
       )}
       {catalog &&
@@ -229,7 +321,13 @@ function CombinationRow({
         candidate.enabled && modelRefKey(candidate.modelRef) === modelRefKey(item.modelRef),
     ).length > 1
   const source = displayModelSource(item.modelRef, model?.source)
-  const description = `${source} · ${model?.name ?? item.modelRef.model} · ${harness?.name ?? item.harnessRef}`
+  const modelName = displayModelName(item.modelRef, model?.name)
+  const routeSeparator = item.modelRef.model.indexOf('::')
+  const modelId =
+    item.modelRef.provider === 'opl-gateway' && routeSeparator >= 0
+      ? item.modelRef.model.slice(routeSeparator + 2)
+      : item.modelRef.model
+  const description = `${source} · ${modelName} · ${harness?.name ?? item.harnessRef}`
   return (
     <details
       className={listCss.item}
@@ -268,6 +366,14 @@ function CombinationRow({
         </span>
       </summary>
       <div className={`${css.detailsBody} ${listCss.editor}`}>
+        <dl className={listCss.modelDetails}>
+          <dt>模型名称</dt>
+          <dd>{modelName}</dd>
+          <dt>模型 ID</dt>
+          <dd>
+            <code>{modelId}</code>
+          </dd>
+        </dl>
         <label className={css.field}>
           配置名称
           <input

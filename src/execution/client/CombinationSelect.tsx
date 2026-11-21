@@ -19,6 +19,7 @@ import { useModelSelection } from './use-model-selection.ts'
 import type { SelectionSource } from './use-model-selection.ts'
 import css from './CombinationSelect.module.css'
 import { modelDefaultEffort } from '../../shared/model-reasoning.ts'
+import { displayModelName } from '../../shared/models.ts'
 
 import type { ExecutionCall as Call } from '../../shared/client/remote-call.ts'
 type Choice = {
@@ -203,7 +204,7 @@ export function CombinationSelect({
         const status = availability.find((item) => item.id === combination.id)
         return {
           combination,
-          modelName: model?.name ?? combination.modelRef.model,
+          modelName: model?.name ?? displayModelName(combination.modelRef),
           harnessName: harness?.name ?? combination.harnessRef,
           source: sourceLabel(
             combination.modelRef.provider,

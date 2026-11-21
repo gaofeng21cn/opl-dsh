@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { TypertRemoteNamespace } from '@deepseek-ai/dsh-typert-protocol'
-import { modelRefKey } from '../contracts/catalog.ts'
+import { displayModelName, modelRefKey } from '../contracts/catalog.ts'
 import { isOfficialPairing } from '../contracts/official-harnesses.ts'
 import {
   isDisabledManualAlternative,
+  defaultPermissionPolicy,
   pairingKey,
+  pairingPermissionPolicies,
   savedChoiceKey,
   recommendationChoiceKey,
 } from './combination-choices.ts'
@@ -34,7 +36,11 @@ export function useExecutionCatalog(
   const [busy, setBusy] = useState(false),
     [notice, setNotice] = useState('')
   const [loadRevision, setLoadRevision] = useState(0)
-  const [draft, setDraft] = useState({ model: '', harness: 'dsh' })
+  const [draft, setDraft] = useState({
+    model: '',
+    harness: 'dsh',
+    permissionPolicy: 'workspace' as CombinationDefinition['permissionPolicy'],
+  })
   const [editing, setEditing] = useState<string>()
   const running = useRef(false),
     mounted = useRef(true),
@@ -152,6 +158,14 @@ export function useExecutionCatalog(
       return
     }
     const chosen = { modelRef: model.ref, harnessRef: draft.harness }
+    const policies = pairingPermissionPolicies(catalog, draft.model, draft.harness)
+    const permissionPolicy = policies.includes(draft.permissionPolicy)
+      ? draft.permissionPolicy
+      : defaultPermissionPolicy(policies)
+    if (!permissionPolicy) {
+      setNotice('该 Harness 当前没有可用的权限配置。')
+      return
+    }
     if (
       [
         ...catalog.combinations.filter((item) => !isDisabledManualAlternative(item)),
@@ -166,6 +180,7 @@ export function useExecutionCatalog(
     )
     if (disabled) {
       const result = await update(disabled.id, {
+        permissionPolicy,
         enabled: true,
         isDefault:
           disabled.isDefault &&
@@ -173,7 +188,8 @@ export function useExecutionCatalog(
             (item) => item.enabled && item.isDefault && modelRefKey(item.modelRef) === draft.model,
           ),
       })
-      if (result?.status === 'saved' && mounted.current) setDraft({ model: '', harness: 'dsh' })
+      if (result?.status === 'saved' && mounted.current)
+        setDraft({ model: '', harness: 'dsh', permissionPolicy: 'workspace' })
       return
     }
     const makeDefault =
@@ -187,10 +203,10 @@ export function useExecutionCatalog(
         ...catalog.combinations,
         {
           id: crypto.randomUUID(),
-          name: `${model.name} + ${catalog.harnesses.find((item) => item.id === draft.harness)?.name ?? draft.harness}`,
+          name: `${displayModelName(model.ref, model.name)} + ${catalog.harnesses.find((item) => item.id === draft.harness)?.name ?? draft.harness}`,
           modelRef: model.ref,
           harnessRef: draft.harness,
-          permissionPolicy: 'workspace',
+          permissionPolicy,
           isDefault: makeDefault,
           enabled: true,
           autoEnabled: false,
@@ -199,7 +215,8 @@ export function useExecutionCatalog(
         },
       ],
     })
-    if (result.status === 'saved' && mounted.current) setDraft({ model: '', harness: 'dsh' })
+    if (result.status === 'saved' && mounted.current)
+      setDraft({ model: '', harness: 'dsh', permissionPolicy: 'workspace' })
   }
   const addRecommendations = async ({ selected, disabledIds }: CombinationSelection) => {
     if (!catalog) return
@@ -212,7 +229,10 @@ export function useExecutionCatalog(
       additions.push({
         ...item,
         id: crypto.randomUUID(),
-        permissionPolicy: 'workspace',
+        permissionPolicy:
+          defaultPermissionPolicy(
+            pairingPermissionPolicies(catalog, modelRefKey(item.modelRef), item.harnessRef),
+          ) ?? 'workspace',
         isDefault: false,
         enabled: true,
         autoEnabled: false,
