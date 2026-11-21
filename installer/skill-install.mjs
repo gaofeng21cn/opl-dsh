@@ -10,6 +10,8 @@ import {
   renameSync,
   rmSync,
   lstatSync,
+  linkSync,
+  mkdtempSync,
 } from 'node:fs'
 import { join, isAbsolute, dirname } from 'node:path'
 import { homedir } from 'node:os'
@@ -186,12 +188,19 @@ function listSkillFiles(directory, prefix = '') {
   })
 }
 
-export function verifySkill(skillDir) {
+export function verifySkill(skillDir, repairSources = []) {
   const skillManifest = join(skillDir, '.opl-install.json')
   if (existsSync(skillDir)) {
     if (lstatSync(skillDir).isSymbolicLink() || !existsSync(skillManifest))
       throw new Error('已有非本安装器管理的 opl-dsh-official Skill，已保留')
     const previous = JSON.parse(readFileSync(skillManifest, 'utf8'))
+    const helper = 'coordinator/macos-process'
+    const target = join(skillDir, helper)
+    const missingHelper =
+      repairSources.length > 0 &&
+      Object.hasOwn(previous.files ?? {}, helper) &&
+      !lstatSync(target, { throwIfNoEntry: false }) &&
+      lstatSync(dirname(target), { throwIfNoEntry: false })?.isDirectory()
     if (
       previous.owner !== 'opl-dsh-suite' ||
       listSkillFiles(skillDir).some(
@@ -199,9 +208,29 @@ export function verifySkill(skillDir) {
       ) ||
       Object.entries(previous.files).some(
         ([file, hash]) =>
-          !existsSync(join(skillDir, file)) || digest(readFileSync(join(skillDir, file))) !== hash,
+          !(file === helper && missingHelper) &&
+          (!existsSync(join(skillDir, file)) ||
+            digest(readFileSync(join(skillDir, file))) !== hash),
       )
     )
       throw new Error('Codex Skill 已被手动修改，已保留；请先备份并移走该目录再更新')
+    if (missingHelper) {
+      for (const source of repairSources) {
+        const candidate = join(source, 'skill', helper)
+        if (!lstatSync(candidate, { throwIfNoEntry: false })?.isFile()) continue
+        const bytes = readFileSync(candidate)
+        if (digest(bytes) !== previous.files[helper]) continue
+        const temp = mkdtempSync(join(dirname(target), '.opl-helper-'))
+        try {
+          const staged = join(temp, 'macos-process')
+          writeFileSync(staged, bytes, { mode: 0o700 })
+          linkSync(staged, target)
+        } finally {
+          rmSync(temp, { recursive: true, force: true })
+        }
+        return
+      }
+      throw new Error('缺少 coordinator/macos-process，未找到与旧安装清单校验值相符的副本')
+    }
   }
 }
