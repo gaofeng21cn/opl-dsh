@@ -322,6 +322,8 @@ async function removeUpdateDirectory(path: string, warn: (message: string) => vo
   try {
     await rm(path, { recursive: true, force: true, maxRetries: 6, retryDelay: 150 })
   } catch (error) {
-    warn(`未能清理执行引擎更新目录 ${path}（${(error as NodeJS.ErrnoException).code ?? 'unknown'}）`)
+    warn(
+      `未能清理执行引擎更新目录 ${path}（${(error as NodeJS.ErrnoException).code ?? 'unknown'}）`,
+    )
   }
 }
