@@ -119,6 +119,7 @@ import { QwenTurnUsage } from './adapters/qwen/usage.ts'
 import type { HarnessContextReading } from '../contracts/usage.ts'
 export type { HarnessStartRequest } from '../../contracts/types.ts'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
+import { minimaxExecutionRegion, saveMinimaxExecutionRegion } from './minimax-execution-region.ts'
 import { oplProfilePath } from '../../shared/host/profile-paths.ts'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { ModelCatalog, ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
@@ -383,6 +384,42 @@ export class HarnessService {
     if (!attempt) return
     attempt.cancelled = true
     await this.minimaxAccount.cancel(attempt.region)
+  }
+  async minimaxRegion() {
+    const harness = (await this.catalogStore.get()).harnesses.find((h) => h.id === 'minimax-code')
+    return {
+      region: await minimaxExecutionRegion(this.directory, harness?.prefix ?? this.options.prefix),
+    }
+  }
+  async selectMinimaxRegion(request: MiniMaxAccountLoginRequest) {
+    this.assertMinimaxCodeEnabled()
+    await this.ready
+    return this.runtimeMaintenance.change(
+      () =>
+        [...this.records.values()].some(
+          (r) =>
+            r.harnessRef === 'minimax-code' &&
+            (this.connecting.has(r.id) ||
+              this.externalEditing.has(r.id) ||
+              this.active.get(r.id)?.turn ||
+              r.turns.some((t) =>
+                [
+                  'queued',
+                  'running',
+                  'waiting_approval',
+                  'waiting_input',
+                  'waiting_child',
+                  'needs_approval',
+                  'needs_input',
+                ].includes(t.state),
+              )),
+        ) || this.minimaxAccount.updateBusy(),
+      async () => {
+        await saveMinimaxExecutionRegion(this.directory, request.region)
+        this.events.emit('catalog')
+        return { region: request.region }
+      },
+    )
   }
   minimaxAccountStatus(request: MiniMaxAccountLoginRequest) {
     this.assertMinimaxCodeEnabled()
@@ -1530,6 +1567,14 @@ export class HarnessService {
       chosenHarness?.command,
       chosenHarness?.prefix,
       chosenHarness?.codexRuntime,
+      ...(record.harnessRef === 'minimax-code'
+        ? [
+            await minimaxExecutionRegion(
+              this.directory,
+              chosenHarness?.prefix ?? this.options.prefix,
+            ),
+          ]
+        : []),
       chosenHarness?.proxy?.mode === 'inherit' ? undefined : chosenHarness?.proxy,
     ])
     const existing = this.active.get(record.id)

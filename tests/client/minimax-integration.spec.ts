@@ -12,6 +12,8 @@ import { minimaxAccountZh } from '../../src/execution/client/minimax-account-loc
 
 const state = vi.hoisted(() => ({ catalogMounts: 0 }))
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
+  Button: (props: React.ButtonHTMLAttributes<HTMLButtonElement>) =>
+    React.createElement('button', props),
   Switch: ({
     label,
     checked,
@@ -93,8 +95,7 @@ proto['click'] = function () {
 
 const { act } = React
 const { createRoot } = await import('react-dom/client')
-const { MiniMaxAccountGate, MiniMaxIntegrationPreference } =
-  await import('../../src/execution/client/MiniMaxIntegration.tsx')
+const { MiniMaxAccountGate } = await import('../../src/execution/client/MiniMaxIntegration.tsx')
 const { ExecutionSettings } = await import('../../src/execution/client/ExecutionSettings.tsx')
 
 type Snapshot = ConfigFormSnapshot<MiniMaxIntegrationSettings>
@@ -198,18 +199,23 @@ async function render(children: React.ReactNode) {
   await act(async () => {
     root.render(children)
   })
+  expect(walk(container).filter((node) => node.getAttribute?.('role') === 'switch')).toHaveLength(0)
+  const edit = walk(container).find(
+    (node) => node.getAttribute?.('data-opl-minimax-edit') !== null,
+  )!
+  expect(edit.getAttribute('aria-expanded')).toBe('false')
+  await act(async () => {
+    edit.click()
+  })
+  expect(edit.getAttribute('aria-expanded')).toBe('true')
+  expect(edit.textContent).toBe(minimaxAccountZh.edit)
   return container
 }
 
 it('uses the accepted snapshot for save → readback → disable → re-enable', async () => {
   const fixture = formFixture(ready(true))
   const view = await render(
-    React.createElement(
-      React.Fragment,
-      null,
-      React.createElement(MiniMaxIntegrationPreference, { form: fixture.form, t }),
-      React.createElement(MiniMaxAccountGate, { form: fixture.form, call, t }),
-    ),
+    React.createElement(MiniMaxAccountGate, { form: fixture.form, call, t }),
   )
   expect(accountCard(view)).toBe(true)
   expect(switchControl(view).getAttribute('aria-checked')).toBe('true')
@@ -217,6 +223,7 @@ it('uses the accepted snapshot for save → readback → disable → re-enable',
   await act(async () => {
     switchControl(view).click()
   })
+  expect(view.textContent).toContain(minimaxAccountZh.disabled)
   expect(fixture.set).toHaveBeenLastCalledWith('minimaxCodeEnabled', false)
   expect(switchControl(view).getAttribute('aria-checked')).toBe('false')
   expect(accountCard(view)).toBe(false)
@@ -227,18 +234,20 @@ it('uses the accepted snapshot for save → readback → disable → re-enable',
   expect(fixture.set).toHaveBeenLastCalledWith('minimaxCodeEnabled', true)
   expect(switchControl(view).getAttribute('aria-checked')).toBe('true')
   expect(accountCard(view)).toBe(true)
+  const edit = walk(view).find((node) => node.getAttribute?.('data-opl-minimax-edit') !== null)!
+  await act(async () => {
+    edit.click()
+  })
+  expect(edit.textContent).toBe(minimaxAccountZh.edit)
+  expect(edit.getAttribute('aria-expanded')).toBe('false')
+  expect(accountCard(view)).toBe(false)
 })
 
 it('does not claim a refused save and keeps the accepted account state', async () => {
   const fixture = formFixture(ready(true))
   fixture.setAccepted(false)
   const view = await render(
-    React.createElement(
-      React.Fragment,
-      null,
-      React.createElement(MiniMaxIntegrationPreference, { form: fixture.form, t }),
-      React.createElement(MiniMaxAccountGate, { form: fixture.form, call, t }),
-    ),
+    React.createElement(MiniMaxAccountGate, { form: fixture.form, call, t }),
   )
   await act(async () => {
     switchControl(view).click()
@@ -305,12 +314,7 @@ it('shows saving feedback, prevents duplicate writes and reports a rejected tran
   const pending = Promise.withResolvers<boolean>()
   fixture.set.mockImplementation(() => pending.promise)
   const view = await render(
-    React.createElement(
-      React.Fragment,
-      null,
-      React.createElement(MiniMaxIntegrationPreference, { form: fixture.form, t }),
-      React.createElement(MiniMaxAccountGate, { form: fixture.form, call, t }),
-    ),
+    React.createElement(MiniMaxAccountGate, { form: fixture.form, call, t }),
   )
   await act(async () => {
     switchControl(view).click()
@@ -335,12 +339,7 @@ it('shows saving feedback, prevents duplicate writes and reports a rejected tran
 it('explains unavailable and read-only settings while following external snapshots', async () => {
   const fixture = formFixture({ ...loading(), status: 'unavailable' })
   const view = await render(
-    React.createElement(
-      React.Fragment,
-      null,
-      React.createElement(MiniMaxIntegrationPreference, { form: fixture.form, t }),
-      React.createElement(MiniMaxAccountGate, { form: fixture.form, call, t }),
-    ),
+    React.createElement(MiniMaxAccountGate, { form: fixture.form, call, t }),
   )
   expect(view.textContent).toContain(minimaxAccountZh.integrationUnavailable)
   expect(accountCard(view)).toBe(false)

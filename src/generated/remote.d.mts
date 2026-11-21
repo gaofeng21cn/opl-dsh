@@ -41,6 +41,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'minimax-account-login': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
     'minimax-account-logout': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
     'minimax-account-status': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
+    'minimax-execution-region': () => Promise<RemoteResult<MiniMaxAccountLoginRequest>>
+    'minimax-select-region': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountLoginRequest>>
     'model-selection': (request: SessionRequest) => Promise<RemoteResult<HarnessSelection>>
     'projectless-session': () => Promise<RemoteResult<{ sessionId: string; cwd: string; }>>
     prompt: (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
@@ -150,6 +152,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/minimax-account-login': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
     'oplExecution/minimax-account-logout': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
     'oplExecution/minimax-account-status': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountStatus>>
+    'oplExecution/minimax-execution-region': () => Promise<RemoteResult<MiniMaxAccountLoginRequest>>
+    'oplExecution/minimax-select-region': (request: MiniMaxAccountLoginRequest) => Promise<RemoteResult<MiniMaxAccountLoginRequest>>
     'oplExecution/model-selection': (request: SessionRequest) => Promise<RemoteResult<HarnessSelection>>
     'oplExecution/projectless-session': () => Promise<RemoteResult<{ sessionId: string; cwd: string; }>>
     'oplExecution/prompt': (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
@@ -260,6 +264,8 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'oplExecution/minimax-account-login': TypertRemoteMethod<{ readonly 'request': MiniMaxAccountLoginRequest }, MiniMaxAccountStatus>
   readonly 'oplExecution/minimax-account-logout': TypertRemoteMethod<{ readonly 'request': MiniMaxAccountLoginRequest }, MiniMaxAccountStatus>
   readonly 'oplExecution/minimax-account-status': TypertRemoteMethod<{ readonly 'request': MiniMaxAccountLoginRequest }, MiniMaxAccountStatus>
+  readonly 'oplExecution/minimax-execution-region': TypertRemoteMethod<{  }, MiniMaxAccountLoginRequest>
+  readonly 'oplExecution/minimax-select-region': TypertRemoteMethod<{ readonly 'request': MiniMaxAccountLoginRequest }, MiniMaxAccountLoginRequest>
   readonly 'oplExecution/model-selection': TypertRemoteMethod<{ readonly 'request': SessionRequest }, HarnessSelection>
   readonly 'oplExecution/projectless-session': TypertRemoteMethod<{  }, { sessionId: string; cwd: string; }>
   readonly 'oplExecution/prompt': TypertRemoteMethod<{ readonly 'request': HarnessPromptRequest }, HarnessSnapshot>

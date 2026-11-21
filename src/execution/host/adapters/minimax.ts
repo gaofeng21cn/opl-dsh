@@ -24,9 +24,11 @@
  * that reports a different value afterwards fails the session loudly instead of running
  * at some other strength.
  */
-import { readdir } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { minimaxExecutionRegion } from '../minimax-execution-region.ts'
+import {
+  readMiniMaxAccountLoginState,
+  type MiniMaxAccountRegion,
+} from '../minimax-account-state.ts'
 import { commandLaunch, executablePath, minimaxCodeRoots } from '../harness-registry.ts'
 import { HarnessConfigurationError } from '../acp.ts'
 import type { ModelRef } from '../../contracts/catalog.ts'
@@ -247,23 +249,12 @@ export async function minimaxCodePath(options: { command?: string }): Promise<st
  * @param env - environment used to resolve the CLI data directory override.
  * @returns true when an account credential file exists.
  */
-export async function minimaxCodeLoggedIn(env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
-  const override = env.MINIMAX_DATA_DIR?.trim() || env.MAVIS_DATA_DIR?.trim()
-  if (override) return containsCredential(join(override, 'auth'), 0)
-  const home = env.USERPROFILE || env.HOME || homedir()
-  return containsCredential(join(home, '.minimax', 'auth'), 0)
-}
-
-async function containsCredential(directory: string, depth: number): Promise<boolean> {
-  if (depth > 4) return false
-  const entries = await readdir(directory, { withFileTypes: true }).catch(() => undefined)
-  if (!entries) return false
-  for (const entry of entries) {
-    if (entry.isFile() && entry.name === 'auth.json') return true
-    if (entry.isDirectory() && (await containsCredential(join(directory, entry.name), depth + 1)))
-      return true
-  }
-  return false
+export async function minimaxCodeLoggedIn(
+  env: NodeJS.ProcessEnv = process.env,
+  region: MiniMaxAccountRegion = 'global',
+  prefix: readonly string[] = [],
+): Promise<boolean> {
+  return (await readMiniMaxAccountLoginState(region, { env, prefix })).loginState === 'signed-in'
 }
 
 /** Launch the official CLI in its ACP mode over stdio. */
@@ -401,11 +392,12 @@ export const minimaxCodeAdapter: HarnessAdapter = {
         reason:
           '未找到官方 MiniMax Code CLI（mcode）。请使用 MiniMax 官方安装器安装，安装后重新检测；此组合不依赖 OPL Gateway。',
       }
-    if (!(await minimaxCodeLoggedIn()))
+    const region = await minimaxExecutionRegion(options.home, options.prefix)
+    if (!(await minimaxCodeLoggedIn(process.env, region, options.prefix)))
       return {
         available: false,
         reason:
-          '官方 mcode 尚未登录。请在终端运行 mcode login 完成官方账号登录；凭据由官方 CLI 自行保存与刷新。',
+          '官方 mcode 尚未登录所选地区，或状态无法确认。请在模型供应商设置中登录，或使用 mcode login 并指定对应地区。',
       }
     return { available: true }
   },
@@ -416,6 +408,7 @@ export const minimaxCodeAdapter: HarnessAdapter = {
       )
     const path = await minimaxCodePath(options)
     if (!path) throw Error('未找到官方 MiniMax Code CLI（mcode），无法启动此组合')
+    const region = await minimaxExecutionRegion(options.home, options.prefix)
     const started = launch(path, options.prefix ?? [])
     if (!minimaxReasoning(record.modelRef, record.reasoningEffort))
       throw new HarnessConfigurationError(
@@ -427,7 +420,10 @@ export const minimaxCodeAdapter: HarnessAdapter = {
       args: started.args,
       // The official CLI reads, refreshes, and stores its own account credential.
       // The suite injects no key and copies no token into the child environment.
-      env: await minimaxBashEnvironment(systemEnvironment()),
+      env: {
+        ...(await minimaxBashEnvironment(systemEnvironment())),
+        MAVIS_REGION: region === 'global' ? 'en' : 'cn',
+      },
       ...(started.verbatim ? { windowsVerbatimArguments: true } : {}),
     }
   },

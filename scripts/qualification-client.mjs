@@ -893,6 +893,11 @@ export async function verifyDesktopClient(
         'Edit BambooNode · StartLux (bamboo-startlux)',
       ]
       await waitFor(
+        `Boolean(document.querySelector('[data-opl-minimax-edit][aria-expanded="false"]'))`,
+        'MiniMax 供应商编辑入口未显示',
+      )
+      await pipe.evaluate(session, `document.querySelector('[data-opl-minimax-edit]').click()`)
+      await waitFor(
         `Boolean(document.querySelector('[data-opl-region-select]'))`,
         'MiniMax地区选择未挂载',
       )
@@ -919,6 +924,16 @@ export async function verifyDesktopClient(
         `!['在中国大陆使用国际版需要代理。','A proxy is required to use the Global service from mainland China.'].some(text=>document.querySelector('[data-opl-panel="minimax-account"]').textContent.includes(text))`,
         '大陆版仍显示国际版提示',
       )
+
+      await pipe.evaluate(
+        session,
+        `(() => {const select=document.querySelector('[data-opl-region-select]');select.value='global';select.dispatchEvent(new Event('change',{bubbles:true}))})()`,
+      )
+      await waitFor(
+        `Boolean(document.querySelector('[data-opl-panel="minimax-account"][data-opl-region="global"][data-opl-login-state="signed-in"]'))`,
+        '切回国际版后未恢复已登录账号',
+      )
+      await pipe.evaluate(session, `document.querySelector('[data-opl-minimax-edit]').click()`)
 
       async function enterNativeCredential(value) {
         await waitFor(

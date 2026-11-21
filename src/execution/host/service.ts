@@ -46,6 +46,14 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 export class ExecutionService extends TypertRemoteService {
+  @Remote('minimax-execution-region')
+  minimaxRegion(): Promise<MiniMaxAccountLoginRequest> {
+    return this.execution.minimaxRegion()
+  }
+  @Remote('minimax-select-region')
+  selectMinimaxRegion(request: MiniMaxAccountLoginRequest): Promise<MiniMaxAccountLoginRequest> {
+    return this.execution.selectMinimaxRegion(request)
+  }
   @Remote('minimax-account-status')
   minimaxAccountStatus(request: MiniMaxAccountLoginRequest): Promise<MiniMaxAccountStatus> {
     return this.execution.minimaxAccountStatus(request)

@@ -68,7 +68,10 @@ const answer = (id, result) => send({ id, result })
 const fail = (id, code, message, details) =>
   send({ id, error: { code, message, ...(details ? { data: { details } } : {}) } })
 const note = (entry) =>
-  appendFile(journal, JSON.stringify({ at: Date.now(), ...entry }) + '\n').catch(() => {})
+  appendFile(
+    journal,
+    JSON.stringify({ at: Date.now(), region: process.env.MAVIS_REGION, ...entry }) + '\n',
+  ).catch(() => {})
 
 const configOptions = () => {
   const options = [

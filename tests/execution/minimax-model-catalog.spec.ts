@@ -754,8 +754,21 @@ describe('MiniMax Code adapter routing seam', () => {
     expect(signedOut.reason).not.toMatch(/Gateway ?Key|OPL Gateway|网关/)
 
     process.env.MINIMAX_DATA_DIR = join(root, 'data2')
-    await mkdir(join(root, 'data2', 'auth'), { recursive: true })
-    await writeFile(join(root, 'data2', 'auth', 'auth.json'), '{}')
+    await mkdir(join(root, 'data2', 'auth', 'prod', 'en', 'mcode-public'), { recursive: true })
+    await writeFile(
+      join(root, 'data2', 'auth', 'prod', 'en', 'mcode-public', 'auth-state.json'),
+      JSON.stringify({
+        schemaVersion: 2,
+        storeKind: 'file',
+        clientId: 'mcode-public',
+        audience: 'agent-backend',
+        scopes: [],
+        buildEnv: 'prod',
+        region: 'en',
+        generation: 1,
+        status: 'authenticated',
+      }),
+    )
     expect(
       await minimaxCodeAdapter.available(undefined as unknown as Context, options(root)),
     ).toEqual({ available: true })
@@ -796,6 +809,7 @@ describe('MiniMax Code adapter routing seam', () => {
       [
         ...new Set([
           ...Object.keys(systemEnvironment()),
+          'MAVIS_REGION',
           ...(process.platform === 'win32' ? ['MCODE_SHELL_PATH', 'SHELL'] : []),
         ]),
       ].sort(),
