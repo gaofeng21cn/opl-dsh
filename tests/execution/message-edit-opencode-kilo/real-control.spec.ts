@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, watch } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { HarnessSession } from '../../../src/execution/contracts/sessions.ts'
 import type { ExternalEditContext } from '../../../src/execution/host/message-edit-driver.ts'
 import type { AdapterLaunch } from '../../../src/execution/host/adapters/types.ts'
@@ -155,30 +155,17 @@ describe('external message-edit driver real control path', () => {
     })
   })
 
-  it('marks an aborted fork as uncertain without retrying', async () => {
+  it('marks an aborted fork as uncertain without retrying', { timeout: 15_000 }, async () => {
     const dir = mkdtempSync(join(TMP_ROOT, 'abort-'))
     const controller = new AbortController()
     const enteredFile = join(dir, 'fork-entered')
-    const entered = new Promise<void>((resolve, reject) => {
-      const watcher = watch(dir, () => {
-        if (existsSync(enteredFile)) {
-          clearTimeout(timer)
-          watcher.close()
-          resolve()
-        }
-      })
-      const timer = setTimeout(() => {
-        watcher.close()
-        reject(Error('fork request never reached fixture'))
-      }, 15_000)
-    })
     const context = contextFor(
       'opencode',
       {
         FAKE_VENDOR_KIND: 'opencode',
         FAKE_VENDOR_MESSAGES: JSON.stringify(messages()),
         FAKE_PID_FILE: join(dir, 'pid'),
-        FAKE_FORK_DELAY_MS: '800',
+        FAKE_HOLD_FORK: '1',
         FAKE_FORK_ENTERED_FILE: enteredFile,
       },
       controller.signal,
@@ -190,8 +177,14 @@ describe('external message-edit driver real control path', () => {
       targetId: 'msg_b',
       expected: history,
     })
-    await entered
-    controller.abort()
-    await expect(pending).rejects.toMatchObject({ code: 'uncertain' })
+    await Promise.all([
+      vi
+        .waitFor(() => expect(existsSync(enteredFile), 'fixture received fork').toBe(true), {
+          timeout: 10_000,
+        })
+        .finally(() => controller.abort()),
+      expect(pending).rejects.toMatchObject({ code: 'uncertain' }),
+    ])
+    expect(readFileSync(enteredFile, 'utf8')).toBe('entered\n')
   })
 })

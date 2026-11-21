@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { watch } from 'node:fs'
 import { ProjectStore } from '../installer/skill/coordinator/state.mjs'
 
 const moduleUrl = new URL('../installer/skill/coordinator/state.mjs', import.meta.url).href
@@ -1256,44 +1255,48 @@ test('dead process tickets and interrupted temporary writes recover without gues
   assert.equal(JSON.parse(await readFile(join(root, `${key}.json`), 'utf8')).revision, 2)
 })
 
-test('a process killed during a real state write leaves one complete old or new snapshot', async (t) => {
-  const { root, store } = await fixture(
-    t,
-    Array.from({ length: 100 }, (_, i) => ({
-      workId: `work-${i}`,
-      acceptance: 'a'.repeat(8000),
-      dependsOn: [],
-    })),
-  )
+test('a process killed during a real state write leaves the prior snapshot intact', async (t) => {
+  const { root, store } = await fixture(t)
   const key = hash('project')
-  let writer,
-    observed = false
-  const watcher = watch(root, (_event, name) => {
-    if (
-      name &&
-      String(name).startsWith(`${key}.json.`) &&
-      String(name).endsWith('.tmp') &&
-      writer
-    ) {
-      observed = true
-      writer.kill('SIGKILL')
-    }
-  })
-  t.after(() => watcher.close())
-  const source = `import {ProjectStore} from ${JSON.stringify(moduleUrl)};const store=new ProjectStore({root:process.argv[1]});for(let i=0;i<20;i++)await store.apply('project',{eventId:'crash-'+i,type:'work.update',authorityEpoch:1,workId:'work-0',status:'review_due',evidence:'artifact-'+i});`
-  const running = child(source, [root])
-  writer = running.process
-  await running.completed
-  watcher.close()
-  assert.equal(observed, true, 'writer reached an atomic temporary-file window')
+  // Stop at the actual rename boundary. Directory-watch delivery can coalesce
+  // creation and rename, especially on macOS, and miss the entire window.
+  const source = `
+    import fs from 'node:fs/promises';
+    import { writeSync } from 'node:fs';
+    import { syncBuiltinESMExports } from 'node:module';
+    import { join } from 'node:path';
+    const [root, key] = process.argv.slice(1);
+    const state = join(root, key + '.json');
+    const rename = fs.rename;
+    fs.rename = async (temporary, destination) => {
+      if (destination === state && temporary.endsWith('.tmp')) {
+        const staged = JSON.parse(await fs.readFile(temporary, 'utf8'));
+        if (staged.revision !== 2) throw new Error('Wrong staged revision');
+        writeSync(1, 'before-state-rename');
+        process.kill(process.pid, 'SIGKILL');
+      }
+      return rename(temporary, destination);
+    };
+    syncBuiltinESMExports();
+    const { ProjectStore } = await import(${JSON.stringify(moduleUrl)});
+    const store = new ProjectStore({ root });
+    await store.apply('project', {
+      eventId: 'crash-before-rename', type: 'work.update', authorityEpoch: 1,
+      workId: 'build', status: 'review_due', evidence: 'test artifact',
+    });
+  `
+  const failure = await child(source, [root, key]).completed
+  if (process.platform === 'win32') assert.notEqual(failure.code, 0, failure.stderr)
+  else assert.equal(failure.signal, 'SIGKILL', failure.stderr)
+  assert.equal(failure.stdout, 'before-state-rename')
   const state = await store.get('project')
   assert.equal(state.mode, 'active')
-  assert.ok(state.revision >= 1 && state.revision <= 21)
+  assert.equal(state.revision, 1)
   await store.apply('project', {
     eventId: 'recovered',
     type: 'work.update',
     authorityEpoch: 1,
-    workId: 'work-1',
+    workId: 'build',
     status: 'blocked',
     evidence: 'writer exited; no business completion inferred',
   })
