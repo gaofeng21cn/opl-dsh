@@ -1099,7 +1099,15 @@ export class HarnessService {
         const supported = catalog.harnesses.flatMap((harness) => {
           const adapter = adapterFor(harness.id, model.ref, this.modelSources)
           return adapter
-            ? [{ harness: harness.id, permissions: adapter.capabilities.permissions }]
+            ? [
+                {
+                  harness: harness.id,
+                  permissions:
+                    harness.id === 'codex' && harness.codexRuntime
+                      ? ['full-access' as const]
+                      : adapter.capabilities.permissions,
+                },
+              ]
             : []
         })
         return {

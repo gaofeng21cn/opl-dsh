@@ -85,8 +85,8 @@
 .permission {
   flex-shrink: 0;
   color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 13px;
+  line-height: 20px;
 }
 .muted {
   margin: 0;
