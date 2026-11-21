@@ -26,6 +26,10 @@
   flex-direction: column;
 }
 
+[data-opl-preference='minimax-integration'] > .officialRow {
+  padding-top: 0;
+}
+
 .officialRow p {
   margin: 0;
 }

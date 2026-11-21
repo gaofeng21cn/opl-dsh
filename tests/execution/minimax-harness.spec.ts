@@ -48,6 +48,7 @@ afterEach(async () => {
 })
 
 interface Journal {
+  region?: string
   method?: string
   event?: string
   configId?: string
@@ -70,11 +71,23 @@ async function setup(
   const state = join(root, 'cli-state')
   const dataDir = join(root, 'cli-data')
   await mkdir(state, { recursive: true })
-  await mkdir(join(dataDir, 'auth', 'en', 'mcode-public'), { recursive: true })
-  // The login probe only checks that the CLI's own credential file exists; the test
-  // creates an empty placeholder so no real account material is ever read.
+  await mkdir(join(dataDir, 'auth', 'prod', 'en', 'mcode-public'), { recursive: true })
+  // Only official login-state metadata is needed.
   if (options.loggedIn !== false)
-    await writeFile(join(dataDir, 'auth', 'en', 'mcode-public', 'auth.json'), '')
+    await writeFile(
+      join(dataDir, 'auth', 'prod', 'en', 'mcode-public', 'auth-state.json'),
+      JSON.stringify({
+        schemaVersion: 2,
+        storeKind: 'file',
+        clientId: 'mcode-public',
+        audience: 'agent-backend',
+        scopes: [],
+        buildEnv: 'prod',
+        region: 'en',
+        generation: 1,
+        status: 'authenticated',
+      }),
+    )
   vi.stubEnv('MINIMAX_DATA_DIR', dataDir)
 
   const current = { provider: MINIMAX_CODE_PROVIDER, model: options.nativeModel ?? 'MiniMax-M3' }
@@ -565,6 +578,33 @@ describe('official MiniMax Code ACP combination', () => {
     expect(calls.some((call) => call.startsWith('thinkingEffort'))).toBe(false)
   })
 
+  it('loads an existing session with the newly selected account and remembers the region', async () => {
+    const first = await setup()
+    const started = await first.start(M3_FLASH_COMBINATION)
+    expect((await first.ask(started.id, 'before', 'first')).state).toBe('completed')
+    const cn = join(first.root, 'cli-data', 'auth', 'prod', 'cn', 'mcode-public')
+    await mkdir(cn, { recursive: true })
+    await writeFile(
+      join(cn, 'auth-state.json'),
+      (
+        await readFile(
+          join(first.root, 'cli-data', 'auth', 'prod', 'en', 'mcode-public', 'auth-state.json'),
+          'utf8',
+        )
+      ).replace('"region":"en"', '"region":"cn"'),
+    )
+    await first.service.selectMinimaxRegion({ region: 'cn' })
+    expect((await first.ask(started.id, 'after', 'second')).state).toBe('completed')
+    const entries = await first.journal()
+    expect(entries.filter((e) => e.method === 'session/prompt').map((e) => e.region)).toEqual([
+      'en',
+      'cn',
+    ])
+    expect(entries.some((e) => e.event === 'session/load' && e.region === 'cn')).toBe(true)
+    await first.service.dispose()
+    const second = await setup({ root: first.root })
+    expect(await second.service.minimaxRegion()).toEqual({ region: 'cn' })
+  })
   it('re-pins the same model and effort when a session is resumed by a fresh process', async () => {
     const first = await setup()
     const started = await first.start(M3_FLASH_COMBINATION)
@@ -624,6 +664,8 @@ describe('official MiniMax Code ACP combination', () => {
     await service.prompt({ sessionId: started.id, text: 'approval', operationId: 'approval' })
     const waiting = await service.wait({ sessionId: started.id }, AbortSignal.timeout(15000))
     expect(waiting.state).toBe('waiting_approval')
+    await expect(service.selectMinimaxRegion({ region: 'cn' })).rejects.toThrow()
+    expect(await service.minimaxRegion()).toEqual({ region: 'global' })
     expect(waiting.approvals).toHaveLength(1)
     expect(
       (await journal()).filter(
@@ -777,8 +819,21 @@ describe('MiniMax Code availability reporting', () => {
     cleanups.push(() => removeTree(root))
     const home = join(root, 'home')
     const explicit = join(root, 'explicit')
-    await mkdir(join(home, '.minimax', 'auth', 'en', 'mcode-public'), { recursive: true })
-    await writeFile(join(home, '.minimax', 'auth', 'en', 'mcode-public', 'auth.json'), '')
+    await mkdir(join(home, '.minimax', 'auth', 'prod', 'en', 'mcode-public'), { recursive: true })
+    await writeFile(
+      join(home, '.minimax', 'auth', 'prod', 'en', 'mcode-public', 'auth-state.json'),
+      JSON.stringify({
+        schemaVersion: 2,
+        storeKind: 'file',
+        clientId: 'mcode-public',
+        audience: 'agent-backend',
+        scopes: [],
+        buildEnv: 'prod',
+        region: 'en',
+        generation: 1,
+        status: 'authenticated',
+      }),
+    )
     await mkdir(explicit, { recursive: true })
     // The default directory holds a credential, but the CLI was pointed elsewhere: a
     // stale login must not be reported as the account this process would actually use.
@@ -790,8 +845,21 @@ describe('MiniMax Code availability reporting', () => {
     const root = await mkdtemp(join(tmpdir(), 'opl-minimax-ready-'))
     cleanups.push(() => removeTree(root))
     vi.stubEnv('MINIMAX_DATA_DIR', join(root, 'cli-data'))
-    await mkdir(join(root, 'cli-data', 'auth', 'en', 'mcode-public'), { recursive: true })
-    await writeFile(join(root, 'cli-data', 'auth', 'en', 'mcode-public', 'auth.json'), '')
+    await mkdir(join(root, 'cli-data', 'auth', 'prod', 'en', 'mcode-public'), { recursive: true })
+    await writeFile(
+      join(root, 'cli-data', 'auth', 'prod', 'en', 'mcode-public', 'auth-state.json'),
+      JSON.stringify({
+        schemaVersion: 2,
+        storeKind: 'file',
+        clientId: 'mcode-public',
+        audience: 'agent-backend',
+        scopes: [],
+        buildEnv: 'prod',
+        region: 'en',
+        generation: 1,
+        status: 'authenticated',
+      }),
+    )
     const result = await minimaxCodeAdapter.available({} as Context, {
       home: root,
       command: process.execPath,

@@ -1,9 +1,10 @@
-import { useMemo, useSyncExternalStore } from 'react'
+import { useMemo, useState, useSyncExternalStore } from 'react'
 import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { FeatureSwitch } from '../../shared/client/FeaturePreferences.tsx'
 import type { ExecutionCall } from '../../shared/client/remote-call.ts'
 import { MiniMaxAccountSection } from './MiniMaxAccountSection.tsx'
+import provider from './MiniMaxIntegration.module.css'
 import css from '../../shared/client/SettingsSection.module.css'
 
 export interface MiniMaxIntegrationSettings {
@@ -37,8 +38,7 @@ export function miniMaxIntegrationEnabled(
   return snapshot.status === 'ready' && snapshot.value?.minimaxCodeEnabled === true
 }
 
-/** One preference row in the existing execution page; there is no second editable state. */
-export function MiniMaxIntegrationPreference({
+function MiniMaxIntegrationPreference({
   form,
   t,
 }: {
@@ -84,5 +84,34 @@ export function MiniMaxAccountGate({
   t: MiniMaxIntegrationLocale
 }) {
   const snapshot = useMiniMaxIntegrationSnapshot(form)
-  return miniMaxIntegrationEnabled(snapshot) ? <MiniMaxAccountSection call={call} t={t} /> : null
+  const [editing, setEditing] = useState(false)
+  const enabled = miniMaxIntegrationEnabled(snapshot)
+  return (
+    <section className={`${css.card} ${provider.card}`} data-opl-panel="minimax-provider">
+      <div className={css.header}>
+        <span className={css.name}>{t('title')}</span>
+        <div className={css.row}>
+          {snapshot.status === 'ready' && (
+            <span className={css.muted}>{t(enabled ? 'enabled' : 'disabled')}</span>
+          )}
+          <button
+            type="button"
+            className={provider.editButton}
+            aria-label={t('edit') + ' ' + t('title')}
+            data-opl-minimax-edit
+            aria-expanded={editing}
+            onClick={() => setEditing((value) => !value)}
+          >
+            {t('edit')}
+          </button>
+        </div>
+      </div>
+      {editing && (
+        <div className={provider.editor}>
+          <MiniMaxIntegrationPreference form={form} t={t} />
+          {enabled && <MiniMaxAccountSection call={call} t={t} />}
+        </div>
+      )}
+    </section>
+  )
 }
