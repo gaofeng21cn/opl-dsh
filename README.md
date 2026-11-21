@@ -85,7 +85,7 @@ OPL 领域智能体预设是可选集成：需要另外安装 OPL Framework 和�
 | OPL GPT                         | Codex CLI                              | 分组与 CLI 已就绪                                                   |
 | OPL Claude Opus 5.5、Fable 5.2  | Claude Code                            | Claude、AWS、Kiro 渠道独立选择                                      |
 | OPL Grok 4.7                    | Grok Build                             | 分组与 CLI 已就绪                                                   |
-| OPL Gemini 3.8 Flash、4 Argon、4 Carbon、4 Hydrogen | Antigravity CLI（默认），可手动添加 OpenCode | 使用 Gateway Gemini 分组凭据，无需 Google 登录；支持图片与 Git Bash |
+| OPL Gemini 4 Carbon、4 Hydrogen | Antigravity CLI（默认）；OpenCode 备选 | 使用 Gateway Gemini 分组凭据，无需 Google 登录；支持图片与 Git Bash |
 | MiniMax M3.1-Flash、M3          | mcode                                  | 官方账号；仅支持明确授权的完全访问                                  |
 | OFM 免费模型与虚拟路由          | 按来源选择已适配 Harness               | 见 [OFM 组合](docs/harness-adaptation.md#our-free-model-组合)       |
 

@@ -41,6 +41,7 @@ import { ofmModelReadiness, type OfmModelReadiness } from './ofm-source/readines
 import { BAMBOO_STARTLUX_MODEL } from './adapters/bamboo.ts'
 import { JEV_DECISION_MODEL, JEV_TYPESAFE_MODEL } from './adapters/jev.ts'
 import { adapterFor } from './adapters/index.ts'
+import { isQwenModel, QWEN_CODE_HARNESS } from './adapters/qwen/models.ts'
 export class ExecutionModelResolver {
   constructor(
     private readonly ctx: Context,
@@ -600,6 +601,22 @@ export class ExecutionModelResolver {
           modelRef: model.ref,
           harnessRef,
           name: model.name + ' + ' + harnessName,
+        })
+      }
+      // These alternate engines stay opt-in. In particular Qwen Code requires
+      // full access, so discovering it must not change an existing AMD route.
+      const alternative =
+        official === 'antigravity' && adapterFor('opencode', model.ref)
+          ? 'opencode'
+          : isQwenModel(model.ref)
+            ? QWEN_CODE_HARNESS
+            : undefined
+      const alternativeHarness = catalog.harnesses.find((h) => h.id === alternative)
+      if (model.available && alternativeHarness) {
+        recommendations.push({
+          modelRef: model.ref,
+          harnessRef: alternativeHarness.id,
+          name: model.name + ' + ' + alternativeHarness.name + '（备用）',
         })
       }
       const pi = catalog.harnesses.find((harness) => harness.id === 'pi')

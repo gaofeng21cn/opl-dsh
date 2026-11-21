@@ -47,7 +47,7 @@ OFM 来源统一使用 `Our Free Model` 写法，区域渠道保留 `region-limi
 | GPT-OSS 20B                                                                                                                   | Codex CLI                       | Responses |
 | Kilo Step 5 Preview（stepfun/step-5-preview-free）                                                                            | StepCode                        | Chat      |
 | Ling、LongCat、North Mini Code、Nemotron 3.5、Space Bunny、OpenRouter Free                                                    | OpenCode                        | Chat      |
-| OPL Gateway Gemini | Antigravity CLI（默认），Carbon、Hydrogen 可选 Pi，OpenCode 可手动添加 | Gemini 原生（Antigravity、Pi），Chat（OpenCode） |
+| OPL Gateway Gemini 4 Carbon、Gemini 4 Hydrogen | Antigravity CLI（默认），Pi Coding Agent 或 OpenCode（可选） | Gemini 原生（Antigravity、Pi），Chat（OpenCode） |
 | Nemotron Nano Omni、LFM2.5、Inkling Small、Inkling、Gemma 4 31B                                                               | Pi Coding Agent                 | Chat      |
 | Dots、Glyph、Kilo Auto Free、Kilo Beam、Xing 4.0                                                                              | Kilo Code                       | Chat      |
 
@@ -59,9 +59,9 @@ Kilo ERNIE-5.5-Flash-Preview 使用精确 ID `baidu/ernie-5.5-flash-preview:free
 
 Kilo Ling 3.2 Flash（`inclusionai/ling-3.2-flash:free`）默认推荐 Kilo Code，经 OFM Chat 转发，保留来源的默认思考设置，不显示推理档位菜单；上下文容量与用量沿用实时目录及官方统计。
 
-EAC 的 AMD 路由保留完整 `amd/` ID：`amd/DeepSeek-V4.1-Flash`、`amd/DeepSeek-V4-Flash` 推荐 DSH；`amd/MiMo-V2.6-Flash` 推荐 MiMo Code；`amd/GLM-5.3-Flash` 推荐 ZCode；`amd/MiniCPM-V-4.7-35B-A3B`、`amd/MiniCPM5-2B`、`amd/Gemma-4-31B-IT`、`amd/MiniCPM-V-4.7-1B` 推荐 Pi。均经 OFM 的 EAC Chat 转发，不与同名免费渠道合并。来源当前未声明这些路由的真实推理档位，外部 Harness 保留来源默认设置；DSH 来源菜单的 light、balanced、deep 控制输出预算。图片与上下文能力沿用来源实时声明，不根据模型名称补齐。
+EAC 的 AMD 路由保留完整 `amd/` ID：`amd/DeepSeek-V4.1-Flash`、`amd/DeepSeek-V4-Flash` 推荐 DSH；`amd/MiMo-V2.6-Flash` 推荐 MiMo Code；`amd/GLM-5.3-Flash` 推荐 ZCode；`amd/Qwen3.8-27B`、`amd/MiniCPM-V-4.7-35B-A3B`、`amd/MiniCPM5-2B`、`amd/Gemma-4-31B-IT`、`amd/MiniCPM-V-4.7-1B` 推荐 Pi。均经 OFM 的 EAC Chat 转发，不与同名免费渠道合并。来源当前未声明这些路由的真实推理档位，外部 Harness 保留来源默认设置；DSH 来源菜单的 light、balanced、deep 控制输出预算。图片与上下文能力沿用来源实时声明，不根据模型名称补齐。
 
-`amd/Qwen3.8-27B` 默认使用 Qwen Code，需要 Pi 时可在“手动添加组合”中选择。该组合使用官方 Qwen Code 0.27.3 和 OFM 免费转发，只启用文本输入与完全访问；Windows 需要 Git Bash。
+`amd/Qwen3.8-27B` 也可以显式添加 Qwen Code 组合。该组合使用官方 Qwen Code 0.27.3 和 OFM 免费转发，只启用文本输入与完全访问；Windows 需要 Git Bash。已有执行组合及 Pi 推荐不变。
 
 OFM 的 Kilo 目录对 `liquid/lfm-3-1.7b:free` 声明 `low`、`medium`、`high` 三档推理强度，默认 `high`，且不提供关闭思考。当前 OPL 适配使用的官方 Kilo ACP 自定义 provider 没有可写的 effort 配置项，因此不把来源档位伪装成 Kilo 选项；显式档位请求会在发送前拒绝，未指定档位时保留上游默认设置。
 
@@ -75,11 +75,11 @@ EAC 的 `opencode/nemotron-3.5-lightning-free`、`opencode/nemotron-3.5-super-vl
 
 `step-5-preview-free` 与 `muse-spark-1.2-contributor-free` 当前从 OPL 选择器隐藏；Jev 与 Content Safety 不作为编码组合提供。Muse Code 没有可用默认组合，不默认登记或提示安装，已有程序与显式配置保留。
 
-OPL Gateway 的 Gemini 3.8 Flash、4 Argon、4 Carbon 和 4 Hydrogen 默认搭配官方 Antigravity CLI，通过 Gateway 原生 Gemini 接口使用该分组凭据，无需 Google 账号登录。新建和恢复均先固定模型及 CLI 实际广告的推理档位并回读（Gemini 4 Carbon 支持 `low`、`medium`、`high`，Gemini 4 Hydrogen 支持 `low`、`medium`、`high`、`xhigh`）；没有指定档位时明确使用 `high`。支持来源声明的图片输入，Windows 命令通过独占 profile 的官方 Hook 使用 Git Bash。只支持明确选择的完全权限，不支持 Auto Review。Token 账单取本轮 ACP 用量，上下文占用另取最后一次模型请求的估计，不混用累计用量。
+OPL Gateway 的 Gemini 4 Carbon 与 Gemini 4 Hydrogen 默认搭配官方 Antigravity CLI，通过 Gateway 原生 Gemini 接口使用该分组凭据，无需 Google 账号登录。新建和恢复均先固定模型及 CLI 实际广告的推理档位并回读（Gemini 4 Carbon 支持 `low`、`medium`、`high`，Gemini 4 Hydrogen 支持 `low`、`medium`、`high`、`xhigh`）；没有指定档位时明确使用 `high`。支持来源声明的图片输入，Windows 命令通过独占 profile 的官方 Hook 使用 Git Bash。只支持明确选择的完全权限，不支持 Auto Review。Token 账单取本轮 ACP 用量，上下文占用另取最后一次模型请求的估计，不混用累计用量。
 
 使用默认 OPL Gateway 地址时，可在「执行与组合」中启用 Carbon 或 Hydrogen 的 Pi Coding Agent 组合。Pi 通过原生 Gemini 协议复用现有 Gemini 分组凭据，使用独立会话目录。当前 Pi 组合接收文本，需要会话明确选择完全权限。
 
-需要 OpenCode 时，可在“执行与组合 → 手动添加组合”中选择 Gemini 模型和 OpenCode。已有会话及用户设置的默认组合保留绑定。Antigravity 当前只支持首条消息编辑重开，底层旧会话保留且不撤销文件；中途编辑可选 OpenCode。自定义 Chat 地址不能推断原生 Gemini 地址，需使用 OPL 默认原生端点或保留 OpenCode 组合。
+OpenCode 保留为这两个模型的可选组合，已有会话及用户明确设置的默认组合保留绑定；Antigravity 失败不会自动转发到 OpenCode。Antigravity 当前只支持首条消息编辑重开，底层旧会话保留且不撤销文件；中途编辑可选 OpenCode。已退役的 Gemini 3.1 Pro、3.8 Flash 与 4 Argon 不再登记 OpenCode 默认路线，避免把旧组合继续显示为可用。自定义 Chat 地址不能推断原生 Gemini 地址，需使用 OPL 默认原生端点或保留 OpenCode 组合。
 
 MiniMax M3.1 Flash 的三条车道分别保留原始 ID：`minimax-m3.1-flash-free` 使用 OpenCode 官方免费通道，Kilo 的 `minimax/minimax-m3.1-flash:free` 和 EAC 的 `minimaxai/minimax-m3.1-flash` 使用 OpenCode 经 OFM 转发。EAC 车道不使用 MiniMax Code 账号。StepCode 的 `stepfun-ai/step-5-preview` 使用独立 EAC 配置，不与 `stepfun/step-5-preview-free` 的 Kilo 车道合并。旧 Space Bunny 会话保留原模型身份，不自动替换历史路由。
 
