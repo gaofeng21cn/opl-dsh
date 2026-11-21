@@ -389,6 +389,47 @@ describe('每个外部 Harness 独立的代理设置', () => {
     expect(calls.some((entry) => entry.method === 'save-catalog')).toBe(false)
   })
 
+  it('停用的 Gemini + OpenCode 从手动添加恢复原配置', async () => {
+    const initial = catalog()
+    const ref = { provider: 'opl-gateway', model: 'gemini::gemini-4-carbon' }
+    const saved = {
+      ...initial.combinations[0],
+      id: 'old-gemini',
+      name: '旧组合',
+      modelRef: ref,
+      harnessRef: 'opencode',
+      enabled: false,
+      isDefault: false,
+    }
+    const { call, stored } = fixture({
+      ...initial,
+      models: [{ ...initial.models[0], ref, name: 'Gemini 4 Carbon', available: true }],
+      harnesses: [
+        ...initial.harnesses,
+        { id: 'opencode', name: 'OpenCode', kind: 'acp', command: 'opencode' },
+      ],
+      combinations: [saved],
+      supportedPairings: [{ modelRef: ref, harnessRefs: ['opencode'] }],
+    })
+    const view = await open(call, ExecutionCatalogSection)
+    expect(text(view)).not.toContain('旧组合')
+    const manual = walk(view).find(
+      (node) => node.getAttribute?.('data-opl-panel') === 'custom-combinations',
+    )!
+    const selects = walk(manual).filter((node) => node.nodeName === 'SELECT')
+    await act(async () => {
+      selects[0].value = JSON.stringify([ref.provider, ref.model])
+      selects[0].dispatchEvent('change')
+    })
+    expect(text(selects[1])).toContain('OpenCode')
+    await act(async () => {
+      selects[1].value = 'opencode'
+      selects[1].dispatchEvent('change')
+    })
+    await press(walk(manual).find((node) => node.nodeName === 'BUTTON')!)
+    expect(stored().combinations).toMatchObject([{ id: saved.id, name: saved.name, enabled: true }])
+  })
+
   it('手动添加官方配对时保留现有默认组合，且新名称可在管理列表修改', async () => {
     const initial = catalog()
     const data = {
@@ -782,7 +823,11 @@ describe('每个外部 Harness 独立的代理设置', () => {
       node.getAttribute?.('data-opl-recommendation-item')?.includes('gemini-4-carbon'),
     )!
     expect(text(piChoice.parentNode)).toContain('Gemini 4 Carbon + Pi Coding Agent')
-    expect(text(piChoice.parentNode)).toContain('完全权限')
+    expect(text(piChoice.parentNode)).not.toContain('仅支持完全权限')
+    const group = walk(picker).find(
+      (node) => node.getAttribute?.('data-opl-recommendation-group') === 'pi',
+    )!
+    expect(text(group.parentNode)).toContain('仅支持完全权限')
     await act(async () => {
       piChoice.checked = true
       piChoice.click()
@@ -800,6 +845,37 @@ describe('每个外部 Harness 独立的代理设置', () => {
     expect(stored().combinations.find((item) => item.harnessRef === 'antigravity')?.isDefault).toBe(
       true,
     )
+  })
+
+  it('marks only the restricted pairing in a mixed group regardless of saved permissions', async () => {
+    const data = catalog()
+    const original = data.combinations[0]
+    const second = { ...original.modelRef, model: 'codex::second' }
+    const { call } = fixture({
+      ...data,
+      models: [data.models[0], { ...data.models[0], ref: second, available: true }],
+      combinations: [
+        { ...original, permissionPolicy: 'workspace' },
+        { ...original, id: 'multi', modelRef: second, permissionPolicy: 'full-access' },
+      ],
+      supportedPairings: [
+        {
+          modelRef: original.modelRef,
+          harnessRefs: [original.harnessRef],
+          permissionPolicies: { [original.harnessRef]: ['full-access'] },
+        },
+        {
+          modelRef: second,
+          harnessRefs: [original.harnessRef],
+          permissionPolicies: { [original.harnessRef]: ['workspace', 'full-access'] },
+        },
+      ],
+    })
+    const view = await open(call, ExecutionCatalogSection)
+    const choice = (id: string) =>
+      walk(view).find((n) => n.getAttribute?.('data-opl-recommendation-item')?.includes(id))!
+    expect(text(choice(original.id).parentNode)).toContain('仅支持完全权限')
+    expect(text(choice('multi').parentNode)).not.toContain('仅支持完全权限')
   })
 
   it('手动添加 Pi 时使用 Host 广告的完全权限', async () => {
@@ -979,10 +1055,18 @@ describe('每个外部 Harness 独立的代理设置', () => {
         },
       ],
     }
-    const { call } = fixture(data)
+    const { call, stored } = fixture(data)
     const view = await open(call, ExecutionCatalogSection)
     const rows = walk(view).filter((node) => node.getAttribute?.('data-opl-combination'))
     expect(rows).toHaveLength(2)
+    const picker = walk(view).find(
+      (n) => n.getAttribute?.('data-opl-panel') === 'recommended-combinations',
+    )!
+    expect(text(picker)).not.toContain(' + OpenCode')
+    await press(
+      walk(picker).find((n) => n.nodeName === 'BUTTON' && text(n).startsWith('保存选择'))!,
+    )
+    expect(stored().combinations.find((c) => c.id === 'gemini/custom')?.enabled).toBe(true)
     for (const row of rows) {
       expect(text(walk(row).find((node) => node.nodeName === 'SUMMARY')!)).not.toContain('默认')
     }

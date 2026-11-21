@@ -5,9 +5,7 @@ import type { ExecutionCatalog } from '../contracts/catalog.ts'
 import css from './RecommendationPicker.module.css'
 import settingsCss from '../../shared/client/SettingsSection.module.css'
 import {
-  COMBINATION_PERMISSION_LABELS,
   combinationChoices,
-  defaultPermissionPolicy,
   pairingPermissionPolicies,
   savedChoiceKey,
 } from './combination-choices.ts'
@@ -24,6 +22,18 @@ export function RecommendationPicker({
   onAdd: (selection: CombinationSelection) => Promise<void>
 }) {
   const candidates = combinationChoices(catalog).map((item) => [item.key, item] as const)
+  const fullAccessOnly = new Set(
+    candidates
+      .filter(([, item]) => {
+        const policies = pairingPermissionPolicies(
+          catalog,
+          modelRefKey(item.modelRef),
+          item.harnessRef,
+        )
+        return policies.length === 1 && policies[0] === 'full-access'
+      })
+      .map(([key]) => key),
+  )
   const enabled = () => new Set(candidates.filter(([, item]) => item.enabled).map(([key]) => key))
   const [selected, setSelected] = useState<Set<string>>(enabled)
   const [disabledIds, setDisabledIds] = useState<Set<string>>(() => new Set())
@@ -132,6 +142,9 @@ export function RecommendationPicker({
         <div className={css.groups}>
           {groups.map((harness) => {
             const items = visible.filter(([, item]) => item.harnessRef === harness)
+            const groupRequiresFullAccess = candidates
+              .filter(([, item]) => item.harnessRef === harness)
+              .every(([key]) => fullAccessOnly.has(key))
             const checked = items.filter(([key]) => selected.has(key)).length
             const name = catalog.harnesses.find((item) => item.id === harness)?.name ?? harness
             return (
@@ -156,19 +169,15 @@ export function RecommendationPicker({
                         if (!event.target.checked && !normalizedQuery) clearSaved(harness)
                       }}
                     />
-                    {name}（{checked}/{items.length}）
+                    <span>
+                      {name}（{checked}/{items.length}）
+                      {groupRequiresFullAccess && (
+                        <span className={css.permission}>仅支持完全权限</span>
+                      )}
+                    </span>
                   </label>
                 </legend>
                 {items.map(([key, item]) => {
-                  const policies = pairingPermissionPolicies(
-                    catalog,
-                    modelRefKey(item.modelRef),
-                    item.harnessRef,
-                  )
-                  const policy =
-                    'permissionPolicy' in item
-                      ? item.permissionPolicy
-                      : defaultPermissionPolicy(policies)
                   return (
                     <label className={css.item} key={key}>
                       <input
@@ -184,10 +193,8 @@ export function RecommendationPicker({
                         <span>
                           {displayModelSource(item.modelRef)} · {item.name}
                         </span>
-                        {policy === 'full-access' && (
-                          <span className={css.permission}>
-                            {COMBINATION_PERMISSION_LABELS[policy]}
-                          </span>
+                        {!groupRequiresFullAccess && fullAccessOnly.has(key) && (
+                          <span className={css.permission}>仅支持完全权限</span>
                         )}
                       </span>
                     </label>
@@ -200,18 +207,9 @@ export function RecommendationPicker({
         <Button variant="primary" type="submit" disabled={busy}>
           保存选择（{count}）
         </Button>
-        {candidates.some(([, item]) => {
-          const policies = pairingPermissionPolicies(
-            catalog,
-            modelRefKey(item.modelRef),
-            item.harnessRef,
-          )
-          return (
-            ('permissionPolicy' in item
-              ? item.permissionPolicy
-              : defaultPermissionPolicy(policies)) === 'full-access'
-          )
-        }) && <p className={css.muted}>运行此类组合前，请在当前会话选择「完全权限」。</p>}
+        {visible.some(([key]) => fullAccessOnly.has(key)) && (
+          <p className={css.muted}>运行此类组合前，请在当前会话选择“完全权限”。</p>
+        )}
       </form>
     </div>
   )

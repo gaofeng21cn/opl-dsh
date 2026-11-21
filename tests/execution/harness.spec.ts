@@ -2101,12 +2101,8 @@ describe('native conversation combinations', () => {
         ?.filter((item) => item.modelRef.model.startsWith('gemini::'))
         .map((item) => [item.modelRef.model, item.harnessRef]),
     ).toEqual([
-      ['gemini::gemini-4-carbon', 'opencode'],
       ['gemini::gemini-4-carbon', 'pi'],
-      ['gemini::gemini-4-hydrogen', 'opencode'],
       ['gemini::gemini-4-hydrogen', 'pi'],
-      ['gemini::gemini-4-argon', 'opencode'],
-      ['gemini::gemini-3.8-flash', 'opencode'],
     ])
     for (const model of [
       'gemini-4-carbon',

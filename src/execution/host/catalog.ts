@@ -5,6 +5,7 @@ import { oplProfilePath } from '../../shared/host/profile-paths.ts'
 import { DSH_COMBINATION, GROK_COMBINATION, type HarnessCatalog } from '../contracts/sessions.ts'
 import {
   displayModelSource,
+  displayModelName,
   isRetiredModel,
   modelRefKey,
   type CombinationDefinition,
@@ -15,6 +16,7 @@ import { harnessAllowsFullAccess } from './permissions.ts'
 import { normalizeHarnessProxy } from './proxy.ts'
 import { OFM_INACTIVE_DEFAULT_HARNESSES } from './ofm-source/selection-policy.ts'
 import type { CodexGitBashRuntime } from '../contracts/codex-runtime.ts'
+import { isOfficialPairing } from '../contracts/official-harnesses.ts'
 import { harnessDirectoryOrder } from '../contracts/harness-groups.ts'
 export type { ExecutionCatalog } from '../contracts/catalog.ts'
 export const defaultExecutionCatalog = (): ExecutionCatalog => ({
@@ -235,11 +237,30 @@ export class ExecutionCatalogStore {
     }
     const parsed = JSON.parse(raw)
     this.value = normalizeCatalog(parsed)
+    let renamedLegacyChoice = false
+    for (const item of this.value.combinations) {
+      if (
+        item.modelRef.provider === 'our-free-model' &&
+        item.modelRef.model === 'amd/Qwen3.8-27B' &&
+        item.harnessRef === 'qwen-code' &&
+        item.name === 'EAC Qwen3.8 27B（AMD） + Qwen Code（备用）'
+      ) {
+        item.name = 'EAC Qwen3.8 27B（AMD） + Qwen Code'
+        renamedLegacyChoice = true
+      } else if (
+        item.harnessRef === 'opencode' &&
+        isOfficialPairing('antigravity', item.modelRef) &&
+        item.name === displayModelName(item.modelRef) + ' + OpenCode（备用）'
+      ) {
+        item.name = displayModelName(item.modelRef) + ' + OpenCode'
+        renamedLegacyChoice = true
+      }
+    }
     const harnessOrderChanged =
       Array.isArray(parsed.harnesses) &&
       parsed.harnesses.map((item: any) => item?.id).join('\0') !==
         this.value.harnesses.map((item) => item.id).join('\0')
-    if (parsed.version !== 2 || harnessOrderChanged) {
+    if (parsed.version !== 2 || harnessOrderChanged || renamedLegacyChoice) {
       if (parsed.version !== 2)
         await copyFile(this.filename, this.filename + '.v1.backup', constants.COPYFILE_EXCL).catch(
           (e: NodeJS.ErrnoException) => {

@@ -3,6 +3,8 @@ import type { TypertRemoteNamespace } from '@deepseek-ai/dsh-typert-protocol'
 import { displayModelName, modelRefKey } from '../contracts/catalog.ts'
 import { isOfficialPairing } from '../contracts/official-harnesses.ts'
 import {
+  isDisabledManualAlternative,
+  isManualAlternative,
   defaultPermissionPolicy,
   pairingKey,
   pairingPermissionPolicies,
@@ -121,7 +123,7 @@ export function useExecutionCatalog(
     if (!catalog) return
     const target = catalog.combinations.find((item) => item.id === id)
     if (!target) return
-    void save({
+    return save({
       ...catalog,
       combinations: catalog.combinations.map((item) =>
         item.id === id
@@ -166,11 +168,29 @@ export function useExecutionCatalog(
       return
     }
     if (
-      [...catalog.combinations, ...(catalog.recommendations ?? [])].some(
-        (item) => pairingKey(item) === pairingKey(chosen),
-      )
+      [
+        ...catalog.combinations.filter((item) => !isDisabledManualAlternative(item)),
+        ...(catalog.recommendations ?? []),
+      ].some((item) => pairingKey(item) === pairingKey(chosen))
     ) {
       setNotice('该组合已在选择列表中，请在上方勾选。')
+      return
+    }
+    const disabled = catalog.combinations.find(
+      (item) => isDisabledManualAlternative(item) && pairingKey(item) === pairingKey(chosen),
+    )
+    if (disabled) {
+      const result = await update(disabled.id, {
+        permissionPolicy,
+        enabled: true,
+        isDefault:
+          disabled.isDefault &&
+          !catalog.combinations.some(
+            (item) => item.enabled && item.isDefault && modelRefKey(item.modelRef) === draft.model,
+          ),
+      })
+      if (result?.status === 'saved' && mounted.current)
+        setDraft({ model: '', harness: 'dsh', permissionPolicy: 'workspace' })
       return
     }
     const makeDefault =
@@ -226,7 +246,7 @@ export function useExecutionCatalog(
     )
     const combinations = catalog.combinations.map((item) => {
       const available = availableModels.has(modelRefKey(item.modelRef))
-      if (!available && !disabledIds.has(item.id)) return item
+      if ((!available || isManualAlternative(item)) && !disabledIds.has(item.id)) return item
       const key = savedChoiceKey(item.id)
       const enabled = available && selected.has(key)
       return item.enabled !== enabled
