@@ -409,15 +409,50 @@ select.input {
   border-radius: var(--dsw-radius-lg);
 }
 
-.advancedLink {
-  align-self: flex-start;
-  border: 0;
-  background: none;
-  padding: 0;
-  color: var(--dsw-alias-label-tertiary);
+.providerAction {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
   font: inherit;
   font-size: 12px;
+  line-height: 18px;
   cursor: pointer;
+}
+
+@media (hover: hover) {
+  .providerAction:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover-solid);
+  }
+}
+
+.providerAction:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+}
+
+.providerAction:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+[data-opl-managed-models] > .modelRows:empty {
+  display: none;
+}
+[data-opl-managed-models] > .modelRows > .modelRow:first-child {
+  padding-top: 0;
+}
+[data-opl-managed-models] > .modelRows > .modelRow:last-child {
+  padding-bottom: 0;
+}
+[data-opl-managed-models] > .error {
+  margin: 0;
 }
 
 .taskRow {
