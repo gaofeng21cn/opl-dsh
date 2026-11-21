@@ -169,10 +169,12 @@ export function RecommendationPicker({
                         if (!event.target.checked && !normalizedQuery) clearSaved(harness)
                       }}
                     />
-                    {name}（{checked}/{items.length}）
-                    {groupRequiresFullAccess && (
-                      <span className={css.permission}>仅支持完全权限</span>
-                    )}
+                    <span>
+                      {name}（{checked}/{items.length}）
+                      {groupRequiresFullAccess && (
+                        <span className={css.permission}>仅支持完全权限</span>
+                      )}
+                    </span>
                   </label>
                 </legend>
                 {items.map(([key, item]) => {
@@ -206,7 +208,7 @@ export function RecommendationPicker({
           保存选择（{count}）
         </Button>
         {visible.some(([key]) => fullAccessOnly.has(key)) && (
-          <p className={css.muted}>运行此类组合前，请在当前会话选择「完全权限」。</p>
+          <p className={css.muted}>运行此类组合前，请在当前会话选择“完全权限”。</p>
         )}
       </form>
     </div>
