@@ -631,7 +631,9 @@ describe('MiniMax official account card', () => {
     })
     expect(disabled(control(view.container, 'data-opl-region-select'))).toBe(false)
     await chooseRegion(view.container, 'global')
-    expect(control(view.container, 'data-opl-region').getAttribute('data-opl-region')).toBe('global')
+    expect(control(view.container, 'data-opl-region').getAttribute('data-opl-region')).toBe(
+      'global',
+    )
   })
 
   it('switches to the region that owns a pending authorization and cancels only there', async () => {
