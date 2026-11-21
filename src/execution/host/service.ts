@@ -1,3 +1,4 @@
+import type { EngineUpdateState, EngineUpdateSettings } from '../contracts/engine-updates.ts'
 import type {
   MiniMaxAccountStatus,
   MiniMaxAccountLoginRequest,
@@ -146,6 +147,22 @@ export class ExecutionService extends TypertRemoteService {
   @Remote('harness-installations')
   installations(): Promise<HarnessInstallation[]> {
     return this.execution.installations()
+  }
+  @Remote('engine-updates')
+  engineUpdates(): Promise<EngineUpdateState> {
+    return this.execution.engineUpdates.snapshot()
+  }
+  @Remote('engine-updates-settings')
+  engineUpdatesSettings(request: EngineUpdateSettings): Promise<EngineUpdateState> {
+    return this.execution.engineUpdates.settings(request)
+  }
+  @Remote('engine-updates-check')
+  engineUpdatesCheck(): Promise<EngineUpdateState> {
+    return this.execution.engineUpdates.check()
+  }
+  @Remote('engine-updates-install')
+  engineUpdatesInstall(request: { ids: string[] }): Promise<EngineUpdateState> {
+    return this.execution.engineUpdates.install(request.ids)
   }
   @Remote('harness-update')
   async update(request: { id: string }): Promise<null> {

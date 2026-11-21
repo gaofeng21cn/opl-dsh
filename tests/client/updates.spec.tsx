@@ -22,6 +22,26 @@ import { en, zh, UPDATE_NAMESPACE } from '../../src/updates/client/locales.ts'
 import * as updates from '../../src/updates/client/index.tsx'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
+  Menu: ({
+    anchor,
+    open,
+    items,
+    onSelect,
+  }: {
+    anchor: ReactNode
+    open: boolean
+    items: { id: string; label: string }[]
+    onSelect(id: string): void
+  }) =>
+    createElement(
+      'div',
+      null,
+      anchor,
+      open &&
+        items.map((item) =>
+          createElement('button', { key: item.id, onClick: () => onSelect(item.id) }, item.label),
+        ),
+    ),
   Modal: ({
     open,
     title,
@@ -240,6 +260,7 @@ async function mount(
         createElement(UpdateNotice, {
           controller,
           ...(navigation ? { navigation } : {}),
+          ...(options.config?.engineCount ? { engineCount: options.config.engineCount } : {}),
           wide: true,
           t: translator(options.dictionary),
           openSettings,
@@ -1511,4 +1532,23 @@ describe('update plugin lifecycle', () => {
     expect(entries).toHaveLength(2)
     expect(entries[0]!.inject!().controller.getSnapshot().status?.installedVersion).toBe('0.2.57')
   })
+})
+
+it('routes the single engine notice directly and the combined notice through a choice', async () => {
+  const f = await mount({ renderSection: false, config: { engineCount: async () => 3 } })
+  const notice = () => f.container.querySelector('button')!
+  expect(notice().title).toContain('3 个执行引擎')
+  await click(notice())
+  expect(f.openSettings).toHaveBeenCalledWith('engines')
+  f.openSettings.mockClear()
+  await act(async () => {
+    f.publish(status({ release: release() }))
+  })
+  await click(notice())
+  expect(f.openSettings).not.toHaveBeenCalled()
+  expect(f.container.textContent).toContain('OPL DSH 更新')
+  await click(
+    [...f.container.querySelectorAll('button')].find((n) => n.textContent === '执行引擎更新（3）')!,
+  )
+  expect(f.openSettings).toHaveBeenCalledWith('engines')
 })

@@ -1,3 +1,5 @@
+import { EngineUpdates } from './engine-updates.ts'
+import { checkEngineUpdate, applyEngineUpdate } from './engine-update-sources.ts'
 import { featureSettings } from '../../shared/host/feature-settings.ts'
 import { withoutRememberingPermission } from '../../compat/host/permission-memory.ts'
 import { LlmError } from '../../shared/llm-error.ts'
@@ -87,7 +89,6 @@ import { access, mkdir, readFile, writeFile, rename, realpath, stat } from 'node
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { startControlBridge } from '../../shared/host/control-bridge.ts'
-import { homedir } from 'node:os'
 import { EventEmitter } from 'node:events'
 import {
   ToolCallId,
@@ -504,6 +505,43 @@ export class HarnessService {
   /** Serialize picker writes with the next prompt for each official Session. */
   private readonly selectionChanges = new Map<string, SelectionChangeState>()
   private readonly maintenance = new Map<string, NonNullable<HarnessInstallation['maintenance']>>()
+  readonly engineUpdates: EngineUpdates
+  private readonly engineAdmissions = new Map<string, number>()
+  private engineBusy(id: string): boolean {
+    return (
+      this.engineAdmissions.has(id) ||
+      this.maintenanceJobs.has(id) ||
+      [...this.records.values()].some(
+        (r) =>
+          r.harnessRef === id &&
+          (this.externalEditing.has(r.id) ||
+            this.connecting.has(r.id) ||
+            this.active.get(r.id)?.turn ||
+            r.turns.some((t) =>
+              [
+                'queued',
+                'running',
+                'waiting_approval',
+                'waiting_input',
+                'waiting_child',
+                'needs_approval',
+                'needs_input',
+              ].includes(t.state),
+            )),
+      )
+    )
+  }
+  private async enterEngine<T>(id: string, operation: () => Promise<T>): Promise<T> {
+    while (this.engineUpdates.lock(id)) await this.engineUpdates.lock(id)
+    this.engineAdmissions.set(id, (this.engineAdmissions.get(id) ?? 0) + 1)
+    try {
+      return await operation()
+    } finally {
+      const count = (this.engineAdmissions.get(id) ?? 1) - 1
+      if (count) this.engineAdmissions.set(id, count)
+      else this.engineAdmissions.delete(id)
+    }
+  }
   private readonly maintenanceJobs = new Map<string, Promise<void>>()
   private readonly records = new Map<string, HarnessSession>()
   private readonly dirtyRecords = new Map<string, HarnessSession>()
@@ -615,6 +653,27 @@ export class HarnessService {
           this.ctx.logger.warn(`外部会话 ${record.id} 迁移未完成：${String(error)}`)
         }
       }
+    })
+    this.engineUpdates = new EngineUpdates(this.directory, {
+      list: () => this.installations(),
+      probe: checkEngineUpdate,
+      busy: (id) => this.engineBusy(id),
+      install: (item, target) =>
+        this.runtimeMaintenance.admit(async () => {
+          const def = (await this.catalogStore.get()).harnesses.find((h) => h.id === item.id)
+          if (!def || JSON.stringify(def) !== JSON.stringify(item.definition))
+            throw Error('启动入口配置已变化，请重新检查')
+          const fresh = await inspectHarness(def, this.directory, this.command(), { fresh: true })
+          if (fresh.path !== item.path || fresh.version !== item.version)
+            throw Error('启动入口或版本已变化，请重新检查')
+          const result = await applyEngineUpdate({ ...fresh, definition: def }, target, (message) =>
+            this.ctx.logger.warn(message),
+          )
+          if (result.path && result.path !== fresh.path)
+            await this.catalogStore.setHarnessLaunch(item.id, result.path, [], { definition: def })
+          return result.version
+        }),
+      log: (message) => this.ctx.logger.warn(message),
     })
     this.tick = setInterval(() => {
       void this.flushDeliveries().catch(() => {})
@@ -834,11 +893,7 @@ export class HarnessService {
     return this.revisionEpoch + ':' + this.revisionCounter
   }
   private command() {
-    return (
-      this.options.command ??
-      process.env.OPL_GROK_COMMAND?.trim() ??
-      join(homedir(), '.grok/bin/grok')
-    )
+    return this.options.command ?? (process.env.OPL_GROK_COMMAND?.trim() || 'grok')
   }
   private adapterOptions(
     command?: string,
@@ -890,7 +945,9 @@ export class HarnessService {
     )
   }
   async updateHarness(id: string) {
-    return this.runtimeMaintenance.admit(() => this.updateHarnessAdmitted(id))
+    return this.enterEngine(id, () =>
+      this.runtimeMaintenance.admit(() => this.updateHarnessAdmitted(id)),
+    )
   }
   private async updateHarnessAdmitted(id: string) {
     await this.ready
@@ -1301,6 +1358,7 @@ export class HarnessService {
   private runtimeBusy(): boolean {
     return (
       this.disposed ||
+      this.engineUpdates.active ||
       this.maintenanceJobs.size > 0 ||
       this.connecting.size > 0 ||
       this.finalizing.size > 0 ||
@@ -1556,7 +1614,9 @@ export class HarnessService {
         : undefined
   }
   private connect(record: HarnessSession): Promise<void> {
-    return this.runtimeMaintenance.admit(() => this.connectAdmitted(record))
+    return this.enterEngine(record.harnessRef, () =>
+      this.runtimeMaintenance.admit(() => this.connectAdmitted(record)),
+    )
   }
   private connectAdmitted(record: HarnessSession): Promise<void> {
     if (this.disposed) return Promise.reject(Error('组合服务已关闭'))
@@ -2214,6 +2274,17 @@ export class HarnessService {
     const record = this.records.get(required(input?.sessionId, 'sessionId'))
     if (!record) throw Error('组合会话不存在')
     this.assertMiniMaxCodeRouteEnabled(record)
+    return this.enterEngine(record.harnessRef, () =>
+      this.promptWithEngine(record, input, reasoningEffort, displayPrompt, promptContent),
+    )
+  }
+  private async promptWithEngine(
+    record: HarnessSession,
+    input: HarnessPromptRequest,
+    reasoningEffort?: string,
+    displayPrompt?: string,
+    promptContent?: HarnessPromptPart[],
+  ): Promise<HarnessSnapshot> {
     const edit = record.nativeSessionId
       ? this.externalMessageEdits.intent(record.nativeSessionId)
       : undefined
@@ -5985,6 +6056,7 @@ export class HarnessService {
   async dispose() {
     this.disposed = true
     clearInterval(this.tick)
+    await this.engineUpdates.dispose()
     await this.minimaxAccount.dispose()
     await this.runtimeMaintenance.close()
     await this.ready
