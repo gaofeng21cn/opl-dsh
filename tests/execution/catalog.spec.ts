@@ -66,6 +66,27 @@ describe('combination authority', () => {
       ]),
     )
   })
+  it('updates the old Qwen Code recommendation name on reload and keeps custom names', async () => {
+    const dir = await root()
+    const store = new ExecutionCatalogStore(dir)
+    const catalog = await store.get()
+    const name = 'EAC Qwen3.8 27B（AMD） + Qwen Code'
+    const saved = {
+      ...catalog.combinations[0]!,
+      id: 'saved-qwen',
+      modelRef: { provider: 'our-free-model', model: 'amd/Qwen3.8-27B' },
+      harnessRef: 'qwen-code',
+      name: name + '（备用）',
+      isDefault: false,
+      enabled: false,
+    }
+    const custom = { ...saved, id: 'custom-qwen', name: '我的 Qwen（备用）' }
+    const other = { ...saved, id: 'other-engine', harnessRef: 'pi' }
+    await store.set({ ...catalog, combinations: [saved, custom, other] })
+    const expected = [{ ...saved, name }, custom, other]
+    expect((await new ExecutionCatalogStore(dir).get()).combinations).toEqual(expected)
+    expect(JSON.parse(await readFile(store.filename, 'utf8')).combinations).toEqual(expected)
+  })
   it('persists references without a second model catalog', async () => {
     const dir = await root(),
       store = new ExecutionCatalogStore(dir),

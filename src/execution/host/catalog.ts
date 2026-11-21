@@ -235,11 +235,23 @@ export class ExecutionCatalogStore {
     }
     const parsed = JSON.parse(raw)
     this.value = normalizeCatalog(parsed)
+    let renamedQwen = false
+    for (const item of this.value.combinations) {
+      if (
+        item.modelRef.provider === 'our-free-model' &&
+        item.modelRef.model === 'amd/Qwen3.8-27B' &&
+        item.harnessRef === 'qwen-code' &&
+        item.name === 'EAC Qwen3.8 27B（AMD） + Qwen Code（备用）'
+      ) {
+        item.name = 'EAC Qwen3.8 27B（AMD） + Qwen Code'
+        renamedQwen = true
+      }
+    }
     const harnessOrderChanged =
       Array.isArray(parsed.harnesses) &&
       parsed.harnesses.map((item: any) => item?.id).join('\0') !==
         this.value.harnesses.map((item) => item.id).join('\0')
-    if (parsed.version !== 2 || harnessOrderChanged) {
+    if (parsed.version !== 2 || harnessOrderChanged || renamedQwen) {
       if (parsed.version !== 2)
         await copyFile(this.filename, this.filename + '.v1.backup', constants.COPYFILE_EXCL).catch(
           (e: NodeJS.ErrnoException) => {
