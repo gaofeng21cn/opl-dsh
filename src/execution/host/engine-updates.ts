@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { usesPrivateUpdateDirectory } from './engine-update-sources.ts'
 import { oplProfilePath } from '../../shared/host/profile-paths.ts'
 import type { HarnessInstallation } from '../contracts/installations.ts'
 import type {
@@ -7,6 +8,9 @@ import type {
   EngineUpdateSettings,
   EngineUpdateItem,
 } from '../contracts/engine-updates.ts'
+
+// External installers may share package-manager state. Staged installs have separate prefixes.
+const MAX_CONCURRENT_INSTALLS = 3
 
 export class EngineUpdates {
   private state: EngineUpdateState = { enabled: true, mode: 'notify', checking: false, items: [] }
@@ -141,8 +145,12 @@ export class EngineUpdates {
     return this.snapshot()
   }
   private drain() {
-    if (this.stopped || this.state.checking || this.running.size) return
+    if (this.stopped || this.state.checking) return
+    let externalRunning = [...this.running.keys()].some(
+      (id) => !usesPrivateUpdateDirectory(this.plan.get(id)!),
+    )
     for (const [id] of this.waiting) {
+      if (this.running.size >= MAX_CONCURRENT_INSTALLS) break
       const row = this.state.items.find((r) => r.id === id),
         item = this.plan.get(id)
       if (!row?.target || !item) {
@@ -153,6 +161,9 @@ export class EngineUpdates {
         row.status = 'waiting'
         continue
       }
+      const external = !usesPrivateUpdateDirectory(item)
+      if (external && externalRunning) continue
+      if (external) externalRunning = true
       const target = row.target
       this.waiting.delete(id)
       row.status = 'installing'
@@ -171,7 +182,6 @@ export class EngineUpdates {
           this.drain()
         })
       this.running.set(id, job)
-      break
     }
   }
   lock(id: string) {

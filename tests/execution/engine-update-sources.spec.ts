@@ -25,3 +25,17 @@ it('keeps OPL Git Bash, hard-pinned Qwen and custom installer roots outside offi
     await expect(applyEngineUpdate(value, '99.0.0')).rejects.toThrow('更新目标已变化')
   }
 })
+
+it('leaves the Codex CLI inside ChatGPT.app to the desktop updater', async () => {
+  const bundled = {
+    ...item,
+    id: 'codex',
+    version: 'codex-cli 0.169.1',
+    path: '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex',
+  }
+  expect(await checkEngineUpdate(bundled)).toMatchObject({
+    status: 'unsupported',
+    message: expect.stringContaining('随桌面应用更新'),
+  })
+  await expect(applyEngineUpdate(bundled, '99.0.0')).rejects.toThrow('更新目标已变化')
+})

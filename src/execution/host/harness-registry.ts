@@ -1,4 +1,4 @@
-import { access, constants, opendir, readFile, stat } from 'node:fs/promises'
+import { access, constants, opendir, readFile, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, delimiter, isAbsolute, extname, resolve, dirname, relative, sep } from 'node:path'
 import { execFile } from 'node:child_process'
@@ -274,6 +274,14 @@ async function executableFile(path: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+export const bundledCodexInstructions = '此 Codex CLI 随桌面应用更新，请通过桌面应用检查更新。'
+
+export async function isBundledMacCodex(path: string): Promise<boolean> {
+  const bundled =
+    /\.app\/Contents\/Resources\/(?:codex-cli\/CodexCLI\.app\/Contents\/MacOS\/)?codex$/i
+  return bundled.test(path) || bundled.test(await realpath(path).catch(() => ''))
 }
 
 /** Inspect direct children of the Windows Codex desktop bin directory, without choosing a release. */
@@ -615,12 +623,14 @@ export async function inspectHarness(
     !managedRelative.startsWith('..' + sep)
   const suiteInstructions = staged
     ? '此版本由执行引擎更新管理，可在上方检查或安装更新。'
-    : path && process.platform === 'win32' && process.env.APPDATA
-      ? await suiteMaintenanceInstructions(
-          path,
-          join(process.env.APPDATA, 'OPL DSH Suite', 'harnesses'),
-        )
-      : undefined
+    : path && harness.id === 'codex' && (await isBundledMacCodex(path))
+      ? bundledCodexInstructions
+      : path && process.platform === 'win32' && process.env.APPDATA
+        ? await suiteMaintenanceInstructions(
+            path,
+            join(process.env.APPDATA, 'OPL DSH Suite', 'harnesses'),
+          )
+        : undefined
   const maintenanceAction =
     selectionRequired || suiteInstructions
       ? undefined

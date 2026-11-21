@@ -178,13 +178,17 @@ export function EngineUpdates({
                 本次更新 · 已处理 {finished.length}/{batch.length}
               </p>
               {batch.map((item) => (
-                <p key={item.id} className={css.row}>
-                  <span>{item.name}</span>
-                  <span className={item.status === 'failed' ? css.error : css.muted}>
-                    {item.status === 'available' ? '排队中' : labels[item.status]}
-                    {item.status === 'failed' && item.message && ` · ${item.message}`}
-                  </span>
-                </p>
+                <div key={item.id}>
+                  <p className={css.row}>
+                    <span>{item.name}</span>
+                    <span className={item.status === 'failed' ? css.error : css.muted}>
+                      {item.status === 'available' ? '排队中' : labels[item.status]}
+                    </span>
+                  </p>
+                  {item.status === 'failed' && item.message && (
+                    <p className={css.error}>{item.message}</p>
+                  )}
+                </div>
               ))}
             </div>
           )}

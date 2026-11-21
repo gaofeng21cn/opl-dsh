@@ -6,7 +6,13 @@ import { promisify } from 'node:util'
 import type { HarnessInstallation } from '../contracts/installations.ts'
 import type { EngineUpdateItem } from '../contracts/engine-updates.ts'
 import { maintenanceEnvironment, maintainHarness } from './harness-maintenance.ts'
-import { commandLaunch, executablePath, harnessDiagnostic } from './harness-registry.ts'
+import {
+  bundledCodexInstructions,
+  commandLaunch,
+  executablePath,
+  harnessDiagnostic,
+  isBundledMacCodex,
+} from './harness-registry.ts'
 import { harnessProxyEnvironment } from './proxy.ts'
 import { AcpProcess, object } from './acp.ts'
 const exec = promisify(execFile)
@@ -89,6 +95,8 @@ function newer(a: string, b: string) {
 const version = (s: string) => s.match(/\b\d+\.\d+\.\d+(?![\w.-])/)?.[0]
 export async function checkEngineUpdate(item: HarnessInstallation): Promise<EngineUpdateItem> {
   const base = { id: item.id, name: item.name, ...(item.version ? { current: item.version } : {}) }
+  if (item.id === 'codex' && item.path && (await isBundledMacCodex(item.path)))
+    return { ...base, status: 'unsupported', message: bundledCodexInstructions }
   if (item.definition?.prefix?.length)
     return { ...base, status: 'unsupported', message: '自定义启动参数由原安装渠道维护' }
   if (item.path && item.id === 'grok-build' && item.maintenanceAction === 'update') {
@@ -213,6 +221,13 @@ async function probe(path: string, id: string, env: NodeJS.ProcessEnv, cwd: stri
     }
   }
 }
+export function usesPrivateUpdateDirectory(item: HarnessInstallation): boolean {
+  return (
+    ['opencode', 'kilo', 'pi'].includes(item.id) ||
+    (item.id === 'step-code' && !item.maintenanceAction)
+  )
+}
+
 export async function applyEngineUpdate(
   item: HarnessInstallation,
   target: string,
@@ -222,10 +237,7 @@ export async function applyEngineUpdate(
   if (row.status !== 'available' || row.target !== target || !stable.test(target) || !item.path)
     throw Error('更新目标已变化，请重新检查')
   const env = environment(item)
-  if (
-    ['opencode', 'kilo', 'pi'].includes(item.id) ||
-    (item.id === 'step-code' && !item.maintenanceAction)
-  ) {
+  if (usesPrivateUpdateDirectory(item)) {
     const root = join(
       process.env.LOCALAPPDATA ?? join(homedir(), '.local', 'share'),
       'OPL DSH Suite',
