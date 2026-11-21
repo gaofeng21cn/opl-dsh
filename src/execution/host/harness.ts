@@ -1152,12 +1152,21 @@ export class HarnessService {
       return this.executionCatalogAfter(this.executionCatalogPending.promise, minimaxCodeEnabled)
     const pending = this.modelResolver.resolve().then((catalog) => ({
       ...catalog,
-      supportedPairings: catalog.models.map((model) => ({
-        modelRef: model.ref,
-        harnessRefs: catalog.harnesses
-          .filter((harness) => adapterFor(harness.id, model.ref, this.modelSources) !== undefined)
-          .map((harness) => harness.id),
-      })),
+      supportedPairings: catalog.models.map((model) => {
+        const supported = catalog.harnesses.flatMap((harness) => {
+          const adapter = adapterFor(harness.id, model.ref, this.modelSources)
+          return adapter
+            ? [{ harness: harness.id, permissions: adapter.capabilities.permissions }]
+            : []
+        })
+        return {
+          modelRef: model.ref,
+          harnessRefs: supported.map((item) => item.harness),
+          permissionPolicies: Object.fromEntries(
+            supported.map((item) => [item.harness, [...item.permissions]]),
+          ),
+        }
+      }),
     }))
     this.executionCatalogPending = { minimaxCodeEnabled, promise: pending }
     void pending.then(
@@ -1240,6 +1249,11 @@ export class HarnessService {
         !adapterFor(combination.harnessRef, combination.modelRef, this.modelSources)
       )
         throw Error('该模型与 Harness 尚无兼容适配器，未保存组合')
+      if (!unchanged && combination.harnessRef === 'pi') {
+        const adapter = adapterFor(combination.harnessRef, combination.modelRef, this.modelSources)
+        if (adapter && !adapter.capabilities.permissions.includes(combination.permissionPolicy))
+          throw Error('所选 Harness 不支持此权限档位，未保存组合')
+      }
     }
     const launch = (catalog: ExecutionCatalog) =>
       catalog.harnesses.map((h) => [h.id, h.command, h.prefix])

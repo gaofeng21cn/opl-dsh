@@ -1,6 +1,7 @@
 /** External CLI routes resolved by the model-source owner, without copying provider settings. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ModelRef } from '../contracts/catalog.ts'
+import { piGatewayGeminiLane } from './adapters/pi/pi-models.ts'
 import {
   resolveGatewayExecution,
   resolveGatewayGeminiExecution,
@@ -96,7 +97,8 @@ export class ExternalModelSources {
   ): Promise<ExternalModelRoute> {
     let route: ExternalModelRoute
     if (ref.provider === 'opl-gateway' && protocol === 'gemini-native') {
-      if (harness !== 'antigravity') throw Error('所选来源的协议与 Harness 不兼容')
+      if (harness !== 'antigravity' && !(harness === 'pi' && piGatewayGeminiLane(ref)))
+        throw Error('所选来源的协议与 Harness 不兼容')
       route = { ...(await resolveGatewayGeminiExecution(this.ctx, ref)), protocol }
     } else if (ref.provider === 'opl-gateway') {
       const resolved = await resolveGatewayExecution(this.ctx, ref)

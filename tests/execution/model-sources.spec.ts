@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { ExternalModelSources } from '../../src/execution/host/model-sources.ts'
-import { adapterFor, harnessAdapters } from '../../src/execution/host/adapters/index.ts'
+import {
+  adapterFor,
+  defaultHarness,
+  harnessAdapters,
+} from '../../src/execution/host/adapters/index.ts'
 const ref = { provider: 'future-source', model: 'exact-model' }
 const route = {
   baseURL: 'https://example.test/v1',
@@ -132,6 +136,22 @@ describe('external model-source ownership', () => {
         'responses',
       ),
     ).rejects.toThrow('协议')
+  })
+  it('offers the pinned native Gateway Gemini models on Pi and retains Antigravity as default', async () => {
+    const sources = new ExternalModelSources(ctx)
+    for (const model of ['gemini-4-carbon', 'gemini-4-hydrogen']) {
+      const ref = { provider: 'opl-gateway', model: `gemini::${model}` }
+      expect(adapterFor('pi', ref, sources)?.id).toBe('pi')
+      expect(defaultHarness(ref)).toBe('antigravity')
+      expect(await sources.resolve('pi', ref, 'gemini-native')).toMatchObject({
+        baseURL: 'https://gateway.medopl.com',
+        model,
+        protocol: 'gemini-native',
+      })
+    }
+    const argon = { provider: 'opl-gateway', model: 'gemini::gemini-4-argon' }
+    await expect(sources.resolve('pi', argon, 'gemini-native')).rejects.toThrow('协议')
+    expect(adapterFor('antigravity', argon, sources)?.id).toBe('antigravity')
   })
   it('advertises only adapters present in the execution registry', () => {
     expect(

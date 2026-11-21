@@ -2059,7 +2059,7 @@ describe('native conversation combinations', () => {
       'OPL Gateway',
     ])
   })
-  it('defaults the four native Gateway Gemini models to Antigravity and recommends OpenCode', async () => {
+  it('keeps Antigravity as the Gateway Gemini default and offers compatible alternatives', async () => {
     vi.stubEnv('USERPROFILE', join(tmpdir(), 'opl-gemini-opencode-absent-cli'))
     vi.stubEnv('HOME', join(tmpdir(), 'opl-gemini-opencode-absent-cli'))
     vi.stubEnv('PATH', '')
@@ -2099,8 +2099,15 @@ describe('native conversation combinations', () => {
     expect(
       catalog.recommendations
         ?.filter((item) => item.modelRef.model.startsWith('gemini::'))
-        .map((item) => item.harnessRef),
-    ).toEqual(['opencode', 'opencode', 'opencode', 'opencode'])
+        .map((item) => [item.modelRef.model, item.harnessRef]),
+    ).toEqual([
+      ['gemini::gemini-4-carbon', 'opencode'],
+      ['gemini::gemini-4-carbon', 'pi'],
+      ['gemini::gemini-4-hydrogen', 'opencode'],
+      ['gemini::gemini-4-hydrogen', 'pi'],
+      ['gemini::gemini-4-argon', 'opencode'],
+      ['gemini::gemini-3.8-flash', 'opencode'],
+    ])
     for (const model of [
       'gemini-4-carbon',
       'gemini-4-hydrogen',
@@ -2112,6 +2119,19 @@ describe('native conversation combinations', () => {
           expect.objectContaining({
             modelRef: { provider: 'opl-gateway', model: `gemini::${model}` },
             harnessRefs: expect.arrayContaining(['antigravity', 'opencode']),
+            permissionPolicies: expect.objectContaining({
+              antigravity: ['full-access'],
+              opencode: ['full-access'],
+            }),
+          }),
+        ]),
+      )
+    for (const model of ['gemini-4-carbon', 'gemini-4-hydrogen'])
+      expect(catalog.supportedPairings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            modelRef: { provider: 'opl-gateway', model: `gemini::${model}` },
+            permissionPolicies: expect.objectContaining({ pi: ['full-access'] }),
           }),
         ]),
       )
@@ -2198,6 +2218,29 @@ describe('native conversation combinations', () => {
         (item) => item.enabled && item.isDefault && item.modelRef.model === modelRef.model,
       ),
     ).toMatchObject([{ id: 'user-open-code', harnessRef: 'opencode' }])
+  })
+  it('rejects a new pairing whose requested permission is outside the adapter capability', async () => {
+    const { service } = await nativeSetup([
+      { id: 'gemini::gemini-4-carbon', name: 'Gemini 4 Carbon' },
+    ])
+    const catalog = await service.executionCatalog()
+    await expect(
+      service.saveExecutionCatalog({
+        ...catalog,
+        combinations: [
+          ...catalog.combinations,
+          {
+            id: 'invalid-pi-permission',
+            name: 'Gemini 4 Carbon + Pi',
+            modelRef: { provider: 'opl-gateway', model: 'gemini::gemini-4-carbon' },
+            harnessRef: 'pi',
+            permissionPolicy: 'workspace',
+            isDefault: false,
+            enabled: true,
+          },
+        ],
+      }),
+    ).rejects.toThrow('不支持此权限档位')
   })
   it('adds the official Antigravity default beside an OpenCode alternative', async () => {
     const { service } = await nativeSetup([
