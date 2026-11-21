@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import type { TypertRemoteNamespace } from '@deepseek-ai/dsh-typert-protocol'
 import { modelRefKey } from '../contracts/catalog.ts'
 import { isOfficialPairing } from '../contracts/official-harnesses.ts'
-import { pairingKey, savedChoiceKey, recommendationChoiceKey } from './combination-choices.ts'
+import {
+  isDisabledManualAlternative,
+  pairingKey,
+  savedChoiceKey,
+  recommendationChoiceKey,
+} from './combination-choices.ts'
 import type { CombinationSelection } from './combination-choices.ts'
 import { safeFailureMessage } from './proxy-draft.ts'
 import type {
@@ -111,7 +116,7 @@ export function useExecutionCatalog(
     if (!catalog) return
     const target = catalog.combinations.find((item) => item.id === id)
     if (!target) return
-    void save({
+    return save({
       ...catalog,
       combinations: catalog.combinations.map((item) =>
         item.id === id
@@ -148,11 +153,27 @@ export function useExecutionCatalog(
     }
     const chosen = { modelRef: model.ref, harnessRef: draft.harness }
     if (
-      [...catalog.combinations, ...(catalog.recommendations ?? [])].some(
-        (item) => pairingKey(item) === pairingKey(chosen),
-      )
+      [
+        ...catalog.combinations.filter((item) => !isDisabledManualAlternative(item)),
+        ...(catalog.recommendations ?? []),
+      ].some((item) => pairingKey(item) === pairingKey(chosen))
     ) {
       setNotice('该组合已在选择列表中，请在上方勾选。')
+      return
+    }
+    const disabled = catalog.combinations.find(
+      (item) => isDisabledManualAlternative(item) && pairingKey(item) === pairingKey(chosen),
+    )
+    if (disabled) {
+      const result = await update(disabled.id, {
+        enabled: true,
+        isDefault:
+          disabled.isDefault &&
+          !catalog.combinations.some(
+            (item) => item.enabled && item.isDefault && modelRefKey(item.modelRef) === draft.model,
+          ),
+      })
+      if (result?.status === 'saved' && mounted.current) setDraft({ model: '', harness: 'dsh' })
       return
     }
     const makeDefault =

@@ -1,3 +1,4 @@
+import { isDisabledManualAlternative } from './combination-choices.ts'
 import { RecommendationPicker } from './RecommendationPicker.tsx'
 import { ModelAvailabilityStatus } from './ModelAvailabilityStatus.tsx'
 import { useExecutionCatalog } from './use-execution-catalog.ts'
@@ -39,7 +40,10 @@ export function ExecutionCatalogSection({
       ?.harnessRefs ?? []
   const remainingHarnesses = supportedHarnesses.filter(
     (harnessRef) =>
-      ![...(catalog?.combinations ?? []), ...(catalog?.recommendations ?? [])].some(
+      ![
+        ...(catalog?.combinations ?? []).filter((item) => !isDisabledManualAlternative(item)),
+        ...(catalog?.recommendations ?? []),
+      ].some(
         (item) => modelRefKey(item.modelRef) === draft.model && item.harnessRef === harnessRef,
       ),
   )

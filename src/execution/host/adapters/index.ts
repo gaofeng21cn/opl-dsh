@@ -58,6 +58,7 @@ export function nativeHarnessMatches(id: string, ref: ModelRef): boolean {
 /** Known channel-specific adapters override vendor pairing; arbitrary models stay manual. */
 export function automaticHarness(ref: ModelRef): string | undefined {
   if (isHiddenOfmSelection(ref)) return undefined
+  if (qwenCodeAdapter.matches(ref)) return qwenCodeAdapter.id
   if (antigravityAdapter.matches(ref)) return antigravityAdapter.id
   if (officialOpenCodeModel(ref) !== undefined) return 'opencode'
   if (

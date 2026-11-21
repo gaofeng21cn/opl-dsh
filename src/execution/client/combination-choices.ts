@@ -1,6 +1,13 @@
 import { modelRefKey } from '../contracts/catalog.ts'
 import type { CombinationDefinition, ExecutionCatalog } from '../contracts/catalog.ts'
 
+import { isOfficialPairing } from '../contracts/official-harnesses.ts'
+
+export const isDisabledManualAlternative = (row: CombinationDefinition) =>
+  !row.enabled &&
+  ((row.harnessRef === 'opencode' && isOfficialPairing('antigravity', row.modelRef)) ||
+    (row.harnessRef === 'pi' && isOfficialPairing('qwen-code', row.modelRef)))
+
 type Pairing = Pick<CombinationDefinition, 'modelRef' | 'harnessRef'>
 
 /** Visible choices and saved ids explicitly cleared by a bulk action. */
@@ -33,7 +40,9 @@ export function combinationChoices(catalog: ExecutionCatalog) {
   )
   return [
     ...catalog.combinations
-      .filter((item) => available.has(modelRefKey(item.modelRef)))
+      .filter(
+        (item) => !isDisabledManualAlternative(item) && available.has(modelRefKey(item.modelRef)),
+      )
       .map((item) => ({
         ...item,
         key: savedChoiceKey(item.id),

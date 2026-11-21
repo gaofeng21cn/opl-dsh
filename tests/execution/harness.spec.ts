@@ -2059,7 +2059,7 @@ describe('native conversation combinations', () => {
       'OPL Gateway',
     ])
   })
-  it('defaults the four native Gateway Gemini models to Antigravity and recommends OpenCode', async () => {
+  it('defaults the four native Gateway Gemini models to Antigravity and offers OpenCode only for manual pairing', async () => {
     vi.stubEnv('USERPROFILE', join(tmpdir(), 'opl-gemini-opencode-absent-cli'))
     vi.stubEnv('HOME', join(tmpdir(), 'opl-gemini-opencode-absent-cli'))
     vi.stubEnv('PATH', '')
@@ -2100,7 +2100,7 @@ describe('native conversation combinations', () => {
       catalog.recommendations
         ?.filter((item) => item.modelRef.model.startsWith('gemini::'))
         .map((item) => item.harnessRef),
-    ).toEqual(['opencode', 'opencode', 'opencode', 'opencode'])
+    ).toEqual([])
     for (const model of [
       'gemini-4-carbon',
       'gemini-4-hydrogen',
