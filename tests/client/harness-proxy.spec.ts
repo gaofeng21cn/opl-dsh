@@ -27,8 +27,12 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   // The published primitives package is not loadable from this offline install, so the
   // two atoms this section uses are stood in for. Both pass their props straight
   // through, which is what the desktop composition relies on anyway.
-  Button: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) =>
-    React.createElement('button', { ...props, type: 'button' }, children),
+  Button: ({
+    children,
+    type = 'button',
+    ...props
+  }: { children?: ReactNode } & Record<string, unknown>) =>
+    React.createElement('button', { ...props, type }, children),
   IconChevronRightOutlineRegular: (props: Record<string, unknown>) =>
     React.createElement('span', { ...props, 'aria-hidden': 'true' }),
   StateDot: (props: Record<string, unknown>) =>
@@ -197,7 +201,9 @@ async function typeAddress(scope: Node, id: string, address: string) {
 }
 async function press(node: Node) {
   await act(async () => {
-    node.click()
+    if (node.getAttribute('type') === 'submit' && node.parentNode?.nodeName === 'FORM')
+      node.parentNode.dispatchEvent('submit')
+    else node.click()
   })
 }
 const saveButton = (scope: Node, id: string) => control(scope, 'data-opl-proxy-save', id)
@@ -721,6 +727,124 @@ describe('每个外部 Harness 独立的代理设置', () => {
     await press(save())
     expect(rows()).toHaveLength(2)
     expect(stored().combinations[1].id).toBe('inactive/one')
+  })
+
+  it('推荐 Pi + Gemini 明确标出完全权限并按适配权限保存', async () => {
+    const data = {
+      ...catalog(),
+      recommendations: [] as Array<{
+        modelRef: { provider: string; model: string }
+        harnessRef: string
+        name: string
+      }>,
+      supportedPairings: [] as Array<{
+        modelRef: { provider: string; model: string }
+        harnessRefs: string[]
+        permissionPolicies: Record<string, string[]>
+      }>,
+    }
+    const modelRef = { provider: 'opl-gateway', model: 'gemini::gemini-4-carbon' }
+    data.models[0] = {
+      ref: modelRef,
+      name: 'Gemini 4 Carbon',
+      source: 'OPL Gateway',
+      available: true,
+    }
+    data.harnesses.push({ id: 'pi', name: 'Pi Coding Agent', kind: 'acp', command: 'pi' })
+    data.combinations = [
+      {
+        id: 'gemini-carbon-antigravity',
+        name: 'Gemini 4 Carbon + Antigravity CLI',
+        modelRef,
+        harnessRef: 'antigravity',
+        permissionPolicy: 'full-access',
+        isDefault: true,
+        enabled: true,
+      },
+    ]
+    data.recommendations = [
+      { modelRef, harnessRef: 'pi', name: 'Gemini 4 Carbon + Pi Coding Agent' },
+    ]
+    data.supportedPairings = [
+      {
+        modelRef,
+        harnessRefs: ['antigravity', 'pi'],
+        permissionPolicies: { antigravity: ['full-access'], pi: ['full-access'] },
+      },
+    ]
+    const { call, stored } = fixture(data)
+    const view = await open(call, ExecutionCatalogSection)
+    const picker = walk(view).find(
+      (node) => node.getAttribute?.('data-opl-panel') === 'recommended-combinations',
+    )!
+    expect(picker.getAttribute('open')).not.toBeNull()
+    const piChoice = walk(picker).find((node) =>
+      node.getAttribute?.('data-opl-recommendation-item')?.includes('gemini-4-carbon'),
+    )!
+    expect(text(piChoice.parentNode)).toContain('Gemini 4 Carbon + Pi Coding Agent')
+    expect(text(piChoice.parentNode)).toContain('完全权限')
+    await act(async () => {
+      piChoice.checked = true
+      piChoice.click()
+    })
+    await press(
+      walk(picker).find((node) => node.nodeName === 'BUTTON' && text(node).startsWith('保存选择'))!,
+    )
+    expect(stored().combinations.find((item) => item.harnessRef === 'pi')).toMatchObject({
+      name: 'Gemini 4 Carbon + Pi Coding Agent',
+      modelRef,
+      permissionPolicy: 'full-access',
+      isDefault: false,
+      enabled: true,
+    })
+    expect(stored().combinations.find((item) => item.harnessRef === 'antigravity')?.isDefault).toBe(
+      true,
+    )
+  })
+
+  it('手动添加 Pi 时使用 Host 广告的完全权限', async () => {
+    const initial = catalog()
+    const modelRef = { provider: 'opl-gateway', model: 'gemini::gemini-4-carbon' }
+    const data = {
+      ...initial,
+      models: [{ ref: modelRef, name: 'Gemini 4 Carbon', source: 'OPL Gateway', available: true }],
+      harnesses: [
+        ...initial.harnesses,
+        { id: 'pi', name: 'Pi Coding Agent', kind: 'acp', command: 'pi' },
+      ],
+      combinations: [],
+      recommendations: [],
+      supportedPairings: [
+        {
+          modelRef,
+          harnessRefs: ['pi'],
+          permissionPolicies: { pi: ['full-access'] },
+        },
+      ],
+    }
+    const { call, stored } = fixture(data)
+    const view = await open(call, ExecutionCatalogSection)
+    const manual = walk(view).find(
+      (node) => node.getAttribute?.('data-opl-panel') === 'custom-combinations',
+    )!
+    const selects = () => walk(manual).filter((node) => node.nodeName === 'SELECT')
+    await act(async () => {
+      selects()[0].value = JSON.stringify([modelRef.provider, modelRef.model])
+      selects()[0].dispatchEvent('change')
+    })
+    await act(async () => {
+      selects()[1].value = 'pi'
+      selects()[1].dispatchEvent('change')
+    })
+    expect(text(selects()[2])).toContain('完全权限')
+    expect(selects()[2].getAttribute('disabled')).not.toBeNull()
+    await press(walk(manual).find((node) => node.nodeName === 'BUTTON')!)
+    expect(stored().combinations[0]).toMatchObject({
+      name: 'Gemini 4 Carbon + Pi Coding Agent',
+      modelRef,
+      harnessRef: 'pi',
+      permissionPolicy: 'full-access',
+    })
   })
 
   it('相同模型和 Harness 的两份配置可独立选择，不因推荐重复新增', async () => {

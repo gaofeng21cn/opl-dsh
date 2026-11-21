@@ -32,6 +32,8 @@ export interface CombinationDefinition {
   /** The user explicitly chose another default for this model. */
   defaultDisabled?: boolean
 }
+export type CombinationPermissionPolicy = CombinationDefinition['permissionPolicy']
+
 export type OfmDiscoveryStatus =
   | { kind: 'official'; harness: string; label: string }
   | { kind: 'recommended'; harness: string; label: string }
@@ -57,7 +59,11 @@ export interface ExecutionCatalog {
   /** Available, explicitly adapted channel pairings offered for manual addition. */
   recommendations?: Array<{ modelRef: ModelRef; harnessRef: string; name: string }>
   /** Live adapter compatibility for the manual pairing form; not a readiness verdict. */
-  supportedPairings?: Array<{ modelRef: ModelRef; harnessRefs: string[] }>
+  supportedPairings?: Array<{
+    modelRef: ModelRef
+    harnessRefs: string[]
+    permissionPolicies?: Record<string, CombinationPermissionPolicy[]>
+  }>
   /** Current OFM directory entries; saved combination references alone are excluded. */
   ofmDiscovery?: OfmDiscoveryItem[]
 }

@@ -98,6 +98,9 @@ const record = (): HarnessSession => ({
   turns: [],
 })
 
+vi.mock('../../src/execution/host/minimax-execution-region.ts', () => ({
+  minimaxExecutionRegion: async () => 'global',
+}))
 function lifecycleOwner() {
   const adapter: HarnessAdapter = {
     id: 'fixture',
@@ -120,6 +123,7 @@ function lifecycleOwner() {
   vi.mocked(adapterFor).mockReturnValue(adapter)
   const active = new Map<string, FixtureActive>()
   const service = Object.assign(Object.create(HarnessService.prototype) as HarnessService, {
+    options: {},
     ctx: { connection: testPeerConnection },
     active,
     records: new Map(),

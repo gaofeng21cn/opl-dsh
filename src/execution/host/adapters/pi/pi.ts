@@ -49,13 +49,13 @@ import { systemEnvironment } from '../environment.ts'
 import { piBashEnvironment } from './pi-bash.ts'
 import {
   piApiForProtocol,
+  piGatewayGeminiLane,
   piLaneProtocol,
   piLaneReasoning,
   piThinkingValue,
   isPiCodeModel,
   piLane,
   PI_HARNESS,
-  PI_PROVIDER,
   PI_MODEL_OPTION,
   PI_THINKING_OPTION,
 } from './pi-models.ts'
@@ -109,7 +109,7 @@ export async function resolvePiRoute(
   const sources = options.modelSources
   if (!sources)
     throw new HarnessConfigurationError(
-      `模型来源 ${PI_PROVIDER} 尚未注册到执行引擎，无法确认此组合的模型与渠道；已停止，未启动 CLI。`,
+      `模型来源 ${record.modelRef.provider} 尚未注册到执行引擎，无法确认此组合的模型与渠道；已停止，未启动 CLI。`,
     )
   // Resolving also re-checks the registration after the await, so a source that was
   // replaced or unloaded during the read cannot authorize a launch.
@@ -123,7 +123,8 @@ export async function resolvePiRoute(
     provider: lane.provider,
     protocol,
     api: piApiForProtocol(protocol),
-    baseURL: route.baseURL,
+    // Pi's Google adapter expects the version in its base URL.
+    baseURL: protocol === 'gemini-native' ? new URL('/v1beta', route.baseURL).href : route.baseURL,
     apiKey: route.apiKey,
   }
 }
@@ -208,9 +209,11 @@ async function preparePiLaunch(
   const sources = options.modelSources
   if (!sources)
     throw new HarnessConfigurationError(
-      `模型来源 ${PI_PROVIDER} 尚未注册到执行引擎，无法确认此组合的模型与渠道；已停止，未启动 CLI。`,
+      `模型来源 ${record.modelRef.provider} 尚未注册到执行引擎，无法确认此组合的模型与渠道；已停止，未启动 CLI。`,
     )
-  const lease = sources.lease(PI_HARNESS, record.modelRef)
+  const lease = piGatewayGeminiLane(record.modelRef)
+    ? undefined
+    : sources.lease(PI_HARNESS, record.modelRef)
 
   const route = await resolvePiRoute(record, options)
   const path = await executablePath(options.command || PI_HARNESS)
@@ -219,7 +222,7 @@ async function preparePiLaunch(
 
   // Everything asynchronous is finished here. A source revoked or replaced during the
   // awaits above must not authorize this launch.
-  lease.assertCurrent()
+  lease?.assertCurrent()
 
   const home = join(options.home, 'harnesses', record.harnessRef, record.id)
   await mkdir(home, { recursive: true })
@@ -233,7 +236,7 @@ async function preparePiLaunch(
   // Re-checked immediately before the launch is returned, with no suspension point between
   // the check and the return. This is what refuses a source that was unregistered and then
   // registered again as a different object during preparation.
-  lease.assertCurrent()
+  lease?.assertCurrent()
 
   return {
     home,
@@ -282,7 +285,7 @@ export function createPiAdapter(bridgePath: string): HarnessAdapter {
     capabilities: {
       transport: 'official-sdk',
       authentication: 'api-source',
-      protocols: ['chat', 'responses', 'messages'],
+      protocols: ['chat', 'responses', 'messages', 'gemini-native'],
       customEndpoint: true,
       // `read-only` and `workspace` are absent on purpose: the official product has no
       // approval gate and no filesystem boundary (see ./pi-permissions.ts), so those
@@ -300,8 +303,7 @@ export function createPiAdapter(bridgePath: string): HarnessAdapter {
       if (!path)
         return {
           available: false,
-          reason:
-            '未找到官方 Pi Coding Agent CLI（pi）。请使用官方安装方式安装，安装后重新检测；此组合不依赖 OPL Gateway 的凭据。',
+          reason: '未找到官方 Pi Coding Agent CLI（pi）。请在执行引擎中安装后重新检测。',
         }
       // The Windows shell is a launch precondition, so report it here rather than letting
       // the first real task fail. This probes the suite's own provider and never touches

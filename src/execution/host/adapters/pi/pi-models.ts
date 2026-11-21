@@ -28,6 +28,28 @@ export const PI_HARNESS = 'pi'
 /** Model provider owner that publishes the Pi ids this harness can pin. */
 export const PI_PROVIDER = 'our-free-model'
 
+const GATEWAY_GEMINI_LANES: readonly PiLane[] = ['gemini-4-carbon', 'gemini-4-hydrogen'].map(
+  (model) => ({
+    model,
+    provider: 'opl-pi-gateway-gemini',
+    thinking: 'cli-advertised',
+    thinkingLevelMap: {
+      off: null,
+      minimal: null,
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      xhigh: null,
+      max: null,
+    },
+  }),
+)
+
+export const piGatewayGeminiLane = (ref: ModelRef): PiLane | undefined =>
+  ref.provider === 'opl-gateway'
+    ? GATEWAY_GEMINI_LANES.find((lane) => ref.model === `gemini::${lane.model}`)
+    : undefined
+
 /** Catalog id: NVIDIA Nemotron 3 Nano Omni reasoning, free lane. */
 export const PI_MODEL_NEMOTRON = 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free'
 /** Catalog id: Liquid AI LFM 2.5 2.6B, free lane. */
@@ -102,7 +124,7 @@ export interface PiLane {
  * runs is still chosen by the source owner and pinned per combination — see
  * {@link piApiForProtocol}.
  */
-export const PI_PROTOCOLS = ['chat', 'responses', 'messages'] as const
+export const PI_PROTOCOLS = ['chat', 'responses', 'messages', 'gemini-native'] as const
 /** One wire protocol this adapter supports. */
 export type PiProtocol = (typeof PI_PROTOCOLS)[number]
 
@@ -128,6 +150,8 @@ export function piApiForProtocol(protocol: string): string {
       return 'openai-responses'
     case 'messages':
       return 'anthropic-messages'
+    case 'gemini-native':
+      return 'google-generative-ai'
     default:
       throw Error(
         `官方 Pi 不支持该协议（${protocol}）；已停止，未改用其他协议，也不会换成其他模型。`,
@@ -161,6 +185,7 @@ const LANE_PROTOCOLS: Readonly<Record<string, PiProtocol>> = {
 
 /** The protocol this harness pins for one lane, or `undefined` for an unknown id. */
 export const piLaneProtocol = (ref: ModelRef): PiProtocol | undefined => {
+  if (piGatewayGeminiLane(ref)) return 'gemini-native'
   const lane = piLane(ref)
   return lane ? LANE_PROTOCOLS[lane.model] : undefined
 }
@@ -191,6 +216,7 @@ const LANE_REASONING: Readonly<Record<string, boolean>> = {
 
 /** Whether the lane exposes a reasoning tier, or `undefined` for an unknown id. */
 export const piLaneReasoning = (ref: ModelRef): boolean | undefined => {
+  if (piGatewayGeminiLane(ref)) return true
   const lane = piLane(ref)
   return lane ? LANE_REASONING[lane.model] : undefined
 }
@@ -250,7 +276,7 @@ const LANES: readonly PiLane[] = [
  * @returns the matching lane, or `undefined` for an id this adapter does not pin.
  */
 export function piLane(ref: ModelRef): PiLane | undefined {
-  if (ref.provider !== PI_PROVIDER) return undefined
+  if (ref.provider !== PI_PROVIDER) return piGatewayGeminiLane(ref)
   const id = ref.model.includes('::') ? ref.model.slice(ref.model.lastIndexOf('::') + 2) : ref.model
   return LANES.find((lane) => lane.model === id)
 }
