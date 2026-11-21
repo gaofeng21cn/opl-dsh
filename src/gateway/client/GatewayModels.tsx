@@ -157,8 +157,9 @@ export function GatewayModels({ call }: { call: Call }) {
             <span className={css.muted}>
               {grouped([...models.values()]).length} 个模型 · 凭据由 OPL Gateway 管理
             </span>
-            <Button
-              variant="outline"
+            <button
+              type="button"
+              className={css.providerAction}
               disabled={busy}
               onClick={() =>
                 void act(async () => {
@@ -248,7 +249,7 @@ export function GatewayModels({ call }: { call: Call }) {
               }
             >
               {busy ? '正在获取…' : '选择模型'}
-            </Button>
+            </button>
           </div>
           {filteredPersistentDiagnostics && (
             <ErrorSummary summary={filteredPersistentDiagnostics} role="status" />
@@ -275,7 +276,7 @@ export function GatewayModels({ call }: { call: Call }) {
           {!models.size && (
             <p className={css.muted}>
               {data.groups.some((group) => group.ready)
-                ? '尚未添加模型。展开编辑后获取可用模型或手动添加。'
+                ? '尚未添加模型。可点击“选择模型”或展开“手动配置模型”。'
                 : '请先在“网关账户”登录并同步凭据。'}
             </p>
           )}
@@ -370,171 +371,176 @@ export function GatewayModels({ call }: { call: Call }) {
               </div>
             </div>
           )}
-          <button className={css.advancedLink} onClick={() => setEditing(!editing)}>
-            {editing ? '收起高级配置' : '高级：手动配置模型'}
-          </button>
-          {editing && (
-            <div className={css.editor}>
-              <p className={css.muted}>
-                每个渠道独立配置。下方按调用路由编辑；默认协议已自动配置，通常无需修改。
-              </p>
-              {data.groups
-                .filter(
-                  (group) => group.enabled !== false && (group.ready || group.models.length > 0),
-                )
-                .map((group) => (
-                  <details className={css.details} key={group.id}>
-                    <summary>
-                      {group.name} 路由 · {group.models.length} 个模型
-                    </summary>
-                    <div className={css.detailsBody}>
-                      <Button
-                        variant="outline"
-                        disabled={busy || !group.ready}
-                        onClick={() =>
-                          void act(async () => {
-                            const fetched = await call('discover', { group: group.id })
-                            const ids = new Set(group.models.map((model) => model.id))
-                            change(group.id, {
-                              models: [
-                                ...group.models,
-                                ...fetched.filter((model) => !ids.has(model.id)),
-                              ],
-                              catalog: fetched.length
-                                ? { state: 'ready', count: fetched.length }
-                                : { state: 'empty', count: 0 },
-                            })
-                          })
-                        }
-                      >
-                        获取可用模型
-                      </Button>
-                      {group.models.map((model, index) => (
-                        <div className={css.detailsBody} key={index}>
-                          <label className={css.field}>
-                            模型 ID
-                            <input
-                              className={css.input}
-                              disabled={busy}
-                              value={model.id}
-                              onChange={(e) =>
-                                change(group.id, {
-                                  models: group.models.map((item, i) =>
-                                    i === index ? { ...item, id: e.target.value } : item,
-                                  ),
-                                })
-                              }
-                            />
-                          </label>
-                          <label className={css.field}>
-                            显示名称
-                            <input
-                              className={css.input}
-                              disabled={busy}
-                              value={model.name ?? ''}
-                              onChange={(e) =>
-                                change(group.id, {
-                                  models: group.models.map((item, i) =>
-                                    i === index ? { ...item, name: e.target.value } : item,
-                                  ),
-                                })
-                              }
-                            />
-                          </label>
-                          <label className={css.field}>
-                            上下文长度
-                            <input
-                              type="number"
-                              min="1"
-                              className={css.input}
-                              disabled={busy}
-                              value={model.contextWindow ?? ''}
-                              onChange={(e) =>
-                                change(group.id, {
-                                  models: group.models.map((item, i) => {
-                                    if (i !== index) return item
-                                    const { contextWindow: _, ...rest } = item
-                                    return e.target.value
-                                      ? { ...rest, contextWindow: Number(e.target.value) }
-                                      : rest
-                                  }),
-                                })
-                              }
-                            />
-                          </label>
-                          <Button
-                            variant="outline"
-                            disabled={busy}
-                            onClick={() =>
+          <details
+            className={css.details}
+            onToggle={(event) => {
+              if (event.target === event.currentTarget) setEditing(event.currentTarget.open)
+            }}
+          >
+            <summary>手动配置模型</summary>
+            {editing && (
+              <div className={css.editor}>
+                <p className={css.muted}>
+                  每个渠道独立配置。下方按调用路由编辑；默认协议已自动配置，通常无需修改。
+                </p>
+                {data.groups
+                  .filter(
+                    (group) => group.enabled !== false && (group.ready || group.models.length > 0),
+                  )
+                  .map((group) => (
+                    <details className={css.details} key={group.id}>
+                      <summary>
+                        {group.name} 路由 · {group.models.length} 个模型
+                      </summary>
+                      <div className={css.detailsBody}>
+                        <Button
+                          variant="outline"
+                          disabled={busy || !group.ready}
+                          onClick={() =>
+                            void act(async () => {
+                              const fetched = await call('discover', { group: group.id })
+                              const ids = new Set(group.models.map((model) => model.id))
                               change(group.id, {
-                                models: group.models.filter((_, i) => i !== index),
+                                models: [
+                                  ...group.models,
+                                  ...fetched.filter((model) => !ids.has(model.id)),
+                                ],
+                                catalog: fetched.length
+                                  ? { state: 'ready', count: fetched.length }
+                                  : { state: 'empty', count: 0 },
                               })
-                            }
-                          >
-                            移除模型
-                          </Button>
-                        </div>
-                      ))}
-                      {!group.models.length && (
-                        <p className={css.muted}>目录为空，可获取可用模型或手动添加。</p>
-                      )}
-                      <Button
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() =>
-                          change(group.id, { models: [...group.models, { id: '', name: '' }] })
-                        }
-                      >
-                        添加模型
-                      </Button>
-                      {group.id !== 'deepseek' && (
-                        <details>
-                          <summary>高级：接口协议</summary>
-                          <select
-                            aria-label={`${group.name} 接口协议`}
-                            className={css.input}
-                            disabled={busy}
-                            value={group.api}
-                            onChange={(e) => change(group.id, { api: e.target.value })}
-                          >
-                            <option value="openai-responses">OpenAI Responses</option>
-                            <option value="openai-completions">OpenAI Chat Completions</option>
-                            <option value="anthropic-messages">Anthropic Messages</option>
-                          </select>
-                        </details>
-                      )}
-                      <Button
-                        disabled={busy}
-                        onClick={() =>
-                          void act(async () => {
-                            const saved = await call('edit', {
-                              group: group.id,
-                              models: group.models,
-                              api: group.api,
-                              revision: group.revision,
                             })
-                            // Preserve other open drafts; only refresh their namespace revisions.
-                            setData((current) => ({
-                              groups: saved.groups.map((next) =>
-                                next.id === group.id
-                                  ? next
-                                  : {
-                                      ...(current?.groups.find((item) => item.id === next.id) ??
-                                        next),
-                                      revision: next.revision,
-                                    },
-                              ),
-                            }))
-                          })
-                        }
-                      >
-                        保存模型
-                      </Button>
-                    </div>
-                  </details>
-                ))}
-            </div>
-          )}
+                          }
+                        >
+                          获取可用模型
+                        </Button>
+                        {group.models.map((model, index) => (
+                          <div className={css.detailsBody} key={index}>
+                            <label className={css.field}>
+                              模型 ID
+                              <input
+                                className={css.input}
+                                disabled={busy}
+                                value={model.id}
+                                onChange={(e) =>
+                                  change(group.id, {
+                                    models: group.models.map((item, i) =>
+                                      i === index ? { ...item, id: e.target.value } : item,
+                                    ),
+                                  })
+                                }
+                              />
+                            </label>
+                            <label className={css.field}>
+                              显示名称
+                              <input
+                                className={css.input}
+                                disabled={busy}
+                                value={model.name ?? ''}
+                                onChange={(e) =>
+                                  change(group.id, {
+                                    models: group.models.map((item, i) =>
+                                      i === index ? { ...item, name: e.target.value } : item,
+                                    ),
+                                  })
+                                }
+                              />
+                            </label>
+                            <label className={css.field}>
+                              上下文长度
+                              <input
+                                type="number"
+                                min="1"
+                                className={css.input}
+                                disabled={busy}
+                                value={model.contextWindow ?? ''}
+                                onChange={(e) =>
+                                  change(group.id, {
+                                    models: group.models.map((item, i) => {
+                                      if (i !== index) return item
+                                      const { contextWindow: _, ...rest } = item
+                                      return e.target.value
+                                        ? { ...rest, contextWindow: Number(e.target.value) }
+                                        : rest
+                                    }),
+                                  })
+                                }
+                              />
+                            </label>
+                            <Button
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() =>
+                                change(group.id, {
+                                  models: group.models.filter((_, i) => i !== index),
+                                })
+                              }
+                            >
+                              移除模型
+                            </Button>
+                          </div>
+                        ))}
+                        {!group.models.length && (
+                          <p className={css.muted}>目录为空，可获取可用模型或手动添加。</p>
+                        )}
+                        <Button
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() =>
+                            change(group.id, { models: [...group.models, { id: '', name: '' }] })
+                          }
+                        >
+                          添加模型
+                        </Button>
+                        {group.id !== 'deepseek' && (
+                          <details>
+                            <summary>高级：接口协议</summary>
+                            <select
+                              aria-label={`${group.name} 接口协议`}
+                              className={css.input}
+                              disabled={busy}
+                              value={group.api}
+                              onChange={(e) => change(group.id, { api: e.target.value })}
+                            >
+                              <option value="openai-responses">OpenAI Responses</option>
+                              <option value="openai-completions">OpenAI Chat Completions</option>
+                              <option value="anthropic-messages">Anthropic Messages</option>
+                            </select>
+                          </details>
+                        )}
+                        <Button
+                          disabled={busy}
+                          onClick={() =>
+                            void act(async () => {
+                              const saved = await call('edit', {
+                                group: group.id,
+                                models: group.models,
+                                api: group.api,
+                                revision: group.revision,
+                              })
+                              // Preserve other open drafts; only refresh their namespace revisions.
+                              setData((current) => ({
+                                groups: saved.groups.map((next) =>
+                                  next.id === group.id
+                                    ? next
+                                    : {
+                                        ...(current?.groups.find((item) => item.id === next.id) ??
+                                          next),
+                                        revision: next.revision,
+                                      },
+                                ),
+                              }))
+                            })
+                          }
+                        >
+                          保存模型
+                        </Button>
+                      </div>
+                    </details>
+                  ))}
+              </div>
+            )}
+          </details>
         </>
       )}
     </div>
