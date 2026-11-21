@@ -389,6 +389,47 @@ describe('每个外部 Harness 独立的代理设置', () => {
     expect(calls.some((entry) => entry.method === 'save-catalog')).toBe(false)
   })
 
+  it('停用的 Gemini + OpenCode 从手动添加恢复原配置', async () => {
+    const initial = catalog()
+    const ref = { provider: 'opl-gateway', model: 'gemini::gemini-4-carbon' }
+    const saved = {
+      ...initial.combinations[0],
+      id: 'old-gemini',
+      name: '旧组合',
+      modelRef: ref,
+      harnessRef: 'opencode',
+      enabled: false,
+      isDefault: false,
+    }
+    const { call, stored } = fixture({
+      ...initial,
+      models: [{ ...initial.models[0], ref, name: 'Gemini 4 Carbon', available: true }],
+      harnesses: [
+        ...initial.harnesses,
+        { id: 'opencode', name: 'OpenCode', kind: 'acp', command: 'opencode' },
+      ],
+      combinations: [saved],
+      supportedPairings: [{ modelRef: ref, harnessRefs: ['opencode'] }],
+    })
+    const view = await open(call, ExecutionCatalogSection)
+    expect(text(view)).not.toContain('旧组合')
+    const manual = walk(view).find(
+      (node) => node.getAttribute?.('data-opl-panel') === 'custom-combinations',
+    )!
+    const selects = walk(manual).filter((node) => node.nodeName === 'SELECT')
+    await act(async () => {
+      selects[0].value = JSON.stringify([ref.provider, ref.model])
+      selects[0].dispatchEvent('change')
+    })
+    expect(text(selects[1])).toContain('OpenCode')
+    await act(async () => {
+      selects[1].value = 'opencode'
+      selects[1].dispatchEvent('change')
+    })
+    await press(walk(manual).find((node) => node.nodeName === 'BUTTON')!)
+    expect(stored().combinations).toMatchObject([{ id: saved.id, name: saved.name, enabled: true }])
+  })
+
   it('手动添加官方配对时保留现有默认组合，且新名称可在管理列表修改', async () => {
     const initial = catalog()
     const data = {
