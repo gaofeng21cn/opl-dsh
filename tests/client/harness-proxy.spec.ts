@@ -1020,10 +1020,18 @@ describe('每个外部 Harness 独立的代理设置', () => {
         },
       ],
     }
-    const { call } = fixture(data)
+    const { call, stored } = fixture(data)
     const view = await open(call, ExecutionCatalogSection)
     const rows = walk(view).filter((node) => node.getAttribute?.('data-opl-combination'))
     expect(rows).toHaveLength(2)
+    const picker = walk(view).find(
+      (n) => n.getAttribute?.('data-opl-panel') === 'recommended-combinations',
+    )!
+    expect(text(picker)).not.toContain(' + OpenCode')
+    await press(
+      walk(picker).find((n) => n.nodeName === 'BUTTON' && text(n).startsWith('保存选择'))!,
+    )
+    expect(stored().combinations.find((c) => c.id === 'gemini/custom')?.enabled).toBe(true)
     for (const row of rows) {
       expect(text(walk(row).find((node) => node.nodeName === 'SUMMARY')!)).not.toContain('默认')
     }

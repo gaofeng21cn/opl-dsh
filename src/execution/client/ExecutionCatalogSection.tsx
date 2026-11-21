@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { isDisabledManualAlternative } from './combination-choices.ts'
+import { isDisabledManualAlternative, isManualAlternative } from './combination-choices.ts'
 import { RecommendationPicker } from './RecommendationPicker.tsx'
 import { ModelAvailabilityStatus } from './ModelAvailabilityStatus.tsx'
 import { useExecutionCatalog } from './use-execution-catalog.ts'
@@ -347,7 +347,7 @@ function CombinationRow({
           <span className={listCss.source} title={source}>
             {source}
           </span>
-          {failure && (
+          {(failure || isManualAlternative(item)) && (
             <button
               type="button"
               className={listCss.remove}

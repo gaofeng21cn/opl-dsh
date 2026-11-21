@@ -82,8 +82,23 @@ describe('combination authority', () => {
     }
     const custom = { ...saved, id: 'custom-qwen', name: '我的 Qwen（备用）' }
     const other = { ...saved, id: 'other-engine', harnessRef: 'pi' }
-    await store.set({ ...catalog, combinations: [saved, custom, other] })
-    const expected = [{ ...saved, name }, custom, other]
+    const gemini = {
+      ...saved,
+      id: 'gemini-open',
+      modelRef: { provider: 'opl-gateway', model: 'gemini::gemini-4-carbon' },
+      harnessRef: 'opencode',
+      enabled: true,
+      name: 'Gemini 4 Carbon + OpenCode（备用）',
+    }
+    const customGemini = { ...gemini, id: 'user-gemini', name: '我的 OpenCode（备用）' }
+    await store.set({ ...catalog, combinations: [saved, custom, other, gemini, customGemini] })
+    const expected = [
+      { ...saved, name },
+      custom,
+      other,
+      { ...gemini, name: 'Gemini 4 Carbon + OpenCode' },
+      customGemini,
+    ]
     expect((await new ExecutionCatalogStore(dir).get()).combinations).toEqual(expected)
     expect(JSON.parse(await readFile(store.filename, 'utf8')).combinations).toEqual(expected)
   })

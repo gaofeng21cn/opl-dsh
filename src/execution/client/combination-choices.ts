@@ -7,10 +7,12 @@ import type {
 
 import { isOfficialPairing } from '../contracts/official-harnesses.ts'
 
+export const isManualAlternative = (row: Pairing) =>
+  (row.harnessRef === 'opencode' && isOfficialPairing('antigravity', row.modelRef)) ||
+  (row.harnessRef === 'pi' && isOfficialPairing('qwen-code', row.modelRef))
+
 export const isDisabledManualAlternative = (row: CombinationDefinition) =>
-  !row.enabled &&
-  ((row.harnessRef === 'opencode' && isOfficialPairing('antigravity', row.modelRef)) ||
-    (row.harnessRef === 'pi' && isOfficialPairing('qwen-code', row.modelRef)))
+  !row.enabled && isManualAlternative(row)
 
 type Pairing = Pick<CombinationDefinition, 'modelRef' | 'harnessRef'>
 
@@ -65,14 +67,12 @@ export function combinationChoices(catalog: ExecutionCatalog) {
   const existing = new Set(catalog.combinations.map(pairingKey))
   const recommendations = new Map(
     (catalog.recommendations ?? [])
-      .filter((item) => !existing.has(pairingKey(item)))
+      .filter((item) => !isManualAlternative(item) && !existing.has(pairingKey(item)))
       .map((item) => [pairingKey(item), item]),
   )
   return [
     ...catalog.combinations
-      .filter(
-        (item) => !isDisabledManualAlternative(item) && available.has(modelRefKey(item.modelRef)),
-      )
+      .filter((item) => !isManualAlternative(item) && available.has(modelRefKey(item.modelRef)))
       .map((item) => ({
         ...item,
         key: savedChoiceKey(item.id),
