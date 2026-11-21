@@ -42,6 +42,20 @@ export const GATEWAY_ANTIGRAVITY_GEMINI_MODELS = [
   'gemini-3.8-flash',
 ] as const
 
+/** EAC models served through the OFM OpenCode relay, keyed by their complete catalog IDs. */
+export const EAC_OPENCODE_NAMES: ReadonlyMap<string, string> = new Map([
+  ['opencode/nemotron-3.5-lightning-free', 'EAC Nemotron 3.5 Lightning Free'],
+  ['opencode/nemotron-3.5-super-vl-free', 'EAC Nemotron 3.5 Super VL Free'],
+  ['opencode/flint-40b-free', 'EAC Flint 40B Free'],
+  ['opencode/longcat-2.5-free', 'EAC LongCat 2.5 Free'],
+  ['opencode/mimo-v2.6-flash-free', 'EAC MiMo V2.6 Flash Free'],
+  ['opencode/hy4-flash-free', 'EAC Hy4 Flash Free'],
+  ['opencode/tidepool-alpha-free', 'EAC Tidepool Alpha Free'],
+  ['opencode/beam-free', 'EAC Beam Free'],
+  ['opencode/iceman-free', 'EAC Iceman Free'],
+  ['opencode/big-pickle', 'EAC Big Pickle'],
+])
+
 /** Stable product names for IDs whose upstream display text changed. */
 export function displayModelName(ref: ModelRef, name?: string): string {
   const id = ref.model.includes('::') ? ref.model.slice(ref.model.lastIndexOf('::') + 2) : ref.model
@@ -59,9 +73,8 @@ export function displayModelName(ref: ModelRef, name?: string): string {
     if (id === 'longcat-2.5-free') return 'LongCat 2.5 Free'
     if (id === 'iceman-free') return 'Iceman Free'
     if (id === 'inkling-2-small-free') return 'Inkling 2 Small Free'
-    if (id === 'opencode/nemotron-3.5-lightning-free') return 'EAC Nemotron 3.5 Lightning Free'
-    if (id === 'opencode/nemotron-3.5-super-vl-free') return 'EAC Nemotron 3.5 Super VL Free'
-    if (id === 'opencode/flint-40b-free') return 'EAC Flint 40B Free'
+    const eacName = EAC_OPENCODE_NAMES.get(id)
+    if (eacName) return eacName
     if (id === 'thinkingmachines/inkling:free') return 'Kilo Inkling'
     if (id === 'google/gemma-4-31b-it:free') return 'Kilo Gemma 4 31B'
     if (id === 'minimaxai/minimax-m3.1-flash') return 'EAC MiniMax M3.1 Flash'

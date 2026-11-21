@@ -6,6 +6,7 @@
  * model on them; it reads none of the plugin's own state.
  */
 
+import { EAC_OPENCODE_NAMES } from '../../../shared/models.ts'
 import type { ModelRef } from '../../contracts/catalog.ts'
 
 /** Provider routes the plugin registers with the official LLM registry. */
@@ -99,9 +100,7 @@ export const OFM_PINNED_HARNESS_MODELS: Readonly<Record<string, readonly string[
     'glm-5.3-flash-free',
     'opencode/glm-5.3-flash-free',
     'opencode/deepseek-v4.1-flash-free',
-    'opencode/nemotron-3.5-lightning-free',
-    'opencode/nemotron-3.5-super-vl-free',
-    'opencode/flint-40b-free',
+    ...EAC_OPENCODE_NAMES.keys(),
     'deepseek-v4.1-flash-free',
     'space-bunny-free',
     'minimax-m3.1-flash-free',

@@ -51,6 +51,8 @@ OFM 来源统一使用 `Our Free Model` 写法，区域渠道保留 `region-limi
 | Nemotron Nano Omni、LFM2.5、Inkling Small、Inkling、Gemma 4 31B                                                               | Pi Coding Agent                 | Chat      |
 | Dots、Glyph、Kilo Auto Free、Kilo Beam、Xing 4.0                                                                              | Kilo Code                       | Chat      |
 
+EAC 的 LongCat 2.5 Free、MiMo V2.6 Flash Free、Hy4 Flash Free、Tidepool Alpha Free、Beam Free、Iceman Free 和 Big Pickle 推荐使用 OpenCode。发送时保留目录中的 `opencode/` 前缀，通过 OFM 转发。
+
 表格描述适配器配对，不是当前在线可用性承诺；模型必须仍在来源目录中且通过启动前检查。Cat Jam、MiMo v2.6 Flash、Muse Spark 1.3、Longcat 2.5、OpenCode 的 DeepSeek/GLM/Beam/Nemotron 免费条目、Space Bunny 和 Big Pickle 的精确裸 ID 使用 OpenCode 官方免费通道。Kilo 频道的 Nemotron 3 Super 120B 使用 Kilo 执行器并经 OFM Chat 转发，不折叠成 OpenCode 路线。Flint 的 `flint-40b-free` 与 EAC 的 `opencode/flint-40b-free` 均由 OpenCode 经 OFM Chat 转发，保留各自的完整 ID；`recursive/flint-v1.0:free` 由 Kilo 执行并经 OFM 转发。同名模型不互相替换。
 
 Kilo ERNIE-5.5-Flash-Preview 使用精确 ID `baidu/ernie-5.5-flash-preview:free`，通过 Kilo Code 和 OFM Chat 转发执行；默认推荐该组合。来源目录声明推理能力，但 Kilo ACP 自定义 provider 未提供可写档位，因此保持来源默认思考设置，不显示推理档位菜单。
