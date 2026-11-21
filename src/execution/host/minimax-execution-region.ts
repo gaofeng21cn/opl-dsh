@@ -35,8 +35,14 @@ export async function minimaxExecutionRegion(
     join(minimaxAccountDataDir(process.env, prefix), 'preferences', 'mcode-region.json'),
   )
   if (preferences) {
-    const region = fromCli(JSON.parse(preferences)?.regions?.prod)
-    if (region) return region
+    try {
+      const region = fromCli(JSON.parse(preferences)?.regions?.prod)
+      if (region) return region
+    } catch (error) {
+      // This is a fallback to the CLI's own preference. An invalid legacy
+      // preference must not prevent the user from selecting a region in OPL.
+      if (!(error instanceof SyntaxError)) throw error
+    }
   }
   const [global, cn] = await Promise.all(
     (['global', 'cn'] as const).map((region) => readMiniMaxAccountLoginState(region, { prefix })),

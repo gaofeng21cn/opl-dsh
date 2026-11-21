@@ -33,6 +33,10 @@ import {
   minimaxCodeLaunch,
   minimaxCodeModels,
 } from '../../src/execution/host/adapters/minimax.ts'
+import {
+  minimaxExecutionRegion,
+  saveMinimaxExecutionRegion,
+} from '../../src/execution/host/minimax-execution-region.ts'
 import { executablePath } from '../../src/execution/host/harness-registry.ts'
 import {
   createMiniMaxCodeModelRegistration,
@@ -72,6 +76,7 @@ const previousEnv = new Map<string, string | undefined>()
 for (const name of [
   'MINIMAX_DATA_DIR',
   'MINIMAX_CODE_HOME',
+  'MAVIS_REGION',
   'PATH',
   'DSH_HOME',
   'USERPROFILE',
@@ -92,6 +97,18 @@ const temp = async (prefix: string): Promise<string> => {
   cleanups.push(() => rm(root, { recursive: true, force: true }))
   return root
 }
+
+it('falls back to account defaults when the external CLI preference is unreadable JSON', async () => {
+  const home = await temp('opl-minimax-region-')
+  process.env.MINIMAX_DATA_DIR = join(home, 'mcode')
+  delete process.env.MAVIS_REGION
+  const preferences = join(process.env.MINIMAX_DATA_DIR, 'preferences')
+  await mkdir(preferences, { recursive: true })
+  await writeFile(join(preferences, 'mcode-region.json'), '{')
+  await expect(minimaxExecutionRegion(home)).resolves.toBe('global')
+  await saveMinimaxExecutionRegion(home, 'cn')
+  await expect(minimaxExecutionRegion(home)).resolves.toBe('cn')
+})
 
 /** A real LLM registry with the adapter registered through the public entry point. */
 async function llmSurface(): Promise<Context & { llm: LlmRuntime }> {
