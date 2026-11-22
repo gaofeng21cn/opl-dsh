@@ -344,6 +344,8 @@ function openAgent(): void {
     cwd: process.cwd(),
     encoding: 'utf8',
     timeout: 3000,
+    // A synchronous probe still waits after timeout if the launcher ignores SIGTERM.
+    killSignal: 'SIGKILL',
     windowsHide: true,
     windowsVerbatimArguments: help.windowsVerbatimArguments,
     stdio: ['ignore', 'pipe', 'ignore'],

@@ -145,6 +145,21 @@ function safeBash(): string {
 afterAll(() => stepTestCleanup())
 
 describe('StepCode bridge: initialization and pinning', () => {
+  it.skipIf(process.platform === 'win32')(
+    'starts RPC when the optional help probe ignores the timeout signal',
+    async () => {
+      const run = await launch({ knobs: { ignoreHelpTermination: true } })
+      try {
+        await expect(
+          run.agent.acp.request('initialize', { protocolVersion: 1, clientCapabilities: {} }),
+        ).resolves.toMatchObject({ protocolVersion: 1 })
+        expect(existsSync(join(run.env.OPL_STEP_AGENT_DIR, 'stub-help-completed'))).toBe(false)
+      } finally {
+        await run.agent.dispose()
+      }
+    },
+  )
+
   it('initializes over ACP and pins the lane model read back from the official CLI', async () => {
     const run = await launch()
     try {

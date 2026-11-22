@@ -49,6 +49,11 @@ const readJson = (path) => {
 const modelsDoc = readJson(join(configRoot, 'models.json')) ?? { providers: {} }
 const knobs = readJson(join(agentDir, 'stub-knobs.json')) ?? {}
 if (process.argv.includes('--help')) {
+  if (knobs.ignoreHelpTermination) {
+    process.on('SIGTERM', () => {})
+    await new Promise((resolve) => setTimeout(resolve, 5000))
+    writeFileSync(join(agentDir, 'stub-help-completed'), '')
+  }
   if (knobs.liveFrames) process.stdout.write('  --include-live-events  Include live RPC frames')
   process.exit(0)
 }
