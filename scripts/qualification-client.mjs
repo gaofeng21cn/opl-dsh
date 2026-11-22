@@ -184,6 +184,7 @@ export async function verifyDesktopClient(
   officialVersion = undefined,
   conversationCountFixture = undefined,
   readExecutionCatalog = undefined,
+  billionContextEnabled = false,
 ) {
   const result = {
     clientMounted: false,
@@ -414,6 +415,7 @@ export async function verifyDesktopClient(
       'Agent 预设',
       '协作与自动化',
       '插件管理',
+      ...(billionContextEnabled ? ['bili设置'] : []),
     ],
     [
       'General',
@@ -424,6 +426,7 @@ export async function verifyDesktopClient(
       'Agent presets',
       'Collaboration',
       'Plugins',
+      ...(billionContextEnabled ? ['bili'] : []),
     ],
   ]
   await waitFor(

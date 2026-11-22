@@ -25,7 +25,6 @@ afterEach(async () => {
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'opl-minimax-integration-'))
-  cleanups.push(() => rm(root, { recursive: true, force: true }))
   let enabled = true
   const ctx = {
     connection: testPeerConnection,
@@ -39,7 +38,10 @@ async function fixture() {
     home: join(root, 'state'),
     minimaxCodeEnabled: () => enabled,
   })
-  cleanups.push(() => service.dispose())
+  cleanups.push(
+    () => rm(root, { recursive: true, force: true }),
+    () => service.dispose(),
+  )
   const adapter = adapterFor(MINIMAX_CODE_HARNESS, {
     provider: MINIMAX_CODE_PROVIDER,
     model: 'MiniMax-M3',

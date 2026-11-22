@@ -194,6 +194,7 @@ async function verifyControlPermissions() {
 const requests = []
 let shellProbe = false
 let teamProbe = false
+let contextProbe = false
 const shellFile = 'opl-' + nativeShellMode + '-smoke.txt'
 const shellMarker = 'OPL_' + nativeShellMode.toUpperCase() + '_OK'
 const server = createServer(async (req, res) => {
@@ -209,7 +210,8 @@ const server = createServer(async (req, res) => {
     )
     const teamResponse = teamProbe ? officialTeamProbeResponse(body) : undefined
     const toolName =
-      teamResponse?.tool?.name ?? (shellProbe ? nativeShellMode : 'list_harness_combinations')
+      teamResponse?.tool?.name ??
+      (contextProbe ? 'acp_status' : shellProbe ? nativeShellMode : 'list_harness_combinations')
     const toolInput =
       teamResponse?.tool?.input ??
       (shellProbe
@@ -232,6 +234,20 @@ const server = createServer(async (req, res) => {
       key: req.headers['x-api-key'] ?? req.headers.authorization,
       usedTool,
       hasTool,
+      ...(contextProbe
+        ? {
+            contextResult: body.messages.some(
+              (message) =>
+                Array.isArray(message.content) &&
+                message.content.some(
+                  (item) =>
+                    item.type === 'tool_result' &&
+                    item.tool_use_id === toolCallId &&
+                    !item.is_error,
+                ),
+            ),
+          }
+        : {}),
       ...(shellProbe
         ? { shellTools: body.tools?.map((t) => t.name ?? t.function?.name) ?? [] }
         : {}),
@@ -550,6 +566,35 @@ async function verifyRemainingRuntime() {
     ),
   )
   assert(requests.filter((r) => r.usedTool).length >= 2, 'official tool execution missing')
+  const profile = JSON.parse(await readFile(join(root, 'profiles/desktop/package.json'), 'utf8'))
+  const contextEnabled = profile.dsh?.profile?.bundles?.includes('billion-context') === true
+  if (contextEnabled) {
+    contextProbe = true
+    const session = await rpc('session', 'create', {
+      request: { cwd: project, permissionPreset: 'read-only' },
+    })
+    await rpc('session', 'selectModel', {
+      request: { sessionId: session.sessionId, provider: 'opl-gateway', model: 'deepseek-flash' },
+    })
+    const prompt = await rpc('session', 'prompt', {
+      request: {
+        sessionId: session.sessionId,
+        requestId: crypto.randomUUID(),
+        mode: 'queue',
+        content: [{ type: 'text', text: 'Read ACP status once and finish.' }],
+      },
+    })
+    assert.equal(prompt.accepted, true)
+    assert.equal(
+      (await rpc('session', 'wait', { sessionId: session.sessionId })).outcome.kind,
+      'completed',
+    )
+    assert(
+      requests.some((request) => request.contextResult),
+      'Billion Context tool result missing',
+    )
+    contextProbe = false
+  }
   const countSession = await rpc('session', 'create', {
     request: { cwd: project, permissionPreset: 'read-only' },
   })
@@ -811,6 +856,7 @@ async function verifyRemainingRuntime() {
         controlProjectAttribution: true,
         groupedModels: models.map((m) => m.id),
         officialTools: true,
+        billionContext: contextEnabled,
         officialCapabilities,
         modelPlugins,
         externalOrdinaryConversation: {

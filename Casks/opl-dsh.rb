@@ -1,6 +1,6 @@
 cask "opl-dsh" do
-  version "0.2.74"
-  sha256 "8031caf2c6042ef50a43f25d9b65e8eb5f87ff47a99b44ec4c238862cd7952c4"
+  version "0.2.76"
+  sha256 "7f3df42e10b4752c8390bc97edb74499e12adf706fd5ba3e137578262faaa77b"
 
   url "https://github.com/gaofeng21cn/opl-dsh/releases/download/opl-dsh-v#{version}/OPL-DSH-Enhancements.zip"
   name "OPL DSH"

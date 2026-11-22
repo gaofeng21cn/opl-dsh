@@ -1,4 +1,5 @@
 /** Qualify real, unmodified official Desktop with a fresh disposable profile. */
+import assert from 'node:assert/strict'
 import { spawn, execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -136,6 +137,12 @@ const environment = {
   OPL_QUALIFICATION_SKIP_PROVIDER_KEYRING: '1',
   OPL_LEGACY_HOME: join(root, 'empty-legacy'),
   OPL_DESKTOP_LAUNCHER: join(root, 'qualification-launcher'),
+  XDG_CONFIG_HOME: join(root, 'xdg-config'),
+  XDG_DATA_HOME: join(root, 'xdg-data'),
+  XDG_CACHE_HOME: join(root, 'xdg-cache'),
+  XDG_STATE_HOME: join(root, 'xdg-state'),
+  ACP_AUTO_UPDATE: '0',
+  BILI_ADVISORY_CHECK: '0',
   NODE_USE_SYSTEM_CA: '1',
 }
 process.env.OPL_QUALIFICATION_SKIP_PROVIDER_SECRET_WRITE = '1'
@@ -607,6 +614,13 @@ try {
       timeout: process.platform === 'win32' ? 900000 : 300000,
     }),
   )
+  const shippedProfileInstaller = await readFile(join(payload, 'profile.cjs'), 'utf8')
+  if (shippedProfileInstaller.includes('opl-billion-context-default'))
+    assert.equal(
+      evidence.checks.runtime.billionContext,
+      true,
+      'Default Billion Context was not exercised',
+    )
   evidence.checks.client = await verifyDesktopClient(
     desktopPipe,
     evidenceFile.replace(/\.json$/, '') + '-client',
@@ -633,6 +647,7 @@ try {
       if (!result.ok) throw new Error('隔离执行组合目录回读失败')
       return result.value
     },
+    evidence.checks.runtime.billionContext,
   )
   if (!modelPluginFixture.requests.some((request) => request.usedTool))
     throw new Error('原版模型插件未完成官方工具调用后的模型回复')
