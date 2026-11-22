@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -15,13 +15,17 @@ import { adapterFor } from '../../src/execution/host/adapters/index.ts'
 import { testPeerConnection } from '../test-peer.ts'
 
 const cleanups: Array<() => Promise<unknown>> = []
+async function cleanupFixtures() {
+  while (cleanups.length) await cleanups.pop()!()
+}
 afterEach(async () => {
   vi.restoreAllMocks()
-  while (cleanups.length) await cleanups.pop()!()
+  await cleanupFixtures()
 })
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'opl-minimax-integration-'))
+  cleanups.push(() => rm(root, { recursive: true, force: true }))
   let enabled = true
   const ctx = {
     connection: testPeerConnection,
@@ -35,10 +39,7 @@ async function fixture() {
     home: join(root, 'state'),
     minimaxCodeEnabled: () => enabled,
   })
-  cleanups.push(
-    () => service.dispose(),
-    () => rm(root, { recursive: true, force: true }),
-  )
+  cleanups.push(() => service.dispose())
   const adapter = adapterFor(MINIMAX_CODE_HARNESS, {
     provider: MINIMAX_CODE_PROVIDER,
     model: 'MiniMax-M3',
@@ -55,6 +56,20 @@ async function fixture() {
     },
   }
 }
+
+it('keeps fixture files available until service shutdown completes', async () => {
+  const { root, service } = await fixture()
+  const marker = join(root, 'shutdown-probe')
+  await writeFile(marker, '')
+  const dispose = service.dispose.bind(service)
+  vi.spyOn(service, 'dispose').mockImplementation(async () => {
+    await dispose()
+    await access(marker)
+  })
+
+  await cleanupFixtures()
+  await expect(access(root)).rejects.toMatchObject({ code: 'ENOENT' })
+})
 
 it('retains hidden rows through an unrelated catalog save and restores them on re-enable', async () => {
   const { service, store, setEnabled } = await fixture()
