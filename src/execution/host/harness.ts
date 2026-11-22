@@ -18,7 +18,7 @@ import { gatewayGroupEnabled } from '../../gateway/host/group-settings.ts'
 import { inspectHarness, inspectInstalledHarness } from './harness-registry.ts'
 import { maintainHarness } from './harness-maintenance.ts'
 import type { HarnessInstallation } from '../contracts/installations.ts'
-import { modelRefKey } from '../contracts/catalog.ts'
+import { isRemovableCombination, modelRefKey } from '../contracts/catalog.ts'
 import type { MiniMaxCandidateRequest, MiniMaxCandidateResult } from '../contracts/candidate.ts'
 import { RuntimeMaintenance } from './runtime-maintenance.ts'
 import { prepareMiniMaxCandidate } from './minimax-candidate.ts'
@@ -1455,6 +1455,19 @@ export class HarnessService {
     await this.ready
     return this.runtimeMaintenance.admit(async () => {
       await this.catalogStore.setProxy(harnessId, proxy)
+      this.events.emit('catalog')
+      return this.executionCatalog()
+    })
+  }
+  async removeCombination(id: string): Promise<ExecutionCatalog> {
+    await this.ready
+    return this.runtimeMaintenance.admit(async () => {
+      const catalog = await this.executionCatalog()
+      await this.catalogStore.removeCombination(required(id, '组合 ID'), (item) => {
+        this.assertMiniMaxCodeRouteEnabled(item)
+        if (!isRemovableCombination(item, catalog.recommendations))
+          throw Error('只能移除非推荐的自定义组合')
+      })
       this.events.emit('catalog')
       return this.executionCatalog()
     })

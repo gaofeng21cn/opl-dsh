@@ -278,6 +278,11 @@ function fixture(start: ReturnType<typeof catalog>, save?: (next: any) => unknow
       stored = JSON.parse(JSON.stringify((args as { catalog: unknown }).catalog))
       return JSON.parse(JSON.stringify(stored))
     }
+    if (method === 'remove-combination') {
+      const { id } = args as { id: string }
+      stored.combinations = stored.combinations.filter((item: { id: string }) => item.id !== id)
+      return JSON.parse(JSON.stringify(stored))
+    }
     if (method === 'combinations')
       return stored.combinations.map((item: { id: string }) => ({ id: item.id, available: true }))
     if (method === 'save-harness-proxy') {
@@ -886,7 +891,7 @@ describe('每个外部 Harness 独立的代理设置', () => {
     const data = catalog()
     const saved = { ...data.combinations[0], id: 'old-custom', name: '旧组合', enabled: false }
     data.combinations.push(saved)
-    const { call, stored } = fixture(data)
+    const { call, calls, stored } = fixture(data)
     const view = await open(call, ExecutionCatalogSection)
     const remove = walk(view).find(
       (node) => node.getAttribute?.('aria-label') === '移除自定义组合 旧组合',
@@ -894,6 +899,10 @@ describe('每个外部 Harness 独立的代理设置', () => {
     expect(text(remove)).toBe('移除')
     await press(walk(view).find((node) => node.nodeName === 'BUTTON' && text(node) === '全选')!)
     await press(remove)
+    expect(calls.filter((entry) => entry.method === 'remove-combination')).toEqual([
+      { method: 'remove-combination', args: { id: saved.id } },
+    ])
+    expect(calls.some((entry) => entry.method === 'save-catalog')).toBe(false)
     expect(stored().combinations.some((item) => item.id === saved.id)).toBe(false)
     expect(stored().combinations.find((item) => item.id === 'inactive/one')?.enabled).toBe(false)
     await press(

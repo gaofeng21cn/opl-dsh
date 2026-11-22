@@ -52,6 +52,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     prompt: (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
     'queue-status': (request: { sessionId: string; }) => Promise<RemoteResult<{ queued: boolean; }>>
     'reasoning-preflight': (request: { sessionId: string; combination: string; }) => Promise<RemoteResult<HarnessReasoningPreflight>>
+    'remove-combination': (request: { id: string; }) => Promise<RemoteResult<ExecutionCatalog>>
     report: (request: ReportRequest) => Promise<RemoteResult<{ saved: boolean; operationId: string; }>>
     result: (request: { origin: HarnessOrigin; sessionId: string; operationId?: string; wait?: boolean; }, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
     'retry-delivery': (request: SessionRequest) => Promise<RemoteResult<HarnessSnapshot>>
@@ -167,6 +168,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplExecution/prompt': (request: HarnessPromptRequest) => Promise<RemoteResult<HarnessSnapshot>>
     'oplExecution/queue-status': (request: { sessionId: string; }) => Promise<RemoteResult<{ queued: boolean; }>>
     'oplExecution/reasoning-preflight': (request: { sessionId: string; combination: string; }) => Promise<RemoteResult<HarnessReasoningPreflight>>
+    'oplExecution/remove-combination': (request: { id: string; }) => Promise<RemoteResult<ExecutionCatalog>>
     'oplExecution/report': (request: ReportRequest) => Promise<RemoteResult<{ saved: boolean; operationId: string; }>>
     'oplExecution/result': (request: { origin: HarnessOrigin; sessionId: string; operationId?: string; wait?: boolean; }, signal?: AbortSignal) => Promise<RemoteResult<HarnessSnapshot>>
     'oplExecution/retry-delivery': (request: SessionRequest) => Promise<RemoteResult<HarnessSnapshot>>
@@ -283,6 +285,7 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'oplExecution/prompt': TypertRemoteMethod<{ readonly 'request': HarnessPromptRequest }, HarnessSnapshot>
   readonly 'oplExecution/queue-status': TypertRemoteMethod<{ readonly 'request': { sessionId: string; } }, { queued: boolean; }>
   readonly 'oplExecution/reasoning-preflight': TypertRemoteMethod<{ readonly 'request': { sessionId: string; combination: string; } }, HarnessReasoningPreflight>
+  readonly 'oplExecution/remove-combination': TypertRemoteMethod<{ readonly 'request': { id: string; } }, ExecutionCatalog>
   readonly 'oplExecution/report': TypertRemoteMethod<{ readonly 'request': ReportRequest }, { saved: boolean; operationId: string; }>
   readonly 'oplExecution/result': TypertRemoteMethod<{ readonly 'request': { origin: HarnessOrigin; sessionId: string; operationId?: string; wait?: boolean; } }, HarnessSnapshot>
   readonly 'oplExecution/retry-delivery': TypertRemoteMethod<{ readonly 'request': SessionRequest }, HarnessSnapshot>

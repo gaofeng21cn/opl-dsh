@@ -202,10 +202,7 @@ export function useExecutionCatalog(
   }
   const removeCombination = async (id: string) => {
     if (!catalog || !combinationChoices(catalog).some((row) => row.removableId === id)) return false
-    const result = await save({
-      ...catalog,
-      combinations: catalog.combinations.filter((row) => row.id !== id),
-    })
+    const result = await persist(() => call('remove-combination', { id }))
     return result.status === 'saved'
   }
   const addRecommendations = async ({ selected, disabledIds }: CombinationSelection) => {

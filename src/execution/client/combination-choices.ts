@@ -1,6 +1,4 @@
-import { isOfficialPairing } from '../contracts/official-harnesses.ts'
-import { DSH_COMBINATION } from '../contracts/sessions.ts'
-import { modelRefKey } from '../contracts/catalog.ts'
+import { isRemovableCombination, modelRefKey } from '../contracts/catalog.ts'
 import type {
   CombinationDefinition,
   CombinationPermissionPolicy,
@@ -58,7 +56,6 @@ export function combinationChoices(catalog: ExecutionCatalog) {
     catalog.models.filter((item) => item.available).map((item) => modelRefKey(item.ref)),
   )
   const existing = new Set(catalog.combinations.map(pairingKey))
-  const suggested = new Set(catalog.recommendations?.map(pairingKey))
   const recommendations = new Map(
     (catalog.recommendations ?? [])
       .filter((item) => !existing.has(pairingKey(item)))
@@ -70,15 +67,7 @@ export function combinationChoices(catalog: ExecutionCatalog) {
       .map((item) => ({
         ...item,
         key: savedChoiceKey(item.id),
-        removableId:
-          !item.generated &&
-          !item.autoEnabled &&
-          !item.id.startsWith('auto:') &&
-          item.id !== DSH_COMBINATION &&
-          !isOfficialPairing(item.harnessRef, item.modelRef) &&
-          !suggested.has(pairingKey(item))
-            ? item.id
-            : undefined,
+        removableId: isRemovableCombination(item, catalog.recommendations) ? item.id : undefined,
       })),
     ...[...recommendations.values()]
       .filter((item) => available.has(modelRefKey(item.modelRef)))

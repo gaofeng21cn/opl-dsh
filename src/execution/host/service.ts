@@ -111,6 +111,11 @@ export class ExecutionService extends TypertRemoteService {
   saveCatalog(request: { catalog: ExecutionCatalog }): Promise<ExecutionCatalog> {
     return this.execution.saveExecutionCatalog(request.catalog)
   }
+  /** Remove one user-defined pairing through the catalog owner. */
+  @Remote('remove-combination')
+  removeCombination(request: { id: string }): Promise<ExecutionCatalog> {
+    return this.execution.removeCombination(request.id)
+  }
   /** Merge only the named Harness's proxy against the latest persisted catalog. */
   @Remote('save-harness-proxy')
   saveHarnessProxy(request: { harnessId: string; proxy: HarnessProxy }): Promise<ExecutionCatalog> {

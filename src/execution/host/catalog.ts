@@ -398,6 +398,23 @@ export class ExecutionCatalogStore {
     )
     return write
   }
+  /** Remove one persisted combination from the latest queued catalog. */
+  async removeCombination(id: string, assertRemovable: (item: CombinationDefinition) => void) {
+    await this.ready
+    const write = this.queue.then(async () => {
+      const target = this.value.combinations.find((item) => item.id === id)
+      if (!target) return
+      assertRemovable(target)
+      const value = {
+        ...this.value,
+        combinations: this.value.combinations.filter((item) => item.id !== id),
+      }
+      await this.persist(value)
+      this.value = value
+    })
+    this.queue = write.catch(() => {})
+    return write
+  }
 }
 export function catalogView(
   catalog: ExecutionCatalog,

@@ -23,7 +23,7 @@ export function RecommendationPicker({
   onRemove: (id: string) => Promise<boolean>
   onAdd: (selection: CombinationSelection) => Promise<void>
 }) {
-  const removing = useRef<string | undefined>(undefined)
+  const removing = useRef<{ id: string; edits: Map<string, boolean> } | undefined>(undefined)
   const candidates = combinationChoices(catalog).map((item) => [item.key, item] as const)
   const fullAccessOnly = new Set(
     candidates
@@ -42,8 +42,16 @@ export function RecommendationPicker({
   const [disabledIds, setDisabledIds] = useState<Set<string>>(() => new Set())
   const [query, setQuery] = useState('')
   useEffect(() => {
-    if (removing.current && !catalog.combinations.some((row) => row.id === removing.current)) {
+    const pending = removing.current
+    if (pending && !catalog.combinations.some((row) => row.id === pending.id)) {
       removing.current = undefined
+      setSelected(
+        new Set(
+          candidates
+            .filter(([key, item]) => pending.edits.get(key) ?? item.enabled)
+            .map(([key]) => key),
+        ),
+      )
       return
     }
     setSelected(enabled())
@@ -213,8 +221,14 @@ export function RecommendationPicker({
                           disabled={busy}
                           aria-label={`移除自定义组合 ${item.name}`}
                           onClick={async () => {
+                            if (removing.current) return
                             const id = item.removableId!
-                            removing.current = id
+                            const edits = new Map(
+                              candidates
+                                .filter(([key, item]) => selected.has(key) !== item.enabled)
+                                .map(([key]) => [key, selected.has(key)]),
+                            )
+                            removing.current = { id, edits }
                             if (!(await onRemove(id))) removing.current = undefined
                           }}
                         >

@@ -67,6 +67,7 @@ export function installUpdateRuntime(ctx: Context, harness?: HarnessService): Up
           'updateHarness',
           'saveExecutionCatalog',
           'saveHarnessProxy',
+          'removeCombination',
           'selectMiniMaxCandidate',
           'selectCodexRuntime',
           'minimaxAccountLogin',

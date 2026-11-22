@@ -42,6 +42,29 @@ const neutralRoutes = (catalog: ExecutionCatalog, model = neutralModel) =>
     (item) => item.modelRef.provider === neutralProvider && item.modelRef.model === model,
   )
 describe('combination authority', () => {
+  it('removes one saved combination without overwriting a concurrent proxy update', async () => {
+    const store = new ExecutionCatalogStore(await root())
+    const original = await store.get()
+    const target = {
+      ...original.combinations[0],
+      id: 'saved-custom',
+      harnessRef: 'opencode',
+      isDefault: false,
+    }
+    await store.set({ ...original, combinations: [...original.combinations, target] })
+    const ready = Promise.all([
+      store.setProxy('opencode', { mode: 'direct' }),
+      store.removeCombination(target.id, () => {}),
+    ])
+    await ready
+    const persisted = JSON.parse(await readFile(store.filename, 'utf8'))
+    expect(
+      persisted.harnesses.find((item: { id: string }) => item.id === 'opencode').proxy,
+    ).toEqual({
+      mode: 'direct',
+    })
+    expect(persisted.combinations).toEqual(original.combinations)
+  })
   it('orders the directory around common engines while preserving every adapter', () => {
     const catalog = defaultExecutionCatalog()
     expect(catalog.harnesses.slice(0, 6).map((item) => item.id)).toEqual([
