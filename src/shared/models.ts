@@ -56,6 +56,22 @@ export const EAC_OPENCODE_NAMES: ReadonlyMap<string, string> = new Map([
   ['opencode/big-pickle', 'EAC Big Pickle'],
 ])
 
+/** EAC Chat lanes recommended for Pi, distinct from their Kilo and OpenCode counterparts. */
+export const EAC_PI_NAMES: ReadonlyMap<string, string> = new Map([
+  ['nvidia/nemotron-3.5-lightning-30b-a3b', 'EAC Nemotron 3.5 Lightning 30B-A3B'],
+  ['nvidia/nemotron-3.5-bolt-e4b', 'EAC Nemotron 3.5 Bolt E4B'],
+  ['nvidia/nemotron-3-ultra-550b-a55b', 'EAC Nemotron 3 Ultra 550B-A55B'],
+  ['nvidia/nemotron-3.5-super-vl-120b-a12b', 'EAC Nemotron 3.5 Super VL 120B-A12B'],
+  ['nvidia/nemotron-3-nano-omni-30b-a3b-reasoning', 'EAC Nemotron 3 Nano Omni 30B-A3B Reasoning'],
+  ['meta/muse-glimmer-30b', 'EAC Muse Glimmer 30B'],
+])
+
+/** Domain-specific EAC models remain available for manual use. */
+export const EAC_SPECIALIST_LABELS: ReadonlyMap<string, string> = new Map([
+  ['nvidia/ising-calibration-1.5-31b', '量子校准 · 仅可手动尝试'],
+  ['nvidia/riva-translate-4b-instruct-v2', '机器翻译 · 仅可手动尝试'],
+])
+
 /** Stable product names for IDs whose upstream display text changed. */
 export function displayModelName(ref: ModelRef, name?: string): string {
   const id = ref.model.includes('::') ? ref.model.slice(ref.model.lastIndexOf('::') + 2) : ref.model
@@ -73,7 +89,10 @@ export function displayModelName(ref: ModelRef, name?: string): string {
     if (id === 'longcat-2.5-free') return 'LongCat 2.5 Free'
     if (id === 'iceman-free') return 'Iceman Free'
     if (id === 'inkling-2-small-free') return 'Inkling 2 Small Free'
-    const eacName = EAC_OPENCODE_NAMES.get(id)
+    if (id === 'poolside/laguna-xs-2.1') return 'EAC Laguna XS 2.1'
+    if (id === 'nvidia/ising-calibration-1.5-31b') return 'EAC Ising Calibration 1.5 31B'
+    if (id === 'nvidia/riva-translate-4b-instruct-v2') return 'EAC Riva Translate 4B Instruct v2'
+    const eacName = EAC_OPENCODE_NAMES.get(id) ?? EAC_PI_NAMES.get(id)
     if (eacName) return eacName
     if (id === 'thinkingmachines/inkling:free') return 'Kilo Inkling'
     if (id === 'google/gemma-4-31b-it:free') return 'Kilo Gemma 4 31B'
