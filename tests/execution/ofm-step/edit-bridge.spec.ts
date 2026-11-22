@@ -1,6 +1,6 @@
 /** StepCode bridge edits use a separate RPC process and suite-owned storage, without model credentials. */
 import { afterAll, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdirSync, readFileSync, readdirSync, watch, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { stepStorage } from '../../../src/execution/host/adapters/step/step-config.ts'
@@ -504,16 +504,8 @@ describe('StepCode bridge message editing', () => {
       const history = await read(run.agent)
       run.knobs({ holdFork: true })
       const started = join(run.storage.agentDir, 'edit-fork-started')
-      const ready = new Promise<void>((resolve) => {
-        const watcher = watch(run.storage.agentDir, () => {
-          if (existsSync(started)) {
-            watcher.close()
-            resolve()
-          }
-        })
-      })
       const fork = rewind(run.agent, history)
-      await ready
+      await vi.waitFor(() => expect(existsSync(started)).toBe(true))
       expect(await read(run.agent)).toEqual({ ok: false, code: 'busy' })
       await expect(
         run.agent.acp.request('session/prompt', {

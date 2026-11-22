@@ -1,6 +1,14 @@
 /** No-key Step RPC fixture for native edit semantics confirmed against StepCode 0.1.4. */
 import { randomUUID } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unwatchFile,
+  watchFile,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 
 const agent = process.env.STEP_CODING_AGENT_DIR
@@ -72,17 +80,15 @@ async function forkGate() {
   const gate = join(agent, 'edit-fork-release')
   const opened = join(agent, 'edit-fork-started')
   await new Promise((resolve) => {
-    const watcher = watch(agent, () => {
-      if (existsSync(gate)) {
-        watcher.close()
-        resolve()
-      }
-    })
-    writeFileSync(opened, 'ready')
-    if (existsSync(gate)) {
-      watcher.close()
+    // Poll the release marker because a directory notification can arrive after the fork timeout.
+    const release = () => {
+      if (!existsSync(gate)) return
+      unwatchFile(gate, release)
       resolve()
     }
+    watchFile(gate, { interval: 25 }, release)
+    writeFileSync(opened, 'ready')
+    release()
   })
 }
 
