@@ -39,7 +39,7 @@
  * the key is never written to a file, an argument vector, or a log line, and error text
  * is scrubbed against it before anything returns to the host.
  */
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   appendFileSync,
@@ -338,7 +338,28 @@ function openAgent(): void {
   }
   if (preset) env.STEP_PERMISSION_PRESET = preset
   if (shellPath) env.SHELL = shellPath
-  const launch = commandLaunch(command, [...prefix, '--mode', 'rpc', '--session-dir', sessionDir])
+  const help = commandLaunch(command, [...prefix, '--help'])
+  const probe = spawnSync(help.command, help.args, {
+    env: { ...env, [STEP_CREDENTIAL_ENV]: undefined },
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    timeout: 3000,
+    windowsHide: true,
+    windowsVerbatimArguments: help.windowsVerbatimArguments,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  })
+  const frames =
+    probe.status === 0 && /^\s*--include-live-events\b/m.test(probe.stdout ?? '')
+      ? ['--include-live-events']
+      : []
+  const launch = commandLaunch(command, [
+    ...prefix,
+    '--mode',
+    'rpc',
+    ...frames,
+    '--session-dir',
+    sessionDir,
+  ])
   const launched = spawn(launch.command, launch.args, {
     cwd: process.cwd(),
     env,
@@ -514,14 +535,20 @@ function answerPermission(id: string, outcome: any): void {
 }
 
 // ── Official events → ACP updates ──────────────────────────────────────────────────
+const messageText = new Map<number, string>()
 function handleEvent(event: any): void {
   if (resolveTurn) turnUsage.accept(event)
   switch (event.type) {
+    case 'message_start':
+      if (event.message?.role === 'assistant') messageText.clear()
+      return
     case 'message_update': {
       const delta = event.assistantMessageEvent ?? {}
-      if (delta.type === 'text_delta' && typeof delta.delta === 'string')
+      if (delta.type === 'text_delta' && typeof delta.delta === 'string') {
+        const index = delta.contentIndex ?? 0
+        messageText.set(index, (messageText.get(index) ?? '') + delta.delta)
         emit({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: delta.delta } })
-      else if (delta.type === 'thinking_delta' && typeof delta.delta === 'string')
+      } else if (delta.type === 'thinking_delta' && typeof delta.delta === 'string')
         emit({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: delta.delta } })
       return
     }
@@ -535,15 +562,40 @@ function handleEvent(event: any): void {
         rawInput: event.args ?? {},
       })
       return
-    case 'tool_execution_end':
+    case 'tool_execution_end': {
+      const execution = event.result?.details?.execution
+      const failedCommand =
+        (event.toolName === 'bash' || event.toolName === 'run_command') &&
+        (execution?.timedOut === true ||
+          execution?.aborted === true ||
+          (typeof execution?.exitCode === 'number' && execution.exitCode !== 0) ||
+          typeof execution?.signal === 'string')
       emit({
         sessionUpdate: 'tool_call_update',
         toolCallId: String(event.toolCallId),
-        status: event.isError ? 'failed' : 'completed',
+        status: event.isError || event.result?.isError || failedCommand ? 'failed' : 'completed',
         rawOutput: event.result ?? null,
       })
       return
+    }
     case 'message_end':
+      if (
+        resolveTurn &&
+        !cancelled &&
+        event.message?.role === 'assistant' &&
+        Array.isArray(event.message.content)
+      ) {
+        for (const [index, block] of event.message.content.entries()) {
+          if (block?.type !== 'text' || typeof block.text !== 'string') continue
+          const sent = messageText.get(index) ?? ''
+          if (block.text.length > sent.length && block.text.startsWith(sent))
+            emit({
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: block.text.slice(sent.length) },
+            })
+        }
+        messageText.clear()
+      }
       if (event.message?.role === 'user' && inputReceipt && !inputReceipt.message) {
         const message = editObject(event.message)
         const content = message.content
@@ -1416,6 +1468,7 @@ async function invokeOwned(method: string, params: any): Promise<unknown> {
       turnActive = false
       throw error
     }
+    messageText.clear()
     turnOutcome.reset()
     turnUsage.reset()
     const done = new Promise<unknown>((resolve, reject) => {

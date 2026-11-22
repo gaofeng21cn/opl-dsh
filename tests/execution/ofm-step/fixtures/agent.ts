@@ -159,12 +159,14 @@ export async function startStepAgent(options: StepAgentOptions): Promise<StepAge
       options.onUpdate?.(value)
       for (const waiter of textWaiters.splice(0))
         if (JSON.stringify(value).includes(waiter.text)) waiter.resolve()
+        else textWaiters.push(waiter)
       for (const waiter of toolWaiters.splice(0))
         if (
           JSON.stringify(value).includes(waiter.id) &&
           JSON.stringify(value).includes(`"${waiter.status}"`)
         )
           waiter.resolve()
+        else toolWaiters.push(waiter)
     },
     (id, params) => {
       permissions.push({ id, params })

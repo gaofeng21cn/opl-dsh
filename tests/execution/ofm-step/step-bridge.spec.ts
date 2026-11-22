@@ -267,6 +267,39 @@ describe('StepCode bridge: initialization and pinning', () => {
 })
 
 describe('StepCode bridge: a real turn', () => {
+  it.each([false, true])(
+    'returns the complete marker exactly once and reports shell exit status (live frames: %s)',
+    async (liveFrames) => {
+      const run = await launch({ knobs: { markerReply: true, liveFrames } })
+      try {
+        await run.agent.acp.request('initialize', { protocolVersion: 1, clientCapabilities: {} })
+        const { sessionId } = (await run.agent.acp.request('session/new', {
+          cwd: run.cwd,
+          mcpServers: [],
+        })) as any
+        await run.agent.acp.request('session/prompt', {
+          sessionId,
+          prompt: [{ type: 'text', text: 'read marker' }],
+        })
+        const updates = run.agent.all().map((entry: any) => entry.update ?? entry)
+        expect(
+          updates
+            .filter((u) => u.sessionUpdate === 'agent_message_chunk')
+            .map((u) => u.content.text),
+        ).toEqual(liveFrames ? ['MARK', 'ER'] : ['MARKER'])
+        expect(
+          updates
+            .filter((u) => u.sessionUpdate === 'tool_call_update')
+            .map((u) => [u.toolCallId, u.status]),
+        ).toEqual([
+          ['bad', 'failed'],
+          ['good', 'completed'],
+        ])
+      } finally {
+        await run.agent.dispose()
+      }
+    },
+  )
   it('runs the official agent loop, executes a real git command, and settles on the right signal', async () => {
     const run = await launch()
     try {

@@ -587,11 +587,11 @@ describe('MiniMax Code model menu labels', () => {
     expect(view.menuText()).toContain('推理强度')
   })
 
-  it('hides a remembered max when the live CLI advertises only thinking-off', async () => {
+  it('hides the trigger badge and menu row when the live CLI advertises only thinking-off', async () => {
     const base = fixture({ model: M3_FLASH, reasoningEffort: 'max' })
     const call = (async (method: string, args?: unknown) =>
       method === 'reasoning-preflight'
-        ? { status: 'known', efforts: [{ id: 'off', name: 'off' }] }
+        ? { status: 'known', currentEffort: 'off', efforts: [{ id: 'off', name: 'off' }] }
         : base.call(method as never, args as never)) as ExecutionCall
     const face = createFace({
       lastUsed: null,
@@ -600,8 +600,9 @@ describe('MiniMax Code model menu labels', () => {
     const view = await mount({ call, source: () => face.face })
     expect(view.trigger.textContent).not.toContain('最大')
     await view.open()
-    await view.click('思考')
-    expect(view.menuText()).toContain('关闭思考')
+    expect(view.trigger.textContent).not.toContain('关闭思考')
+    expect(view.menuText()).not.toContain('思考')
+    expect(view.menuText()).not.toContain('推理强度')
     expect(view.menuText()).not.toContain('最大')
     expect(view.menuText()).not.toContain('极高')
   })
