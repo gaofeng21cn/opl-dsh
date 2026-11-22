@@ -73,7 +73,7 @@ One Person Lab 面向论文、基金申请、研究报告等需要多轮审阅�
 | 在对话中搜索网页 | 登录 OPL Gateway 后默认使用 GPT-6.1 Sol 搜索。可在「设置 → 网页搜索与获取」切换搜索提供方。 |
 | 将任务交给专业应用继续处理 | [Agent 应用交接与 MCP Apps 支持范围](docs/mcp-apps.md) |
 | 配置工具审批或桌面操作 | [Auto Review 审批](docs/auto-review.md) · [Computer Use](docs/computer-use.md) |
-| 在项目外聊天、编辑重发、查看统计或清理旧会话 | [日常使用图文指南](docs/everyday-guide.md) · [待办状态](docs/todo-status.md) · [后台任务通知](docs/desktop-notifications.md) |
+| 在项目外聊天、编辑重发、查看统计或清理旧会话 | [日常使用图文指南](docs/everyday-guide.md) · [后台任务通知](docs/desktop-notifications.md) |
 
 ## 更新与数据
 
