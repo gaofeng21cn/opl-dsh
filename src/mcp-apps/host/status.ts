@@ -5,7 +5,7 @@ import type { McpAppHostStatus } from '../contracts/status.ts'
 
 const require = createRequire(import.meta.url)
 const resourceTools = ['list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource']
-const assessedVersion = '0.2.2-rc.3'
+const assessedVersions = new Set(['0.2.2-rc.3', '0.2.2-rc.5'])
 
 export function officialMcpBridgeVersion(): string | null {
   try {
@@ -38,11 +38,11 @@ export function inspectMcpAppHost(
       assessment:
         version === null
           ? 'unavailable-version'
-          : version === assessedVersion
+          : version !== null && assessedVersions.has(version)
             ? 'known-public-api-gap'
             : 'unverified-version',
       missingPublicCapabilities:
-        version === assessedVersion
+        version !== null && assessedVersions.has(version)
           ? [
               'MCP Apps capability negotiation on the existing connection',
               'Server-owned tool UI metadata and app visibility on the public tool definition',
