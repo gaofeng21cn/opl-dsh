@@ -73,7 +73,9 @@ One Person Lab 面向论文、基金申请、研究报告等需要多轮审阅�
 | 在对话中搜索网页 | 登录 OPL Gateway 后默认使用 GPT-6.1 Sol 搜索。可在「设置 → 网页搜索与获取」切换搜索提供方。 |
 | 将任务交给专业应用继续处理 | [Agent 应用交接与 MCP Apps 支持范围](docs/mcp-apps.md) |
 | 配置工具审批或桌面操作 | [Auto Review 审批](docs/auto-review.md) · [Computer Use](docs/computer-use.md) |
-| 在项目外聊天、编辑重发、查看统计或清理旧会话 | [日常使用图文指南](docs/everyday-guide.md) · [后台任务通知](docs/desktop-notifications.md) |
+| 对话与文件 | [不在项目中工作](docs/everyday-guide.md#在项目外聊天) · [编辑消息并重发](docs/everyday-guide.md#修改已经发出的消息) · [打开交付文件](docs/file-deliveries.md) · [将指定会话移到回收站](docs/everyday-guide.md#把指定的-dsh-会话移到回收站) |
+| 任务进展与用量 | [设置无进展超时](docs/everyday-guide.md#progress-timeout) · [后台任务通知](docs/desktop-notifications.md) · [选择轮次统计范围](docs/everyday-guide.md#编辑后为什么有两种轮数) · [查看 token 用量和上下文窗口](docs/everyday-guide.md#token-context) |
+| 使用习惯 | [记住权限预设](docs/everyday-guide.md#remember-permissions) · [固定窗口标题](docs/everyday-guide.md#window-title) · [在 Windows 使用 Git Bash](docs/everyday-guide.md#git-bash) |
 
 ## 更新与数据
 
