@@ -258,9 +258,7 @@ export function CombinationSelect({
       : undefined
   const effortSwitch =
     displayedReasoning === undefined ? undefined : thinkingSwitch(displayedReasoning)
-  const showReasoning =
-    displayedReasoning !== undefined &&
-    !(effortSwitch?.off !== undefined && effortSwitch.on === undefined)
+  const offOnly = effortSwitch?.off !== undefined && effortSwitch.on === undefined
   const providerOwnsEffort =
     selected !== undefined &&
     ['codex', 'claude', 'minimax-code'].includes(selected.combination.harnessRef)
@@ -306,7 +304,7 @@ export function CombinationSelect({
           ? false
           : undefined
   const thinkingLabel = thinkingOn === undefined ? undefined : thinkingOn ? '开启思考' : '关闭思考'
-  const currentEffortLabel = !showReasoning
+  const currentEffortLabel = offOnly
     ? undefined
     : (thinkingLabel ??
       (effectiveEffort === undefined
@@ -660,7 +658,7 @@ export function CombinationSelect({
                   <span className={css.cellValue}>{modelLabel}</span>
                   <IconChevronRightOutlineRegular className={css.cellChevron} />
                 </button>
-                {showReasoning && (
+                {displayedReasoning !== undefined && !offOnly && (
                   <button
                     ref={itemRef()}
                     type="button"
