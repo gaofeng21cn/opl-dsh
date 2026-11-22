@@ -24,6 +24,8 @@ OPL DSH 为官方 DeepSeek Harness 桌面增加两种工作方式。你可以在
 
 ## 新用户使用指南
 
+**Billion Context** 随增强套件默认启用，适用于使用 DSH 引擎的长对话。在新会话中输入 `/acp` 查看压缩状态。通过「插件 → 已安装插件」管理，停用或卸载后重启可恢复 DSH 自带的压缩。 [上游项目](https://github.com/ranxianglei/billion-context)
+
 - [从 Codex 委派任务给 DSH](docs/codex-task-delegation.md) · 配好连接，派发第一个任务，在原聊天接收并验收结果。
 - [给模型选一个官方执行引擎](docs/model-harness-guide.md) · 连接模型来源，安装 CLI，启用组合，在 DSH 对话中调用工具。
 - [OPL DSH 日常使用指南](docs/everyday-guide.md) · 在项目外聊天、编辑重发、清理指定会话，按自己的习惯调整通知、权限和统计。

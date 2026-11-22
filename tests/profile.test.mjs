@@ -29,6 +29,7 @@ async function runtime(
     migrationReceipt,
     cliProfile,
     featurePlugins = false,
+    removeContextAndReinstall = false,
   } = {},
 ) {
   const runtimeVersion = promotedTeam ? '0.2.2-rc.2' : officialVersion
@@ -117,6 +118,14 @@ ${owner === 'app-boot' ? template : ''}`,
     `import { writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 export async function runPluginCommand(profile, args) {
+  if (args[1] === 'billion-context@0.1.216') {
+    const file = join(profile.dir, 'package.json');
+    const manifest = JSON.parse(readFileSync(file, 'utf8'));
+    manifest.dependencies['billion-context'] = '0.1.216';
+    manifest.dsh.profile.bundles.push('billion-context');
+    writeFileSync(file, JSON.stringify(manifest));
+    return { exitCode: 0 };
+  }
   writeFileSync(join(profile.dir, 'install-observation.json'), JSON.stringify({ profile: profile.profile, args }));
   const additions = ${JSON.stringify(
     featurePlugins
@@ -209,6 +218,15 @@ export async function withFileLock(file, operation, options) {
     await writeFile(join(profile, 'package.json'), JSON.stringify(manifest))
     await install()
   }
+  if (removeContextAndReinstall) {
+    const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
+    delete manifest.dependencies['billion-context']
+    manifest.dsh.profile.bundles = manifest.dsh.profile.bundles.filter(
+      (name) => name !== 'billion-context',
+    )
+    await writeFile(join(profile, 'package.json'), JSON.stringify(manifest))
+    await install()
+  }
   return {
     manifest: JSON.parse(await readFile(join(profile, 'package.json'), 'utf8')),
     template: JSON.parse(await readFile(join(profile, 'template-observation.json'), 'utf8')),
@@ -247,7 +265,28 @@ test('feature installation restores suite execution collaboration dependency ord
     '@one-person-lab/dsh-opl',
     '@one-person-lab/dsh-execution',
     '@one-person-lab/dsh-collaboration',
+    'billion-context',
   ])
+  assert.equal(result.manifest.dependencies['billion-context'], '0.1.216')
+})
+
+test('suite update preserves an already installed but disabled Billion Context', async (t) => {
+  const existing = {
+    dependencies: { 'billion-context': '0.1.216' },
+    dsh: { profile: { bundles } },
+  }
+  const result = await runtime(t, 'app-boot', existing, { featurePlugins: true })
+  assert.equal(result.manifest.dependencies['billion-context'], '0.1.216')
+  assert(!result.manifest.dsh.profile.bundles.includes('billion-context'))
+})
+
+test('suite repair preserves a user uninstalling Billion Context', async (t) => {
+  const result = await runtime(t, 'app-boot', undefined, {
+    featurePlugins: true,
+    removeContextAndReinstall: true,
+  })
+  assert(!Object.hasOwn(result.manifest.dependencies, 'billion-context'))
+  assert(!result.manifest.dsh.profile.bundles.includes('billion-context'))
 })
 
 test('the moved template leaves an existing profile manifest intact', async (t) => {

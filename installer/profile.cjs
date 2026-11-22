@@ -222,6 +222,26 @@ async function main() {
     },
     { waitMs: 1000 },
   )
+  // The official plugin manager owns enablement and subsequent removal.
+  const contextPlugin = 'billion-context'
+  const contextReceipt = join(dir, 'opl-billion-context-default')
+  const contextProfile = boot.readProfileManifest('dsh', dir)
+  if (
+    plugins.length &&
+    !existsSync(contextReceipt) &&
+    contextProfile.dsh?.profile?.bundles?.includes('@deepseek-ai/dsh-base') &&
+    !contextProfile.dsh.profile.bundles.includes('billion-context-dsh')
+  ) {
+    if (!Object.hasOwn(contextProfile.dependencies ?? {}, contextPlugin)) {
+      try {
+        await install(['add', contextPlugin + '@0.1.216'])
+      } catch (error) {
+        console.warn('Billion Context 安装待重试：' + error.message)
+        return
+      }
+    }
+    writeFileSync(contextReceipt, '1\n', { mode: 0o600 })
+  }
 }
 main().catch((error) => {
   console.error(error.message)
