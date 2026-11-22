@@ -72,6 +72,7 @@ One Person Lab 面向论文、基金申请、研究报告等需要多轮审阅�
 | --- | --- |
 | 换模型来源，或确认组合支持哪些权限和输入 | [OFM 免费模型](docs/model-plugins.md) · [MiniMax 官方账号](docs/minimax-code.md) · [各渠道与执行引擎的适配范围](docs/harness-adaptation.md) |
 | 给团队成员分配不同引擎，或从仓库接收任务 | [DSH 团队与角色](docs/cross-harness-team.md) · [SuperAgent 仓库协作](docs/superagent.md) |
+| 管理长对话上下文 | DSH 引擎默认启用 [Billion Context](https://github.com/ranxianglei/billion-context)。在新会话输入 `/acp` 查看压缩状态。在「插件 → 已安装插件」停用或卸载后重启，可恢复 DSH 自带的压缩。 |
 | 在对话中搜索网页 | 登录 OPL Gateway 后，默认通过网关使用 GPT-6.1 Sol 搜索，无需另配搜索密钥。如果已配置 DeepSeek 官方 API Key，可在「设置 → 网页搜索与获取」的「搜索」中选择 **DeepSeek Search API**，直接使用 DeepSeek 官方搜索。 |
 | 将任务交给专业应用继续处理 | [Agent 应用交接与 MCP Apps 支持范围](docs/mcp-apps.md) |
 | 配置工具审批或桌面操作 | [Auto Review 审批](docs/auto-review.md) · [Computer Use](docs/computer-use.md) |

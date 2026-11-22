@@ -36,8 +36,8 @@ async function fixture() {
     minimaxCodeEnabled: () => enabled,
   })
   cleanups.push(
-    () => service.dispose(),
     () => rm(root, { recursive: true, force: true }),
+    () => service.dispose(),
   )
   const adapter = adapterFor(MINIMAX_CODE_HARNESS, {
     provider: MINIMAX_CODE_PROVIDER,
