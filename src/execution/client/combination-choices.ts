@@ -13,7 +13,6 @@ type Pairing = Pick<CombinationDefinition, 'modelRef' | 'harnessRef'>
 export interface CombinationSelection {
   selected: ReadonlySet<string>
   disabledIds: ReadonlySet<string>
-  removedIds: ReadonlySet<string>
 }
 
 /** Exact source/model and Harness identity for a suggested pairing. */

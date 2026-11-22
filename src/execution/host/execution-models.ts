@@ -549,7 +549,7 @@ export class ExecutionModelResolver {
             (officialOpenCodeModel(model.ref) ? '（官方免费通道）' : ''),
           modelRef: model.ref,
           harnessRef,
-          permissionPolicy: 'read-only',
+          permissionPolicy: harnessRef === 'pi' ? 'full-access' : 'read-only',
           isDefault: true,
           enabled: true,
           generated: true,

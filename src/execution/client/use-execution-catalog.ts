@@ -3,6 +3,7 @@ import type { TypertRemoteNamespace } from '@deepseek-ai/dsh-typert-protocol'
 import { displayModelName, modelRefKey } from '../contracts/catalog.ts'
 import { isOfficialPairing } from '../contracts/official-harnesses.ts'
 import {
+  combinationChoices,
   defaultPermissionPolicy,
   pairingKey,
   pairingPermissionPolicies,
@@ -199,11 +200,15 @@ export function useExecutionCatalog(
     if (result.status === 'saved' && mounted.current)
       setDraft({ model: '', harness: 'dsh', permissionPolicy: 'workspace' })
   }
-  const addRecommendations = async ({
-    selected,
-    disabledIds,
-    removedIds,
-  }: CombinationSelection) => {
+  const removeCombination = async (id: string) => {
+    if (!catalog || !combinationChoices(catalog).some((row) => row.removableId === id)) return false
+    const result = await save({
+      ...catalog,
+      combinations: catalog.combinations.filter((row) => row.id !== id),
+    })
+    return result.status === 'saved'
+  }
+  const addRecommendations = async ({ selected, disabledIds }: CombinationSelection) => {
     if (!catalog) return
     const existing = new Set(catalog.combinations.map(pairingKey))
     const additions: CombinationDefinition[] = []
@@ -228,25 +233,22 @@ export function useExecutionCatalog(
     const availableModels = new Set(
       catalog.models.filter((model) => model.available).map((model) => modelRefKey(model.ref)),
     )
-    const combinations = catalog.combinations
-      .filter((item) => !removedIds.has(item.id))
-      .map((item) => {
-        const available = availableModels.has(modelRefKey(item.modelRef))
-        if (!available && !disabledIds.has(item.id)) return item
-        const key = savedChoiceKey(item.id)
-        const enabled = available && selected.has(key)
-        return item.enabled !== enabled
-          ? {
-              ...item,
-              enabled,
-              generated: false,
-              autoEnabled: false,
-              autoEnabledDisabled: true,
-            }
-          : item
-      })
+    const combinations = catalog.combinations.map((item) => {
+      const available = availableModels.has(modelRefKey(item.modelRef))
+      if (!available && !disabledIds.has(item.id)) return item
+      const key = savedChoiceKey(item.id)
+      const enabled = available && selected.has(key)
+      return item.enabled !== enabled
+        ? {
+            ...item,
+            enabled,
+            generated: false,
+            autoEnabled: false,
+            autoEnabledDisabled: true,
+          }
+        : item
+    })
     if (
-      removedIds.size ||
       additions.length ||
       combinations.some((item, index) => item !== catalog.combinations[index])
     )
@@ -268,5 +270,6 @@ export function useExecutionCatalog(
     update,
     add,
     addRecommendations,
+    removeCombination,
   }
 }

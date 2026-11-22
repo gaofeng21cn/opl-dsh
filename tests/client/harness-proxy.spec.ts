@@ -882,7 +882,7 @@ describe('每个外部 Harness 独立的代理设置', () => {
     })
   })
 
-  it('可从选择器移除单条停用的自定义组合并保存', async () => {
+  it('立即移除自定义组合，其他未保存的勾选仍可单独保存', async () => {
     const data = catalog()
     const saved = { ...data.combinations[0], id: 'old-custom', name: '旧组合', enabled: false }
     data.combinations.push(saved)
@@ -892,11 +892,14 @@ describe('每个外部 Harness 独立的代理设置', () => {
       (node) => node.getAttribute?.('aria-label') === '移除自定义组合 旧组合',
     )!
     expect(text(remove)).toBe('移除')
+    await press(walk(view).find((node) => node.nodeName === 'BUTTON' && text(node) === '全选')!)
     await press(remove)
-    expect(stored().combinations.some((item) => item.id === saved.id)).toBe(true)
+    expect(stored().combinations.some((item) => item.id === saved.id)).toBe(false)
+    expect(stored().combinations.find((item) => item.id === 'inactive/one')?.enabled).toBe(false)
     await press(
       walk(view).find((node) => node.nodeName === 'BUTTON' && text(node).startsWith('保存选择'))!,
     )
+    expect(stored().combinations.find((item) => item.id === 'inactive/one')?.enabled).toBe(true)
     expect(stored().combinations.map((item) => item.id)).toEqual(
       data.combinations.filter((item) => item.id !== saved.id).map((item) => item.id),
     )

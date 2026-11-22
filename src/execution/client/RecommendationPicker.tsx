@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { displayModelName, displayModelSource, modelRefKey } from '../contracts/catalog.ts'
 import type { ExecutionCatalog } from '../contracts/catalog.ts'
@@ -16,15 +16,15 @@ export function RecommendationPicker({
   catalog,
   busy,
   onAdd,
+  onRemove,
 }: {
   catalog: ExecutionCatalog
   busy: boolean
+  onRemove: (id: string) => Promise<boolean>
   onAdd: (selection: CombinationSelection) => Promise<void>
 }) {
-  const [removedIds, setRemovedIds] = useState<Set<string>>(() => new Set())
-  const candidates = combinationChoices(catalog)
-    .filter((item) => !item.removableId || !removedIds.has(item.removableId))
-    .map((item) => [item.key, item] as const)
+  const removing = useRef<string | undefined>(undefined)
+  const candidates = combinationChoices(catalog).map((item) => [item.key, item] as const)
   const fullAccessOnly = new Set(
     candidates
       .filter(([, item]) => {
@@ -42,9 +42,12 @@ export function RecommendationPicker({
   const [disabledIds, setDisabledIds] = useState<Set<string>>(() => new Set())
   const [query, setQuery] = useState('')
   useEffect(() => {
+    if (removing.current && !catalog.combinations.some((row) => row.id === removing.current)) {
+      removing.current = undefined
+      return
+    }
     setSelected(enabled())
     setDisabledIds(new Set())
-    setRemovedIds(new Set())
   }, [catalog])
   const normalizedQuery = query.trim().toLowerCase()
   const modelNames = new Map(catalog.models.map((model) => [modelRefKey(model.ref), model.name]))
@@ -83,8 +86,7 @@ export function RecommendationPicker({
             .map((item) => item.id),
         ]),
     )
-  if (!removedIds.size && !candidates.length && !catalog.combinations.some((item) => item.enabled))
-    return null
+  if (!candidates.length && !catalog.combinations.some((item) => item.enabled)) return null
   return (
     <div className={css.picker}>
       <div className={css.toolbar}>
@@ -136,7 +138,6 @@ export function RecommendationPicker({
           void onAdd({
             selected: new Set(candidates.filter(([key]) => selected.has(key)).map(([key]) => key)),
             disabledIds: new Set(disabledIds),
-            removedIds: new Set(removedIds),
           })
         }}
       >
@@ -211,9 +212,11 @@ export function RecommendationPicker({
                           className={css.remove}
                           disabled={busy}
                           aria-label={`移除自定义组合 ${item.name}`}
-                          onClick={() =>
-                            setRemovedIds((current) => new Set([...current, item.removableId!]))
-                          }
+                          onClick={async () => {
+                            const id = item.removableId!
+                            removing.current = id
+                            if (!(await onRemove(id))) removing.current = undefined
+                          }}
                         >
                           移除
                         </button>
