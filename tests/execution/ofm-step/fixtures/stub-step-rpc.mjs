@@ -48,6 +48,10 @@ const readJson = (path) => {
 // The official CLI loads providers from the config root, not the agent directory.
 const modelsDoc = readJson(join(configRoot, 'models.json')) ?? { providers: {} }
 const knobs = readJson(join(agentDir, 'stub-knobs.json')) ?? {}
+if (process.argv.includes('--help')) {
+  if (knobs.liveFrames) process.stdout.write('  --include-live-events  Include live RPC frames')
+  process.exit(0)
+}
 const settings = readJson(join(agentDir, 'settings.json')) ?? {}
 const shell = typeof settings.shellPath === 'string' ? settings.shellPath : ''
 
@@ -255,6 +259,34 @@ const handle = async (message) => {
       event({ type: 'agent_start' })
       event({ type: 'turn_start' })
       event({ type: 'message_start', message: { role: 'assistant' } })
+      if (knobs.markerReply) {
+        const send = (type, fields) => event({ type, ...fields })
+        const finish = (content) => send('message_end', { message: { role: 'assistant', content } })
+        for (const [id, code] of [
+          ['bad', 1],
+          ['good', 0],
+        ]) {
+          send('tool_execution_start', { toolCallId: id, toolName: 'run_command', args: {} })
+          send('tool_execution_end', {
+            toolCallId: id,
+            toolName: 'run_command',
+            isError: false,
+            result: { details: { execution: { status: 'exited', exitCode: code } } },
+          })
+        }
+        if (process.argv.includes('--include-live-events')) {
+          send('message_update', {
+            assistantMessageEvent: { type: 'text_delta', contentIndex: 1, delta: 'MARK' },
+          })
+        }
+        finish([
+          { type: 'thinking', thinking: 'private' },
+          { type: 'text', text: 'MARKER' },
+        ])
+        send('agent_settled', {})
+        streaming = false
+        return
+      }
       if (knobs.terminalError === true) {
         event({
           type: 'message_end',
