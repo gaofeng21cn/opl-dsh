@@ -102,3 +102,29 @@
   flex-shrink: 0;
   accent-color: var(--dsw-alias-label-primary);
 }
+
+.choiceRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.choiceRow .item {
+  flex: 1;
+  min-width: 0;
+}
+.remove {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .choiceRow:not(:hover):not(:focus-within) .remove {
+    opacity: 0;
+  }
+}
+.remove:hover {
+  color: var(--dsw-alias-state-error-primary);
+}

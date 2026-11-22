@@ -199,7 +199,11 @@ export function useExecutionCatalog(
     if (result.status === 'saved' && mounted.current)
       setDraft({ model: '', harness: 'dsh', permissionPolicy: 'workspace' })
   }
-  const addRecommendations = async ({ selected, disabledIds }: CombinationSelection) => {
+  const addRecommendations = async ({
+    selected,
+    disabledIds,
+    removedIds,
+  }: CombinationSelection) => {
     if (!catalog) return
     const existing = new Set(catalog.combinations.map(pairingKey))
     const additions: CombinationDefinition[] = []
@@ -224,22 +228,25 @@ export function useExecutionCatalog(
     const availableModels = new Set(
       catalog.models.filter((model) => model.available).map((model) => modelRefKey(model.ref)),
     )
-    const combinations = catalog.combinations.map((item) => {
-      const available = availableModels.has(modelRefKey(item.modelRef))
-      if (!available && !disabledIds.has(item.id)) return item
-      const key = savedChoiceKey(item.id)
-      const enabled = available && selected.has(key)
-      return item.enabled !== enabled
-        ? {
-            ...item,
-            enabled,
-            generated: false,
-            autoEnabled: false,
-            autoEnabledDisabled: true,
-          }
-        : item
-    })
+    const combinations = catalog.combinations
+      .filter((item) => !removedIds.has(item.id))
+      .map((item) => {
+        const available = availableModels.has(modelRefKey(item.modelRef))
+        if (!available && !disabledIds.has(item.id)) return item
+        const key = savedChoiceKey(item.id)
+        const enabled = available && selected.has(key)
+        return item.enabled !== enabled
+          ? {
+              ...item,
+              enabled,
+              generated: false,
+              autoEnabled: false,
+              autoEnabledDisabled: true,
+            }
+          : item
+      })
     if (
+      removedIds.size ||
       additions.length ||
       combinations.some((item, index) => item !== catalog.combinations[index])
     )

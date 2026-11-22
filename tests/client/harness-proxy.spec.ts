@@ -882,6 +882,26 @@ describe('每个外部 Harness 独立的代理设置', () => {
     })
   })
 
+  it('可从选择器移除单条停用的自定义组合并保存', async () => {
+    const data = catalog()
+    const saved = { ...data.combinations[0], id: 'old-custom', name: '旧组合', enabled: false }
+    data.combinations.push(saved)
+    const { call, stored } = fixture(data)
+    const view = await open(call, ExecutionCatalogSection)
+    const remove = walk(view).find(
+      (node) => node.getAttribute?.('aria-label') === '移除自定义组合 旧组合',
+    )!
+    expect(text(remove)).toBe('移除')
+    await press(remove)
+    expect(stored().combinations.some((item) => item.id === saved.id)).toBe(true)
+    await press(
+      walk(view).find((node) => node.nodeName === 'BUTTON' && text(node).startsWith('保存选择'))!,
+    )
+    expect(stored().combinations.map((item) => item.id)).toEqual(
+      data.combinations.filter((item) => item.id !== saved.id).map((item) => item.id),
+    )
+  })
+
   it('相同模型和 Harness 的两份配置可独立选择，不因推荐重复新增', async () => {
     const initial = catalog()
     const existing = initial.combinations[0]

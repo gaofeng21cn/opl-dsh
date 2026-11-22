@@ -21,7 +21,10 @@ export function RecommendationPicker({
   busy: boolean
   onAdd: (selection: CombinationSelection) => Promise<void>
 }) {
-  const candidates = combinationChoices(catalog).map((item) => [item.key, item] as const)
+  const [removedIds, setRemovedIds] = useState<Set<string>>(() => new Set())
+  const candidates = combinationChoices(catalog)
+    .filter((item) => !item.removableId || !removedIds.has(item.removableId))
+    .map((item) => [item.key, item] as const)
   const fullAccessOnly = new Set(
     candidates
       .filter(([, item]) => {
@@ -41,6 +44,7 @@ export function RecommendationPicker({
   useEffect(() => {
     setSelected(enabled())
     setDisabledIds(new Set())
+    setRemovedIds(new Set())
   }, [catalog])
   const normalizedQuery = query.trim().toLowerCase()
   const modelNames = new Map(catalog.models.map((model) => [modelRefKey(model.ref), model.name]))
@@ -79,7 +83,8 @@ export function RecommendationPicker({
             .map((item) => item.id),
         ]),
     )
-  if (!candidates.length && !catalog.combinations.some((item) => item.enabled)) return null
+  if (!removedIds.size && !candidates.length && !catalog.combinations.some((item) => item.enabled))
+    return null
   return (
     <div className={css.picker}>
       <div className={css.toolbar}>
@@ -131,6 +136,7 @@ export function RecommendationPicker({
           void onAdd({
             selected: new Set(candidates.filter(([key]) => selected.has(key)).map(([key]) => key)),
             disabledIds: new Set(disabledIds),
+            removedIds: new Set(removedIds),
           })
         }}
       >
@@ -179,25 +185,40 @@ export function RecommendationPicker({
                 </legend>
                 {items.map(([key, item]) => {
                   return (
-                    <label className={css.item} key={key}>
-                      <input
-                        type="checkbox"
-                        name="combination"
-                        value={key}
-                        disabled={busy}
-                        checked={selected.has(key)}
-                        data-opl-recommendation-item={key}
-                        onChange={(event) => toggle([key], event.target.checked)}
-                      />
-                      <span className={css.itemText}>
-                        <span>
-                          {displayModelSource(item.modelRef)} · {item.name}
+                    <div className={css.choiceRow} key={key}>
+                      <label className={css.item}>
+                        <input
+                          type="checkbox"
+                          name="combination"
+                          value={key}
+                          disabled={busy}
+                          checked={selected.has(key)}
+                          data-opl-recommendation-item={key}
+                          onChange={(event) => toggle([key], event.target.checked)}
+                        />
+                        <span className={css.itemText}>
+                          <span>
+                            {displayModelSource(item.modelRef)} · {item.name}
+                          </span>
+                          {!groupRequiresFullAccess && fullAccessOnly.has(key) && (
+                            <span className={css.permission}>仅支持完全权限</span>
+                          )}
                         </span>
-                        {!groupRequiresFullAccess && fullAccessOnly.has(key) && (
-                          <span className={css.permission}>仅支持完全权限</span>
-                        )}
-                      </span>
-                    </label>
+                      </label>
+                      {item.removableId && (
+                        <button
+                          type="button"
+                          className={css.remove}
+                          disabled={busy}
+                          aria-label={`移除自定义组合 ${item.name}`}
+                          onClick={() =>
+                            setRemovedIds((current) => new Set([...current, item.removableId!]))
+                          }
+                        >
+                          移除
+                        </button>
+                      )}
+                    </div>
                   )
                 })}
               </fieldset>
