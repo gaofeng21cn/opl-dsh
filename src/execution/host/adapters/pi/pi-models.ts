@@ -20,6 +20,7 @@
  * EAC AMD ids retain their namespace and use Chat. The source advertises no
  * upstream effort menu, so these lanes retain its default thinking settings.
  */
+import { EAC_PI_NAMES } from '../../../../shared/models.ts'
 import type { ModelRef } from '../../../contracts/catalog.ts'
 
 /** Harness identity as it appears in the suite's Harness catalog. */
@@ -95,6 +96,7 @@ export const PI_CODE_MODELS: readonly string[] = [
   PI_MODEL_INKLING_FULL,
   PI_MODEL_GEMMA,
   ...PI_AMD_MODELS,
+  ...EAC_PI_NAMES.keys(),
 ]
 
 /** Official Pi thinking levels mapped to provider values; `null` removes a level. */
@@ -187,6 +189,7 @@ const LANE_PROTOCOLS: Readonly<Record<string, PiProtocol>> = {
 export const piLaneProtocol = (ref: ModelRef): PiProtocol | undefined => {
   if (piGatewayGeminiLane(ref)) return 'gemini-native'
   const lane = piLane(ref)
+  if (lane && EAC_PI_NAMES.has(lane.model)) return 'chat'
   return lane ? LANE_PROTOCOLS[lane.model] : undefined
 }
 
@@ -218,11 +221,17 @@ const LANE_REASONING: Readonly<Record<string, boolean>> = {
 export const piLaneReasoning = (ref: ModelRef): boolean | undefined => {
   if (piGatewayGeminiLane(ref)) return true
   const lane = piLane(ref)
+  if (lane && EAC_PI_NAMES.has(lane.model)) return false
   return lane ? LANE_REASONING[lane.model] : undefined
 }
 
 /** Each exact id has its own provider entry and thinking declaration. */
 const LANES: readonly PiLane[] = [
+  ...Array.from(EAC_PI_NAMES.keys(), (model): PiLane => ({
+    model,
+    provider: 'opl-pi-eac-' + model.replace(/[^a-z0-9-]/g, '-'),
+    thinking: 'upstream-default',
+  })),
   { model: PI_MODEL_NEMOTRON, provider: 'opl-pi-nemotron-lane', thinking: 'cli-advertised' },
   { model: PI_MODEL_LFM, provider: 'opl-pi-lfm-lane', thinking: 'cli-advertised' },
   { model: PI_MODEL_INKLING, provider: 'opl-pi-inkling-lane', thinking: 'cli-advertised' },

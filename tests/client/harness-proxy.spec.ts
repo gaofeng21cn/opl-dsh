@@ -278,6 +278,11 @@ function fixture(start: ReturnType<typeof catalog>, save?: (next: any) => unknow
       stored = JSON.parse(JSON.stringify((args as { catalog: unknown }).catalog))
       return JSON.parse(JSON.stringify(stored))
     }
+    if (method === 'remove-combination') {
+      const { id } = args as { id: string }
+      stored.combinations = stored.combinations.filter((item: { id: string }) => item.id !== id)
+      return JSON.parse(JSON.stringify(stored))
+    }
     if (method === 'combinations')
       return stored.combinations.map((item: { id: string }) => ({ id: item.id, available: true }))
     if (method === 'save-harness-proxy') {
@@ -880,6 +885,33 @@ describe('每个外部 Harness 独立的代理设置', () => {
       harnessRef: 'pi',
       permissionPolicy: 'full-access',
     })
+  })
+
+  it('立即移除自定义组合，其他未保存的勾选仍可单独保存', async () => {
+    const data = catalog()
+    const saved = { ...data.combinations[0], id: 'old-custom', name: '旧组合', enabled: false }
+    data.combinations.push(saved)
+    const { call, calls, stored } = fixture(data)
+    const view = await open(call, ExecutionCatalogSection)
+    const remove = walk(view).find(
+      (node) => node.getAttribute?.('aria-label') === '移除自定义组合 旧组合',
+    )!
+    expect(text(remove)).toBe('移除')
+    await press(walk(view).find((node) => node.nodeName === 'BUTTON' && text(node) === '全选')!)
+    await press(remove)
+    expect(calls.filter((entry) => entry.method === 'remove-combination')).toEqual([
+      { method: 'remove-combination', args: { id: saved.id } },
+    ])
+    expect(calls.some((entry) => entry.method === 'save-catalog')).toBe(false)
+    expect(stored().combinations.some((item) => item.id === saved.id)).toBe(false)
+    expect(stored().combinations.find((item) => item.id === 'inactive/one')?.enabled).toBe(false)
+    await press(
+      walk(view).find((node) => node.nodeName === 'BUTTON' && text(node).startsWith('保存选择'))!,
+    )
+    expect(stored().combinations.find((item) => item.id === 'inactive/one')?.enabled).toBe(true)
+    expect(stored().combinations.map((item) => item.id)).toEqual(
+      data.combinations.filter((item) => item.id !== saved.id).map((item) => item.id),
+    )
   })
 
   it('相同模型和 Harness 的两份配置可独立选择，不因推荐重复新增', async () => {

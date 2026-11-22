@@ -84,6 +84,7 @@ export const OFFICIAL_HARNESSES: readonly OfficialHarness[] = [
     officialModels: [
       { provider: 'our-free-model', model: 'poolside/laguna-s-2.1:free' },
       { provider: 'our-free-model', model: 'poolside/laguna-xs-2.1:free' },
+      { provider: 'our-free-model', model: 'poolside/laguna-xs-2.1' },
     ],
   },
   {

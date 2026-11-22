@@ -1,7 +1,7 @@
 /**
  * Official Poolside Agent CLI (`pool acp`) model surface.
  *
- * The two ids below are the **adaptation intent** for this host, not proof of
+ * The ids below are the **adaptation intent** for this host, not proof of
  * availability. `pool acp` builds its `model` picker from the models its
  * configured endpoint advertises, so that catalog stays owned by the endpoint
  * and the official CLI. This module only names the ids the suite is prepared to
@@ -52,7 +52,11 @@ export const POOL_LAGUNA_S = 'poolside/laguna-s-2.1:free'
 export const POOL_LAGUNA_XS = 'poolside/laguna-xs-2.1:free'
 
 /** Every model id this adapter is prepared to pin, in catalog order. */
-export const POOL_MODELS: readonly string[] = [POOL_LAGUNA_S, POOL_LAGUNA_XS]
+export const POOL_MODELS: readonly string[] = [
+  POOL_LAGUNA_S,
+  POOL_LAGUNA_XS,
+  'poolside/laguna-xs-2.1',
+]
 
 /**
  * Whether this adapter handles the given model reference.

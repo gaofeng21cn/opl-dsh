@@ -18,7 +18,7 @@ import { gatewayGroupEnabled } from '../../gateway/host/group-settings.ts'
 import { inspectHarness, inspectInstalledHarness } from './harness-registry.ts'
 import { maintainHarness } from './harness-maintenance.ts'
 import type { HarnessInstallation } from '../contracts/installations.ts'
-import { modelRefKey } from '../contracts/catalog.ts'
+import { isRemovableCombination, modelRefKey } from '../contracts/catalog.ts'
 import type { MiniMaxCandidateRequest, MiniMaxCandidateResult } from '../contracts/candidate.ts'
 import { RuntimeMaintenance } from './runtime-maintenance.ts'
 import { prepareMiniMaxCandidate } from './minimax-candidate.ts'
@@ -1304,17 +1304,20 @@ export class HarnessService {
         })
     for (const combination of next.combinations) {
       const old = previous.combinations.find((item) => item.id === combination.id)
-      const unchanged =
+      const samePairing =
         old &&
         modelRefKey(old.modelRef) === modelRefKey(combination.modelRef) &&
-        old.harnessRef === combination.harnessRef &&
-        (!combination.enabled || old.enabled)
+        old.harnessRef === combination.harnessRef
+      const unchanged = samePairing && (!combination.enabled || old.enabled)
       if (
         !unchanged &&
         !adapterFor(combination.harnessRef, combination.modelRef, this.modelSources)
       )
         throw Error('该模型与 Harness 尚无兼容适配器，未保存组合')
-      if (!unchanged && combination.harnessRef === 'pi') {
+      if (
+        combination.harnessRef === 'pi' &&
+        (!samePairing || old.permissionPolicy !== combination.permissionPolicy)
+      ) {
         const adapter = adapterFor(combination.harnessRef, combination.modelRef, this.modelSources)
         if (adapter && !adapter.capabilities.permissions.includes(combination.permissionPolicy))
           throw Error('所选 Harness 不支持此权限档位，未保存组合')
@@ -1452,6 +1455,19 @@ export class HarnessService {
     await this.ready
     return this.runtimeMaintenance.admit(async () => {
       await this.catalogStore.setProxy(harnessId, proxy)
+      this.events.emit('catalog')
+      return this.executionCatalog()
+    })
+  }
+  async removeCombination(id: string): Promise<ExecutionCatalog> {
+    await this.ready
+    return this.runtimeMaintenance.admit(async () => {
+      const catalog = await this.executionCatalog()
+      await this.catalogStore.removeCombination(required(id, '组合 ID'), (item) => {
+        this.assertMiniMaxCodeRouteEnabled(item)
+        if (!isRemovableCombination(item, catalog.recommendations))
+          throw Error('只能移除非推荐的自定义组合')
+      })
       this.events.emit('catalog')
       return this.executionCatalog()
     })
@@ -5527,24 +5543,30 @@ export class HarnessService {
     if (exact) return exact
     const replacement = this.replacementFor(sessionId, catalog, ref)
     if (replacement) return replacement.definition
-    const selected = catalog.combinations.find((item) => item.id === this.selections[sessionId])
-    if (
-      (selected && !selected.enabled && modelRefKey(selected.modelRef) === modelRefKey(ref)) ||
-      (!selected &&
-        [...this.records.values()].some(
-          (record) =>
-            record.nativeSessionId === sessionId &&
-            record.combination === this.selections[sessionId] &&
-            modelRefKey(record.modelRef) === modelRefKey(ref),
-        ))
-    )
-      return undefined
+    if (this.unavailableConversationSelection(sessionId, catalog, ref)) return undefined
     const candidates = catalog.combinations.filter(
       (item) => item.enabled && modelRefKey(item.modelRef) === modelRefKey(ref),
     )
     const defaults = candidates.filter((item) => item.isDefault)
     if (defaults.length === 1) return defaults[0]
     return candidates.length === 1 ? candidates[0] : undefined
+  }
+  private unavailableConversationSelection(
+    sessionId: string,
+    catalog: ExecutionCatalog,
+    ref: ModelRef,
+  ): boolean {
+    const selectedId = this.selections[sessionId]
+    if (!selectedId) return false
+    const selected = catalog.combinations.find((item) => item.id === selectedId)
+    const model = modelRefKey(ref)
+    if (selected) return !selected.enabled && modelRefKey(selected.modelRef) === model
+    const history = [...this.records.values()].filter(
+      (record) => record.nativeSessionId === sessionId && record.combination === selectedId,
+    )
+    // A selected combination has an ID before its first send creates any Harness record.
+    // With no record of its model, an explicit reselection is required before routing.
+    return history.length === 0 || history.some((record) => modelRefKey(record.modelRef) === model)
   }
   /** Restore this Session's choice for the exact model, using its live default if absent or retired. */
   private async selectionForModel(
@@ -5694,35 +5716,17 @@ export class HarnessService {
       // The first admission may have waited through opt-out. Re-read the saved
       // selection before any fallback can choose a native DSH route instead.
       await this.assertMiniMaxNativeSelectionEnabled(options.sessionId)
-    if (options.sessionId && !options.purpose && catalog) {
-      const selectedId = this.selections[options.sessionId]
-      const selected = catalog.combinations.find((item) => item.id === selectedId)
-      const historical = [...this.records.values()].find(
-        (record) =>
-          record.nativeSessionId === options.sessionId &&
-          record.combination === selectedId &&
-          modelRefKey(record.modelRef) === modelRefKey(options),
-      )
-      if (
-        (selected &&
-          !selected.enabled &&
-          modelRefKey(selected.modelRef) === modelRefKey(options)) ||
-        (!selected && historical && !this.replacementFor(options.sessionId, catalog, options))
-      )
-        throw new LlmError(
-          '此对话原先选择的执行组合已移除或停用，请在模型菜单重新选择执行组合后发送；本轮未改用 DSH 或其他 Harness。',
-          'HARNESS_BINDING',
-        )
-    }
     const definition =
       options.sessionId && catalog
         ? this.combinationFor(options.sessionId, catalog, options)
         : undefined
-    if (options.sessionId && !options.purpose && catalog) {
-      if (
-        !definition &&
-        catalog.combinations.some((item) => modelRefKey(item.modelRef) === modelRefKey(options))
-      )
+    if (options.sessionId && !options.purpose && catalog && !definition) {
+      if (this.unavailableConversationSelection(options.sessionId, catalog, options))
+        throw new LlmError(
+          '此对话原先选择的执行组合已移除或停用，请在模型菜单重新选择执行组合后发送；本轮未改用 DSH 或其他 Harness。',
+          'HARNESS_BINDING',
+        )
+      if (catalog.combinations.some((item) => modelRefKey(item.modelRef) === modelRefKey(options)))
         throw new LlmError(
           '请在模型菜单明确选择一个已启用的执行组合，本轮未发送。',
           'HARNESS_BINDING',

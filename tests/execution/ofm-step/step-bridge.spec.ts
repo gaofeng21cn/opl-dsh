@@ -145,6 +145,21 @@ function safeBash(): string {
 afterAll(() => stepTestCleanup())
 
 describe('StepCode bridge: initialization and pinning', () => {
+  it.skipIf(process.platform === 'win32')(
+    'starts RPC when the optional help probe ignores the timeout signal',
+    async () => {
+      const run = await launch({ knobs: { ignoreHelpTermination: true } })
+      try {
+        await expect(
+          run.agent.acp.request('initialize', { protocolVersion: 1, clientCapabilities: {} }),
+        ).resolves.toMatchObject({ protocolVersion: 1 })
+        expect(existsSync(join(run.env.OPL_STEP_AGENT_DIR, 'stub-help-completed'))).toBe(false)
+      } finally {
+        await run.agent.dispose()
+      }
+    },
+  )
+
   it('initializes over ACP and pins the lane model read back from the official CLI', async () => {
     const run = await launch()
     try {
@@ -267,6 +282,39 @@ describe('StepCode bridge: initialization and pinning', () => {
 })
 
 describe('StepCode bridge: a real turn', () => {
+  it.each([false, true])(
+    'returns the complete marker exactly once and reports shell exit status (live frames: %s)',
+    async (liveFrames) => {
+      const run = await launch({ knobs: { markerReply: true, liveFrames } })
+      try {
+        await run.agent.acp.request('initialize', { protocolVersion: 1, clientCapabilities: {} })
+        const { sessionId } = (await run.agent.acp.request('session/new', {
+          cwd: run.cwd,
+          mcpServers: [],
+        })) as any
+        await run.agent.acp.request('session/prompt', {
+          sessionId,
+          prompt: [{ type: 'text', text: 'read marker' }],
+        })
+        const updates = run.agent.all().map((entry: any) => entry.update ?? entry)
+        expect(
+          updates
+            .filter((u) => u.sessionUpdate === 'agent_message_chunk')
+            .map((u) => u.content.text),
+        ).toEqual(liveFrames ? ['MARK', 'ER'] : ['MARKER'])
+        expect(
+          updates
+            .filter((u) => u.sessionUpdate === 'tool_call_update')
+            .map((u) => [u.toolCallId, u.status]),
+        ).toEqual([
+          ['bad', 'failed'],
+          ['good', 'completed'],
+        ])
+      } finally {
+        await run.agent.dispose()
+      }
+    },
+  )
   it('runs the official agent loop, executes a real git command, and settles on the right signal', async () => {
     const run = await launch()
     try {

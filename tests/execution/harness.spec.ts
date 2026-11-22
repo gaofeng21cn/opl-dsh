@@ -11,6 +11,7 @@ import {
   type GenerateOptions,
   type ToolCallId,
 } from '@deepseek-ai/dsh-llm'
+import { ExecutionCatalogStore } from '../../src/execution/host/catalog.ts'
 import { HarnessSessionStore } from '../../src/execution/host/session-store.ts'
 import {
   HarnessService,
@@ -1396,6 +1397,42 @@ describe('native conversation combinations', () => {
     }
   })
 
+  it('requires reselection after removing a combination before the first prompt', async () => {
+    const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
+    const { service, session, root } = await nativeSetup([{ id: ref.model, name: 'Grok' }])
+    vi.spyOn(adapterFor('grok-build', ref)!, 'available').mockResolvedValue({ available: true })
+    await service.selectCombination({ sessionId: session.id, combination: GROK_COMBINATION })
+    const catalog = await service.executionCatalog()
+    const original = catalog.combinations.find((item) => item.id === GROK_COMBINATION)!
+    vi.spyOn(service, 'executionCatalog').mockResolvedValue({
+      ...catalog,
+      combinations: [{ ...original, id: 'another-combination', isDefault: true }],
+    })
+    const native = vi.fn(async function* () {})
+    const request = {
+      ...ref,
+      sessionId: session.id,
+      messages: [
+        createUserMessage({
+          source: { kind: 'user' },
+          content: [{ type: 'text', text: 'first-after-removal' }],
+        }),
+      ],
+    } as GenerateOptions
+    expect((await service.modelSelection(session.id)).combination).toBeUndefined()
+    await expect(
+      Array.fromAsync(service.conversationStream(request, native)),
+    ).rejects.toMatchObject({
+      code: 'HARNESS_BINDING',
+    })
+    expect(native).not.toHaveBeenCalled()
+    expect((await service.list()).sessions).toHaveLength(0)
+    await service.selectCombination({ sessionId: session.id, combination: 'another-combination' })
+    await Array.fromAsync(service.conversationStream(request, native))
+    expect((await service.list()).sessions[0]).toMatchObject({ combination: 'another-combination' })
+    expect(await readFile(join(root, 'calls.txt'), 'utf8')).toContain('first-after-removal')
+  })
+
   it('resumes a uniquely replaced route across restart without replaying history or widening permission', async () => {
     const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
     const { service, session, root, ctx, options, setPermission } = await nativeSetup([
@@ -2218,6 +2255,41 @@ describe('native conversation combinations', () => {
         (item) => item.enabled && item.isDefault && item.modelRef.model === modelRef.model,
       ),
     ).toMatchObject([{ id: 'user-open-code', harnessRef: 'opencode' }])
+  })
+  it('re-enables saved Pi combinations without rewriting their existing permission', async () => {
+    const { options, ctx, service } = await nativeSetup([
+      { id: 'gemini::gemini-4-carbon', name: 'Carbon' },
+    ])
+    const catalog = await service.executionCatalog()
+    const modelRef = { provider: 'opl-gateway', model: 'gemini::gemini-4-carbon' }
+    const old = (['read-only', 'workspace'] as const).map((permissionPolicy) => ({
+      id: 'legacy-' + permissionPolicy,
+      name: 'Legacy Pi',
+      modelRef,
+      harnessRef: 'pi',
+      permissionPolicy,
+      isDefault: false,
+      enabled: false,
+    }))
+    const disk = new ExecutionCatalogStore(options.home)
+    await disk.set({ ...catalog, combinations: [...catalog.combinations, ...old] })
+    const reopened = new HarnessService(ctx, options)
+    cleanups.push(() => reopened.dispose())
+    const current = await reopened.executionCatalog()
+    const saved = await reopened.saveExecutionCatalog({
+      ...current,
+      combinations: current.combinations.map((row) => ({ ...row, enabled: true })),
+    })
+    for (const row of old)
+      expect(saved.combinations).toContainEqual(expect.objectContaining({ ...row, enabled: true }))
+    await expect(
+      reopened.saveExecutionCatalog({
+        ...saved,
+        combinations: saved.combinations.map((row) =>
+          row.id === old[0].id ? { ...row, permissionPolicy: 'workspace' } : row,
+        ),
+      }),
+    ).rejects.toThrow('不支持此权限档位')
   })
   it('rejects a new pairing whose requested permission is outside the adapter capability', async () => {
     const { service } = await nativeSetup([

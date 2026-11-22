@@ -1,4 +1,4 @@
-import { modelRefKey } from '../contracts/catalog.ts'
+import { isRemovableCombination, modelRefKey } from '../contracts/catalog.ts'
 import type {
   CombinationDefinition,
   CombinationPermissionPolicy,
@@ -67,12 +67,14 @@ export function combinationChoices(catalog: ExecutionCatalog) {
       .map((item) => ({
         ...item,
         key: savedChoiceKey(item.id),
+        removableId: isRemovableCombination(item, catalog.recommendations) ? item.id : undefined,
       })),
     ...[...recommendations.values()]
       .filter((item) => available.has(modelRefKey(item.modelRef)))
       .map((item) => ({
         ...item,
         key: recommendationChoiceKey(item),
+        removableId: undefined,
         enabled: false,
       })),
   ]

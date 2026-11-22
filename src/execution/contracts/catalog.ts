@@ -1,5 +1,7 @@
-import type { ModelRef, ModelDefinition } from '../../shared/models.ts'
+import { modelRefKey, type ModelRef, type ModelDefinition } from '../../shared/models.ts'
 import type { CodexGitBashRuntime } from './codex-runtime.ts'
+import { isOfficialPairing } from './official-harnesses.ts'
+import { DSH_COMBINATION } from './sessions.ts'
 export * from '../../shared/models.ts'
 /** Network routing for this external CLI and its children; omission inherits Desktop. */
 export type HarnessProxy =
@@ -66,4 +68,23 @@ export interface ExecutionCatalog {
   }>
   /** Current OFM directory entries; saved combination references alone are excluded. */
   ofmDiscovery?: OfmDiscoveryItem[]
+}
+
+/** Only user-defined pairings outside the managed catalog can be removed. */
+export function isRemovableCombination(
+  item: CombinationDefinition,
+  recommendations: ExecutionCatalog['recommendations'],
+): boolean {
+  return (
+    !item.generated &&
+    !item.autoEnabled &&
+    !item.id.startsWith('auto:') &&
+    item.id !== DSH_COMBINATION &&
+    !isOfficialPairing(item.harnessRef, item.modelRef) &&
+    !recommendations?.some(
+      (pairing) =>
+        pairing.harnessRef === item.harnessRef &&
+        modelRefKey(pairing.modelRef) === modelRefKey(item.modelRef),
+    )
+  )
 }

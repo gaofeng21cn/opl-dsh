@@ -69,11 +69,16 @@ async function runtime(
     )
     await writeFile(join(dir, 'index.mjs'), source)
   }
-  for (const name of ['@deepseek-ai/cordis-plugin-include', 'yaml', 'js-yaml'])
+  const include = require.resolve('@deepseek-ai/cordis-plugin-include')
+  for (const [name, resolved] of [
+    ['@deepseek-ai/cordis-plugin-include', include],
+    ['yaml', require.resolve('yaml')],
+    ['js-yaml', createRequire(include).resolve('js-yaml')],
+  ])
     await module(
       name,
       './index.mjs',
-      `export * from ${JSON.stringify(pathToFileURL(require.resolve(name)).href)};\n`,
+      `export * from ${JSON.stringify(pathToFileURL(resolved).href)};\n`,
     )
   const template = `export const PROFILE_TEMPLATES = { web: { bundles: ${JSON.stringify(bundles)} } };\n`
   await module(

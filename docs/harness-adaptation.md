@@ -26,7 +26,7 @@ OFM 来源统一使用 `Our Free Model` 写法，区域渠道保留 `region-limi
 | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | --------- |
 | Kimi K2.6、K3、K3.1 Pro（K3.1 Pro 必须保持思考开启）                                                                          | Kimi Code                       | Messages  |
 | MiMo v2.6 Flash（mimo-v2.6-flash-free）                                                                                       | OpenCode，官方免费通道          | Chat      |
-| Laguna S、XS 2.1                                                                                                              | Poolside                        | Chat      |
+| EAC Laguna XS 2.1、Kilo Laguna S、XS 2.1                                                                                                              | Poolside                        | Chat      |
 | GLM 5.3、5.3 Flash（z-ai 原始 ID）                                                                                            | ZCode                           | Chat      |
 | EAC GLM 5.3 Flash Free（opencode/glm-5.3-flash-free）                                                                         | OpenCode，经 OFM 转发           | Chat      |
 | EAC DeepSeek V4.1 Flash Free（opencode/deepseek-v4.1-flash-free）                                                             | OpenCode，经 OFM 转发           | Chat      |
@@ -48,6 +48,7 @@ OFM 来源统一使用 `Our Free Model` 写法，区域渠道保留 `region-limi
 | Kilo Step 5 Preview（stepfun/step-5-preview-free）                                                                            | StepCode                        | Chat      |
 | Ling、LongCat、North Mini Code、Nemotron 3.5、Space Bunny、OpenRouter Free                                                    | OpenCode                        | Chat      |
 | OPL Gateway Gemini 4 Carbon、Gemini 4 Hydrogen | Antigravity CLI（默认），Pi Coding Agent 或 OpenCode（可选） | Gemini 原生（Antigravity、Pi），Chat（OpenCode） |
+| EAC Nemotron 3.5 Lightning、Bolt、Super VL、Nemotron 3 Ultra、Nano Omni Reasoning、Muse Glimmer 30B | Pi Coding Agent | Chat |
 | Nemotron Nano Omni、LFM2.5、Inkling Small、Inkling、Gemma 4 31B                                                               | Pi Coding Agent                 | Chat      |
 | Dots、Glyph、Kilo Auto Free、Kilo Beam、Xing 4.0                                                                              | Kilo Code                       | Chat      |
 
