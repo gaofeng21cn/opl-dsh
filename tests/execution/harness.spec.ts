@@ -1397,6 +1397,42 @@ describe('native conversation combinations', () => {
     }
   })
 
+  it('requires reselection after removing a combination before the first prompt', async () => {
+    const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
+    const { service, session, root } = await nativeSetup([{ id: ref.model, name: 'Grok' }])
+    vi.spyOn(adapterFor('grok-build', ref)!, 'available').mockResolvedValue({ available: true })
+    await service.selectCombination({ sessionId: session.id, combination: GROK_COMBINATION })
+    const catalog = await service.executionCatalog()
+    const original = catalog.combinations.find((item) => item.id === GROK_COMBINATION)!
+    vi.spyOn(service, 'executionCatalog').mockResolvedValue({
+      ...catalog,
+      combinations: [{ ...original, id: 'another-combination', isDefault: true }],
+    })
+    const native = vi.fn(async function* () {})
+    const request = {
+      ...ref,
+      sessionId: session.id,
+      messages: [
+        createUserMessage({
+          source: { kind: 'user' },
+          content: [{ type: 'text', text: 'first-after-removal' }],
+        }),
+      ],
+    } as GenerateOptions
+    expect((await service.modelSelection(session.id)).combination).toBeUndefined()
+    await expect(
+      Array.fromAsync(service.conversationStream(request, native)),
+    ).rejects.toMatchObject({
+      code: 'HARNESS_BINDING',
+    })
+    expect(native).not.toHaveBeenCalled()
+    expect((await service.list()).sessions).toHaveLength(0)
+    await service.selectCombination({ sessionId: session.id, combination: 'another-combination' })
+    await Array.fromAsync(service.conversationStream(request, native))
+    expect((await service.list()).sessions[0]).toMatchObject({ combination: 'another-combination' })
+    expect(await readFile(join(root, 'calls.txt'), 'utf8')).toContain('first-after-removal')
+  })
+
   it('resumes a uniquely replaced route across restart without replaying history or widening permission', async () => {
     const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
     const { service, session, root, ctx, options, setPermission } = await nativeSetup([

@@ -5530,24 +5530,30 @@ export class HarnessService {
     if (exact) return exact
     const replacement = this.replacementFor(sessionId, catalog, ref)
     if (replacement) return replacement.definition
-    const selected = catalog.combinations.find((item) => item.id === this.selections[sessionId])
-    if (
-      (selected && !selected.enabled && modelRefKey(selected.modelRef) === modelRefKey(ref)) ||
-      (!selected &&
-        [...this.records.values()].some(
-          (record) =>
-            record.nativeSessionId === sessionId &&
-            record.combination === this.selections[sessionId] &&
-            modelRefKey(record.modelRef) === modelRefKey(ref),
-        ))
-    )
-      return undefined
+    if (this.unavailableConversationSelection(sessionId, catalog, ref)) return undefined
     const candidates = catalog.combinations.filter(
       (item) => item.enabled && modelRefKey(item.modelRef) === modelRefKey(ref),
     )
     const defaults = candidates.filter((item) => item.isDefault)
     if (defaults.length === 1) return defaults[0]
     return candidates.length === 1 ? candidates[0] : undefined
+  }
+  private unavailableConversationSelection(
+    sessionId: string,
+    catalog: ExecutionCatalog,
+    ref: ModelRef,
+  ): boolean {
+    const selectedId = this.selections[sessionId]
+    if (!selectedId) return false
+    const selected = catalog.combinations.find((item) => item.id === selectedId)
+    const model = modelRefKey(ref)
+    if (selected) return !selected.enabled && modelRefKey(selected.modelRef) === model
+    const history = [...this.records.values()].filter(
+      (record) => record.nativeSessionId === sessionId && record.combination === selectedId,
+    )
+    // A selected combination has an ID before its first send creates any Harness record.
+    // With no record of its model, an explicit reselection is required before routing.
+    return history.length === 0 || history.some((record) => modelRefKey(record.modelRef) === model)
   }
   /** Restore this Session's choice for the exact model, using its live default if absent or retired. */
   private async selectionForModel(
@@ -5697,35 +5703,17 @@ export class HarnessService {
       // The first admission may have waited through opt-out. Re-read the saved
       // selection before any fallback can choose a native DSH route instead.
       await this.assertMiniMaxNativeSelectionEnabled(options.sessionId)
-    if (options.sessionId && !options.purpose && catalog) {
-      const selectedId = this.selections[options.sessionId]
-      const selected = catalog.combinations.find((item) => item.id === selectedId)
-      const historical = [...this.records.values()].find(
-        (record) =>
-          record.nativeSessionId === options.sessionId &&
-          record.combination === selectedId &&
-          modelRefKey(record.modelRef) === modelRefKey(options),
-      )
-      if (
-        (selected &&
-          !selected.enabled &&
-          modelRefKey(selected.modelRef) === modelRefKey(options)) ||
-        (!selected && historical && !this.replacementFor(options.sessionId, catalog, options))
-      )
-        throw new LlmError(
-          '此对话原先选择的执行组合已移除或停用，请在模型菜单重新选择执行组合后发送；本轮未改用 DSH 或其他 Harness。',
-          'HARNESS_BINDING',
-        )
-    }
     const definition =
       options.sessionId && catalog
         ? this.combinationFor(options.sessionId, catalog, options)
         : undefined
-    if (options.sessionId && !options.purpose && catalog) {
-      if (
-        !definition &&
-        catalog.combinations.some((item) => modelRefKey(item.modelRef) === modelRefKey(options))
-      )
+    if (options.sessionId && !options.purpose && catalog && !definition) {
+      if (this.unavailableConversationSelection(options.sessionId, catalog, options))
+        throw new LlmError(
+          '此对话原先选择的执行组合已移除或停用，请在模型菜单重新选择执行组合后发送；本轮未改用 DSH 或其他 Harness。',
+          'HARNESS_BINDING',
+        )
+      if (catalog.combinations.some((item) => modelRefKey(item.modelRef) === modelRefKey(options)))
         throw new LlmError(
           '请在模型菜单明确选择一个已启用的执行组合，本轮未发送。',
           'HARNESS_BINDING',
