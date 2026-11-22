@@ -73,6 +73,12 @@ describe('Pi adapter capabilities', () => {
       'amd/MiniCPM5-2B',
       'amd/Gemma-4-31B-IT',
       'amd/MiniCPM-V-4.7-1B',
+      'nvidia/nemotron-3.5-lightning-30b-a3b',
+      'nvidia/nemotron-3.5-bolt-e4b',
+      'nvidia/nemotron-3-ultra-550b-a55b',
+      'nvidia/nemotron-3.5-super-vl-120b-a12b',
+      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+      'meta/muse-glimmer-30b',
     ])
     expect(piCodeModels()).toEqual(PI_CODE_MODELS.map((model) => ref(model)))
   })

@@ -1,3 +1,4 @@
+import { EAC_SPECIALIST_LABELS } from '../../shared/models.ts'
 import { invokeHostRemote } from '../../compat/host/remote-invocation.ts'
 /** Owns live model/combination projection; persisted catalog stores references only. */
 import type { Context } from '@deepseek-ai/cordis'
@@ -682,7 +683,14 @@ export class ExecutionModelResolver {
                 label: `推荐 ${catalog.harnesses.find((h) => h.id === automatic)?.name ?? automatic}`,
               }
             : harnesses.length
-              ? { kind: 'manual' as const, harnesses, label: '仅可手动尝试' }
+              ? {
+                  kind: 'manual' as const,
+                  harnesses,
+                  label:
+                    (model.ref.provider === OFM_PROVIDER &&
+                      EAC_SPECIALIST_LABELS.get(model.ref.model)) ||
+                    '仅可手动尝试',
+                }
               : { kind: 'unknown' as const, label: '尚未适配' }
       return {
         modelRef: model.ref,

@@ -1,3 +1,5 @@
+import { ExecutionModelResolver } from '../../src/execution/host/execution-models.ts'
+import { defaultExecutionCatalog } from '../../src/execution/host/catalog.ts'
 import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { automaticHarness, adapterFor } from '../../src/execution/host/adapters/index.ts'
@@ -20,6 +22,17 @@ import type { HarnessSession } from '../../src/execution/contracts/sessions.ts'
 import type { AcpSessionSnapshot, AdapterOptions } from '../../src/execution/host/adapters/types.ts'
 
 const lanes = [
+  ['nvidia/nemotron-3.5-lightning-30b-a3b', 'pi', 'EAC Nemotron 3.5 Lightning 30B-A3B'],
+  ['nvidia/nemotron-3.5-bolt-e4b', 'pi', 'EAC Nemotron 3.5 Bolt E4B'],
+  ['nvidia/nemotron-3-ultra-550b-a55b', 'pi', 'EAC Nemotron 3 Ultra 550B-A55B'],
+  ['nvidia/nemotron-3.5-super-vl-120b-a12b', 'pi', 'EAC Nemotron 3.5 Super VL 120B-A12B'],
+  [
+    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+    'pi',
+    'EAC Nemotron 3 Nano Omni 30B-A3B Reasoning',
+  ],
+  ['meta/muse-glimmer-30b', 'pi', 'EAC Muse Glimmer 30B'],
+  ['poolside/laguna-xs-2.1', 'pool', 'EAC Laguna XS 2.1'],
   ['opencode/nemotron-3.5-lightning-free', 'opencode', 'EAC Nemotron 3.5 Lightning Free'],
   ['opencode/nemotron-3.5-super-vl-free', 'opencode', 'EAC Nemotron 3.5 Super VL Free'],
   ['opencode/flint-40b-free', 'opencode', 'EAC Flint 40B Free'],
@@ -55,6 +68,32 @@ const snapshot = (options = config()): AcpSessionSnapshot => ({
 })
 
 describe('new OFM channel pairings', () => {
+  it('projects the official, recommended and specialist routes in OFM discovery', async () => {
+    const specialists = [
+      ['nvidia/ising-calibration-1.5-31b', '量子校准 · 仅可手动尝试'],
+      ['nvidia/riva-translate-4b-instruct-v2', '机器翻译 · 仅可手动尝试'],
+    ] as const
+    const ctx = {
+      get: () => undefined,
+      llm: {
+        listProviders: () => [{ id: 'our-free-model', name: 'OFM' }],
+        listConfigurableProviders: () => [],
+        listModels: async () => [...lanes, ...specialists].map(([id]) => ({ id })),
+      },
+    } as unknown as Context
+    const catalog = await new ExecutionModelResolver(ctx, {
+      get: async () => defaultExecutionCatalog(),
+    } as never).resolve()
+    const status = (id: string) =>
+      catalog.ofmDiscovery?.find((row) => row.modelRef.model === id)?.status
+    for (const [id, harness] of lanes.filter(([, harness]) => ['pool', 'pi'].includes(harness)))
+      expect(status(id)).toMatchObject({
+        kind: harness === 'pool' ? 'official' : 'recommended',
+        harness,
+      })
+    for (const [id, label] of specialists)
+      expect(status(id)).toMatchObject({ kind: 'manual', label })
+  })
   it('routes EAC Kimi K3.1 Pro through its official Kimi Code adapter', () => {
     const model = ref('moonshotai/kimi-k3.1-pro')
     expect(automaticHarness(model)).toBe('kimi-code')
