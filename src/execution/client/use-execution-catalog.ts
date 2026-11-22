@@ -3,6 +3,7 @@ import type { TypertRemoteNamespace } from '@deepseek-ai/dsh-typert-protocol'
 import { displayModelName, modelRefKey } from '../contracts/catalog.ts'
 import { isOfficialPairing } from '../contracts/official-harnesses.ts'
 import {
+  combinationChoices,
   defaultPermissionPolicy,
   pairingKey,
   pairingPermissionPolicies,
@@ -199,6 +200,14 @@ export function useExecutionCatalog(
     if (result.status === 'saved' && mounted.current)
       setDraft({ model: '', harness: 'dsh', permissionPolicy: 'workspace' })
   }
+  const removeCombination = async (id: string) => {
+    if (!catalog || !combinationChoices(catalog).some((row) => row.removableId === id)) return false
+    const result = await save({
+      ...catalog,
+      combinations: catalog.combinations.filter((row) => row.id !== id),
+    })
+    return result.status === 'saved'
+  }
   const addRecommendations = async ({ selected, disabledIds }: CombinationSelection) => {
     if (!catalog) return
     const existing = new Set(catalog.combinations.map(pairingKey))
@@ -261,5 +270,6 @@ export function useExecutionCatalog(
     update,
     add,
     addRecommendations,
+    removeCombination,
   }
 }

@@ -1304,17 +1304,20 @@ export class HarnessService {
         })
     for (const combination of next.combinations) {
       const old = previous.combinations.find((item) => item.id === combination.id)
-      const unchanged =
+      const samePairing =
         old &&
         modelRefKey(old.modelRef) === modelRefKey(combination.modelRef) &&
-        old.harnessRef === combination.harnessRef &&
-        (!combination.enabled || old.enabled)
+        old.harnessRef === combination.harnessRef
+      const unchanged = samePairing && (!combination.enabled || old.enabled)
       if (
         !unchanged &&
         !adapterFor(combination.harnessRef, combination.modelRef, this.modelSources)
       )
         throw Error('该模型与 Harness 尚无兼容适配器，未保存组合')
-      if (!unchanged && combination.harnessRef === 'pi') {
+      if (
+        combination.harnessRef === 'pi' &&
+        (!samePairing || old.permissionPolicy !== combination.permissionPolicy)
+      ) {
         const adapter = adapterFor(combination.harnessRef, combination.modelRef, this.modelSources)
         if (adapter && !adapter.capabilities.permissions.includes(combination.permissionPolicy))
           throw Error('所选 Harness 不支持此权限档位，未保存组合')

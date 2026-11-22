@@ -11,6 +11,7 @@ import {
   type GenerateOptions,
   type ToolCallId,
 } from '@deepseek-ai/dsh-llm'
+import { ExecutionCatalogStore } from '../../src/execution/host/catalog.ts'
 import { HarnessSessionStore } from '../../src/execution/host/session-store.ts'
 import {
   HarnessService,
@@ -2218,6 +2219,41 @@ describe('native conversation combinations', () => {
         (item) => item.enabled && item.isDefault && item.modelRef.model === modelRef.model,
       ),
     ).toMatchObject([{ id: 'user-open-code', harnessRef: 'opencode' }])
+  })
+  it('re-enables saved Pi combinations without rewriting their existing permission', async () => {
+    const { options, ctx, service } = await nativeSetup([
+      { id: 'gemini::gemini-4-carbon', name: 'Carbon' },
+    ])
+    const catalog = await service.executionCatalog()
+    const modelRef = { provider: 'opl-gateway', model: 'gemini::gemini-4-carbon' }
+    const old = (['read-only', 'workspace'] as const).map((permissionPolicy) => ({
+      id: 'legacy-' + permissionPolicy,
+      name: 'Legacy Pi',
+      modelRef,
+      harnessRef: 'pi',
+      permissionPolicy,
+      isDefault: false,
+      enabled: false,
+    }))
+    const disk = new ExecutionCatalogStore(options.home)
+    await disk.set({ ...catalog, combinations: [...catalog.combinations, ...old] })
+    const reopened = new HarnessService(ctx, options)
+    cleanups.push(() => reopened.dispose())
+    const current = await reopened.executionCatalog()
+    const saved = await reopened.saveExecutionCatalog({
+      ...current,
+      combinations: current.combinations.map((row) => ({ ...row, enabled: true })),
+    })
+    for (const row of old)
+      expect(saved.combinations).toContainEqual(expect.objectContaining({ ...row, enabled: true }))
+    await expect(
+      reopened.saveExecutionCatalog({
+        ...saved,
+        combinations: saved.combinations.map((row) =>
+          row.id === old[0].id ? { ...row, permissionPolicy: 'workspace' } : row,
+        ),
+      }),
+    ).rejects.toThrow('不支持此权限档位')
   })
   it('rejects a new pairing whose requested permission is outside the adapter capability', async () => {
     const { service } = await nativeSetup([

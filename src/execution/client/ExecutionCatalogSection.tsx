@@ -46,6 +46,7 @@ export function ExecutionCatalogSection({
     update,
     add,
     addRecommendations,
+    removeCombination,
   } = useExecutionCatalog(call, refreshKey)
   const [recommendationsOpen, setRecommendationsOpen] = useState(false)
   const choices = catalog ? combinationChoices(catalog) : []
@@ -124,7 +125,12 @@ export function ExecutionCatalogSection({
           >
             <summary>启用与添加组合（{choices.length}）</summary>
             <div className={css.detailsBody}>
-              <RecommendationPicker catalog={catalog} busy={busy} onAdd={addRecommendations} />
+              <RecommendationPicker
+                catalog={catalog}
+                busy={busy}
+                onAdd={addRecommendations}
+                onRemove={removeCombination}
+              />
             </div>
           </details>
         )}

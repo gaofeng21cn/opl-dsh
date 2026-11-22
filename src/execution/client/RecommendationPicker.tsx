@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { displayModelName, displayModelSource, modelRefKey } from '../contracts/catalog.ts'
 import type { ExecutionCatalog } from '../contracts/catalog.ts'
@@ -16,11 +16,14 @@ export function RecommendationPicker({
   catalog,
   busy,
   onAdd,
+  onRemove,
 }: {
   catalog: ExecutionCatalog
   busy: boolean
+  onRemove: (id: string) => Promise<boolean>
   onAdd: (selection: CombinationSelection) => Promise<void>
 }) {
+  const removing = useRef<string | undefined>(undefined)
   const candidates = combinationChoices(catalog).map((item) => [item.key, item] as const)
   const fullAccessOnly = new Set(
     candidates
@@ -39,6 +42,10 @@ export function RecommendationPicker({
   const [disabledIds, setDisabledIds] = useState<Set<string>>(() => new Set())
   const [query, setQuery] = useState('')
   useEffect(() => {
+    if (removing.current && !catalog.combinations.some((row) => row.id === removing.current)) {
+      removing.current = undefined
+      return
+    }
     setSelected(enabled())
     setDisabledIds(new Set())
   }, [catalog])
@@ -179,25 +186,42 @@ export function RecommendationPicker({
                 </legend>
                 {items.map(([key, item]) => {
                   return (
-                    <label className={css.item} key={key}>
-                      <input
-                        type="checkbox"
-                        name="combination"
-                        value={key}
-                        disabled={busy}
-                        checked={selected.has(key)}
-                        data-opl-recommendation-item={key}
-                        onChange={(event) => toggle([key], event.target.checked)}
-                      />
-                      <span className={css.itemText}>
-                        <span>
-                          {displayModelSource(item.modelRef)} · {item.name}
+                    <div className={css.choiceRow} key={key}>
+                      <label className={css.item}>
+                        <input
+                          type="checkbox"
+                          name="combination"
+                          value={key}
+                          disabled={busy}
+                          checked={selected.has(key)}
+                          data-opl-recommendation-item={key}
+                          onChange={(event) => toggle([key], event.target.checked)}
+                        />
+                        <span className={css.itemText}>
+                          <span>
+                            {displayModelSource(item.modelRef)} · {item.name}
+                          </span>
+                          {!groupRequiresFullAccess && fullAccessOnly.has(key) && (
+                            <span className={css.permission}>仅支持完全权限</span>
+                          )}
                         </span>
-                        {!groupRequiresFullAccess && fullAccessOnly.has(key) && (
-                          <span className={css.permission}>仅支持完全权限</span>
-                        )}
-                      </span>
-                    </label>
+                      </label>
+                      {item.removableId && (
+                        <button
+                          type="button"
+                          className={css.remove}
+                          disabled={busy}
+                          aria-label={`移除自定义组合 ${item.name}`}
+                          onClick={async () => {
+                            const id = item.removableId!
+                            removing.current = id
+                            if (!(await onRemove(id))) removing.current = undefined
+                          }}
+                        >
+                          移除
+                        </button>
+                      )}
+                    </div>
                   )
                 })}
               </fieldset>
