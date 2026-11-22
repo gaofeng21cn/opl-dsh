@@ -72,7 +72,7 @@ One Person Lab 面向论文、基金申请、研究报告等需要多轮审阅�
 | --- | --- |
 | 换模型来源，或确认组合支持哪些权限和输入 | [OFM 免费模型](docs/model-plugins.md) · [MiniMax 官方账号](docs/minimax-code.md) · [各渠道与执行引擎的适配范围](docs/harness-adaptation.md) |
 | 给团队成员分配不同引擎，或从仓库接收任务 | [DSH 团队与角色](docs/cross-harness-team.md) · [SuperAgent 仓库协作](docs/superagent.md) |
-| 在对话中搜索网页 | 登录 OPL Gateway 后默认使用 GPT-6.1 Sol 搜索。可在「设置 → 网页搜索与获取」切换搜索提供方。 |
+| 在对话中搜索网页 | 登录 OPL Gateway 后，默认通过网关使用 GPT-6.1 Sol 搜索，无需另配搜索密钥。如果已配置 DeepSeek 官方 API Key，可在「设置 → 网页搜索与获取」的「搜索」中选择 **DeepSeek Search API**，直接使用 DeepSeek 官方搜索。 |
 | 将任务交给专业应用继续处理 | [Agent 应用交接与 MCP Apps 支持范围](docs/mcp-apps.md) |
 | 配置工具审批或桌面操作 | [Auto Review 审批](docs/auto-review.md) · [Computer Use](docs/computer-use.md) |
 | 对话与文件 | [不在项目中工作](docs/everyday-guide.md#在项目外聊天) · [编辑消息并重发](docs/everyday-guide.md#修改已经发出的消息) · [打开交付文件](docs/file-deliveries.md) · [将指定会话移到回收站](docs/everyday-guide.md#把指定的-dsh-会话移到回收站) |
