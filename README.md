@@ -12,6 +12,8 @@
 <details>
 <summary>其他安装方式</summary>
 
+<br>
+
 macOS · Apple Silicon：
 
 ```sh
