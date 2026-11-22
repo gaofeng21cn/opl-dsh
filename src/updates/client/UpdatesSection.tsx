@@ -263,7 +263,7 @@ export function UpdatesSection({ controller, navigation: navigationProp, t }: Up
         </div>
       )}
       {preparing && (
-        <div className={css.notice}>
+        <div className={`${css.notice} ${updatesCss.progress}`}>
           <p role="status">{t('preparing')}</p>
           <Button
             variant="ghost"
@@ -275,7 +275,10 @@ export function UpdatesSection({ controller, navigation: navigationProp, t }: Up
         </div>
       )}
       {status?.pendingVersion && !preparing && (
-        <div className={css.notice} data-opl-update-pending={status.pendingVersion}>
+        <div
+          className={`${css.notice} ${updatesCss.progress}`}
+          data-opl-update-pending={status.pendingVersion}
+        >
           <p role={countdown !== null ? 'timer' : 'status'}>
             {t(
               handoff

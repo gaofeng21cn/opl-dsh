@@ -50,3 +50,9 @@
   flex: 1 1 160px;
   max-width: 220px;
 }
+
+.progress {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
