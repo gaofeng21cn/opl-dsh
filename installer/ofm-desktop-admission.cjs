@@ -6,12 +6,21 @@ const { join } = require('node:path')
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex')
 const versions = {
   '2.8.3': [
-    'e905f725e42c71b32bd0a7a6b87df85bff6d90c26403232e4c4372e692f83a42',
-    '2a803e996fb1bc9b9ddeb9f7e29467887a0b11835d91c2e2e43489a987b6949e',
+    [
+      'e905f725e42c71b32bd0a7a6b87df85bff6d90c26403232e4c4372e692f83a42',
+      '2a803e996fb1bc9b9ddeb9f7e29467887a0b11835d91c2e2e43489a987b6949e',
+    ],
   ],
+  // OFM published both a release archive and a different signed in-app update as 2.9.0.
   '2.9.0': [
-    '64bda1fa219cefdccbaea85b4737173a195b1e761aa3318950e590935578a5ac',
-    '49ea4a47c767698ff833627a4ed2b572b0198c34c746990d42399ffc38747dad',
+    [
+      '64bda1fa219cefdccbaea85b4737173a195b1e761aa3318950e590935578a5ac',
+      'e8c0c2dc2c7e34ad8e513dd7956b3891533283a2c514f5a7093c466151f56e70',
+    ],
+    [
+      '991a660d0e108bd6c1c3b6c2a1e21aa3147c63f549c33770dae384a5d665ff9d',
+      '49ea4a47c767698ff833627a4ed2b572b0198c34c746990d42399ffc38747dad',
+    ],
   ],
 }
 const trust = [
@@ -70,8 +79,9 @@ async function applyDesktopAdmission(root, version) {
   const target = join(root, 'ofm', 'dsh-our-free-model')
   const canonical = await realpath(root)
   const changes = []
-  for (const [name, [before, after]] of [
-    ['src/trust.js', trust],
+  const files = {}
+  for (const [name, variants] of [
+    ['src/trust.js', [trust]],
     ['index.js', hashes],
   ]) {
     const file = join(target, name)
@@ -91,11 +101,14 @@ async function applyDesktopAdmission(root, version) {
       throw Error('OFM 兼容文件路径无效：' + name)
     const bytes = await readFile(file)
     const actual = digest(bytes)
-    if (actual === after) continue
-    if (actual !== before) {
+    const match = variants.find(([before, after]) => actual === before || actual === after)
+    if (!match) {
       console.warn('已保留修改过的 OFM 文件，未应用桌面兼容修复：' + name)
       return 'modified'
     }
+    const after = match[1]
+    files[name] = after
+    if (actual === after) continue
     let next = bytes.toString('utf8')
     for (const [oldText, newText] of edits[name]) next = next.replace(oldText, newText)
     if (digest(next) !== after) throw Error('OFM 兼容文件摘要不符：' + name)
@@ -113,7 +126,7 @@ async function applyDesktopAdmission(root, version) {
         {
           version,
           upstreamCommit: 'e684b64b3179c12d00d525493e14c3ea283ddf3e',
-          files: { 'index.js': hashes[1], 'src/trust.js': trust[1] },
+          files,
         },
         null,
         2,
