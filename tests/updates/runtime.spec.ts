@@ -53,3 +53,59 @@ it('does not reuse an offer cached for a different installed runtime', () => {
     restoreLaunchFailure(null, { state: 'deferred', checkedAt: 'invalid' }, pending, current),
   ).toBeNull()
 })
+
+it('preserves valid structured apply failures and maps their error category', () => {
+  const stored = {
+    installedVersion: current.suiteVersion,
+    officialVersion: current.officialVersion,
+    checkedAt: '2026-11-07T09:00:00Z',
+  }
+  expect(
+    restoreLaunchFailure(
+      stored,
+      { ...failure, failure: { stage: 'apply', reason: 'busy' } },
+      pending,
+      current,
+    ),
+  ).toEqual({
+    ...stored,
+    error: 'prepare-lock-failed',
+    failure: { stage: 'apply', reason: 'busy' },
+  })
+  expect(
+    restoreLaunchFailure(
+      stored,
+      { ...failure, failure: { stage: 'verify', reason: 'integrity' } },
+      pending,
+      current,
+    ),
+  ).toEqual({
+    ...stored,
+    error: 'prepare-integrity-failed',
+    failure: { stage: 'verify', reason: 'integrity' },
+  })
+  expect(
+    restoreLaunchFailure(
+      stored,
+      { ...failure, failure: { stage: 'installation', reason: 'installation' } },
+      pending,
+      current,
+    ),
+  ).toEqual({
+    ...stored,
+    error: 'prepare-installation-failed',
+    failure: { stage: 'installation', reason: 'installation' },
+  })
+  expect(
+    restoreLaunchFailure(
+      stored,
+      { ...failure, failure: { stage: 'evil', reason: 'busy' } },
+      pending,
+      current,
+    ),
+  ).toEqual({
+    ...stored,
+    error: 'prepare-failed',
+    failure: { stage: 'apply', reason: 'unknown' },
+  })
+})

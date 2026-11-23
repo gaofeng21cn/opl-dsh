@@ -1552,3 +1552,42 @@ it('routes the single engine notice directly and the combined notice through a c
   )
   expect(f.openSettings).toHaveBeenCalledWith('engines')
 })
+
+it('lets users replace an older prepared update with a newly discovered release', async () => {
+  const newer = release({ version: '0.2.57' })
+  const f = await mount({
+    initial: status({ pendingVersion: '0.2.56', release: newer }),
+  })
+  expect(section(f.container).textContent).toContain(
+    zh.pendingOutdated.replace('{version}', '0.2.56').replace('{latest}', '0.2.57'),
+  )
+  expect(
+    [...section(f.container).querySelectorAll('button')].map((node) => node.textContent),
+  ).not.toContain(zh.applyNow)
+  await click(button(f.container, zh.prepare))
+  expect(f.api.prepare).toHaveBeenCalledTimes(1)
+  expect(f.controller.getSnapshot().status?.pendingVersion).toBe('0.2.57')
+})
+
+it('shows release-changed guidance and a refreshStatus button for lock or apply failures', async () => {
+  const f = await mount({
+    initial: status({
+      release: release(),
+      error: 'prepare-release-changed',
+      failure: { stage: 'discovery', reason: 'release-changed' },
+    }),
+  })
+  expect(section(f.container).textContent).toContain(zh['prepare-release-changed'])
+  await act(async () => {
+    f.publish(
+      status({
+        release: release(),
+        error: 'prepare-lock-failed',
+        failure: { stage: 'acquire', reason: 'busy' },
+      }),
+    )
+  })
+  expect(button(f.container, zh.refreshStatus)).toBeDefined()
+  await click(button(f.container, zh.refreshStatus))
+  expect(f.api.status).toHaveBeenCalled()
+})

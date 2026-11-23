@@ -68,6 +68,15 @@ export function UpdatesSection({ controller, navigation: navigationProp, t }: Up
   const failureDetails = status?.failure ?? null
   const release = status?.release
   const restart = status?.restart
+  const pendingMatchesRelease = Boolean(
+    status?.pendingVersion && release && status.pendingVersion === release.version,
+  )
+  const pendingOutdated = Boolean(
+    status?.pendingVersion && release && status.pendingVersion !== release.version,
+  )
+  const showRefreshStatus = Boolean(
+    view.failure || status?.error === 'prepare-lock-failed' || restart?.phase === 'failed',
+  )
   const countdown = useUpdateCountdown(
     status?.pendingVersion && restart?.phase === 'countdown' ? restart.dueAt : null,
     view.connected && view.confirmed && !view.uncertain && !view.failure,
@@ -122,7 +131,7 @@ export function UpdatesSection({ controller, navigation: navigationProp, t }: Up
         >
           {t(checking ? 'checking' : 'check')}
         </Button>
-        {view.failure && (
+        {showRefreshStatus && (
           <Button
             variant="outline"
             disabled={!view.connected || operation !== null}
@@ -244,7 +253,7 @@ export function UpdatesSection({ controller, navigation: navigationProp, t }: Up
           )}
           {release.compatibility === 'enhancement' && (
             <>
-              {!status?.pendingVersion && (
+              {!pendingMatchesRelease && (
                 <Button
                   variant="outline"
                   disabled={!writable}
@@ -253,7 +262,7 @@ export function UpdatesSection({ controller, navigation: navigationProp, t }: Up
                   {t(preparing ? 'preparing' : 'prepare')}
                 </Button>
               )}
-              {!status?.localCandidate && (
+              {!status?.localCandidate && !pendingOutdated && (
                 <Button variant="outline" disabled={!writable} onClick={() => void applyNow()}>
                   {t(operation === 'apply' ? 'applying' : 'applyNow')}
                 </Button>
@@ -283,18 +292,24 @@ export function UpdatesSection({ controller, navigation: navigationProp, t }: Up
             {t(
               handoff
                 ? 'restartHandoff'
-                : status.localCandidate
-                  ? 'candidatePending'
-                  : countdown !== null
-                    ? 'restartCountdown'
-                    : restart?.phase === 'waiting'
-                      ? 'restartWaiting'
-                      : restart?.phase === 'blocked'
-                        ? 'restartBlocked'
-                        : !release
-                          ? 'pendingUnchecked'
-                          : 'pending',
-              { version: status.pendingVersion, seconds: countdown ?? 0 },
+                : pendingOutdated
+                  ? 'pendingOutdated'
+                  : status.localCandidate
+                    ? 'candidatePending'
+                    : countdown !== null
+                      ? 'restartCountdown'
+                      : restart?.phase === 'waiting'
+                        ? 'restartWaiting'
+                        : restart?.phase === 'blocked'
+                          ? 'restartBlocked'
+                          : !release
+                            ? 'pendingUnchecked'
+                            : 'pending',
+              {
+                version: status.pendingVersion,
+                latest: release?.version ?? '',
+                seconds: countdown ?? 0,
+              },
             )}
           </p>
           {restart?.phase === 'waiting' && restart.reason && (

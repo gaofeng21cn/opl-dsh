@@ -48,6 +48,8 @@ export const zh = {
   preparing: '正在下载并准备更新…',
   pending: '已准备版本 {version}，可点击“立即更新”；退出应用后也会自动安装。',
   pendingUnchecked: '已准备版本 {version}，检查更新后可立即安装。',
+  pendingOutdated:
+    '已准备旧版本 {version}，当前可用版本为 {latest}。可点击上方“准备自动更新”替换为新版本，或取消旧计划。',
   candidatePending: '已准备版本 {version}。完全退出应用后安装，下次打开生效。',
   restartBlocked: '已准备版本 {version}，本次未重启。',
   restartWaiting: '已准备版本 {version}，正在等待空闲后重启。',
@@ -76,6 +78,7 @@ export const zh = {
   'prepare-timeout': '更新包下载超时，请检查网络或代理后重试。',
   'prepare-http-failed': '更新包下载被服务器拒绝，请稍后重试或检查代理。',
   'prepare-integrity-failed': '更新包校验失败，请重新检查更新后重试。',
+  'prepare-release-changed': '线上已发布更新版本，请确认最新可用版本后再操作。',
   'prepare-lock-failed': '已有更新操作仍在进行，请稍后重新读取状态。',
   'prepare-installation-failed': '当前安装状态不适合增量更新，请重新检查；必要时安装完整套件。',
   failureDetail: '失败阶段：{stage}，分类：{reason}{detail}',
@@ -145,6 +148,8 @@ export const en: Record<UpdateLocaleKey, string> = {
   preparing: 'Downloading and preparing update…',
   pending: 'Version {version} is prepared. Choose “Update now” or exit the app to install it.',
   pendingUnchecked: 'Version {version} is prepared. Check for updates before applying it now.',
+  pendingOutdated:
+    'Version {version} is prepared, while {latest} is now available. Prepare the newer release above or cancel the older plan.',
   candidatePending: 'Version {version} is prepared. Exit the app completely to install it.',
   restartBlocked: 'Version {version} is prepared. The app has not restarted.',
   restartWaiting: 'Version {version} is prepared. Waiting until idle to restart.',
@@ -184,6 +189,8 @@ export const en: Record<UpdateLocaleKey, string> = {
     'The update server rejected the download. Check the proxy or try again later.',
   'prepare-integrity-failed':
     'The update package failed integrity checks. Check for updates and try again.',
+  'prepare-release-changed':
+    'A newer release is now available. Review the latest release before retrying.',
   'prepare-lock-failed':
     'Another update operation is still running. Read the status again before retrying.',
   'prepare-installation-failed':

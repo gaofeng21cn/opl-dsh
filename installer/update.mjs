@@ -604,7 +604,7 @@ async function homeProfilesStopped(home) {
     }
     const bytes = await readOptional(join(profiles, entry.name, 'control.json'), 128 * 1024)
     if (bytes !== null && alive(JSON.parse(bytes.toString('utf8')).pid))
-      throw Error('已有 profile 正在运行')
+      throw updateFailureError(Error('已有 profile 正在运行'), 'apply', 'busy')
   }
 }
 
@@ -629,6 +629,7 @@ function runInstaller(payload, application, root, current, candidate = false) {
         ...process.env,
         ELECTRON_RUN_AS_NODE: '1',
         NODE_USE_SYSTEM_CA: '1',
+        OPL_KIMI_CU_OFFLINE: process.env.OPL_KIMI_CU_OFFLINE ?? '1',
         OPL_DSH_HOME: current.profileHome,
         OPL_CODEX_HOME: dirname(dirname(current.skillDir)),
         // A custom entry point belongs to its caller; only the Suite's own
@@ -641,7 +642,8 @@ function runInstaller(payload, application, root, current, candidate = false) {
       timeout: 180000,
     },
   )
-  if (result.error || result.status !== 0) throw Error('增强安装失败')
+  if (result.error || result.status !== 0)
+    throw updateFailureError(result.error ?? Error('增强安装失败'), 'apply', 'installation')
 }
 
 async function confirmInstalled(root, application, expected, original) {
@@ -674,7 +676,11 @@ export async function refreshEnhancements(
   try {
     if (transaction) await assertUpdateTransaction(root, transaction)
     if ((await readOptional(join(root, pendingName), maxPendingSize)) === null) return
-    unlock = await lockUpdate(root, { transaction, allowLaunch: true })
+    try {
+      unlock = await lockUpdate(root, { transaction, allowLaunch: true })
+    } catch (error) {
+      throw prepareFailure(error, 'acquire', 'busy')
+    }
     const pendingBytes = await readOptional(join(root, pendingName), maxPendingSize)
     if (pendingBytes === null) return
     if (expectedPendingSha256 && digest(pendingBytes) !== expectedPendingSha256) return
@@ -685,78 +691,104 @@ export async function refreshEnhancements(
         ['failed', 'cancelled', 'succeeded'].includes(previous.stage) &&
         previous.targetPendingSha256 === digest(pendingBytes)
       )
-        throw Error('此更新计划已有处理结果，请取消后重新准备')
+        throw updateFailureError(
+          Error('此更新计划已有处理结果，请取消后重新准备'),
+          'apply',
+          'installation',
+        )
     }
-    const plan = validatePending(JSON.parse(pendingBytes.toString('utf8')))
-    const { current, bytes: installationBytes } = await installed(root, application)
-    if (
-      plan.application !== resolve(application) ||
-      plan.installationSha256 !== digest(installationBytes)
-    )
-      throw Error('待安装更新与当前安装不匹配')
-    if (
-      !newer(plan.version, current.suiteVersion) ||
-      readOfficialVersion(application) !== plan.officialVersion ||
-      releaseForInstallation(
-        {
-          ...current,
-          officialVersion: plan.officialVersion,
-          platform: process.platform,
-          arch: process.arch,
-        },
-        plan.metadata,
-      ).compatibility !== 'enhancement'
-    )
-      throw Error('待安装更新与官方桌面不兼容')
+    let plan, current, installationBytes, previous
+    try {
+      plan = validatePending(JSON.parse(pendingBytes.toString('utf8')))
+    } catch (error) {
+      throw updateFailureError(error, 'verify', 'integrity')
+    }
+    try {
+      ;({ current, bytes: installationBytes } = await installed(root, application))
+      if (
+        plan.application !== resolve(application) ||
+        plan.installationSha256 !== digest(installationBytes)
+      )
+        throw Error('待安装更新与当前安装不匹配')
+      if (
+        !newer(plan.version, current.suiteVersion) ||
+        readOfficialVersion(application) !== plan.officialVersion ||
+        releaseForInstallation(
+          {
+            ...current,
+            officialVersion: plan.officialVersion,
+            platform: process.platform,
+            arch: process.arch,
+          },
+          plan.metadata,
+        ).compatibility !== 'enhancement'
+      )
+        throw Error('待安装更新与官方桌面不兼容')
+    } catch (error) {
+      throw prepareFailure(error, 'apply', 'installation')
+    }
     await profilesStopped(current)
-    const previous = await verifyDirectory(current.release, {
-      version: current.suiteVersion,
-      officialVersion: current.officialVersion,
-      allowOfficialVersionMismatch: true,
-    })
-    if (previous.artifact.updateProtocolVersion !== 1) throw Error('原安装不支持安全更新协议')
-    if (
-      previous.artifactSha256 !== plan.originalArtifactSha256 ||
-      previous.artifact.suiteSha256 !== current.suiteSha256 ||
-      previous.artifact.sha256 !== current.enhancementSha256
-    )
-      throw Error('原安装文件已改变')
-    await directory(join(root, 'updates'))
-    const stage = join(root, 'updates', plan.stage)
-    await directory(stage)
-    const archive = await regularFile(join(stage, 'payload.zip'), 32 * 1024 * 1024)
-    if (
-      archive.length !== plan.metadata.asset.size ||
-      'sha256:' + digest(archive) !== plan.metadata.asset.digest
-    )
-      throw Error('待安装 ZIP 校验失败')
-    const entries = unpackPayload(archive)
-    const artifact = verifyEntries(entries, {
-      version: plan.version,
-      officialVersion: plan.officialVersion,
-      artifactOfficialVersion: plan.metadata.manifest.official.version,
-    })
-    if (artifact.updateProtocolVersion !== 1) throw Error('待安装文件不支持安全更新协议')
-    if (
-      digest(entries.get('artifact.json')) !== plan.artifactSha256 ||
-      artifact.suiteSha256 !== plan.suiteSha256
-    )
-      throw Error('待安装清单校验失败')
-    const payload = join(stage, 'payload')
-    const staged = await verifyDirectory(payload, {
-      version: plan.version,
-      officialVersion: plan.officialVersion,
-      artifactOfficialVersion: plan.metadata.manifest.official.version,
-    })
-    if (staged.artifactSha256 !== plan.artifactSha256) throw Error('待安装文件已改变')
+    try {
+      previous = await verifyDirectory(current.release, {
+        version: current.suiteVersion,
+        officialVersion: current.officialVersion,
+        allowOfficialVersionMismatch: true,
+      })
+      if (previous.artifact.updateProtocolVersion !== 1) throw Error('原安装不支持安全更新协议')
+      if (
+        previous.artifactSha256 !== plan.originalArtifactSha256 ||
+        previous.artifact.suiteSha256 !== current.suiteSha256 ||
+        previous.artifact.sha256 !== current.enhancementSha256
+      )
+        throw Error('原安装文件已改变')
+    } catch (error) {
+      throw prepareFailure(error, 'installation', 'installation')
+    }
+    let artifact, payload
+    try {
+      await directory(join(root, 'updates'))
+      const stage = join(root, 'updates', plan.stage)
+      await directory(stage)
+      const archive = await regularFile(join(stage, 'payload.zip'), 32 * 1024 * 1024)
+      if (
+        archive.length !== plan.metadata.asset.size ||
+        'sha256:' + digest(archive) !== plan.metadata.asset.digest
+      )
+        throw Error('待安装 ZIP 校验失败')
+      const entries = unpackPayload(archive)
+      artifact = verifyEntries(entries, {
+        version: plan.version,
+        officialVersion: plan.officialVersion,
+        artifactOfficialVersion: plan.metadata.manifest.official.version,
+      })
+      if (artifact.updateProtocolVersion !== 1) throw Error('待安装文件不支持安全更新协议')
+      if (
+        digest(entries.get('artifact.json')) !== plan.artifactSha256 ||
+        artifact.suiteSha256 !== plan.suiteSha256
+      )
+        throw Error('待安装清单校验失败')
+      payload = join(stage, 'payload')
+      const staged = await verifyDirectory(payload, {
+        version: plan.version,
+        officialVersion: plan.officialVersion,
+        artifactOfficialVersion: plan.metadata.manifest.official.version,
+      })
+      if (staged.artifactSha256 !== plan.artifactSha256) throw Error('待安装文件已改变')
+    } catch (error) {
+      throw prepareFailure(error, 'verify', 'integrity')
+    }
     const profileReceipt = join(current.profileHome, 'opl-dsh/installation.json')
     const oldProfileReceipt = await readOptional(profileReceipt, 128 * 1024)
     await profilesStopped(current)
-    if (
-      digest((await installed(root, application)).bytes) !== plan.installationSha256 ||
-      readOfficialVersion(application) !== plan.officialVersion
-    )
-      throw Error('启动安装前原安装已改变')
+    try {
+      if (
+        digest((await installed(root, application)).bytes) !== plan.installationSha256 ||
+        readOfficialVersion(application) !== plan.officialVersion
+      )
+        throw Error('启动安装前原安装已改变')
+    } catch (error) {
+      throw prepareFailure(error, 'confirm', 'installation')
+    }
     try {
       if (transaction) await assertUpdateTransaction(root, transaction)
       runInstaller(payload, application, root, current)
@@ -785,7 +817,7 @@ export async function refreshEnhancements(
       } catch (rollbackError) {
         // Both immutable release directories and the failed plan remain available for repair.
       }
-      throw error
+      throw prepareFailure(error, 'apply', 'installation')
     }
     await unlink(join(root, pendingName))
     await atomicJson(join(root, 'enhancement-update.json'), {
@@ -794,11 +826,13 @@ export async function refreshEnhancements(
       state: 'updated',
       version: plan.version,
     })
-  } catch {
+  } catch (error) {
+    const failure = describeUpdateFailure(error, 'apply')
     await atomicJson(join(root, 'enhancement-update.json'), {
       checkedAt: new Date().toISOString(),
       trigger,
       state: 'deferred',
+      failure,
       ...(rollback ? { rollback } : {}),
       message: '本次增强更新未完成，已保留更新计划和原安装包。',
     }).catch(() => {})

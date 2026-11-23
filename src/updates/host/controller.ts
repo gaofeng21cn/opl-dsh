@@ -46,6 +46,7 @@ const persistedErrors = new Set<Exclude<OplUpdateError, null>>([
   'prepare-timeout',
   'prepare-http-failed',
   'prepare-integrity-failed',
+  'prepare-release-changed',
   'prepare-lock-failed',
   'prepare-installation-failed',
 ])
@@ -75,7 +76,7 @@ const failureReasons = new Set<OplUpdateFailure['reason']>([
   'unknown',
 ])
 
-function validFailure(value: unknown): value is OplUpdateFailure {
+export function validFailure(value: unknown): value is OplUpdateFailure {
   if (!value || typeof value !== 'object') return false
   const row = value as Partial<OplUpdateFailure>
   if (!failureStages.has(row.stage as OplUpdateFailure['stage'])) return false
@@ -93,7 +94,7 @@ function validFailure(value: unknown): value is OplUpdateFailure {
   return true
 }
 
-function errorForFailure(failure: OplUpdateFailure): Exclude<OplUpdateError, null> {
+export function errorForFailure(failure: OplUpdateFailure): Exclude<OplUpdateError, null> {
   switch (failure.reason) {
     case 'proxy':
       return 'prepare-proxy-failed'
@@ -104,8 +105,9 @@ function errorForFailure(failure: OplUpdateFailure): Exclude<OplUpdateError, nul
     case 'http':
       return 'prepare-http-failed'
     case 'integrity':
-    case 'release-changed':
       return 'prepare-integrity-failed'
+    case 'release-changed':
+      return 'prepare-release-changed'
     case 'busy':
       return 'prepare-lock-failed'
     case 'installation':
@@ -288,9 +290,15 @@ export class UpdateController implements OplUpdateApi {
       try {
         this.value.pendingVersion = await this.operations.pending()
         if (this.value.pendingVersion) await this.operations.armPending?.()
-      } catch {
-        this.value.error = 'prepare-failed'
-        this.value.failure = { stage: 'acquire', reason: 'filesystem' }
+      } catch (_error) {
+        const details = describeUpdateFailure(_error, 'acquire')
+        if (details.reason !== 'unknown') {
+          this.value.failure = details
+          this.value.error = errorForFailure(details)
+        } else {
+          this.value.error = 'prepare-failed'
+          this.value.failure = { stage: 'acquire', reason: 'filesystem' }
+        }
       }
       this.publish()
     })()
@@ -367,10 +375,29 @@ export class UpdateController implements OplUpdateApi {
         const current = await this.operations.installed()
         const release = await this.operations.discover(current, abort.signal)
         if (!this.closed && !abort.signal.aborted) {
+          const previousVersion = this.value.release?.version ?? null
+          this.value.installedVersion = current.suiteVersion
+          this.value.officialVersion = current.officialVersion
+          this.value.localCandidate = current.localCandidate === true
           this.value.release = release
+          if (
+            this.value.restart?.phase === 'failed' &&
+            (release?.version ?? null) !== previousVersion
+          )
+            this.value.restart = undefined
           succeeded = true
           this.value.error = null
           this.value.failure = null
+          if (!this.preparing && !this.cancelling) {
+            try {
+              this.value.pendingVersion = await this.operations.pending()
+              if (this.value.pendingVersion) await this.operations.armPending?.()
+            } catch (_pendingError) {
+              const details = describeUpdateFailure(_pendingError, 'confirm')
+              this.value.failure = details
+              this.value.error = errorForFailure(details)
+            }
+          }
         }
       } catch (_error) {
         if (!this.closed && !abort.signal.aborted) {
@@ -438,19 +465,49 @@ export class UpdateController implements OplUpdateApi {
       // A new attempt supersedes the previous failure; do not display stale red text while downloading.
       this.value.error = null
       this.value.failure = null
+      if (this.value.restart?.phase === 'failed') this.value.restart = undefined
       this.publish()
+      let stage: 'download' | 'confirm' | 'apply' = 'download'
       try {
         await this.operations.prepare(abort.signal, expectedVersion)
         if (!this.closed && !abort.signal.aborted) {
+          stage = 'confirm'
           this.value.pendingVersion = await this.operations.pending()
-          if (this.value.pendingVersion) await this.operations.armPending?.()
+          if (this.value.pendingVersion) {
+            stage = 'apply'
+            await this.operations.armPending?.()
+          }
           this.value.error = null
           this.value.failure = null
         }
       } catch (_error) {
         if (!this.closed && !abort.signal.aborted) {
-          this.value.failure = describeUpdateFailure(_error, 'download')
+          this.value.failure = describeUpdateFailure(_error, stage)
           this.value.error = errorForFailure(this.value.failure)
+          if (
+            this.value.failure.stage === 'discovery' &&
+            this.value.failure.reason === 'release-changed'
+          ) {
+            try {
+              const current = await this.operations.installed()
+              const latest = await this.operations.discover(current, abort.signal)
+              if (!this.closed && !abort.signal.aborted) {
+                this.value.installedVersion = current.suiteVersion
+                this.value.officialVersion = current.officialVersion
+                this.value.localCandidate = current.localCandidate === true
+                this.value.release = latest
+                const now = new Date().toISOString()
+                this.value.checkedAt = now
+                this.value.lastSuccessAt = now
+                if (!latest) {
+                  this.value.error = null
+                  this.value.failure = null
+                }
+              }
+            } catch {
+              /* Retain the release-changed diagnostic when re-discovery also fails. */
+            }
+          }
         }
       } finally {
         this.value.preparing = false
@@ -499,7 +556,7 @@ export class UpdateController implements OplUpdateApi {
       const version = this.value.release.version
       const epoch = ++this.applyEpoch
       if (this.value.pendingVersion && this.value.pendingVersion !== version) {
-        this.value.error = 'prepare-integrity-failed'
+        this.value.error = 'prepare-release-changed'
         this.value.failure = { stage: 'confirm', reason: 'release-changed' }
         await this.persist().catch(() => {})
         this.publish()

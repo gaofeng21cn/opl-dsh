@@ -34,6 +34,7 @@ export type OplUpdateError =
   | 'prepare-timeout'
   | 'prepare-http-failed'
   | 'prepare-integrity-failed'
+  | 'prepare-release-changed'
   | 'prepare-lock-failed'
   | 'prepare-installation-failed'
   | null

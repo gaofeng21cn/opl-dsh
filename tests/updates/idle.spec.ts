@@ -604,4 +604,35 @@ describe('Host idle coordinator integration', () => {
     await f.controller.activity()
     expect((await f.controller.status()).restart?.phase).toBe('handoff')
   })
+
+  it('auto-refreshes and prepares the newer version when on-launch preparation hits release-changed', async () => {
+    const newerOffer: OplUpdateRelease = {
+      ...offer,
+      version: '0.3.1',
+      url: 'https://github.com/gaofeng21cn/opl-dsh/releases/tag/opl-dsh-v0.3.1',
+    }
+    const f = hostFixture({ policy: policy({ mode: 'on-launch' }) })
+    f.operations.prepare.mockRejectedValueOnce(
+      Object.assign(new Error('稳定发布版本已改变，请重新检查'), {
+        updateFailure: { stage: 'discovery', reason: 'release-changed' },
+      }),
+    )
+    f.operations.discover.mockResolvedValueOnce(newerOffer)
+    f.controller.start()
+    await f.controller.status()
+    await tick(5000)
+    expect(f.operations.prepare).toHaveBeenCalledTimes(2)
+    expect(f.operations.prepare).toHaveBeenNthCalledWith(1, expect.any(AbortSignal), offer.version)
+    expect(f.operations.prepare).toHaveBeenNthCalledWith(
+      2,
+      expect.any(AbortSignal),
+      newerOffer.version,
+    )
+    expect(await f.controller.status()).toMatchObject({
+      release: newerOffer,
+      pendingVersion: newerOffer.version,
+      error: null,
+      failure: null,
+    })
+  })
 })

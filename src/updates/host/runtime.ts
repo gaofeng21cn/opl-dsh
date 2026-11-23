@@ -7,7 +7,12 @@ import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { installationPaths } from '../../../installer/installation-paths.mjs'
 import type { Context } from '@deepseek-ai/cordis'
 import type { OplUpdatePolicy, OplUpdateRelease, OplUpdateStatus } from '../contracts.ts'
-import type { InstalledUpdateIdentity, UpdateOperations } from './controller.ts'
+import {
+  errorForFailure,
+  validFailure,
+  type InstalledUpdateIdentity,
+  type UpdateOperations,
+} from './controller.ts'
 import { defaultUpdatePolicy, storedUpdatePolicy } from './idle.ts'
 import type {} from './runtime-admission.ts'
 
@@ -45,12 +50,15 @@ export function restoreLaunchFailure(
   current: InstalledUpdateIdentity,
 ): unknown {
   if (!outcome || typeof outcome !== 'object' || !pending) return stored
-  const result = outcome as { state?: unknown; checkedAt?: unknown }
+  const result = outcome as { state?: unknown; checkedAt?: unknown; failure?: unknown }
   if (result.state !== 'deferred' || typeof result.checkedAt !== 'string') return stored
   const failedAt = Date.parse(result.checkedAt)
   const preparedAt = Date.parse(pending.preparedAt)
   if (!Number.isFinite(failedAt) || !Number.isFinite(preparedAt) || failedAt < preparedAt)
     return stored
+  const failure = validFailure(result.failure)
+    ? result.failure
+    : { stage: 'apply' as const, reason: 'unknown' as const }
   const row = stored && typeof stored === 'object' ? (stored as Partial<OplUpdateStatus>) : {}
   return {
     ...(row.installedVersion === current.suiteVersion &&
@@ -59,8 +67,8 @@ export function restoreLaunchFailure(
       : {}),
     installedVersion: current.suiteVersion,
     officialVersion: current.officialVersion,
-    error: 'prepare-failed',
-    failure: { stage: 'apply', reason: 'unknown' },
+    error: errorForFailure(failure),
+    failure,
   }
 }
 

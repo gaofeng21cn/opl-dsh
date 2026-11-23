@@ -1,10 +1,12 @@
 /** Apply a prepared update after the official Desktop and its Host have exited. */
 import { createHash, randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
+import { realpathSync } from 'node:fs'
 import { lstat, open, readFile, realpath, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { installationPaths } from './installation-paths.mjs'
+import { updateFailureError } from './update-errors.mjs'
 import { launchIndependent, quoteWindowsArgument } from './windows-lifecycle.mjs'
 import { readPreparedUpdate, refreshEnhancements } from './update.mjs'
 import {
@@ -39,9 +41,15 @@ function executable(application) {
 
 /** List only processes using this official executable; never expose their command lines. */
 function desktopProcesses(application) {
-  const target = resolve(executable(application))
+  const targets = new Set([resolve(executable(application))])
+  try {
+    targets.add(realpathSync(executable(application)))
+  } catch {
+    /* Fall back to the resolved path when the bundle cannot be realpath'd yet. */
+  }
   let result
   if (process.platform === 'win32') {
+    const normalizedTargets = new Set([...targets].map((value) => value.toLowerCase()))
     const code = [
       "$ErrorActionPreference = 'Stop'",
       'Get-CimInstance Win32_Process -Filter "Name = \'DeepSeek Harness.exe\'" |',
@@ -56,13 +64,14 @@ function desktopProcesses(application) {
       windowsHide: true,
       timeout: 15000,
     })
-    if (result.error || result.status !== 0) throw Error('无法检查桌面进程')
+    if (result.error || result.status !== 0)
+      throw updateFailureError(Error('无法检查桌面进程'), 'apply', 'installation')
     const parsed = result.stdout.trim() ? JSON.parse(result.stdout) : []
     return (Array.isArray(parsed) ? parsed : [parsed])
       .filter(
         (row) =>
           typeof row.ExecutablePath === 'string' &&
-          resolve(row.ExecutablePath).toLowerCase() === target.toLowerCase() &&
+          normalizedTargets.has(resolve(row.ExecutablePath).toLowerCase()) &&
           !String(row.CommandLine ?? '').includes('--opl-post-exit-update'),
       )
       .map((row) => row.ProcessId)
@@ -72,16 +81,17 @@ function desktopProcesses(application) {
     timeout: 15000,
     maxBuffer: 16 * 1024 * 1024,
   })
-  if (result.error || result.status !== 0) throw Error('无法检查桌面进程')
+  if (result.error || result.status !== 0)
+    throw updateFailureError(Error('无法检查桌面进程'), 'apply', 'installation')
+  const matchesTarget = (commandLine) => {
+    for (const target of targets)
+      if (commandLine === target || commandLine.startsWith(target + ' ')) return true
+    return false
+  }
   return result.stdout
     .split('\n')
     .map((line) => /^\s*(\d+)\s+(.*)$/u.exec(line))
-    .filter(
-      (row) =>
-        row &&
-        (row[2] === target || row[2].startsWith(target + ' ')) &&
-        !row[2].includes('--opl-post-exit-update'),
-    )
+    .filter((row) => row && matchesTarget(row[2]) && !row[2].includes('--opl-post-exit-update'))
     .map((row) => Number(row[1]))
 }
 
@@ -136,15 +146,16 @@ export async function armPostExitUpdate({
     },
   )
   if (resolve(current.app) !== resolve(application) || current.release !== dirname(script))
-    throw Error('更新进程与当前安装不匹配')
+    throw updateFailureError(Error('更新进程与当前安装不匹配'), 'apply', 'installation')
   if (
     !Number.isSafeInteger(hostPid) ||
     hostPid <= 1 ||
     !Number.isSafeInteger(desktopPid) ||
     desktopPid <= 1
   )
-    throw Error('无法核验桌面进程')
-  if (!desktopProcesses(application).includes(desktopPid)) throw Error('当前 Host 不属于该官方桌面')
+    throw updateFailureError(Error('无法核验桌面进程'), 'apply', 'installation')
+  if (!desktopProcesses(application).includes(desktopPid))
+    throw updateFailureError(Error('当前 Host 不属于该官方桌面'), 'apply', 'installation')
   if (!(await readPreparedUpdate(root))) return false
   const expected = await pendingDigest(root)
   if (!expected) return false
@@ -196,7 +207,7 @@ export async function armPostExitUpdate({
     (process.platform === 'win32' && started.guarantee !== 'job-independent')
   ) {
     if (wrapper) await unlink(wrapper).catch(() => {})
-    throw Error('无法启动退出后的更新进程')
+    throw updateFailureError(Error('无法启动退出后的更新进程'), 'apply', 'installation')
   }
   return true
 }

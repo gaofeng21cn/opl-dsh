@@ -59,6 +59,44 @@ test('classifies allow-listed system and DOM error identities without reading me
     ),
     { stage: 'acquire', reason: 'busy', systemCode: 'UPDATE-IN-PROGRESS' },
   )
+  assert.deepEqual(
+    describeUpdateFailure(
+      new TypeError('fetch failed', {
+        cause: new AggregateError(
+          [
+            Object.assign(new Error('connect ECONNREFUSED ::1:443'), { code: 'ECONNREFUSED' }),
+            Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:443'), {
+              code: 'ECONNREFUSED',
+            }),
+          ],
+          '',
+        ),
+      }),
+      'download',
+    ),
+    { stage: 'download', reason: 'network', systemCode: 'ECONNREFUSED' },
+  )
+  assert.deepEqual(
+    describeUpdateFailure(
+      new TypeError('fetch failed', {
+        cause: new AggregateError(
+          [Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' })],
+          '',
+        ),
+      }),
+      'download',
+    ),
+    { stage: 'download', reason: 'timeout', systemCode: 'ETIMEDOUT' },
+  )
+  assert.deepEqual(
+    describeUpdateFailure(
+      Object.assign(new Error('tls issuer missing'), {
+        code: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+      }),
+      'download',
+    ),
+    { stage: 'download', reason: 'network', systemCode: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' },
+  )
 })
 
 test('walks a bounded cause chain and ignores unapproved diagnostic fields', () => {

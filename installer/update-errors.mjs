@@ -42,13 +42,25 @@ const networkCodes = new Set([
   'ENETUNREACH',
   'ENOTFOUND',
   'EPIPE',
+  'EPROTO',
   'ERR_CERT_AUTHORITY_INVALID',
+  'ERR_SOCKET_CLOSED',
   'ERR_SSL_CERTIFICATE_VERIFY_FAILED',
+  'ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC',
+  'ERR_SSL_UNEXPECTED_EOF_WHILE_READING',
   'ERR_SSL_WRONG_VERSION_NUMBER',
+  'ERR_STREAM_PREMATURE_CLOSE',
   'ERR_TLS_CERT_ALTNAME_INVALID',
   'ERR_TLS_HANDSHAKE_TIMEOUT',
   'SELF_SIGNED_CERT_IN_CHAIN',
+  'CERT_REVOKED',
+  'CERT_UNTRUSTED',
+  'UND_ERR_ABORTED',
+  'UND_ERR_CLOSED',
+  'UND_ERR_DESTROYED',
   'UND_ERR_SOCKET',
+  'UNABLE_TO_GET_ISSUER_CERT',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
   'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
 ])
 
@@ -152,11 +164,19 @@ function safeDetails(value, fallbackStage) {
 function errorChain(error) {
   const chain = []
   const seen = new Set()
-  let current = error
-  while (current && typeof current === 'object' && chain.length < 8 && !seen.has(current)) {
-    chain.push(current)
+  const queue = [error]
+  while (queue.length > 0 && chain.length < 16) {
+    const current = queue.shift()
+    if (!current || typeof current !== 'object' || seen.has(current)) continue
     seen.add(current)
-    current = current.cause
+    chain.push(current)
+    if (current.cause && typeof current.cause === 'object' && !seen.has(current.cause))
+      queue.push(current.cause)
+    if (Array.isArray(current.errors)) {
+      for (const nested of current.errors) {
+        if (nested && typeof nested === 'object' && !seen.has(nested)) queue.push(nested)
+      }
+    }
   }
   return chain
 }

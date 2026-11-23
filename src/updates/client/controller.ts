@@ -141,7 +141,7 @@ export class UpdateController {
     if (
       !this.writable() ||
       this.view.status!.release?.compatibility !== 'enhancement' ||
-      this.view.status!.pendingVersion !== null
+      this.view.status!.pendingVersion === this.view.status!.release.version
     )
       return
     await this.run('prepare', () => this.config.api.prepare())

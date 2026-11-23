@@ -247,6 +247,7 @@ async function fixture(
     if (args[0] === '-e') return { status: 0, stdout: state.officialVersion }
     assert.ok(args.includes('--no-launch'))
     assert.ok(args.includes('--update-if-stopped'))
+    assert.equal(options.env.OPL_KIMI_CU_OFFLINE, '1')
     state.installs.push(args)
     state.installLaunchers.push(options.env.OPL_DESKTOP_LAUNCHER)
     const source = args[3],
@@ -704,6 +705,15 @@ test('stale identities, tampered plans and files, and every running profile defe
       const status = JSON.parse(await readFile(join(value.root, 'enhancement-update.json'), 'utf8'))
       assert.equal(status.state, 'deferred')
       assert.equal(status.trigger, 'prepared-launcher')
+      const expectedFailure =
+        scenario === 'running' || scenario === 'other-profile' || scenario === 'superagent-profile'
+          ? { stage: 'apply', reason: 'busy' }
+          : scenario === 'old-payload'
+            ? { stage: 'installation', reason: 'installation' }
+            : scenario === 'receipt' || scenario === 'official'
+              ? { stage: 'apply', reason: 'installation' }
+              : { stage: 'verify', reason: 'integrity' }
+      assert.deepEqual(status.failure, expectedFailure)
       await assert.rejects(readFile(join(value.root, 'enhancement-update.lock')), {
         code: 'ENOENT',
       })

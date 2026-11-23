@@ -219,7 +219,7 @@ describe('Host update discovery and preparation', () => {
         expect(f.operations.handoff).toHaveBeenCalledTimes(1)
       } else {
         expect(result).toMatchObject({
-          error: 'prepare-integrity-failed',
+          error: 'prepare-release-changed',
           failure: { stage: 'confirm', reason: 'release-changed' },
         })
         expect(f.operations.inspect).not.toHaveBeenCalled()
@@ -484,6 +484,61 @@ describe('Host update discovery and preparation', () => {
     expect((await f.controller.status()).installedVersion).toBe('0.2.55')
     expect(f.operations.load).toHaveBeenCalledTimes(2)
     expect((await f.controller.check()).release).toEqual(offer)
+    await f.controller.dispose()
+  })
+
+  it('refreshes the displayed release when preparation sees a newer release published', async () => {
+    const f = fixture()
+    const newerOffer: OplUpdateRelease = {
+      ...offer,
+      version: '0.3.1',
+      url: 'https://github.com/gaofeng21cn/opl-dsh/releases/tag/opl-dsh-v0.3.1',
+    }
+    await f.controller.check()
+    vi.mocked(f.operations.prepare).mockRejectedValueOnce(
+      Object.assign(new Error('稳定发布版本已改变，请重新检查'), {
+        updateFailure: { stage: 'discovery', reason: 'release-changed' },
+      }),
+    )
+    vi.mocked(f.operations.discover).mockResolvedValueOnce(newerOffer)
+    const result = await f.controller.prepare()
+    expect(result).toMatchObject({
+      error: 'prepare-release-changed',
+      failure: { stage: 'discovery', reason: 'release-changed' },
+      release: newerOffer,
+      pendingVersion: null,
+    })
+    await f.controller.dispose()
+  })
+
+  it('classifies post-download watcher arming failures under apply instead of download', async () => {
+    const f = fixture()
+    f.operations.armPending = vi.fn(async () => {
+      throw new Error('watcher spawn failed')
+    })
+    await f.controller.check()
+    const result = await f.controller.prepare()
+    expect(result).toMatchObject({
+      pendingVersion: offer.version,
+      error: 'prepare-failed',
+      failure: { stage: 'apply', reason: 'unknown' },
+    })
+    await f.controller.dispose()
+  })
+
+  it('refreshes runtime identity and pending state on check', async () => {
+    const f = fixture()
+    await f.controller.check()
+    await f.controller.prepare()
+    vi.mocked(f.operations.installed).mockResolvedValueOnce({
+      suiteVersion: '0.2.55',
+      officialVersion: '0.2.2-rc.5',
+      localCandidate: false,
+    })
+    vi.mocked(f.operations.pending).mockResolvedValueOnce(null)
+    const refreshed = await f.controller.check()
+    expect(refreshed.officialVersion).toBe('0.2.2-rc.5')
+    expect(refreshed.pendingVersion).toBeNull()
     await f.controller.dispose()
   })
 })

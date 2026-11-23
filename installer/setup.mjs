@@ -19,7 +19,7 @@ import { serveDesktopUpdate } from './desktop-update.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { openSync, closeSync, readFileSync } from 'node:fs'
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, unlink } from 'node:fs/promises'
 import { resolve } from 'node:path'
 const [home, root, application] = process.argv.slice(2)
 if (!home || !root || !application) throw new Error('缺少桌面启动路径')
@@ -66,6 +66,12 @@ if (Object.keys(existingLaunch).length) {
         : '另一套桌面仍在运行，拒绝覆盖启动记录。',
     )
   }
+  if (
+    process.platform !== 'win32' &&
+    typeof existingLaunch.endpoint === 'string' &&
+    /^\/tmp\/opl-u-[a-f0-9-]+\.sock$/u.test(existingLaunch.endpoint)
+  )
+    await unlink(existingLaunch.endpoint).catch(() => {})
 }
 const launchLease = await acquireSuiteLaunch(
   suiteRoot,
