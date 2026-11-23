@@ -147,6 +147,23 @@ export async function verifyModelPlugins({ root, origin, cookie, wire, harness }
     assert.equal(response.status, 200, 'Original model plugin API failed: ' + path)
     return response.json()
   }
+  for (const [path, headers, expected] of [
+    ['/summary', {}, 401],
+    ['/events', {}, 401],
+    ['/events', { cookie }, 200],
+  ]) {
+    const response = await fetch(origin + '/api/our-free-model' + path, {
+      headers,
+      redirect: 'error',
+      signal: AbortSignal.timeout(30000),
+    })
+    try {
+      assert.equal(response.status, expected, 'OFM admission failed: ' + path)
+      if (expected === 200) assert.match(response.headers.get('content-type'), /^text\/event-stream/)
+    } finally {
+      await response.body?.cancel()
+    }
+  }
   let summary
   for (let attempt = 0; attempt < 90; attempt++) {
     summary = await api('/summary')
