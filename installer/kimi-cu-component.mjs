@@ -1,6 +1,6 @@
 /** Version and update operations for the KimiCU installation used by the DSH Host. */
 import { execFileSync } from 'node:child_process'
-import { readFile, stat } from 'node:fs/promises'
+import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   compareStableVersions,
@@ -12,6 +12,7 @@ import {
   responseBytes,
 } from './kimi-cu.mjs'
 import {
+  discoverWindowsKimiCu,
   installWindowsKimiCu,
   windowsKimiCuRelease,
   WINDOWS_KIMI_CU_VERSION,
@@ -21,38 +22,20 @@ import { acquireSuiteMaintenance } from './update-transaction.mjs'
 
 const windowsFeed = 'https://cdn.kimi.com/kimi-computer-use-windows/latest/version.json'
 
-async function installed({ platform, suiteRoot, appPath = KIMI_CU_INSTALL_PATH }) {
-  if (platform === 'darwin') {
-    try {
-      await stat(appPath)
-    } catch (error) {
-      if (error.code === 'ENOENT') return null
-      throw error
-    }
-    const version = execFileSync(
-      '/usr/libexec/PlistBuddy',
-      ['-c', 'Print :CFBundleShortVersionString', join(appPath, 'Contents/Info.plist')],
-      { encoding: 'utf8', timeout: 5000 },
-    ).trim()
-    if (!parseStableVersion(version)) throw Error('无法识别已安装的 KimiCU 版本')
-    return version
+async function installedMac(appPath = KIMI_CU_INSTALL_PATH) {
+  try {
+    await stat(appPath)
+  } catch (error) {
+    if (error.code === 'ENOENT') return null
+    throw error
   }
-  for (const version of [WINDOWS_KIMI_CU_VERSION, '0.3.10']) {
-    const root = join(suiteRoot, 'kimi-cu', version)
-    try {
-      await stat(root)
-    } catch (error) {
-      if (error.code === 'ENOENT') continue
-      throw error
-    }
-    const plugin = JSON.parse(await readFile(join(root, 'plugin', 'kimi.plugin.json'), 'utf8'))
-    if (plugin.version !== version || plugin.name !== 'kimi-cu-win')
-      throw Error('已安装的 KimiCU 插件版本与目录不符')
-    for (const path of ['runtime/kimi-cu.exe', 'plugin/runtime/node-repl.exe'])
-      if (!(await stat(join(root, path))).isFile()) throw Error('KimiCU 安装不完整')
-    return version
-  }
-  return null
+  const version = execFileSync(
+    '/usr/libexec/PlistBuddy',
+    ['-c', 'Print :CFBundleShortVersionString', join(appPath, 'Contents/Info.plist')],
+    { encoding: 'utf8', timeout: 5000 },
+  ).trim()
+  if (!parseStableVersion(version)) throw Error('无法识别已安装的 KimiCU 版本')
+  return version
 }
 
 /** Read the selected installation. A remote error preserves its local version. */
@@ -62,6 +45,7 @@ export async function componentStatus({
   platform = process.platform,
   arch = process.arch,
   fetchImpl = fetch,
+  env = process.env,
   appPath,
   signal,
 } = {}) {
@@ -72,7 +56,13 @@ export async function componentStatus({
       !(platform === 'win32' && arch === 'x64')
     )
       throw Error('当前系统或架构不支持 KimiCU')
-    state.installedVersion = await installed({ platform, suiteRoot, appPath })
+    if (platform === 'win32') {
+      const installation = discoverWindowsKimiCu(suiteRoot, env)
+      state.installedVersion = installation?.version ?? null
+      if (installation?.external) return state
+    } else {
+      state.installedVersion = await installedMac(appPath)
+    }
   } catch {
     return { ...state, error: 'read-failed' }
   }

@@ -571,25 +571,19 @@ describe('independent Computer Use component updates', () => {
     await f.controller.dispose()
   })
 
-  it('honors the update policy after startup and user activity', async () => {
+  it('discovers the component on startup and waits for explicit installation under every Suite policy', async () => {
     vi.useFakeTimers()
     for (const mode of ['notify', 'on-launch', 'idle'] as const) {
       const f = setup(mode)
       f.controller.start()
       await f.controller.status()
       await vi.advanceTimersByTimeAsync(15_010)
-      expect(f.component.mock.calls.some(([action]) => action === 'install')).toBe(
-        mode === 'on-launch',
-      )
       await f.controller.activity()
-      await vi.advanceTimersByTimeAsync(59_999)
-      expect(f.component.mock.calls.some(([action]) => action === 'install')).toBe(
-        mode === 'on-launch',
-      )
-      await vi.advanceTimersByTimeAsync(10)
-      expect(f.component.mock.calls.some(([action]) => action === 'install')).toBe(
-        mode !== 'notify',
-      )
+      await vi.advanceTimersByTimeAsync(60_010)
+      expect(f.component.mock.calls.map(([a]) => a)).toEqual(['local', 'check'])
+      expect((await f.controller.status()).kimiCu?.available).toBe(true)
+      await f.controller.updateKimiCu()
+      expect(f.component.mock.calls.map(([a]) => a)).toEqual(['local', 'check', 'install'])
       await f.controller.dispose()
     }
   })
