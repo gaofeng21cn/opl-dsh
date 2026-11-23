@@ -1,3 +1,4 @@
+import { contextOwner } from '../../compat/host/context-owner.ts'
 /** Bounded, secret-free catalog observations for this process, keyed by account group. */
 import type { Context } from '@deepseek-ai/cordis'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
@@ -15,7 +16,7 @@ const observations = new WeakMap<object, Map<GatewayGroupId, GatewayCatalogStatu
 
 /** Latest listing observation; a stored key alone never marks a catalog ready. */
 export function gatewayCatalogStatus(ctx: Context, group: GatewayGroupId): GatewayCatalogStatus {
-  return observations.get(ctx.root ?? ctx)?.get(group) ?? { state: 'unverified' }
+  return observations.get(contextOwner(ctx))?.get(group) ?? { state: 'unverified' }
 }
 
 /** Record at most one observation per declared group, without keeping model data or auth. */
@@ -24,7 +25,7 @@ export function setGatewayCatalogStatus(
   group: GatewayGroupId,
   status: GatewayCatalogStatus,
 ): void {
-  const owner = ctx.root ?? ctx
+  const owner = contextOwner(ctx)
   let groups = observations.get(owner)
   if (!groups) observations.set(owner, (groups = new Map()))
   groups.set(group, status)
@@ -32,7 +33,7 @@ export function setGatewayCatalogStatus(
 
 /** Remove observations when switching accounts, signing out, or resetting one group. */
 export function clearGatewayCatalogStatus(ctx: Context, group?: GatewayGroupId): void {
-  const owner = ctx.root ?? ctx
+  const owner = contextOwner(ctx)
   if (group === undefined) {
     observations.delete(owner)
     return
