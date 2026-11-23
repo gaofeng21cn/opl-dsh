@@ -8,14 +8,14 @@ export const nativeShellLabels = {
   zh: {
     title: 'DSH 使用 Git Bash',
     description:
-      '仅限 Windows。默认使用官方 PowerShell；启用后，standard、cordis、ptc 预设的 Shell 工具使用 Git Bash；minimal 的持久终端保持官方配置。关闭时恢复原配置。停止活动任务后可保存，重启 OPL DSH 后生效。',
+      '默认使用官方 PowerShell；启用后，standard、cordis、ptc 预设的 Shell 工具使用 Git Bash；minimal 的持久终端保持官方配置。关闭时恢复原配置。停止活动任务后可保存，重启 OPL DSH 后生效。',
     failed: 'Shell 设置未能保存，请重试。',
     restart: '已保存，重启 OPL DSH 后生效。',
   },
   en: {
     title: 'Use Git Bash for DSH',
     description:
-      'Windows only. Official PowerShell is the default. Enable Git Bash for standard, cordis and ptc shell tools; minimal persistent terminals retain official settings. Turning it off restores the original configuration. Stop active tasks before saving. Restart OPL DSH to apply.',
+      'Official PowerShell is the default. Enable Git Bash for standard, cordis and ptc shell tools; minimal persistent terminals retain official settings. Turning it off restores the original configuration. Stop active tasks before saving. Restart OPL DSH to apply.',
     failed: 'Could not save the shell preference. Please try again.',
     restart: 'Saved. Restart OPL DSH to apply.',
   },
