@@ -387,10 +387,17 @@ test('old, incompatible and no-longer-accepted releases never download the ZIP',
         release.release.assets[1].digest = 'sha256:' + hash(release.manifestBytes)
       }
       const calls = remote(t, release)
+      const expectedFailure =
+        scenario === 'same' || scenario === 'older' || scenario === 'expected'
+          ? { stage: 'discovery', reason: 'release-changed' }
+          : scenario === 'original-protocol'
+            ? { stage: 'installation', reason: 'installation' }
+            : { stage: 'discovery', reason: 'installation' }
       await assert.rejects(
         prepareUpdate(value.root, value.application, {
           expectedVersion: scenario === 'expected' ? '0.2.57' : undefined,
         }),
+        { updateFailure: expectedFailure },
       )
       assert.equal(calls.length, 2)
       assert.equal(await readPreparedUpdate(value.root), null)
@@ -424,11 +431,24 @@ test('uses the installed Desktop for platform compatibility while retaining the 
 test('refuses a foreign application before network access and a mismatched release before downloading the ZIP', async (t) => {
   const value = await fixture(t),
     calls = remote(t, releaseFixture())
-  await assert.rejects(prepareUpdate(value.root, join(value.root, 'foreign-app')), /原安装/)
+  await assert.rejects(prepareUpdate(value.root, join(value.root, 'foreign-app')), {
+    message: /原安装/,
+    updateFailure: { stage: 'installation', reason: 'installation' },
+  })
   assert.equal(calls.length, 0)
-  value.state.officialVersion = '0.2.2-rc.2'
-  await assert.rejects(prepareUpdate(value.root, value.application), /完整套件/)
+  await writeFile(join(value.receipt.release, 'unlisted-installed-file.ps1'), 'extra file')
+  await assert.rejects(prepareUpdate(value.root, value.application), {
+    message: /清单以外/,
+    updateFailure: { stage: 'installation', reason: 'installation' },
+  })
   assert.equal(calls.length, 2)
+  await rm(join(value.receipt.release, 'unlisted-installed-file.ps1'))
+  value.state.officialVersion = '0.2.2-rc.2'
+  await assert.rejects(prepareUpdate(value.root, value.application), {
+    message: /完整套件/,
+    updateFailure: { stage: 'discovery', reason: 'installation' },
+  })
+  assert.equal(calls.length, 4)
   assert.equal(value.state.installs.length, 0)
 })
 
@@ -556,6 +576,9 @@ test('network errors, wrong ZIP digests and cancelled downloads leave the origin
       })
       await assert.rejects(
         prepareUpdate(value.root, value.application, { signal: controller.signal }),
+        scenario === 'changed-installation'
+          ? { updateFailure: { stage: 'confirm', reason: 'installation' } }
+          : undefined,
       )
       assert.equal(await readPreparedUpdate(value.root), null)
       assert.equal(value.state.installs.length, 0)
@@ -694,7 +717,10 @@ test('a live updater lock prevents concurrent prepare and cancel without changin
   await prepareUpdate(value.root, value.application)
   const accepted = await readFile(pendingFile(value.root), 'utf8')
   await writeFile(join(value.root, 'enhancement-update.lock'), JSON.stringify({ pid: process.pid }))
-  await assert.rejects(prepareUpdate(value.root, value.application), /正在进行/)
+  await assert.rejects(prepareUpdate(value.root, value.application), {
+    message: /正在进行/,
+    updateFailure: { stage: 'acquire', reason: 'busy' },
+  })
   await assert.rejects(cancelPreparedUpdate(value.root), /正在进行/)
   await refreshEnhancements(value.root, value.application)
   assert.equal(await readFile(pendingFile(value.root), 'utf8'), accepted)

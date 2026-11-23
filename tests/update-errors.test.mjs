@@ -52,6 +52,13 @@ test('classifies allow-listed system and DOM error identities without reading me
     ),
     { stage: 'download', reason: 'network', systemCode: 'ERR_TLS_CERT_ALTNAME_INVALID' },
   )
+  assert.deepEqual(
+    describeUpdateFailure(
+      Object.assign(new Error('update-in-progress'), { code: 'update-in-progress' }),
+      'acquire',
+    ),
+    { stage: 'acquire', reason: 'busy', systemCode: 'UPDATE-IN-PROGRESS' },
+  )
 })
 
 test('walks a bounded cause chain and ignores unapproved diagnostic fields', () => {
@@ -94,6 +101,7 @@ test('wraps failures while retaining message, name and cause', () => {
   const wrapped = updateFailureError(cause, 'download')
   assert.equal(wrapped.message, cause.message)
   assert.equal(wrapped.name, cause.name)
+  assert.equal(wrapped.code, cause.code)
   assert.equal(wrapped.cause, cause)
   assert.deepEqual(wrapped.updateFailure, {
     stage: 'download',

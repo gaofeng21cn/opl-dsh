@@ -4,7 +4,7 @@ import {
   pluginNamespaces,
 } from './scripts/build-feature-plugins.mjs'
 /** Build a self-contained enhancement tarball; DSH services stay runtime peers. */
-import { mkdir, readFile, writeFile, cp, rm } from 'node:fs/promises'
+import { mkdir, readdir, readFile, writeFile, cp, rm } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { build } from 'esbuild'
@@ -268,6 +268,7 @@ for (const file of [
   'release-manifest.mjs',
   'skill-install.mjs',
   'installation-paths.mjs',
+  'installation-paths.d.mts',
   'skill/SKILL.md',
   'skill/control.mjs',
   'skill/windows-acl.mjs',
@@ -299,6 +300,18 @@ for (const file of [
     .update(await readFile(join(installer, file)))
     .digest('hex')
 }
+async function listFiles(directory, prefix = '') {
+  const found = []
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name
+    if (entry.isDirectory()) found.push(...(await listFiles(join(directory, entry.name), relative)))
+    else found.push(relative)
+  }
+  return found
+}
+const unlisted = (await listFiles(installer)).filter((file) => !Object.hasOwn(payloadFiles, file))
+if (unlisted.length > 0)
+  throw Error(`Unlisted installer payload files: ${unlisted.sort().join(', ')}`)
 const suiteSha256 = createHash('sha256').update(JSON.stringify(payloadFiles)).digest('hex')
 const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
   cwd: root,

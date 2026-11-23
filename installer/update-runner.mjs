@@ -92,7 +92,8 @@ async function verifyArtifact(path) {
   for (const name of ['setup.mjs', 'update.mjs', 'update-runner.mjs', 'update-transaction.mjs'])
     if (!Object.hasOwn(artifact.payloadFiles, name)) throw failure('unattended-update-unsupported')
   const names = new Set()
-  const actual = new Set(['artifact.json'])
+  // Older packages include this declaration alongside the hashed runtime files.
+  const actual = new Set(['artifact.json', 'installation-paths.d.mts'])
   let size = 0
   for (const [name, hash] of Object.entries(artifact.payloadFiles)) {
     payloadPath(name)

@@ -52,7 +52,14 @@ const networkCodes = new Set([
   'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
 ])
 
-const busyCodes = new Set(['ERR_BUSY', 'ERR_UPDATE_IN_PROGRESS', 'SUITE-OPERATION-BUSY'])
+const busyCodes = new Set([
+  'ERR_BUSY',
+  'ERR_UPDATE_IN_PROGRESS',
+  'SUITE-OPERATION-BUSY',
+  'UPDATE-IN-PROGRESS',
+  'SUITE-LAUNCH-IN-PROGRESS',
+  'SUITE-UPDATE-IN-PROGRESS',
+])
 
 const filesystemCodes = new Set([
   'EACCES',
@@ -219,6 +226,7 @@ export function updateFailureError(error, stage, reason) {
   const message = row && typeof row.message === 'string' ? row.message : String(error)
   const wrapped = new Error(message, { cause: error })
   if (row && typeof row.name === 'string') wrapped.name = row.name
+  if (row && typeof row.code === 'string') wrapped.code = row.code
   Object.defineProperty(wrapped, 'updateFailure', {
     value: details,
     enumerable: true,

@@ -16,7 +16,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import childProcess from 'node:child_process'
 import { inflateRawSync, crc32 } from 'node:zlib'
 import { installationPaths } from './installation-paths.mjs'
-import { updateFailureError } from './update-errors.mjs'
+import { describeUpdateFailure, updateFailureError } from './update-errors.mjs'
 import {
   acquireSuiteMaintenance,
   assertUpdateTransaction,
@@ -39,6 +39,15 @@ const pendingName = 'enhancement-pending.json'
 const stagePattern = /^prepared-[a-f0-9]{64}-[a-zA-Z0-9]+$/u
 const maxExpandedSize = 256 * 1024 * 1024
 const maxPendingSize = 1024 * 1024
+
+function prepareFailure(error, stage, fallbackReason) {
+  const described = describeUpdateFailure(error, stage)
+  return updateFailureError(
+    error,
+    stage,
+    described.reason === 'unknown' ? fallbackReason : undefined,
+  )
+}
 
 /** An explicit candidate installation remains identifiable until the user replaces it. */
 export function isLocalCandidateInstall(artifact, flags) {
@@ -137,7 +146,7 @@ async function lockEnhancementUpdate(root) {
       const bytes = await regularFile(path, 1024)
       const record = JSON.parse(bytes.toString('utf8'))
       const pid = typeof record === 'number' ? record : record.pid
-      if (alive(pid)) throw Error('另一项增强更新正在进行')
+      if (alive(pid)) throw updateFailureError(Error('另一项增强更新正在进行'), 'acquire', 'busy')
       // Serialize stale-lock removal and reread the owner after acquiring it.
       const recoveryPath = `${path}.recovery`
       const recovery = await open(recoveryPath, 'wx', 0o600)
@@ -146,7 +155,7 @@ async function lockEnhancementUpdate(root) {
         if (latest !== null) {
           const owner = JSON.parse(latest.toString('utf8'))
           if (alive(typeof owner === 'number' ? owner : owner.pid))
-            throw Error('另一项增强更新正在进行')
+            throw updateFailureError(Error('另一项增强更新正在进行'), 'acquire', 'busy')
           await unlink(path)
         }
       } finally {
@@ -155,7 +164,7 @@ async function lockEnhancementUpdate(root) {
       }
     }
   }
-  throw Error('无法取得增强更新锁')
+  throw updateFailureError(Error('无法取得增强更新锁'), 'acquire', 'busy')
 }
 
 async function installed(root, application) {
@@ -450,32 +459,53 @@ export async function readPreparedUpdate(root, actualOfficialVersion) {
 
 /** Download and verify a newer compatible release without executing its installer. */
 export async function prepareUpdate(root, application, { signal, expectedVersion } = {}) {
-  const unlock = await lockUpdate(root)
+  let unlock
+  try {
+    unlock = await lockUpdate(root)
+  } catch (error) {
+    throw prepareFailure(error, 'acquire', 'filesystem')
+  }
   let stage
   try {
     signal?.throwIfAborted()
-    const { current, bytes: installationBytes } = await installed(root, application)
-    const officialVersion = readOfficialVersion(application)
+    let current, installationBytes, officialVersion
+    try {
+      ;({ current, bytes: installationBytes } = await installed(root, application))
+      officialVersion = readOfficialVersion(application)
+    } catch (error) {
+      throw prepareFailure(error, 'installation', 'installation')
+    }
     const { release, metadata } = await checkRelease(
       { ...current, officialVersion, platform: process.platform, arch: process.arch },
       { signal },
     )
-    if (!release) throw Error('没有更新的稳定增强版本')
+    if (!release)
+      throw updateFailureError(Error('没有更新的稳定增强版本'), 'discovery', 'release-changed')
     if (expectedVersion !== undefined && release.version !== expectedVersion)
-      throw Error('稳定发布版本已改变，请重新检查')
-    if (release.compatibility !== 'enhancement') throw Error('此版本需要安装完整套件')
-    const previous = await verifyDirectory(current.release, {
-      version: current.suiteVersion,
-      officialVersion,
-      allowOfficialVersionMismatch: true,
-    })
-    if (previous.artifact.updateProtocolVersion !== 1)
-      throw Error('原安装需要重新安装完整套件以启用安全更新')
-    if (
-      current.suiteSha256 !== previous.artifact.suiteSha256 ||
-      current.enhancementSha256 !== previous.artifact.sha256
-    )
-      throw Error('原安装文件与安装回执不符')
+      throw updateFailureError(
+        Error('稳定发布版本已改变，请重新检查'),
+        'discovery',
+        'release-changed',
+      )
+    if (release.compatibility !== 'enhancement')
+      throw updateFailureError(Error('此版本需要安装完整套件'), 'discovery', 'installation')
+    let previous
+    try {
+      previous = await verifyDirectory(current.release, {
+        version: current.suiteVersion,
+        officialVersion,
+        allowOfficialVersionMismatch: true,
+      })
+      if (previous.artifact.updateProtocolVersion !== 1)
+        throw Error('原安装需要重新安装完整套件以启用安全更新')
+      if (
+        current.suiteSha256 !== previous.artifact.suiteSha256 ||
+        current.enhancementSha256 !== previous.artifact.sha256
+      )
+        throw Error('原安装文件与安装回执不符')
+    } catch (error) {
+      throw prepareFailure(error, 'installation', 'installation')
+    }
     const archive = await downloadReleaseAsset(metadata.asset, { signal })
     let entries, artifact
     try {
@@ -489,37 +519,49 @@ export async function prepareUpdate(root, application, { signal, expectedVersion
     } catch (error) {
       throw updateFailureError(error, 'verify', 'integrity')
     }
-    const updates = join(root, 'updates')
-    await mkdir(updates, { recursive: true, mode: 0o700 })
-    await directory(updates)
-    stage = await mkdtemp(join(updates, `prepared-${digest(archive)}-`))
-    const payload = join(stage, 'payload')
-    await mkdir(payload, { mode: 0o700 })
-    for (const [path, bytes] of entries) {
-      await mkdir(dirname(join(payload, path)), { recursive: true, mode: 0o700 })
-      await writeFile(join(payload, path), bytes, { mode: 0o600, flag: 'wx' })
+    try {
+      const updates = join(root, 'updates')
+      await mkdir(updates, { recursive: true, mode: 0o700 })
+      await directory(updates)
+      stage = await mkdtemp(join(updates, `prepared-${digest(archive)}-`))
+      const payload = join(stage, 'payload')
+      await mkdir(payload, { mode: 0o700 })
+      for (const [path, bytes] of entries) {
+        await mkdir(dirname(join(payload, path)), { recursive: true, mode: 0o700 })
+        await writeFile(join(payload, path), bytes, { mode: 0o600, flag: 'wx' })
+      }
+      await writeFile(join(stage, 'payload.zip'), archive, { mode: 0o600, flag: 'wx' })
+    } catch (error) {
+      throw prepareFailure(error, 'stage', 'filesystem')
     }
-    await writeFile(join(stage, 'payload.zip'), archive, { mode: 0o600, flag: 'wx' })
     signal?.throwIfAborted()
-    if (
-      digest((await installed(root, application)).bytes) !== digest(installationBytes) ||
-      readOfficialVersion(application) !== officialVersion
-    )
-      throw Error('下载期间原安装已改变')
+    try {
+      if (
+        digest((await installed(root, application)).bytes) !== digest(installationBytes) ||
+        readOfficialVersion(application) !== officialVersion
+      )
+        throw Error('下载期间原安装已改变')
+    } catch (error) {
+      throw prepareFailure(error, 'confirm', 'installation')
+    }
     const preparedAt = new Date().toISOString()
-    await atomicJson(join(root, pendingName), {
-      schemaVersion: 1,
-      version: release.version,
-      officialVersion,
-      preparedAt,
-      application: resolve(application),
-      stage: basename(stage),
-      installationSha256: digest(installationBytes),
-      originalArtifactSha256: previous.artifactSha256,
-      artifactSha256: digest(entries.get('artifact.json')),
-      suiteSha256: artifact.suiteSha256,
-      metadata,
-    })
+    try {
+      await atomicJson(join(root, pendingName), {
+        schemaVersion: 1,
+        version: release.version,
+        officialVersion,
+        preparedAt,
+        application: resolve(application),
+        stage: basename(stage),
+        installationSha256: digest(installationBytes),
+        originalArtifactSha256: previous.artifactSha256,
+        artifactSha256: digest(entries.get('artifact.json')),
+        suiteSha256: artifact.suiteSha256,
+        metadata,
+      })
+    } catch (error) {
+      throw prepareFailure(error, 'save', 'filesystem')
+    }
     stage = undefined
     return { version: release.version, preparedAt, release }
   } finally {

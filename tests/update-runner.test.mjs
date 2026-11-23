@@ -64,7 +64,12 @@ async function writeJson(path, value) {
   await writeFile(path, JSON.stringify(value) + '\n')
 }
 
-async function artifact(directory, version, patch = {}, omitUpdateErrors = false) {
+async function artifact(
+  directory,
+  version,
+  patch = {},
+  { omitUpdateErrors = false, omitInstallationPathsDeclaration = false } = {},
+) {
   await mkdir(directory, { recursive: true })
   const name = `opl-dsh-enhancements-${version}.tgz`
   const payloadFiles = {}
@@ -77,6 +82,7 @@ async function artifact(directory, version, patch = {}, omitUpdateErrors = false
     'setup.mjs',
     'update.mjs',
     'update-errors.mjs',
+    'installation-paths.d.mts',
     'skill-install.mjs',
     'migrate.cjs',
     'update-runner.mjs',
@@ -84,6 +90,7 @@ async function artifact(directory, version, patch = {}, omitUpdateErrors = false
     name,
   ]) {
     if (omitUpdateErrors && file === 'update-errors.mjs') continue
+    if (omitInstallationPathsDeclaration && file === 'installation-paths.d.mts') continue
     const content = `${version}: ${file}\n`
     await writeFile(join(directory, file), content)
     payloadFiles[file] = digest(content)
@@ -149,6 +156,7 @@ async function fixture(
     targetPatch,
     manifestPatch,
     omitUpdateErrors = false,
+    omitInstallationPathsDeclaration = false,
     receiptOfficialVersion = officialVersion,
   } = {},
 ) {
@@ -160,7 +168,10 @@ async function fixture(
   await mkdir(join(profileHome, 'profiles/desktop'), { recursive: true })
   await mkdir(join(root, 'updates'))
   const originalSource = join(root, 'source')
-  const source = await artifact(originalSource, '0.2.55', sourcePatch, omitUpdateErrors)
+  const source = await artifact(originalSource, '0.2.55', sourcePatch, {
+    omitUpdateErrors,
+    omitInstallationPathsDeclaration,
+  })
   const release = join(root, 'releases', source.suiteSha256)
   await mkdir(join(root, 'releases'))
   await cp(originalSource, release, { recursive: true })
@@ -180,7 +191,10 @@ async function fixture(
   }
   await writeJson(join(root, 'installation.json'), receipt)
   const stagedPayload = join(root, 'target-payload')
-  const target = await artifact(stagedPayload, '0.2.56', targetPatch, omitUpdateErrors)
+  const target = await artifact(stagedPayload, '0.2.56', targetPatch, {
+    omitUpdateErrors,
+    omitInstallationPathsDeclaration,
+  })
   const archive = await zipArtifact(stagedPayload, target)
   const stageName = `prepared-${digest(archive)}-fixture1`
   const stage = join(root, 'updates', stageName)
@@ -330,6 +344,34 @@ test('a listed update-errors helper still rejects changed content in installed o
     const value = await fixture(t)
     const directory = target === 'installed' ? value.receipt.release : join(value.stage, 'payload')
     await writeFile(join(directory, 'update-errors.mjs'), 'tampered helper\n')
+    await assert.rejects(value.prepare(), { code: 'update-payload-changed' })
+  }
+})
+
+test('older packages with an unlisted installation-paths declaration still prepare an unattended update', async (t) => {
+  const value = await fixture(t, { omitInstallationPathsDeclaration: true })
+  for (const directory of [value.receipt.release, join(value.stage, 'payload')]) {
+    await writeFile(
+      join(directory, 'installation-paths.d.mts'),
+      'export function installationPaths(): unknown\n',
+    )
+    assert.equal(
+      Object.hasOwn(
+        (await json(join(directory, 'artifact.json'))).payloadFiles,
+        'installation-paths.d.mts',
+      ),
+      false,
+    )
+  }
+  const lease = await value.prepare()
+  await finishUpdateTransaction(value.root, lease, { stage: 'cancelled' })
+})
+
+test('a listed installation-paths declaration rejects changed content in installed or staged artifacts', async (t) => {
+  for (const target of ['installed', 'staged']) {
+    const value = await fixture(t)
+    const directory = target === 'installed' ? value.receipt.release : join(value.stage, 'payload')
+    await writeFile(join(directory, 'installation-paths.d.mts'), 'tampered declaration\n')
     await assert.rejects(value.prepare(), { code: 'update-payload-changed' })
   }
 })

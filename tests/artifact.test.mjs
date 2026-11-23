@@ -2,7 +2,8 @@
 import { test } from 'node:test'
 import { parse } from 'yaml'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -147,4 +148,28 @@ test('three real packages own distinct Host and Client lifecycles', async () => 
   assert.doesNotMatch(executionHost, /new OfficialCollaborationBridge/)
   assert.match(collaborationHost, /OfficialCollaborationBridge/)
   assert.match(collaborationHost, /DomainAgentPresetService/)
+})
+
+test('installer directory files match artifact payloadFiles exactly', async () => {
+  const installerDir = fileURLToPath(new URL('OPL DSH 一键安装/', output))
+  const manifest = JSON.parse(await readFile(join(installerDir, 'artifact.json'), 'utf8'))
+  const actual = new Map()
+  async function walk(directory, prefix = '') {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name
+      if (entry.isDirectory()) await walk(join(directory, entry.name), relative)
+      else actual.set(relative, await readFile(join(directory, entry.name)))
+    }
+  }
+  await walk(installerDir)
+  assert.ok(actual.has('artifact.json'))
+  actual.delete('artifact.json')
+  assert.deepEqual([...actual.keys()].sort(), Object.keys(manifest.payloadFiles).sort())
+  assert.ok(Object.hasOwn(manifest.payloadFiles, 'installation-paths.d.mts'))
+  assert.ok(Object.hasOwn(manifest.payloadFiles, 'cleanup-skill/quit-windows.ps1'))
+  for (const [relative, expected] of Object.entries(manifest.payloadFiles)) {
+    const content = actual.get(relative)
+    assert.ok(content, `missing installer payload file ${relative}`)
+    assert.equal(createHash('sha256').update(content).digest('hex'), expected, relative)
+  }
 })
