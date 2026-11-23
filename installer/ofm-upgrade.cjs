@@ -521,6 +521,7 @@ async function migrateOfmLink({ dir, install, plugin, fetchImpl, restoreBundles 
       if ((await realpath(before.packageDir)) !== (await realpath(target)))
         throw transactionError('invalid-ofm-link', 'OFM 链接目标不匹配')
       if (before.managed) throw transactionError('invalid-ofm-link', 'OFM 目标仍有包管理器硬链接')
+      await require('./ofm-desktop-admission.cjs').applyDesktopAdmission(root, before.installedVersion)
       return { phase: 'skipped', reason: 'self-managed-link', version: before.installedVersion }
     }
     // Only migrate the suite's exact retained vendor archive dependency.
@@ -612,6 +613,7 @@ async function migrateOfmLink({ dir, install, plugin, fetchImpl, restoreBundles 
       after.managed
     )
       throw transactionError('invalid-ofm-link', '官方 pnpm 未登记预期的 OFM 链接')
+    await require('./ofm-desktop-admission.cjs').applyDesktopAdmission(root, metadata.version)
     await saveState(root, {
       schemaVersion: 1,
       phase: 'succeeded',

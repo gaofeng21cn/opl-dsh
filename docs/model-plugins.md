@@ -1,6 +1,8 @@
 # 第三方模型插件
 
-OPL 安装器通过官方插件管理器接入原版 [Our Free Model](https://github.com/Ebony-Vinyl/dsh-our-free-model)。首次安装使用官方 `v2.8.3` 完整发布包，验证固定 SHA-256 后保存到 profile 的 `vendor/` 目录，供安装和后续修复使用；不重新打包、不修改源码，也不裁剪账号渠道、工具输出压缩、自动续跑和设置页面。下载或摘要校验失败时停止安装，不使用旧版源码包替代。
+OPL 安装器通过官方插件管理器接入 [Our Free Model](https://github.com/Ebony-Vinyl/dsh-our-free-model)。首次安装使用官方 `v2.8.3` 完整发布包，验证固定 SHA-256 后保存到 profile 的 `vendor/` 目录，供安装和后续修复使用。下载或摘要校验失败时停止安装，不使用旧版源码包替代。
+
+为兼容官方 DSH 0.2.3 的桌面身份验证，OPL 在安装或修复时识别 OFM 2.8.3 和 2.9.0 的已知官方文件，只对独立程序目录内的两个文件应用[管理接口修正](https://github.com/Ebony-Vinyl/dsh-our-free-model/pull/911)。用户修改过的文件会保留。如果从 OFM 页面更新后再次遇到管理接口返回 503，可重新运行 OPL 安装器修复上述已知版本。
 
 OPL 为 OFM 使用 profile 内的独立程序目录，通过官方插件管理器以相对 `link:` 依赖登记。OFM 页面保留原版检查更新、升级与热重载功能；程序文件由 OFM 自己更新，pnpm 只管理链接。OPL 重装保留该目录和已升级版本，不用安装器固定版本覆盖它。插件的数据、账号和其他设置仍由 OFM 在原数据位置管理。
 

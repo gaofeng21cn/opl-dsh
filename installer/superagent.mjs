@@ -238,9 +238,19 @@ export async function openSuperagent(installed, { start, open = openLoginPage } 
         const binding = await read(join(profile, 'control.json'))
         const candidate = await authenticatedSetupUrl(binding)
         const url = new URL('/orchestrator/api/state', candidate)
+        const signal = AbortSignal.timeout(2000)
+        const login = await fetch(candidate, { redirect: 'manual', signal })
+        const cookie = login.headers
+          .getSetCookie()
+          .map((item) => item.split(';', 1)[0])
+          .join('; ')
+        await login.body?.cancel()
+        if (![302, 303].includes(login.status) || !cookie)
+          throw Error('SuperAgent 桌面认证尚未完成')
         const response = await fetch(url, {
-          headers: { 'x-orchestrator-request': '1' },
-          signal: AbortSignal.timeout(2000),
+          headers: { 'x-orchestrator-request': '1', cookie },
+          redirect: 'error',
+          signal,
         })
         const state = await response.json()
         if (

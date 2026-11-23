@@ -32,6 +32,12 @@ test(
         )
         return
       }
+      if (req.url === '/') {
+        res.writeHead(302, { 'set-cookie': 'session=test-owner; HttpOnly', location: '/' })
+        res.end()
+        return
+      }
+      assert.equal(req.headers.cookie, 'session=test-owner')
       assert.equal(req.url, '/orchestrator/api/state')
       assert.equal(req.headers['x-orchestrator-request'], '1')
       res.end(JSON.stringify({ setup: { machine: { stateDir: join(root, 'state') } } }))
