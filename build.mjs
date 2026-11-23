@@ -248,6 +248,7 @@ for (const file of [
   'split-plugins.cjs',
   'queue-onboarding.cjs',
   'ofm-upgrade.cjs',
+  'ofm-desktop-admission.cjs',
   'ofm-owner.cjs',
   'kimi-cu.mjs',
   'kimi-cu-windows.mjs',
