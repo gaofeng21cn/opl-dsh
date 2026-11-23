@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { FixedWindowTitleRow, type WindowTitleSettings } from './FixedWindowTitleRow.tsx'
+import { isWindowsDesktop } from '../../shared/client/windows-desktop.ts'
 import { installFixedWindowTitle } from './title.ts'
 import { WINDOW_TITLE_NAMESPACE, zh, en, type WindowTitleLocaleKey } from './locales.ts'
 
@@ -13,8 +14,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 export const inject = ['slots', 'locale', 'configForms']
 
-/** Install the fixed-title observer and expose its setting in General settings. */
+/** Install the Windows taskbar title override and its General setting. */
 export function apply(ctx: Context): void {
+  if (!isWindowsDesktop()) return
   ctx.effect(() => ctx.locale.register(WINDOW_TITLE_NAMESPACE, { zh, en }))
   const form = ctx.configForms.get<WindowTitleSettings>('opl-suite')
   const title = installFixedWindowTitle(
