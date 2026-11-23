@@ -112,7 +112,12 @@
   flex: 1;
   min-width: 0;
 }
+.choiceRow:has(.remove) .item {
+  flex: 0 1 auto;
+}
 .remove {
+  flex: none;
+  white-space: nowrap;
   border: 0;
   padding: 0;
   background: transparent;
