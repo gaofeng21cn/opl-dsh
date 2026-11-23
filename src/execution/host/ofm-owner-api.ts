@@ -1,3 +1,4 @@
+import { authenticatedEntry } from '../../compat/host/browser-entry.ts'
 /** Authenticated OFM management reads stay inside the Host and never enter model output. */
 import { symbols, type Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-connection'
@@ -67,7 +68,7 @@ export function createOfmOwnerApiReader(ctx: Context, timeoutMs: number): OfmOwn
         stage = '服务身份'
         current()
         stage = '认证地址解析'
-        const login = new URL(connection.authenticatedUrl(new URL('/', origin).href))
+        const login = new URL(authenticatedEntry(ctx, new URL('/', origin)))
         stage = '认证地址校验'
         if (login.origin !== origin.origin) {
           stage = '认证地址来源'
