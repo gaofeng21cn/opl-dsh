@@ -1,8 +1,8 @@
 /** Windows code-mode frontend shipped in the signed KimiCU plugin. */
-import { statSync, readFileSync } from 'node:fs'
+import { existsSync, statSync, readFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 
-export const WINCU_VERSION = '0.3.10'
+export const WINCU_VERSION = '0.3.13'
 export const WINCU_ACTIONS = [
   'list_apps',
   'list_windows',
@@ -24,9 +24,16 @@ export type WinCuAction = (typeof WINCU_ACTIONS)[number]
 
 /** Resolve the complete installed plugin; never treat the native Agent as an MCP executable. */
 export function windowsKimiCuLaunch(env: NodeJS.ProcessEnv = process.env) {
+  const managed = env.OPL_SUITE_ROOT && join(env.OPL_SUITE_ROOT, 'kimi-cu')
+  const managedRoot =
+    managed &&
+    [WINCU_VERSION, '0.3.10']
+      .map((version) => join(managed, version))
+      .find((path) => existsSync(join(path, 'plugin', 'kimi.plugin.json')))
   const root =
-    env.OPL_KIMI_CU_WINDOWS_ROOT ??
-    (env.LOCALAPPDATA ? join(env.LOCALAPPDATA, 'Kimi Computer Use', 'opl', WINCU_VERSION) : '')
+    managedRoot ||
+    (env.OPL_KIMI_CU_WINDOWS_ROOT ??
+      (env.LOCALAPPDATA ? join(env.LOCALAPPDATA, 'Kimi Computer Use', 'opl', WINCU_VERSION) : ''))
   if (!isAbsolute(root)) throw Error('WinCU 安装目录无效，请重新安装 Windows KimiCU 组件。')
   const plugin = join(root, 'plugin')
   const executable = join(plugin, 'runtime', 'node-repl.exe')
@@ -43,7 +50,7 @@ export function windowsKimiCuLaunch(env: NodeJS.ProcessEnv = process.env) {
   const manifest = JSON.parse(readFileSync(join(plugin, 'kimi.plugin.json'), 'utf8'))
   if (
     manifest.name !== 'kimi-cu-win' ||
-    manifest.version !== WINCU_VERSION ||
+    ![WINCU_VERSION, '0.3.10'].includes(manifest.version) ||
     manifest.mcpServers?.win?.command !== './runtime/node-repl.exe'
   )
     throw Error('Windows KimiCU 插件版本或启动入口与已验证接口不符。')

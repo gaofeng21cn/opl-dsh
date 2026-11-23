@@ -44,6 +44,12 @@ export class UpdateService extends TypertRemoteService {
     return this.controller.check()
   }
 
+  /** Update the displayed Computer Use runtime while its tools are idle. */
+  @Remote('updateKimiCu')
+  updateKimiCu(): Promise<OplUpdateStatus> {
+    return this.controller.updateKimiCu()
+  }
+
   /** @param enabled - Whether the Host checks after startup and every six hours. */
   @Remote('automatic')
   automatic(enabled: boolean): Promise<OplUpdateStatus> {

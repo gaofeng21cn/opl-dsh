@@ -113,6 +113,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     postpone: () => Promise<RemoteResult<OplUpdateStatus>>
     prepare: () => Promise<RemoteResult<OplUpdateStatus>>
     status: () => Promise<RemoteResult<OplUpdateStatus>>
+    updateKimiCu: () => Promise<RemoteResult<OplUpdateStatus>>
     watch: () => RemoteStreamHandle<OplUpdateStatus, never>
   }
   interface TypertRemoteNamespace$7461736b466565646261636b {
@@ -219,6 +220,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'oplUpdates/postpone': () => Promise<RemoteResult<OplUpdateStatus>>
     'oplUpdates/prepare': () => Promise<RemoteResult<OplUpdateStatus>>
     'oplUpdates/status': () => Promise<RemoteResult<OplUpdateStatus>>
+    'oplUpdates/updateKimiCu': () => Promise<RemoteResult<OplUpdateStatus>>
     'oplUpdates/watch': () => RemoteStreamHandle<OplUpdateStatus, never>
     'taskFeedback/ack': (request: TaskAckRequest) => Promise<RemoteResult<TaskAckValue>>
     'taskFeedback/consume': (request: TaskConsumeRequest) => Promise<RemoteResult<TaskConsumeValue>>
@@ -336,6 +338,7 @@ export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'oplUpdates/postpone': TypertRemoteMethod<{  }, OplUpdateStatus>
   readonly 'oplUpdates/prepare': TypertRemoteMethod<{  }, OplUpdateStatus>
   readonly 'oplUpdates/status': TypertRemoteMethod<{  }, OplUpdateStatus>
+  readonly 'oplUpdates/updateKimiCu': TypertRemoteMethod<{  }, OplUpdateStatus>
   readonly 'oplUpdates/watch': TypertRemoteMethod<{  }, OplUpdateStatus, 'stream'>
   readonly 'taskFeedback/ack': TypertRemoteMethod<{ readonly 'request': TaskAckRequest }, TaskAckValue>
   readonly 'taskFeedback/consume': TypertRemoteMethod<{ readonly 'request': TaskConsumeRequest }, TaskConsumeValue>
