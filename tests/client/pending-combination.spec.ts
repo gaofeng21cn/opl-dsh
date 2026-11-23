@@ -33,6 +33,26 @@ it('does not submit on failed selection or after a waiting send was cancelled', 
   }
 })
 
+it('cancels a waiting send before the picker write finishes', async () => {
+  const picker = new PendingCombination()
+  const write = Promise.withResolvers<void>()
+  const selecting = picker.select('one', () => write.promise)
+  const abort = new AbortController()
+  const submit = vi.fn(async () => 'sent')
+  const sending = picker.send('one', abort.signal, submit)
+  const cancellation = Error('cancelled')
+  abort.abort(cancellation)
+  try {
+    const nextTask = new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await expect(Promise.race([sending, nextTask])).rejects.toBe(cancellation)
+  } finally {
+    write.resolve()
+    await selecting
+    await Promise.allSettled([sending])
+  }
+  expect(submit).not.toHaveBeenCalled()
+})
+
 it('blocks a delayed attachment send after a failed switch until a selection is confirmed', async () => {
   const picker = new PendingCombination()
   const send = vi.fn(async () => 'sent')
