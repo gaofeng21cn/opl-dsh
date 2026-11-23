@@ -97,8 +97,10 @@ async function applyDesktopAdmission(root, version) {
       !stat.isFile() ||
       stat.nlink !== 1 ||
       (await realpath(file)) !== join(canonical, 'ofm', 'dsh-our-free-model', name)
-    )
-      throw Error('OFM 兼容文件路径无效：' + name)
+    ) {
+      console.warn('已保留自定义 OFM 文件路径，未应用桌面兼容修复：' + name)
+      return 'modified'
+    }
     const bytes = await readFile(file)
     const actual = digest(bytes)
     const match = variants.find(([before, after]) => actual === before || actual === after)

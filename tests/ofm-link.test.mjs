@@ -64,6 +64,20 @@ test('migrates complete installed bytes, preserves newer version and configurati
     )
     assert.equal(calls.length, 2)
   }))
+test('reinstall preserves custom linked OFM source files and skips the Desktop backport', () =>
+  fixture(async ({ dir, install, calls }) => {
+    await migrateOfmLink({ restoreBundles: async () => {}, dir, install })
+    const custom = join(dir, 'custom-ofm-src')
+    const source = join(dir, 'ofm', name, 'src')
+    await mkdir(custom)
+    await writeFile(join(custom, 'trust.js'), 'custom trust rules')
+    await symlink(custom, source, process.platform === 'win32' ? 'junction' : 'dir')
+
+    assert.equal((await migrateOfmLink({ dir, install })).reason, 'self-managed-link')
+    assert.equal(await readFile(join(custom, 'trust.js'), 'utf8'), 'custom trust rules')
+    assert.equal((await lstat(source)).isSymbolicLink(), true)
+    assert.equal(calls.length, 2)
+  }))
 test('refuses a live profile before package migration', () =>
   fixture(async ({ dir, install }) => {
     await writeFile(join(dir, 'control.json'), JSON.stringify({ pid: process.pid }))
