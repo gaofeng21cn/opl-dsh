@@ -92,7 +92,7 @@ Issue 在实现前记录这些判断，PR 在合并前核对实现与用户目�
 
 开发使用 Node.js 24.9.0 或更新版本。
 
-SuperAgent 原型以固定源码快照保存在 `vendor/dsh-superagent`，通过同一 npm workspace 和锁文件安装开发依赖。根类型检查和测试同时覆盖它；构建生成独立 bundle 并把摘要写入套件清单。官方服务仍为运行时 peer，原版面板与存储保持自身 owner；适配范围见其 `UPSTREAM.md` 和[使用说明](superagent.md)。
+SuperAgent 原型以固定源码快照保存在 `vendor/dsh-superagent`，通过同一 npm workspace 和锁文件安装开发依赖。根类型检查覆盖它，测试可通过 `npm run test:superagent` 按需运行；构建生成独立 bundle 并把摘要写入套件清单。官方服务仍为运行时 peer，原版面板与存储保持自身 owner；适配范围见其 `UPSTREAM.md` 和[使用说明](superagent.md)。
 
 ```sh
 npm ci --ignore-scripts
@@ -104,7 +104,7 @@ npm run build
 npm test
 ```
 
-首次运行或修改 `@Remote` 参数与返回值后执行生成。`npm run check:rpc` 只检查漂移，不改文件。生成器使用安装的官方 `dsh-typert-generator`：在临时目录建立它要求的 workspace 布局，分析真实源代码和原版 protocol 声明，完成后移除临时目录。没有手写平行 Schema 或修改上游生成器。
+`src/generated` 不再由 Git 追踪；首次运行或修改 `@Remote` 参数与返回值后，由 `pretypecheck`、`prebuild`、`pretest`（通过 `npm run generate:rpc -- --if-stale`）按需生成，也可显式执行 `npm run generate:rpc`。`npm run check:rpc` 只检查漂移，不改文件。生成器使用安装的官方 `dsh-typert-generator`：在临时目录建立它要求的 workspace 布局，分析真实源代码和原版 protocol 声明，完成后移除临时目录。没有手写平行 Schema 或修改上游生成器。
 
 原生 Client、兼容控制入口和 Skill 调用使用同一个生成契约。Provider 专有模型字段使用可递归的 JSON 类型，经过前后端校验后保留，避免编辑显示名称时丢掉模型能力配置。
 

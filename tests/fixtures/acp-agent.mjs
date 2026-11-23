@@ -1,10 +1,12 @@
-import { createInterface } from 'node:readline'
 import { writeFile, readFile, appendFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-let sessionId = 'test-native',
-  running,
-  completeOnCancel = false
+import { createAcpStub } from './acp-stub-base.mjs'
+
+const stub = createAcpStub({ exitOnClose: false })
+let sessionId = 'test-native'
+let running
+let completeOnCancel = false
 let effort = 'high'
 const efforts =
   process.env.OPL_FIXTURE_MODEL === 'glm-5.2' ? ['high', 'max'] : ['low', 'medium', 'high', 'xhigh']
@@ -28,18 +30,14 @@ const persistEditHistory = async () => {
   if (process.env.OPL_FIXTURE_EDIT_PERSIST === '1')
     await writeFile(editHistoryFile(), JSON.stringify(editHistory))
 }
-const send = (v) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...v }) + '\n')
-const update = (u) => send({ method: 'session/update', params: { sessionId, update: u } })
-const chunk = (t) =>
-  update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: t } })
-const answer = (id, r) => send({ id, result: r })
-createInterface({ input: process.stdin }).on('line', async (line) => {
-  const m = JSON.parse(line)
+const update = (u) => stub.update(sessionId, u)
+const chunk = (t) => stub.chunk(sessionId, t)
+
+stub.start(async (m) => {
   if (m.method?.startsWith('_x.ai/rewind/')) {
-    if (process.env.OPL_FIXTURE_EDIT !== '1')
-      return send({ id: m.id, error: { code: -32601, message: 'unsupported fixture' } })
+    if (process.env.OPL_FIXTURE_EDIT !== '1') return stub.fail(m.id, -32601, 'unsupported fixture')
     if (m.method === '_x.ai/rewind/points')
-      return answer(m.id, {
+      return stub.reply(m.id, {
         rewind_points: editHistory.map((text, prompt_index) => ({
           prompt_index,
           prompt_preview: text,
@@ -50,7 +48,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     const text = editHistory[index]
     editHistory.splice(index)
     await persistEditHistory()
-    return answer(m.id, {
+    return stub.reply(m.id, {
       success: true,
       target_prompt_index: index,
       mode: 'conversation_only',
@@ -58,7 +56,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     })
   }
   if (m.method === 'initialize')
-    answer(m.id, {
+    stub.reply(m.id, {
       protocolVersion: 1,
       agentCapabilities: {
         loadSession: true,
@@ -98,16 +96,16 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         args: process.argv.slice(2),
       }),
     )
-    answer(m.id, {
+    stub.reply(m.id, {
       sessionId,
       models: { currentModelId: process.env.OPL_FIXTURE_MODEL ?? 'grok-4.7' },
       configOptions: configOptions(),
     })
   } else if (m.method === 'session/set_config_option') {
     if (m.params.configId !== 'reasoning_effort' || !efforts.includes(m.params.value))
-      return send({ id: m.id, error: { code: -32602, message: 'Unsupported effort' } })
+      return stub.fail(m.id, -32602, 'Unsupported effort')
     effort = m.params.value
-    answer(m.id, { configOptions: configOptions() })
+    stub.reply(m.id, { configOptions: configOptions() })
   } else if (m.method === 'session/prompt') {
     running = m.id
     if (process.env.OPL_FIXTURE_IMAGES === '1')
@@ -127,7 +125,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         await persistEditHistory()
       }
       running = undefined
-      return send({ id: m.id, error: { code: 'HARNESS_PROVIDER_RATE_LIMIT' } })
+      return stub.fail(m.id, 'HARNESS_PROVIDER_RATE_LIMIT')
     }
     if (process.env.OPL_FIXTURE_EDIT === '1') editHistory.push(text)
     await persistEditHistory()
@@ -155,18 +153,15 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       if (completeOnCancel) chunk('partial answer')
       return
     }
-    // A turn the agent reports as failed: the executor records `failed`, so a
-    // notification about a failure can be observed without a real CLI failure.
     if (text === 'fail-turn') {
-      answer(m.id, { stopReason: 'error' })
+      stub.reply(m.id, { stopReason: 'error' })
       running = undefined
       return
     }
-    // A CLI that reports end_turn without delivering an answer.
     if (text === 'empty-turn') {
       update({ sessionUpdate: 'available_commands_update', availableCommands: [] })
       update({ sessionUpdate: 'usage_update', usage: { totalTokens: 0 } })
-      answer(m.id, {
+      stub.reply(m.id, {
         stopReason: 'end_turn',
         usage: { totalTokens: 0, inputTokens: 0, outputTokens: 0 },
       })
@@ -176,7 +171,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     if (text.endsWith('usage-stats')) {
       chunk('usage answer')
       update({ sessionUpdate: 'usage_update', used: 42, size: 100 })
-      answer(m.id, {
+      stub.reply(m.id, {
         stopReason: 'end_turn',
         usage: {
           totalTokens: 42,
@@ -190,7 +185,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     }
     if (text.endsWith('owned-usage')) {
       chunk('owned usage answer')
-      answer(m.id, {
+      stub.reply(m.id, {
         stopReason: 'end_turn',
         _meta: {
           'opl/turnUsage': {
@@ -213,9 +208,8 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     if (text.endsWith('usage-cumulative')) {
       chunk('cumulative answer')
       update({ sessionUpdate: 'usage_update', used: 84, size: 100 })
-      answer(m.id, {
+      stub.reply(m.id, {
         stopReason: 'end_turn',
-        // ACP v1 does not identify whether these fields are per-prompt or cumulative.
         usage: { totalTokens: 84, inputTokens: 80, outputTokens: 4 },
       })
       running = undefined
@@ -244,13 +238,13 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
           kind: 'read',
           status: text.slice('tool-only-'.length),
         })
-      answer(m.id, { stopReason: 'end_turn' })
+      stub.reply(m.id, { stopReason: 'end_turn' })
       running = undefined
       return
     }
     if (text === 'allow-write' || text === 'deny-write') {
       approvals.set('permission-string', m.id)
-      send({
+      stub.send({
         id: 'permission-string',
         method: 'session/request_permission',
         params: {
@@ -276,11 +270,11 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         kind: 'read',
         status: 'completed',
       })
-      answer(m.id, { stopReason: 'end_turn' })
+      stub.reply(m.id, { stopReason: 'end_turn' })
       running = undefined
     }
   } else if (m.method === 'session/cancel') {
-    if (running) answer(running, { stopReason: completeOnCancel ? 'end_turn' : 'cancelled' })
+    if (running) stub.reply(running, { stopReason: completeOnCancel ? 'end_turn' : 'cancelled' })
     running = undefined
   } else if (m.id === 'permission-string') {
     const id = approvals.get(m.id)
@@ -288,7 +282,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       await writeFile(join(process.cwd(), 'controlled.txt'), 'approved')
       chunk('written')
     } else chunk('denied')
-    answer(id, { stopReason: 'end_turn' })
+    stub.reply(id, { stopReason: 'end_turn' })
     running = undefined
   }
 })

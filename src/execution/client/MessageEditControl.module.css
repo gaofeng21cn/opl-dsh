@@ -1,0 +1,36 @@
+/** 停止后编辑入口：普通侧栏对话内选择一条已发送的消息，把原文放回输入框。 */
+.root {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.iconTrigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+.iconTrigger:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+.iconTrigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+/** 首批 Harness 但暂时没有可回退边界，或此刻不可用时的固定状态说明。 */
+.status {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}

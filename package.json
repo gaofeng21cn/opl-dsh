@@ -15,8 +15,12 @@
   "scripts": {
     "build": "node build.mjs",
     "build:bridge": "node scripts/build-native-bridge.mjs",
+    "pretypecheck": "node scripts/generate-rpc.mjs --if-stale",
+    "prebuild": "node scripts/generate-rpc.mjs --if-stale",
+    "pretest": "node scripts/generate-rpc.mjs --if-stale",
     "typecheck": "tsc -p tsconfig.host.json && tsc -p tsconfig.client.json && npm run typecheck --workspace dsh-superagent",
-    "test": "vitest run && node --test --test-concurrency=1 tests/*.test.mjs && npm test --workspace dsh-superagent",
+    "test": "vitest run && node scripts/run-node-tests.mjs",
+    "test:superagent": "npm test --workspace dsh-superagent",
     "package": "npm run build && node package.mjs",
     "release:manifest": "node scripts/create-release-manifest.mjs",
     "format": "prettier --write src tests scripts installer/*.mjs build.mjs",

@@ -15,6 +15,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci --ignore-scripts
+      - run: npm run generate:rpc
       - run: npm run check:rpc
       - run: npm run check:boundaries
       - run: npm run format:check

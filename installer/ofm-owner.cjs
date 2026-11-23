@@ -11,18 +11,27 @@ async function optional(path) {
     throw error
   }
 }
+function processAlive(pid, { rethrowAccess = false } = {}) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    if (error.code === 'ESRCH') return false
+    if (rethrowAccess) throw error
+    return true
+  }
+}
+function isAlive(pid) {
+  return processAlive(pid)
+}
 async function stopped(dir) {
   const text = await optional(join(dir, 'control.json'))
   if (text === undefined) return
   const { pid } = JSON.parse(text)
   if (!Number.isSafeInteger(pid) || pid <= 0) throw Error('无法核验 OFM profile 进程')
-  try {
-    process.kill(pid, 0)
-  } catch (error) {
-    if (error.code === 'ESRCH') return
-    throw error
-  }
-  throw Error('请先停止 profile，再声明 OFM 安装管理方式')
+  if (processAlive(pid, { rethrowAccess: true }))
+    throw Error('请先停止 profile，再声明 OFM 安装管理方式')
 }
 /** Remove only a managed override identified by an OPL ownership receipt.
  * @param {object} options - Profile, runtime module loader, and optional receipt location.
@@ -72,5 +81,6 @@ async function releaseOfmManaged({ dir, receiptPath = join(dir, 'opl-ofm-managed
     { waitMs: 1000 },
   )
 }
+module.exports.isAlive = isAlive
 module.exports.releaseOfmManaged = releaseOfmManaged
 module.exports.stopped = stopped

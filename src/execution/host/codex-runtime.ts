@@ -1,10 +1,7 @@
 /** Verification and publication inputs for the optional Codex Git Bash runtime. */
 import { join } from 'node:path'
 import { oplProfilePath } from '../../shared/host/profile-paths.ts'
-import {
-  importCodexCandidate,
-  verifyCodexCandidate,
-} from '../../../scripts/codex-candidate/lifecycle.mjs'
+import { importCodexCandidate, verifyCodexCandidate } from './candidates/codex/lifecycle.ts'
 import type { CodexGitBashRuntime, CodexRuntimeRequest } from '../contracts/codex-runtime.ts'
 
 /** Verify an imported package in this profile's owned Store; no executable is run. */

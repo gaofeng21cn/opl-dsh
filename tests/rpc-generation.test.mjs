@@ -71,8 +71,6 @@ test('official generator derives source contracts, rejects drift, and preserves 
   try {
     await mkdir(join(root, 'src'))
     await mkdir(join(root, 'installer'))
-    await mkdir(join(root, 'scripts/mcode-candidate'), { recursive: true })
-    await mkdir(join(root, 'scripts/codex-candidate'), { recursive: true })
     await symlink(join(repository, 'node_modules'), join(root, 'node_modules'), 'junction')
     await writeFile(
       join(root, 'package.json'),
@@ -105,12 +103,11 @@ test('official generator derives source contracts, rejects drift, and preserves 
     assert.equal(map.file, 'remote.d.mts')
     assert.deepEqual(map.sources, ['../index.ts'])
     await generateRpc({ root, check: true })
+    await generateRpc({ root, ifStale: true })
+    assert.equal(await readFile(join(root, 'src/generated/host.mjs'), 'utf8'), original)
     await writeFile(join(root, 'src/index.ts'), source('number'))
     await assert.rejects(generateRpc({ root, check: true }), /RPC generation drift/)
     assert.equal(await readFile(join(root, 'src/generated/host.mjs'), 'utf8'), original)
-    await generateRpc({ root })
-    assert.notEqual(await readFile(join(root, 'src/generated/host.mjs'), 'utf8'), original)
-    await generateRpc({ root, check: true })
   } finally {
     await rm(root, { recursive: true, force: true })
   }

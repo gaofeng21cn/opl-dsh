@@ -2,7 +2,7 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { IconCloseOutlineRegular, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { messageEditCopy, type MessageEditSession } from './message-edit-session.ts'
-import css from './StopEditControl.module.css'
+import css from './MessageEditControl.module.css'
 
 export interface MessageEditProps {
   session: MessageEditSession

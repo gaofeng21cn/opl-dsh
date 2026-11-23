@@ -1,24 +1,10 @@
 /**
- * Executable ACP fixture reproducing the official MiniMax Code CLI (`mcode` 0.7.4)
- * exactly as it behaves on the wire, so the adapter is exercised over the real stdio
- * transport instead of against its own constants.
- *
- * Reproduced behavior, all confirmed against the installed CLI:
- *  - `session/new` and `session/load` advertise `permissionMode` and `model`.
- *  - `thinkingEffort` is advertised *only* after a model that owns it is selected.
- *  - `m:minimax:MiniMax-M3.1-Flash:v:` is advertised but rejected with
- *    `-32603 Invalid model reasoning`, because that model is forced-on.
- *  - Any value outside the advertised model list is rejected with `-32602`.
- *  - The selection survives a process restart and is returned by `session/load`.
- *
- * It also records every request it receives, so a test can prove that a refused
- * configuration never reached `session/prompt` and that authorized Full access
- * selects the CLI's advertised permission mode before execution.
+ * Executable ACP fixture reproducing the official MiniMax Code CLI (`mcode` 0.7.4).
  */
-import { createInterface } from 'node:readline'
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { existsSync, watch } from 'node:fs'
+import { createAcpStub } from './acp-stub-base.mjs'
 
 const argv = process.argv.slice(2)
 const argValue = (name, fallback) => {
@@ -26,7 +12,11 @@ const argValue = (name, fallback) => {
   return index >= 0 && argv[index + 1] ? argv[index + 1] : fallback
 }
 const state = argValue('--state', process.env.MCODE_FIXTURE_STATE ?? process.cwd())
-const journal = join(state, 'journal.ndjson')
+const stub = createAcpStub({
+  journalPath: join(state, 'journal.ndjson'),
+  asyncJournal: true,
+  exitOnClose: false,
+})
 const sessionFile = join(state, 'session.json')
 const callsFile = join(state, 'prompts.txt')
 
@@ -46,14 +36,6 @@ const MODEL_VALUES = [
   modelValue('MiniMax-M2.7', 'thinking'),
 ]
 const EFFORT_VALUES = ['default', 'low', 'medium', 'high', 'xhigh', 'max']
-/**
- * Capability modes let a test reproduce an older or narrower official CLI without
- * inventing a second transport:
- *  - `full` (default): the installed 0.7.4 surface.
- *  - `no-model-option`: no `model` config option at all.
- *  - `no-effort`: the model is selectable but `thinkingEffort` is never advertised.
- *  - `legacy-models`: only MiniMax-M3 is offered, so the Flash combination is refused.
- */
 const capability = argValue('--capability', process.env.MCODE_FIXTURE_CAPABILITY ?? 'full')
 
 let sessionId = 'mvs_fixture'
@@ -62,16 +44,9 @@ let effort = 'default'
 let permissionMode = process.env.MCODE_FIXTURE_PERMISSION ?? 'auto'
 let running
 
-const send = (payload) =>
-  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...payload }) + '\n')
-const answer = (id, result) => send({ id, result })
 const fail = (id, code, message, details) =>
-  send({ id, error: { code, message, ...(details ? { data: { details } } : {}) } })
-const note = (entry) =>
-  appendFile(
-    journal,
-    JSON.stringify({ at: Date.now(), region: process.env.MAVIS_REGION, ...entry }) + '\n',
-  ).catch(() => {})
+  stub.fail(id, code, message, details ? { details } : undefined)
+const note = (entry) => stub.record({ at: Date.now(), region: process.env.MAVIS_REGION, ...entry })
 
 const configOptions = () => {
   const options = [
@@ -98,7 +73,6 @@ const configOptions = () => {
     currentValue: offered.includes(model) ? model : offered.at(-1),
     options: offered.map((entry) => ({ value: entry, name: entry })),
   })
-  // The effort control exists only for the model that declares effort levels.
   if (model === M3_FLASH_VALUE && capability !== 'no-effort')
     options.push({
       type: 'select',
@@ -125,16 +99,10 @@ const restore = async () => {
 
 await restore()
 
-createInterface({ input: process.stdin }).on('line', async (line) => {
-  let message
-  try {
-    message = JSON.parse(line)
-  } catch {
-    return
-  }
+stub.start(async (message) => {
   await note({ method: message.method ?? 'response', id: message.id, params: message.params })
   if (message.method === 'initialize')
-    answer(message.id, {
+    stub.reply(message.id, {
       protocolVersion: 1,
       fixturePid: process.pid,
       agentCapabilities: { loadSession: true },
@@ -160,7 +128,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     }
     if (message.params?.sessionId) sessionId = message.params.sessionId
     await persist()
-    answer(message.id, {
+    stub.reply(message.id, {
       sessionId,
       modes: { currentModeId: 'default', availableModes: [] },
       configOptions: configOptions(),
@@ -174,12 +142,11 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         return
       }
       permissionMode = requested
-      answer(message.id, { configOptions: configOptions() })
+      stub.reply(message.id, { configOptions: configOptions() })
     } else if (configId === 'model') {
       if (existsSync(join(state, 'refuse-config'))) {
         fail(message.id, -32603, 'private-account-diagnostic', 'private-account-diagnostic')
       } else if (requested === modelValue(M3_FLASH, '')) {
-        // The exact trap the installed CLI has: advertised, yet refused.
         fail(message.id, -32603, 'Internal error', 'Invalid model reasoning')
       } else if (capability === 'legacy-models' && requested !== M3_VALUE) {
         fail(message.id, -32602, 'Invalid params: Model selection is not advertised.')
@@ -190,7 +157,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         if (requested !== M3_FLASH_VALUE) effort = 'default'
         await persist()
         await note({ event: 'config', configId, current: model })
-        answer(message.id, { configOptions: configOptions() })
+        stub.reply(message.id, { configOptions: configOptions() })
       }
     } else if (configId === 'thinkingEffort') {
       if (capability === 'refuse-effort')
@@ -206,9 +173,9 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         effort = requested
         await persist()
         await note({ event: 'config', configId, current: effort })
-        answer(message.id, { configOptions: configOptions() })
+        stub.reply(message.id, { configOptions: configOptions() })
       }
-    } else fail(message.id, -32602, `Invalid params: Unsupported configuration option`)
+    } else fail(message.id, -32602, 'Invalid params: Unsupported configuration option')
   } else if (message.method === 'session/prompt') {
     running = message.id
     await appendFile(callsFile, message.params.prompt[0].text + '\n').catch(() => {})
@@ -216,7 +183,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     if (text.includes('USAGE_FIXTURE')) {
       const operationId = message.params._meta['opl/clientRequestId']
       const turnId = 'native-' + operationId
-      send({
+      stub.send({
         method: 'opl/session/history/boundary',
         params: {
           sessionId,
@@ -243,25 +210,18 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         { rows: [{ ...row, model: 'minimax/other' }] },
         { version: 99 },
       ])
-        send({ method: 'opl/session/usage', params: { ...params, ...change } })
+        stub.send({ method: 'opl/session/usage', params: { ...params, ...change } })
       if (!text.includes('NO_USAGE')) {
         const complete = { ...params, rows: [row, { ...row, id: 2, inputTokens: 5 }] }
-        send({ method: 'opl/session/usage', params: complete })
-        send({ method: 'opl/session/usage', params: complete })
+        stub.send({ method: 'opl/session/usage', params: complete })
+        stub.send({ method: 'opl/session/usage', params: complete })
       }
     }
     if (text.includes('TRANSCRIPT_FIXTURE')) {
-      const update = (value) =>
-        send({ method: 'session/update', params: { sessionId, update: value } })
-      send({
-        method: 'session/update',
-        params: {
-          sessionId: 'unrelated-session',
-          update: {
-            sessionUpdate: 'agent_thought_chunk',
-            content: { type: 'text', text: 'WRONG_SESSION' },
-          },
-        },
+      const update = (value) => stub.update(sessionId, value)
+      stub.update('unrelated-session', {
+        sessionUpdate: 'agent_thought_chunk',
+        content: { type: 'text', text: 'WRONG_SESSION' },
       })
       const live = text.includes('TRANSCRIPT_FIXTURE_LIVE')
       update({
@@ -278,10 +238,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         sessionUpdate: 'agent_thought_chunk',
         content: { type: 'text', text: 'the repository.' },
       })
-      update({
-        sessionUpdate: 'agent_message_chunk',
-        content: { type: 'text', text: 'Starting check.' },
-      })
+      stub.chunk(sessionId, 'Starting check.')
       update({
         sessionUpdate: 'tool_call',
         toolCallId: 'transcript-bash',
@@ -307,7 +264,6 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         content: { type: 'text', text: live ? 'Continuing live thought.' : 'The check passed.' },
       })
       if (live) {
-        // Qualification releases this turn after inspecting the actual live Desktop.
         const finish = join(
           process.cwd(),
           text.match(/RELEASE_FILE=([\w-]+)/)?.[1] ?? 'finish-live-transcript',
@@ -325,17 +281,14 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
           }
         })
       }
-      update({
-        sessionUpdate: 'agent_message_chunk',
-        content: { type: 'text', text: 'TRANSCRIPT_DONE' },
-      })
-      answer(message.id, { stopReason: 'end_turn' })
+      stub.chunk(sessionId, 'TRANSCRIPT_DONE')
+      stub.reply(message.id, { stopReason: 'end_turn' })
       running = undefined
       return
     }
     if (text === 'wait') return
     if (text === 'approval') {
-      send({
+      stub.send({
         id: 'official-permission',
         method: 'session/request_permission',
         params: {
@@ -349,35 +302,17 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       })
       return
     }
-    send({
-      method: 'session/update',
-      params: {
-        sessionId,
-        update: {
-          sessionUpdate: 'agent_message_chunk',
-          content: { type: 'text', text: 'result:' + text },
-        },
-      },
-    })
-    answer(message.id, { stopReason: 'end_turn' })
+    stub.chunk(sessionId, 'result:' + text)
+    stub.reply(message.id, { stopReason: 'end_turn' })
     running = undefined
   } else if (message.id === 'official-permission') {
     const choice = message.result?.outcome?.optionId
     await note({ event: 'permission-answer', current: choice })
-    send({
-      method: 'session/update',
-      params: {
-        sessionId,
-        update: {
-          sessionUpdate: 'agent_message_chunk',
-          content: { type: 'text', text: choice === 'yes' ? 'allowed' : 'denied' },
-        },
-      },
-    })
-    answer(running, { stopReason: 'end_turn' })
+    stub.chunk(sessionId, choice === 'yes' ? 'allowed' : 'denied')
+    stub.reply(running, { stopReason: 'end_turn' })
     running = undefined
   } else if (message.method === 'session/cancel') {
-    if (running) answer(running, { stopReason: 'cancelled' })
+    if (running) stub.reply(running, { stopReason: 'cancelled' })
     running = undefined
   }
 })

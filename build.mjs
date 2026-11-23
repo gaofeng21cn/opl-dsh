@@ -26,7 +26,7 @@ async function bundle(options) {
   for (const file of result.outputFiles ?? []) await writeFile(file.path, file.contents)
   return result
 }
-await generateRpc({ root })
+await generateRpc({ root, ifStale: true })
 await rm(join(output, 'package'), { recursive: true, force: true })
 await mkdir(join(output, 'package/lib'), { recursive: true })
 const hostBuild = await bundle({
@@ -112,7 +112,6 @@ await writeFile(
   join(output, 'package/lib/client.js'),
   `window.__ModuleLoader__.load({id:"@one-person-lab/dsh-opl",factory:(require)=>{const module={exports:{}};const exports=module.exports;${client}\nconst original=module.exports;return {...original,apply(ctx,...args){ctx.effect(()=>{const style=document.createElement('style');style.dataset.oplSuite='';style.textContent=${JSON.stringify(css)};document.head.append(style);return ()=>style.remove()});return original.apply(ctx,...args)}};}});\n`,
 )
-await cp(join(root, 'src/generated/host.mjs'), join(output, 'package/lib/typert.host.js'))
 const externalImports = [
   ...Object.values(hostBuild.metafile.outputs),
   ...Object.values(clientBuild.metafile.outputs),

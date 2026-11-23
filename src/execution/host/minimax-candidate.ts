@@ -5,7 +5,7 @@ import {
   importCandidate,
   verifyImportCandidate,
   versionDir,
-} from '../../../scripts/mcode-candidate/lifecycle.mjs'
+} from './candidates/mcode/lifecycle.ts'
 import type { MiniMaxCandidateRequest } from '../contracts/candidate.ts'
 
 /**

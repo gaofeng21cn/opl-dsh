@@ -18,12 +18,13 @@ const {
 } = require('node:fs/promises')
 const { createHash, randomUUID } = require('node:crypto')
 const { isAbsolute, join, resolve, sep } = require('node:path')
+const { parseVersion, compareVersions } = require('./compare.cjs')
+const { isAlive, stopped } = require('./ofm-owner.cjs')
 
 const PACKAGE_NAME = 'dsh-our-free-model'
 const LOCK_NAME = '.ofm-upgrade.lock'
 const STATE_NAME = '.ofm-upgrade.json'
 const RECOVERY_DIR = '.ofm-upgrade-recovery'
-const VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/u
 const LOCK_PID_PATTERN = /^\d+$/u
 
 function transactionError(code, message = code) {
@@ -36,44 +37,6 @@ function profileRoot(dir) {
   if (typeof dir !== 'string' || !dir || !isAbsolute(dir))
     throw transactionError('invalid-ofm-profile', 'OFM profile path must be absolute')
   return resolve(dir)
-}
-
-function parseVersion(value) {
-  const match = VERSION_PATTERN.exec(String(value ?? '').trim())
-  if (!match) return undefined
-  const prerelease = match[4] === undefined ? [] : match[4].split('.')
-  return {
-    major: Number(match[1]),
-    minor: Number(match[2]),
-    patch: Number(match[3]),
-    prerelease,
-  }
-}
-
-function compareVersions(left, right) {
-  const a = parseVersion(left)
-  const b = parseVersion(right)
-  if (!a || !b) throw transactionError('invalid-ofm-version', `无效的 OFM 版本：${left} / ${right}`)
-  for (const key of ['major', 'minor', 'patch']) {
-    if (a[key] !== b[key]) return a[key] > b[key] ? 1 : -1
-  }
-  if (a.prerelease.length === 0 && b.prerelease.length === 0) return 0
-  if (a.prerelease.length === 0) return 1
-  if (b.prerelease.length === 0) return -1
-  const length = Math.max(a.prerelease.length, b.prerelease.length)
-  for (let index = 0; index < length; index++) {
-    const x = a.prerelease[index]
-    const y = b.prerelease[index]
-    if (x === undefined) return -1
-    if (y === undefined) return 1
-    if (x === y) continue
-    const xNumber = /^\d+$/u.test(x)
-    const yNumber = /^\d+$/u.test(y)
-    if (xNumber && yNumber) return Number(x) > Number(y) ? 1 : -1
-    if (xNumber !== yNumber) return xNumber ? -1 : 1
-    return x > y ? 1 : -1
-  }
-  return 0
 }
 
 async function regularFile(path, optional = false) {
@@ -114,17 +77,6 @@ async function atomicJson(path, value) {
   }
 }
 
-async function isAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    if (error.code === 'ESRCH') return false
-    return true
-  }
-}
-
 async function lockRecord(path) {
   const bytes = await regularFile(path)
   let value
@@ -150,7 +102,7 @@ async function clearStaleLock(path) {
   }
   try {
     const current = await lockRecord(path)
-    if (await isAlive(Number(current.pid)))
+    if (isAlive(Number(current.pid)))
       throw transactionError('ofm-upgrade-in-progress', '另一项 OFM 升级正在进行')
     await unlink(path).catch((error) => {
       if (error.code !== 'ENOENT') throw error
@@ -189,7 +141,7 @@ async function acquireLock(dir) {
     } catch (error) {
       if (error.code !== 'EEXIST') throw error
       const owner = await lockRecord(path)
-      if (await isAlive(Number(owner.pid)))
+      if (isAlive(Number(owner.pid)))
         throw transactionError('ofm-upgrade-in-progress', '另一项 OFM 升级正在进行')
       await clearStaleLock(path)
     }
@@ -509,7 +461,7 @@ async function migrateOfmLink({ dir, install, plugin, fetchImpl, restoreBundles 
   let before
   let bundlesBefore
   try {
-    await require('./ofm-owner.cjs').stopped(root)
+    await stopped(root)
     before = await inspectOfm(root)
     bundlesBefore = (await readJson(join(root, 'package.json'))).dsh?.profile?.bundles
     if (before.dependency === dependency) {
@@ -586,7 +538,7 @@ async function migrateOfmLink({ dir, install, plugin, fetchImpl, restoreBundles 
       throw transactionError('invalid-ofm-copy', 'OFM 副本仍有硬链接')
     await mkdir(join(root, 'ofm'), { recursive: true })
     await regularDirectory(join(root, 'ofm'))
-    await require('./ofm-owner.cjs').stopped(root)
+    await stopped(root)
     await rename(stage, target)
     created = true
     snapshot = await snapshotProfile(root, randomUUID(), before.packageDir)

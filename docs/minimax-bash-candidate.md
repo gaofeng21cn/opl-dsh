@@ -4,7 +4,7 @@
 
 ## 当前 0.7.7 候选
 
-固定输入在 `scripts/mcode-candidate/distribution.json`，官方文件清单在 `official-0.7.7-files.json`。构建先核对 npm 归档 SHA-512、许可 SHA-256 与逐文件摘要，再安装依赖；依赖安装后重新核对原始文件，生成含便携 Node 的完整清单。清单的 `filesSha256` 是官方文件数组经 `JSON.stringify` 序列化的 SHA-256。
+固定输入在 `src/execution/host/candidates/mcode/distribution.json`，官方文件清单在 `official-0.7.7-files.json`。构建先核对 npm 归档 SHA-512、许可 SHA-256 与逐文件摘要，再安装依赖；依赖安装后重新核对原始文件，生成含便携 Node 的完整清单。清单的 `filesSha256` 是官方文件数组经 `JSON.stringify` 序列化的 SHA-256。
 
 ```powershell
 node scripts/mcode-candidate/build-distribution.mjs --out "D:/mcode/0.7.7-opl-bash.20261119.1" --archive "D:/downloads/code-0.7.7.tgz" --node "C:/Program Files/nodejs/node.exe" --license "D:/downloads/MiniMax-LICENSE" --proxy http://127.0.0.1:7897
@@ -79,11 +79,7 @@ node scripts/mcode-candidate/build-candidate.mjs --out "D:/opl build/candidate" 
 node scripts/mcode-candidate/verify-candidate.mjs --candidate "D:/opl build/candidate/0.6.3-opl-bash.20261010.2" \
   --manifest "D:/opl build/candidate/candidate-manifest.json" --out "D:/opl build/candidate/verification"
 
-# 5) 有界的入口编排自检：用真实官方归档 + 工具链替身，把「构建入口 → 组装 → 验证入口」跑通一次
-node scripts/mcode-candidate/self-test.mjs --out "D:/opl build/selftest" \
-  --source-archive "D:/downloads/minimax-code-v0.6.3.tar.gz"
-
-# 6) 生命周期（面向交付对象，不重造安装体系）：导入候选、列版本、记录显式选择、升级、切回官方
+# 5) 生命周期（面向交付对象，不重造安装体系）：导入候选、列版本、记录显式选择、升级、切回官方
 #    全部离线、不下载 latest、不读账号与用户配置、不执行候选代码；先看计划再执行
 #    --active-tasks 必须来自调用方的公开活动状态；下面的 N 是占位符，不要照抄成 0
 node scripts/mcode-candidate/lifecycle.mjs verify --source "D:/opl build/candidate/0.6.3-opl-bash.20261010.2" \
@@ -99,7 +95,7 @@ node scripts/mcode-candidate/lifecycle.mjs official --active-tasks <N>
 
 启动器使用的运行时来源必须显式，二选一：`--system-node`（用 PATH 上的 `node`）或 `--node <node.exe>`（写进启动器并记录版本与摘要）。两者都不给时入口在创建任何输出目录之前就拒绝。
 
-`--toolchain-shim <脚本>` 用一个替身代替 pnpm 与 esbuild，只用于第 5 条的有界编排自检。替身产物会在计划、清单和验证报告里标记为 `toolchainStubbed`，验证器会拒绝把它当作可分发产物，因此它不能替代真实构建。
+`--toolchain-shim <脚本>` 用一个替身代替 pnpm 与 esbuild，只用于有界编排验证。替身产物会在计划、清单和验证报告里标记为 `toolchainStubbed`，验证器会拒绝把它当作可分发产物，因此它不能替代真实构建。
 
 输出目录结构：
 
@@ -234,7 +230,7 @@ Host 检查同一运行实例所有项目的运行 Agent、组合轮次和公开
 
 ## 验收要求
 
-静态检查（`self-test.mjs`、`verify-candidate.mjs`、`lifecycle.mjs verify`）与离线聚焦测试只能证明补丁进了产物、摘要一致、边界按预期拒绝、回执按预期写入。它们是**本机离线检查，不是 ACP/Bash smoke，也不是真实安装或选择验收**。下列项必须由主审接公开接口后实机验收，静态或离线通过不能替代：
+静态检查（`verify-candidate.mjs`、`lifecycle.mjs verify`）与离线聚焦测试只能证明补丁进了产物、摘要一致、边界按预期拒绝、回执按预期写入。它们是**本机离线检查，不是 ACP/Bash smoke，也不是真实安装或选择验收**。下列项必须由主审接公开接口后实机验收，静态或离线通过不能替代：
 
 - 候选目录 artifact 与 `candidate-manifest.json` 逐文件摘要一致，清单覆盖目录里每个文件（不漏也不多），`build-trace.jsonl` 记录了真实执行的每条命令。
 - 外部原生模块的传递依赖闭包从**各实际依赖方所在目录**解析，全部必须落在候选目录内；落在构建树或仓库 `node_modules` 的包会被判失败。包内容复制时排除原 `node_modules`，同名依赖的不同来源复制到实际依赖方的私有 `node_modules`，相同来源复用可解析的祖先目录；没有指向构建树的链接。当前平台未安装的可选依赖允许缺失。清单的 `placements` 登记每份复制的版本及相对位置；`closureVerified` 保持 false，真实模块加载单独验收。

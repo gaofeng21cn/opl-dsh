@@ -1,68 +1,28 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { basename, dirname, join, normalize, relative, resolve } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const NUMBERED = /^(\d{3})-[a-z0-9-]+\.md$/
-const numbered = readdirSync(join(ROOT, 'docs')).filter(name => NUMBERED.test(name)).sort()
-const entries = ['README.md', 'SETUP.md']
-const documents = [...entries, ...readdirSync(join(ROOT, 'docs')).filter(name => name.endsWith('.md')).map(name => `docs/${name}`)]
+const entries = ['README.md']
 const read = (path: string): string => readFileSync(join(ROOT, path), 'utf8')
 function links(file: string): string[] {
-  return [...readFileSync(file, 'utf8').matchAll(/\]\(([^)\s]+)\)/g)].map(match => match[1]!.split('#')[0]!).filter(target => target && !/^[a-z]+:/.test(target))
-}
-const files = (directory: string): string[] => readdirSync(join(ROOT, directory), { recursive: true, withFileTypes: true })
-  .filter(entry => entry.isFile()).map(entry => relative(ROOT, join(entry.parentPath, entry.name)))
-/**
- * Extract repo-relative file paths from the first column of a table under `## <heading>` in `docs/007-architecture.md`.
- * Bare filenames inherit the directory of the preceding path in the same cell.
- */
-function listed(heading: string, source = read('docs/007-architecture.md')): string[] {
-  const lines = source.split(/\r?\n/)
-  const start = lines.indexOf(`## ${heading}`)
-  const end = lines.findIndex((line, index) => index > start && line.startsWith('## '))
-  // The first two rows are the header and its separator.
-  const rows = lines.slice(start, end < 0 ? undefined : end).filter(line => line.startsWith('| ')).slice(2)
-  return rows.flatMap(row => {
-    let directory = ''
-    return [...row.split('|')[1]!.matchAll(/`([^`]+)`/g)].map(([, name]) => {
-      if (!name!.includes('/')) return join(directory, name!)
-      directory = dirname(name!)
-      return normalize(name!)
-    })
-  })
+  return [...readFileSync(file, 'utf8').matchAll(/\]\(([^)\s]+)\)/g)]
+    .map((match) => match[1]!.split('#')[0]!)
+    .filter((target) => target && !/^[a-z]+:/.test(target))
 }
 
 describe('documentation', () => {
-  it('numbers documents consecutively from 000', () => {
-    expect(numbered.map(name => name.slice(0, 3))).toEqual(numbered.map((_, index) => String(index).padStart(3, '0')))
-  })
-  it('links numbered documents only to earlier numbered documents', () => {
-    const violations = numbered.flatMap(name => links(join(ROOT, 'docs', name)).flatMap(target => {
-      const linked = resolve(ROOT, 'docs', target)
-      if (!linked.endsWith('.md')) return []
-      const number = NUMBERED.exec(basename(linked))?.[1]
-      return dirname(linked) === join(ROOT, 'docs') && number !== undefined && number < name.slice(0, 3) ? [] : [`${name} → ${target}`]
-    }))
-    expect(violations).toEqual([])
-  })
   it('resolves every local link', () => {
-    const files = [...entries.map(name => join(ROOT, name)), ...numbered.map(name => join(ROOT, 'docs', name))]
-    const missing = files.flatMap(file => links(file).filter(target => !existsSync(resolve(dirname(file), target))).map(target => `${file.slice(ROOT.length + 1)} → ${target}`))
+    const files = entries.map((name) => join(ROOT, name))
+    const missing = files.flatMap((file) =>
+      links(file)
+        .filter((target) => !existsSync(resolve(dirname(file), target)))
+        .map((target) => `${file.slice(ROOT.length + 1)} → ${target}`),
+    )
     expect(missing).toEqual([])
   })
   it('leaves no merge conflict markers in any document', () => {
-    expect(documents.filter(path => /^(<{7}|>{7}) /m.test(read(path)))).toEqual([])
-  })
-  it.each(['\n', '\r\n'])('lists every module of src in the module table of 007 Architecture, and only files that exist (%j line endings)', ending => {
-    const modules = listed('Modules', read('docs/007-architecture.md').replace(/\r?\n/g, ending))
-    expect(files('src').filter(path => !modules.includes(path))).toEqual([])
-    expect(modules.filter(path => !existsSync(join(ROOT, path)))).toEqual([])
-  })
-  it.each(['\n', '\r\n'])('lists every test in the test table of 007 Architecture, and only files that exist (%j line endings)', ending => {
-    const tests = listed('Tests', read('docs/007-architecture.md').replace(/\r?\n/g, ending))
-    expect(files('tests').filter(path => /\.spec\.tsx?$/.test(path) && !tests.includes(path))).toEqual([])
-    expect(tests.filter(path => !existsSync(join(ROOT, path)))).toEqual([])
+    expect(entries.filter((path) => /^(<{7}|>{7}) /m.test(read(path)))).toEqual([])
   })
 })

@@ -1,15 +1,126 @@
 /** Rebuild the RPC contract from the real Host sources with official Typert. */
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FaceModelEmitter, WorkspaceAnalyzer } from '@deepseek-ai/dsh-typert-generator'
 
+const OUTPUT_FILES = ['host.mjs', 'host.d.mts', 'remote.mjs', 'remote.d.mts', 'remote.d.mts.map']
+
+async function hasAllOutputs(directory) {
+  for (const name of OUTPUT_FILES) {
+    try {
+      await stat(join(directory, name))
+    } catch (error) {
+      if (error.code === 'ENOENT') return false
+      throw error
+    }
+  }
+  return true
+}
+
+function emitOutputs(temporary, manifestName, checkDiagnostics) {
+  const workspace = new WorkspaceAnalyzer({
+    root: temporary,
+    faces: ['host'],
+    packages: [manifestName],
+    checkDiagnostics,
+  }).analyze()
+  const host = workspace.faces.find((face) => face.face === 'host')
+  if (!host)
+    throw new Error(
+      'Typert did not discover the Host package; check package exports and tsconfig.host.json',
+    )
+  const generated = new FaceModelEmitter(host).emit(manifestName)
+  if (!generated.remote) throw new Error('Typert did not discover any @Remote methods')
+  // Emitter paths assume package/lib. Our checked-in files live in
+  // src/generated, so relocate only source-navigation metadata.
+  const remoteMap = JSON.parse(generated.remote.dtsMap)
+  remoteMap.file = 'remote.d.mts'
+  remoteMap.sources = remoteMap.sources.map((source) => source.replace(/^\.\.\/src\//, '../'))
+  return {
+    'host.mjs': generated.js.replaceAll('"file":"packages/opl/', '"file":"'),
+    'host.d.mts': generated.dts,
+    'remote.mjs': generated.remote.js.replaceAll('"file":"packages/opl/', '"file":"'),
+    'remote.d.mts': generated.remote.dts.replace(
+      'sourceMappingURL=typert.remote-client.d.ts.map',
+      'sourceMappingURL=remote.d.mts.map',
+    ),
+    'remote.d.mts.map': `${JSON.stringify(remoteMap)}\n`,
+  }
+}
+
+async function newestMtimeNs(path, skipDirName) {
+  let info
+  try {
+    info = await stat(path, { bigint: true })
+  } catch (error) {
+    if (error.code === 'ENOENT') return 0n
+    throw error
+  }
+  if (!info.isDirectory()) return info.mtimeNs
+  let newest = info.mtimeNs
+  for (const entry of await readdir(path, { withFileTypes: true })) {
+    if (skipDirName && entry.name === skipDirName) continue
+    const child = await newestMtimeNs(join(path, entry.name))
+    if (child > newest) newest = child
+  }
+  return newest
+}
+
+async function isRpcCurrent(root) {
+  let oldestOutput = null
+  for (const name of OUTPUT_FILES) {
+    let info
+    try {
+      info = await stat(join(root, 'src/generated', name), { bigint: true })
+    } catch (error) {
+      if (error.code === 'ENOENT') return false
+      throw error
+    }
+    if (oldestOutput === null || info.mtimeNs < oldestOutput) oldestOutput = info.mtimeNs
+  }
+  if (oldestOutput === null) return false
+  const candidates = [
+    newestMtimeNs(join(root, 'src'), 'generated'),
+    newestMtimeNs(join(root, 'installer')),
+    newestMtimeNs(join(root, 'package.json')),
+    newestMtimeNs(fileURLToPath(import.meta.url)),
+    newestMtimeNs(join(root, 'node_modules/@deepseek-ai/dsh-typert-protocol/package.json')),
+    readdir(root)
+      .then((names) =>
+        Promise.all(
+          names
+            .filter((name) => /^tsconfig(?:\..+)?\.json$/.test(name))
+            .map((name) => newestMtimeNs(join(root, name))),
+        ),
+      )
+      .then((times) => times.reduce((max, item) => (item > max ? item : max), 0n)),
+  ]
+  const newestInput = (await Promise.all(candidates)).reduce(
+    (max, item) => (item > max ? item : max),
+    0n,
+  )
+  return newestInput < oldestOutput
+}
+
 export async function generateRpc({
   root = resolve(dirname(fileURLToPath(import.meta.url)), '..'),
   check = false,
+  ifStale = false,
   checkDiagnostics = true,
 } = {}) {
+  if (!check && ifStale && (await isRpcCurrent(root))) return [...OUTPUT_FILES]
   const temporary = await mkdtemp(join(tmpdir(), 'opl-dsh-typert-'))
   try {
     // The official analyzer registers packages only below workspace/packages.
@@ -19,12 +130,6 @@ export async function generateRpc({
     await mkdir(packageRoot, { recursive: true })
     await cp(join(root, 'src'), join(packageRoot, 'src'), { recursive: true })
     await cp(join(root, 'installer'), join(packageRoot, 'installer'), {
-      recursive: true,
-    })
-    await cp(join(root, 'scripts/mcode-candidate'), join(packageRoot, 'scripts/mcode-candidate'), {
-      recursive: true,
-    })
-    await cp(join(root, 'scripts/codex-candidate'), join(packageRoot, 'scripts/codex-candidate'), {
       recursive: true,
     })
     const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
@@ -68,34 +173,14 @@ export async function generateRpc({
         ],
       }),
     )
-    const workspace = new WorkspaceAnalyzer({
-      root: temporary,
-      faces: ['host'],
-      packages: [manifest.name],
-      checkDiagnostics,
-    }).analyze()
-    const host = workspace.faces.find((face) => face.face === 'host')
-    if (!host)
-      throw new Error(
-        'Typert did not discover the Host package; check package exports and tsconfig.host.json',
-      )
-    const generated = new FaceModelEmitter(host).emit(manifest.name)
-    if (!generated.remote) throw new Error('Typert did not discover any @Remote methods')
-    // Emitter paths assume package/lib. Our checked-in files live in
-    // src/generated, so relocate only source-navigation metadata.
-    const remoteMap = JSON.parse(generated.remote.dtsMap)
-    remoteMap.file = 'remote.d.mts'
-    remoteMap.sources = remoteMap.sources.map((source) => source.replace(/^\.\.\/src\//, '../'))
-    const outputs = {
-      'host.mjs': generated.js.replaceAll('"file":"packages/opl/', '"file":"'),
-      'host.d.mts': generated.dts,
-      'remote.mjs': generated.remote.js.replaceAll('"file":"packages/opl/', '"file":"'),
-      'remote.d.mts': generated.remote.dts.replace(
-        'sourceMappingURL=typert.remote-client.d.ts.map',
-        'sourceMappingURL=remote.d.mts.map',
-      ),
-      'remote.d.mts.map': `${JSON.stringify(remoteMap)}\n`,
+    if (!check && checkDiagnostics && !(await hasAllOutputs(join(packageRoot, 'src/generated')))) {
+      const bootstrapOutputs = emitOutputs(temporary, manifest.name, false)
+      await mkdir(join(packageRoot, 'src/generated'), { recursive: true })
+      for (const [name, content] of Object.entries(bootstrapOutputs)) {
+        await writeFile(join(packageRoot, 'src/generated', name), content)
+      }
     }
+    const outputs = emitOutputs(temporary, manifest.name, checkDiagnostics)
     const drift = []
     if (!check) await mkdir(join(root, 'src/generated'), { recursive: true })
     for (const [name, content] of Object.entries(outputs)) {
@@ -118,13 +203,16 @@ export async function generateRpc({
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const check = process.argv.includes('--check')
+  const ifStale = process.argv.includes('--if-stale')
   try {
     const unsupported = process.argv
       .slice(2)
-      .filter((value) => !['--check', '--skip-typecheck'].includes(value))
+      .filter((value) => !['--check', '--if-stale', '--skip-typecheck'].includes(value))
     if (unsupported.length) throw new Error(`Unknown arguments: ${unsupported.join(', ')}`)
+    if (check && ifStale) throw new Error('Cannot combine --check and --if-stale')
     await generateRpc({
       check,
+      ifStale,
       checkDiagnostics: !process.argv.includes('--skip-typecheck'),
     })
     console.log(
