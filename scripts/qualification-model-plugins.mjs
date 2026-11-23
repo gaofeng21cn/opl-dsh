@@ -159,7 +159,8 @@ export async function verifyModelPlugins({ root, origin, cookie, wire, harness }
     })
     try {
       assert.equal(response.status, expected, 'OFM admission failed: ' + path)
-      if (expected === 200) assert.match(response.headers.get('content-type'), /^text\/event-stream/)
+      if (expected === 200)
+        assert.match(response.headers.get('content-type'), /^text\/event-stream/)
     } finally {
       await response.body?.cancel()
     }
