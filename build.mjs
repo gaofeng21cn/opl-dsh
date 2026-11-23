@@ -253,6 +253,7 @@ for (const file of [
   'kimi-cu.mjs',
   'kimi-cu-component.mjs',
   'kimi-cu-windows.mjs',
+  'kimi-cu-windows.d.mts',
   'official-pnpm.cjs',
   'migrate.cjs',
   'setup.mjs',
