@@ -75,7 +75,7 @@ export function kimiCuRelease(manifest, platform = process.platform, arch = proc
 }
 
 /** Read a bounded streamed response without buffering an oversized body first. */
-async function responseBytes(response, limit) {
+export async function responseBytes(response, limit) {
   if (!response.ok) throw Error(`下载失败（HTTP ${String(response.status)}）`)
   const declared = Number(response.headers.get('content-length') ?? 0)
   if (Number.isFinite(declared) && declared > limit) throw Error('下载内容超过大小上限')
@@ -275,7 +275,10 @@ export async function installKimiCu({
   inspect,
   verifyBundle = verifyKimiCuBundle,
   configure = configureKimiCu,
-  archivePath = process.env.OPL_KIMI_CU_ARCHIVE_PATH?.trim() || undefined,
+  allowOffline = true,
+  archivePath = allowOffline
+    ? process.env.OPL_KIMI_CU_ARCHIVE_PATH?.trim() || undefined
+    : undefined,
   expectedSha256 = process.env.OPL_KIMI_CU_ARCHIVE_SHA256?.trim() || undefined,
   unpack = (archive, destination) => command('/usr/bin/ditto', ['-x', '-k', archive, destination]),
   hostPlatform = process.platform,
@@ -383,7 +386,12 @@ export async function installKimiCu({
         await rm(stage, { recursive: true, force: true })
       }
     }
-    if (before.verified && before.version !== null && process.env.OPL_KIMI_CU_OFFLINE === '1') {
+    if (
+      allowOffline &&
+      before.verified &&
+      before.version !== null &&
+      process.env.OPL_KIMI_CU_OFFLINE === '1'
+    ) {
       const configured = configure(before.executable)
       await record('current', {
         installedVersion: before.version,

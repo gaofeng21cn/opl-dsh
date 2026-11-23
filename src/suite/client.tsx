@@ -1,3 +1,4 @@
+import { isWindowsDesktop } from '../shared/client/windows-desktop.ts'
 import { mountRemotes } from '../shared/client/mount-remotes.ts'
 /** One browser package, independently mounted feature lifecycles. */
 import type { Context } from '@deepseek-ai/cordis'
@@ -25,9 +26,9 @@ import { NativeShellPreference, nativeShellLabels, type NativeShellApi } from '.
 export const inject = ['remote', 'slots', 'locale']
 export async function apply(ctx: Context): Promise<void> {
   await mountRemotes(ctx, ['oplSetup', 'oplGatewayAccount', 'oplGatewayModels', 'oplUpdates'])
-  ctx.effect(() => ctx.locale.register('settings.oplNativeShell', nativeShellLabels))
   const setupRemote = optionalRemote(ctx, 'oplSetup')
-  if (setupRemote) {
+  if (setupRemote && isWindowsDesktop()) {
+    ctx.effect(() => ctx.locale.register('settings.oplNativeShell', nativeShellLabels))
     const call = remoteCall(setupRemote)
     const api: NativeShellApi = {
       read: () => call('native-shell'),
@@ -86,6 +87,7 @@ export async function apply(ctx: Context): Promise<void> {
         setAutomatic: (enabled: boolean) => call('automatic', enabled),
         prepare: () => call('prepare'),
         applyNow: () => call('applyNow'),
+        updateKimiCu: () => call('updateKimiCu'),
         cancel: () => call('cancel'),
         setPolicy: (policy) => call('policy', policy),
         postpone: () => call('postpone'),

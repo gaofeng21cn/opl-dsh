@@ -1,5 +1,4 @@
 import { refreshEnhancements } from './update.mjs'
-import { WINDOWS_KIMI_CU_VERSION } from './kimi-cu-windows.mjs'
 import {
   acquireSuiteLaunch,
   finishUpdateTransaction,
@@ -115,9 +114,6 @@ const env = {
   OPL_UPDATE_LAUNCHER_PID: transactionId ? String(process.pid) : '',
   NODE_USE_SYSTEM_CA: '1',
   OPL_OFFICIAL_VERSION: manifest.version,
-  ...(process.platform === 'win32'
-    ? { OPL_KIMI_CU_WINDOWS_ROOT: join(root, 'kimi-cu', WINDOWS_KIMI_CU_VERSION) }
-    : {}),
 }
 delete env.ELECTRON_RUN_AS_NODE
 const log = openSync(join(root, 'desktop.log'), 'a', 0o600)

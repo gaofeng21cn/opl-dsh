@@ -1,22 +1,23 @@
 /** Install the official Windows code-mode plugin without starting its native Agent. */
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join } from 'node:path'
+import { delimiter, dirname, isAbsolute, join, normalize } from 'node:path'
 
-export const WINDOWS_KIMI_CU_VERSION = '0.3.10'
+export const WINDOWS_KIMI_CU_VERSION = '0.3.13'
+const supportedVersions = [WINDOWS_KIMI_CU_VERSION, '0.3.10']
 export const WINDOWS_KIMI_CU_MANIFEST_URL =
-  'https://cdn.kimi.com/kimi-computer-use-windows/0.3.10/version.json'
+  'https://cdn.kimi.com/kimi-computer-use-windows/0.3.13/version.json'
 export const WINDOWS_KIMI_CU_SIGNER = '6DA99CCA99A69947C11F97395A55FD2DC683420D'
-const base = 'https://cdn.kimi.com/kimi-computer-use-windows/0.3.10/'
+const base = 'https://cdn.kimi.com/kimi-computer-use-windows/0.3.13/'
 const hashes = {
-  plugin: 'aae21d2b5b8eb601f8f89b29e3ccc3ffab32db95f009a1e7e0a5409eefe4cea9',
-  runtime: '46e2900b93353af6f44391451126575967192340daa3b952b34e92f6a88a9bd4',
+  plugin: 'd3bc92f4c9fe6b3321eace98121c7dc2756067ff66ae7a423d8f6ffc2f56565a',
+  runtime: 'e592f3ec1134baa2f8720c18b828a25ac3f26db04b83ae36ea96fc38bb4d8096',
 }
-const nativeHash = 'ab33418e9bf042775116a9334cb3ea5be923cc8ebcead1c060d86f9742f96936'
+const nativeHash = 'a65e3e9cd58c3106840a7a566dd8d98ca694577e3d535c679609f0f185b6a8ca'
 const runtimeFiles = {
-  'INSTALL.md': '1867f3b6a62e1827be24301b1a3106a340625b0664d9941b5f13666f06e739c9',
+  'INSTALL.md': '61752603aa037d34754e26bc2bd4673dcdca997ff8eea6ea4edef12048939da3',
   'install_runtime.ps1': '4f35cc5467dc5d18fd3e292930a6ddf65c877ae9170796af88137ddb270800da',
   'kimi-cu.exe': nativeHash,
   'runtime-layout.json': 'e8fe44dce54a7af0fcd8e700c587e0154ebb2d6cb36a587499c440c31afc20a5',
@@ -26,6 +27,60 @@ const runtimeFiles = {
     '212799350e4163cc98ec60141925b18aa1a03d607a87b7ac4279d95cb3d9f4fc',
 }
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex')
+
+function windowsInstallationAt(root, version) {
+  if (!isAbsolute(root)) throw Error('WinCU 安装目录无效，请重新安装 Windows KimiCU 组件。')
+  const plugin = join(root, 'plugin')
+  const executable = join(plugin, 'runtime', 'node-repl.exe')
+  const native = join(root, 'runtime', 'kimi-cu.exe')
+  for (const file of [executable, native, join(plugin, 'public/node_modules/@kimi/cu/index.mjs')]) {
+    if (!statSync(file).isFile()) throw Error(`Windows KimiCU 组件不是文件：${file}`)
+  }
+  const manifest = JSON.parse(readFileSync(join(plugin, 'kimi.plugin.json'), 'utf8'))
+  if (
+    manifest.name !== 'kimi-cu-win' ||
+    !supportedVersions.includes(manifest.version) ||
+    (version !== undefined && manifest.version !== version) ||
+    manifest.mcpServers?.win?.command !== './runtime/node-repl.exe'
+  )
+    throw Error('Windows KimiCU 插件版本或启动入口与已验证接口不符。')
+  return { plugin, executable, native, version: manifest.version }
+}
+
+/** Resolve the WinCU runtime used by both the Host and the update status. */
+export function discoverWindowsKimiCu(suiteRoot, env = process.env) {
+  const candidates = []
+  if (suiteRoot) {
+    for (const version of supportedVersions)
+      candidates.push({ version, root: join(suiteRoot, 'kimi-cu', version) })
+  }
+  const configuredRoot = env.OPL_KIMI_CU_WINDOWS_ROOT
+  // Older Suite launchers export the old managed location as a default.
+  if (
+    configuredRoot !== undefined &&
+    !candidates.some(({ root }) => root === normalize(configuredRoot))
+  ) {
+    return { ...windowsInstallationAt(configuredRoot), external: true }
+  }
+  if (env.LOCALAPPDATA) {
+    for (const version of supportedVersions)
+      candidates.push({
+        version,
+        root: join(env.LOCALAPPDATA, 'Kimi Computer Use', 'opl', version),
+      })
+  }
+  let error
+  for (const { root, version } of candidates) {
+    if (!existsSync(root)) continue
+    try {
+      return { ...windowsInstallationAt(root, version), external: false }
+    } catch (invalid) {
+      error ??= invalid
+    }
+  }
+  if (error) throw error
+  return null
+}
 
 /** Reject paths that Windows would interpret outside an ordinary relative archive entry. */
 export function validateWindowsKimiCuEntry(name) {
@@ -166,7 +221,7 @@ async function verifyInstallation(root, verifySignature) {
   const executable = join(pluginRoot, 'runtime', 'node-repl.exe')
   const runtimeExecutable = join(root, 'runtime', 'kimi-cu.exe')
   const bundleBytes = await readFile(join(pluginRoot, 'bundle.json'))
-  if (hash(bundleBytes) !== '823903608ce503721df9c11741c9df89cbb181beda1b81c6e2eb8c738417d190')
+  if (hash(bundleBytes) !== '317427bdf5978226a6a1ed4095e65fc88dc1e7fccca2cc8eb91d9974be3e4412')
     throw Error('KimiCU 插件文件清单 SHA-256 不匹配')
   const bundle = JSON.parse(bundleBytes.toString('utf8'))
   const plugin = JSON.parse(await readFile(join(pluginRoot, 'kimi.plugin.json'), 'utf8'))
@@ -200,12 +255,23 @@ async function verifyInstallation(root, verifySignature) {
   return { pluginRoot, executable, runtimeExecutable, staticVerified: true, runtimeVerified: false }
 }
 
+/** Select a standalone Node for the Windows plugin when called inside the desktop app. */
+function windowsNodeExecutable() {
+  if (!process.versions.electron) return process.execPath
+  return (process.env.PATH ?? '')
+    .split(delimiter)
+    .map((entry) => entry.replace(/^"|"$/gu, ''))
+    .filter((entry) => isAbsolute(entry))
+    .map((entry) => join(entry, 'node.exe'))
+    .find((path) => existsSync(path))
+}
+
 /** Install into an OPL-owned version directory; preserve existing files and report static verification separately. */
 export async function installWindowsKimiCu({
   suiteRoot,
   log = () => {},
   installRoot,
-  nodeExecutable = process.execPath,
+  nodeExecutable = windowsNodeExecutable(),
   fetchImpl = fetch,
   platform = process.platform,
   arch = process.arch,
@@ -226,7 +292,8 @@ export async function installWindowsKimiCu({
     return record({ state: 'skipped', reason: 'KimiCU Windows 需要 Windows x64' })
   let stage
   try {
-    if (!isAbsolute(nodeExecutable)) throw Error('KimiCU 需要外部 Node.js 的绝对路径')
+    if (!nodeExecutable || !isAbsolute(nodeExecutable))
+      throw Error('KimiCU 需要外部 Node.js 的绝对路径')
     const node = spawnSync(nodeExecutable, ['--version'], {
       encoding: 'utf8',
       windowsHide: true,

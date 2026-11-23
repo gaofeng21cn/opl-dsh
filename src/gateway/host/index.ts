@@ -8,22 +8,25 @@ import {
 /** OPL-owned credentials and model-group routing over official DSH adapters. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { assertUsableApiKey, LlmAdapter, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
 import type { LlmProviderInfo } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-attachment'
 import {
   getOrCreateAnonymousUserId,
   type AnonymousUserId,
 } from '@deepseek-ai/dsh-anonymous-user-id'
-import { DeepSeekAdapter, catalogModelInfo } from '@deepseek-ai/dsh-llm-deepseek'
-import { resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek-api-key'
+import {
+  DeepSeekAdapter,
+  catalogModelInfo,
+  resolveAdapterOptions,
+} from '@deepseek-ai/dsh-llm-deepseek'
 import type { ResolvedDeepSeekOptions } from '@deepseek-ai/dsh-llm-deepseek-api-key'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/dsh-settings'
 import { OplGatewayAccountService } from './account-service.ts'
 import { GatewayModelAdapter, OPENAI_PROVIDER, AUTO_REVIEW_PROVIDER } from './model-router.ts'
 import { GATEWAY_GROUPS, type GatewayGroupId } from '../contracts/groups.ts'
-import { Config, CODEX_API_KEY_REF, toAdapterConfig } from './config.ts'
+import { Config, CODEX_API_KEY_REF, DEFAULT_API_KEY_REF, toAdapterConfig } from './config.ts'
 import { OPL_GATEWAY_INFERENCE_BASE_URL } from './opl-credentials.ts'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import {
@@ -144,10 +147,11 @@ export function apply(ctx: Context, config: Config): void {
     const raw = current()
     if (raw === lastRaw && lastGood !== undefined) return lastGood
     try {
-      const next = resolveAdapterOptions(
-        toAdapterConfig(raw, OPL_GATEWAY_INFERENCE_BASE_URL),
-        launchEnvironmentOf(ctx),
-      )
+      const { apiKeyEnv, ...messages } = toAdapterConfig(raw, OPL_GATEWAY_INFERENCE_BASE_URL)
+      const next = {
+        ...resolveAdapterOptions(messages, launchEnvironmentOf(ctx)),
+        apiKeyEnv: credentialRef(apiKeyEnv ?? DEFAULT_API_KEY_REF),
+      }
       lastRaw = raw
       lastGood = next
       return next
@@ -179,7 +183,13 @@ export function apply(ctx: Context, config: Config): void {
         ? launchEnvironmentOf(ctx).get(ref)?.value
         : (await credentials.resolve(ref))?.value
     if (stored !== undefined && stored.length > 0) {
-      return assertUsableApiKey(stored, 'llm-opl-gateway', ref)
+      const key = stored.trim()
+      if (!/^[!-~]+$/.test(key))
+        throw new LlmError(
+          `llm-opl-gateway: invalid API key in ${ref}; expected a printable ASCII token`,
+          'INVALID_CREDENTIAL',
+        )
+      return key
     }
     throw new LlmError(
       `llm-opl-gateway: no credential for provider route "${PROVIDER}"; sign in through Settings > OPL Gateway` +

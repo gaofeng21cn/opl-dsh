@@ -167,6 +167,14 @@ function host(initial = status()) {
       current = { ...current, automatic: enabled }
       return current
     }),
+    updateKimiCu: vi.fn(async () => {
+      const cu = current.kimiCu!
+      current = {
+        ...current,
+        kimiCu: { ...cu, installedVersion: cu.latestVersion, available: false },
+      }
+      return current
+    }),
     prepare: vi.fn(async () => {
       current = { ...current, pendingVersion: current.release!.version }
       return current
@@ -347,6 +355,35 @@ function activityEvents() {
 }
 
 describe('unattended update preferences', () => {
+  it('opens General settings for a component-only release and refreshes the installed version', async () => {
+    const kimiCu = { installedVersion: '0.3.10', latestVersion: '0.3.13', available: true }
+    const f = await mount({ initial: status({ kimiCu, lastSuccessAt: '2026-11-20T00:00:00Z' }) })
+    expect([...f.container.querySelectorAll('dd')].map((node) => node.textContent)).toContain(
+      '0.3.10',
+    )
+    expect(f.container.textContent).not.toContain(zh.noUpdate)
+    await click(f.container.querySelector<HTMLButtonElement>('[data-opl-update-notice]')!)
+    expect(f.openSettings).toHaveBeenCalledExactlyOnceWith()
+    await click(button(f.container, zh.cuUpdate))
+    expect(f.api.updateKimiCu).toHaveBeenCalledOnce()
+    expect(f.container.querySelector('[data-opl-update-notice]')).toBeNull()
+    expect([...f.container.querySelectorAll('dd')].map((node) => node.textContent)).toContain(
+      '0.3.13',
+    )
+  })
+
+  it('offers one preparation action when a compatible release includes KimiCU', async () => {
+    const kimiCu = { installedVersion: '0.3.10', latestVersion: '0.3.13', available: true }
+    const f = await mount({ initial: status({ release: release(), kimiCu }) })
+    expect(f.container.textContent).toContain(t('cuIncluded', { version: '0.3.13' }))
+    expect(f.container.querySelector('[data-opl-update-notice]')?.getAttribute('title')).toContain(
+      t('cuAvailable', { version: '0.3.13' }),
+    )
+    await click(button(f.container, zh.prepare))
+    expect(f.api.prepare).toHaveBeenCalledOnce()
+    expect(f.api.updateKimiCu).not.toHaveBeenCalled()
+  })
+
   it('uses reminder defaults without changing the separate automatic-check preference', async () => {
     const f = await mount()
     const select = section(f.container).querySelector('select')!

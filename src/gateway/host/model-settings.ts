@@ -1,3 +1,4 @@
+import { contextOwner } from '../../compat/host/context-owner.ts'
 import { gatewayModelChoices } from '../shared/model-choices.ts'
 import { gatewayGroupEnabled } from './group-settings.ts'
 import { createHash } from 'node:crypto'
@@ -69,7 +70,7 @@ const copiedCatalogs = new WeakMap<object, Map<string, { fingerprint: string; re
 function modelCatalogState(ctx: Context, settings: Context['settings']) {
   const descriptors = settings.describe()
   const catalogs = savedModelCatalogs(settings)
-  const owner = ctx.root ?? ctx
+  const owner = contextOwner(ctx)
   let copied = copiedCatalogs.get(owner)
   if (!copied) copiedCatalogs.set(owner, (copied = new Map()))
   for (const [id, previous] of copied) {
@@ -238,7 +239,7 @@ const migrations = new WeakMap<object, Promise<void>>()
  * Custom connections and explicit user input/compat choices win.
  */
 export function migrateGatewayProtocolDefaults(ctx: Context): Promise<void> {
-  const owner = ctx.root ?? ctx
+  const owner = contextOwner(ctx)
   let pending = migrations.get(owner)
   if (!pending) {
     pending = migrateProtocolDefaults(ctx).finally(() => migrations.delete(owner))

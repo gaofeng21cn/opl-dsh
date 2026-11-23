@@ -6,7 +6,15 @@ import { updatePolicy, validUpdatePolicy } from './policy.ts'
 
 /** One foreground request owns the accepted status until it completes or is superseded. */
 export type UpdateOperation =
-  'status' | 'check' | 'automatic' | 'policy' | 'prepare' | 'apply' | 'cancel' | 'postpone'
+  | 'status'
+  | 'check'
+  | 'automatic'
+  | 'policy'
+  | 'prepare'
+  | 'apply'
+  | 'component'
+  | 'cancel'
+  | 'postpone'
 export type UpdateFailure = `${UpdateOperation}-failed`
 
 /** Accepted Host facts and the current Client request. */
@@ -134,6 +142,12 @@ export class UpdateController {
     )
       return
     await this.run('policy', () => this.config.api.setPolicy(policy))
+  }
+
+  async updateKimiCu(): Promise<void> {
+    const update = this.config.api.updateKimiCu
+    if (!update || !this.writable() || !this.view.status?.kimiCu?.available) return
+    await this.run('component', () => update.call(this.config.api))
   }
 
   /** Prepare only the explicitly selected compatible release, including local candidates. */
@@ -278,6 +292,7 @@ export class UpdateController {
       !this.view.operation &&
       !this.view.status?.checking &&
       !this.view.status?.preparing &&
+      !this.view.status?.kimiCu?.updating &&
       this.view.status?.restart?.phase !== 'handoff'
     )
   }

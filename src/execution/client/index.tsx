@@ -22,6 +22,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import { PendingCombination } from './pending-combination.ts'
 import { CombinationSelect } from './CombinationSelect.tsx'
 import { ExecutionSettings } from './ExecutionSettings.tsx'
 import { HarnessToolRow } from './HarnessToolRow.tsx'
@@ -123,6 +124,7 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
   )
   const composerText = ctx.locale.bind(PROJECTLESS_COMPOSER_NAMESPACE)
   const call = remoteCall(ctx.remote.oplExecution)
+  const pendingCombination = new PendingCombination()
   ctx.inject(['configForms'], (settings) => {
     const executionForm = settings.configForms.get<
       PermissionMemorySettings & MiniMaxIntegrationSettings
@@ -211,7 +213,8 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
       const route: typeof remote.prompt = async (prompt, signal) => {
         const editor = editors.get(prompt.sessionId)
         const target = editor?.selection()
-        if (!target) return original(prompt, signal)
+        if (!target)
+          return pendingCombination.send(prompt.sessionId, signal, () => original(prompt, signal))
         if (signal?.aborted) return original(prompt, signal)
         const result = await ctx.remote.oplExecution['message-edit-send']({
           prompt,
@@ -264,6 +267,7 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
         inject: (sessionId) => ({
           call,
           sessionId,
+          pendingCombination,
           loadingLabel: composerText('loadingModels'),
           available: ctx.sessions.subagentAddress(sessionId as SessionId) === undefined,
           selectionSource: (id: string) => modelSelectionFace(ctx, id),

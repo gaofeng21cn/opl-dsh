@@ -173,13 +173,15 @@ async function main(application, dir) {
         dir,
         requireRuntime.resolve('@deepseek-ai/dsh/package.json'),
       )
-      return applyEntryPatches(
+      const patched = applyEntryPatches(
         [],
         [...profile.layers.flatMap((layer) => layer.patches), ...profile.patches],
         (message) => {
           throw Error(message)
         },
       )
+      // Desktop 0.2.3 also returns the ownership index for the composed entries.
+      return Array.isArray(patched) ? patched : patched.data
     },
   })
 }

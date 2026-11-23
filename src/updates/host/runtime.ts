@@ -6,13 +6,19 @@ import { pathToFileURL } from 'node:url'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { installationPaths } from '../../../installer/installation-paths.mjs'
 import type { Context } from '@deepseek-ai/cordis'
-import type { OplUpdatePolicy, OplUpdateRelease, OplUpdateStatus } from '../contracts.ts'
 import {
   errorForFailure,
   validFailure,
   type InstalledUpdateIdentity,
   type UpdateOperations,
 } from './controller.ts'
+import { withKimiCuUpdate } from '../../computer-use/host/update-lease.ts'
+import type {
+  KimiCuUpdateStatus,
+  OplUpdatePolicy,
+  OplUpdateRelease,
+  OplUpdateStatus,
+} from '../contracts.ts'
 import { defaultUpdatePolicy, storedUpdatePolicy } from './idle.ts'
 import type {} from './runtime-admission.ts'
 
@@ -131,6 +137,32 @@ export function updateOperations(ctx: Context): UpdateOperations {
   }
   return {
     installed: actualInstallation,
+    ...(process.platform === 'darwin' || process.platform === 'win32'
+      ? {
+          component: async (
+            mode: 'local' | 'check' | 'install',
+            signal: AbortSignal,
+            expectedVersion?: string,
+          ) => {
+            const installed = await installation()
+            const component = (await import(
+              pathToFileURL(join(installed.release, 'kimi-cu-component.mjs')).href
+            )) as {
+              componentStatus(input: object): Promise<KimiCuUpdateStatus>
+              updateComponent(input: object): Promise<KimiCuUpdateStatus>
+            }
+            const options = {
+              suiteRoot: installed.suiteRoot,
+              check: mode === 'check',
+              expectedVersion,
+              signal,
+            }
+            return mode === 'install'
+              ? withKimiCuUpdate(() => component.updateComponent(options))
+              : component.componentStatus(options)
+          },
+        }
+      : {}),
     automatic: () => {
       const value = ctx.settings.describe().find((entry) => entry.ns === 'opl-suite')?.value as
         { updateAutomatic?: boolean } | undefined
