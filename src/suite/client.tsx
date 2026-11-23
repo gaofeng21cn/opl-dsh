@@ -86,6 +86,7 @@ export async function apply(ctx: Context): Promise<void> {
         setAutomatic: (enabled: boolean) => call('automatic', enabled),
         prepare: () => call('prepare'),
         applyNow: () => call('applyNow'),
+        updateKimiCu: () => call('updateKimiCu'),
         cancel: () => call('cancel'),
         setPolicy: (policy) => call('policy', policy),
         postpone: () => call('postpone'),

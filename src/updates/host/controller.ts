@@ -1,5 +1,6 @@
 /** One Host owns release discovery, prepared-update state and the check schedule. */
 import type {
+  KimiCuUpdateStatus,
   OplUpdateApi,
   OplUpdateError,
   OplUpdateFailure,
@@ -18,6 +19,11 @@ export interface InstalledUpdateIdentity {
 }
 
 export interface UpdateOperations {
+  component?(
+    mode: 'local' | 'check' | 'install',
+    signal: AbortSignal,
+    expectedVersion?: string,
+  ): Promise<KimiCuUpdateStatus>
   installed(): Promise<InstalledUpdateIdentity>
   automatic(): boolean
   saveAutomatic(enabled: boolean): Promise<void>
@@ -227,6 +233,11 @@ export class UpdateController implements OplUpdateApi {
   private checkAbort: AbortController | undefined
   private prepareAbort: AbortController | undefined
   private timer: ReturnType<typeof setTimeout> | undefined
+  private readonly componentAbort = new AbortController()
+  private componentInstall: Promise<OplUpdateStatus> | undefined
+  private componentTimer: ReturnType<typeof setTimeout> | undefined
+  private componentActivity = Date.now()
+  private firstScheduledCheck = true
   private closed = false
   private saves: Promise<void> = Promise.resolve()
   private readonly settingsWrites = new Set<Promise<void>>()
@@ -287,6 +298,7 @@ export class UpdateController implements OplUpdateApi {
           error: null,
           failure: null,
         })
+      if (this.operations.component) await this.readComponent('local', this.componentAbort.signal)
       try {
         this.value.pendingVersion = await this.operations.pending()
         if (this.value.pendingVersion) await this.operations.armPending?.()
@@ -352,7 +364,10 @@ export class UpdateController implements OplUpdateApi {
         : initialDelay)
     this.timer = setTimeout(() => {
       this.timer = undefined
+      const startup = this.firstScheduledCheck
+      this.firstScheduledCheck = false
       void this.check()
+        .then(() => this.scheduleComponent(startup))
         .catch(() => {})
         .finally(() => this.schedule())
     }, wait)
@@ -364,12 +379,14 @@ export class UpdateController implements OplUpdateApi {
     if (this.closed || this.value.restart?.phase === 'handoff')
       throw Error('Update service is closing')
     if (this.checking) return this.checking
+    if (this.componentInstall) return this.componentInstall
     this.applyEpoch++
     this.idle.changed()
     const abort = (this.checkAbort = new AbortController())
     const work = (async () => {
       let succeeded = false
       this.value.checking = true
+      const componentCheck = this.readComponent('check', abort.signal)
       this.publish()
       try {
         const current = await this.operations.installed()
@@ -405,6 +422,7 @@ export class UpdateController implements OplUpdateApi {
           this.value.failure = describeUpdateFailure(_error, 'discovery')
         }
       } finally {
+        await componentCheck
         this.value.checking = false
         if (!this.closed) {
           this.value.checkedAt = new Date().toISOString()
@@ -426,9 +444,109 @@ export class UpdateController implements OplUpdateApi {
     } finally {
       this.checking = undefined
       this.checkAbort = undefined
+      this.scheduleComponent(false)
       this.schedule()
       this.idle.changed()
     }
+  }
+
+  private async readComponent(
+    mode: 'local' | 'check' | 'install',
+    signal: AbortSignal,
+    expected?: string,
+  ): Promise<void> {
+    if (!this.operations.component) return
+    try {
+      const result = await this.operations.component(mode, signal, expected)
+      if (signal.aborted) return
+      const error = result.error
+        ? ((['busy', 'unvalidated', 'read-failed', 'install-failed', 'check-failed'].includes(
+            result.error,
+          )
+            ? result.error
+            : undefined) ??
+          (mode === 'install'
+            ? 'install-failed'
+            : mode === 'local'
+              ? 'read-failed'
+              : 'check-failed'))
+        : undefined
+      this.value.kimiCu = { ...result, ...(error ? { error } : {}) }
+    } catch (error) {
+      if (signal.aborted) return
+      this.value.kimiCu = {
+        installedVersion: this.value.kimiCu?.installedVersion ?? null,
+        latestVersion: this.value.kimiCu?.latestVersion ?? null,
+        available: mode === 'install' && this.value.kimiCu?.available === true,
+        error:
+          error instanceof Error && error.message === 'kimi-cu-busy'
+            ? 'busy'
+            : mode === 'install'
+              ? 'install-failed'
+              : mode === 'local'
+                ? 'read-failed'
+                : 'check-failed',
+      }
+    }
+  }
+
+  /** Update only the release observed by discovery and leave Desktop running. */
+  async updateKimiCu(): Promise<OplUpdateStatus> {
+    await this.initialize()
+    this.assertOpen()
+    if (this.componentInstall) return this.componentInstall
+    if (this.checking || this.preparing || this.applying || this.value.pendingVersion)
+      throw Error('Another update is in progress')
+    const component = this.value.kimiCu
+    if (!component?.available || !component.latestVersion) return this.status()
+    const version = component.latestVersion
+    const work = (async () => {
+      this.value.kimiCu = { ...component, updating: true }
+      this.publish()
+      await this.readComponent('install', this.componentAbort.signal, version)
+      this.publish()
+      return structuredClone(this.value)
+    })()
+    this.componentInstall = work
+    try {
+      return await work
+    } finally {
+      this.componentInstall = undefined
+    }
+  }
+
+  private scheduleComponent(startup: boolean): void {
+    if (this.componentTimer) clearTimeout(this.componentTimer)
+    this.componentTimer = undefined
+    const { kimiCu, policy, release, pendingVersion, automatic } = this.value
+    if (
+      this.closed ||
+      !automatic ||
+      !kimiCu?.available ||
+      !policy ||
+      pendingVersion ||
+      (!this.value.localCandidate && release?.compatibility === 'enhancement') ||
+      policy.mode === 'notify' ||
+      (policy.mode === 'on-launch' && !startup)
+    )
+      return
+    const delay =
+      policy.mode === 'idle'
+        ? Math.max(0, this.componentActivity + policy.idleMinutes * 60_000 - Date.now())
+        : 0
+    this.componentTimer = setTimeout(() => {
+      this.componentTimer = undefined
+      if (this.closed || this.value.checking || this.value.preparing || this.applying) return
+      void this.updateKimiCu()
+        .then((result) => {
+          if (result.kimiCu?.error === 'busy' && this.value.policy?.mode === 'idle') {
+            this.componentActivity = Date.now()
+            this.scheduleComponent(false)
+          }
+        })
+        .catch(() => {})
+    }, delay)
+    this.componentTimer.unref?.()
   }
 
   async setAutomatic(enabled: boolean): Promise<OplUpdateStatus> {
@@ -443,6 +561,7 @@ export class UpdateController implements OplUpdateApi {
     }
     if (this.closed) return this.status()
     this.value.automatic = enabled
+    this.scheduleComponent(false)
     this.schedule()
     this.publish()
     return this.status()
@@ -450,6 +569,8 @@ export class UpdateController implements OplUpdateApi {
 
   async prepare(): Promise<OplUpdateStatus> {
     await this.initialize()
+    this.assertOpen()
+    await this.componentInstall
     this.assertOpen()
     if (this.preparing) return this.preparing
     if (this.cancelling) await this.cancelling
@@ -638,6 +759,7 @@ export class UpdateController implements OplUpdateApi {
     }
     if (!this.closed) {
       this.value.policy = policy
+      this.scheduleComponent(false)
       this.value.restart = undefined
       this.idle.postpone()
       this.publish()
@@ -659,6 +781,8 @@ export class UpdateController implements OplUpdateApi {
   /** Trusted Client input postpones only the idle restart. */
   async activity(): Promise<void> {
     if (this.closed) return
+    this.componentActivity = Date.now()
+    if (this.value.policy?.mode === 'idle') this.scheduleComponent(false)
     this.idle.activity()
   }
 
@@ -672,12 +796,15 @@ export class UpdateController implements OplUpdateApi {
     this.closed = true
     this.applyEpoch++
     if (this.timer) clearTimeout(this.timer)
+    this.componentAbort.abort()
+    if (this.componentTimer) clearTimeout(this.componentTimer)
     this.checkAbort?.abort()
     this.prepareAbort?.abort()
     await this.idle.dispose()
     this.publish()
     this.listeners.clear()
     await Promise.allSettled([
+      this.componentInstall,
       this.initialization,
       this.checking,
       this.preparing,

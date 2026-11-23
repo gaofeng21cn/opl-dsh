@@ -1,62 +1,61 @@
-# KimiCU Computer Use
+# 用 KimiCU 观察和操作桌面
 
+在 OPL DSH 中，你可以让原生 DSH 会话读取窗口、查看截图，也可以让它点击按钮或输入文字。第一次使用时，先选执行引擎为 **DSH** 的模型组合。其他 Harness 的桌面能力由各自的集成提供。
 
-OPL DSH 通过官方 KimiCU 观察和操作桌面，Windows 使用 code-mode 插件，macOS 使用原始 MCP companion。变更桌面需要当前会话明确选择完全访问。
+## 首次使用前
 
-## macOS
+OPL 安装器会为当前平台安装 KimiCU。两端都可以先在现有会话权限下试用只读观察。
 
-- macOS 14 或更高版本，Apple Silicon。
-- `/Applications/KimiCU.app` 已安装并可信，Bundle ID 为 `ai.kimi.cu`，Team ID 为 `2J9472RW75`。新机由 OPL 安装器自动安装，不需要另装。
-- KimiCU 的辅助功能和屏幕录制权限已授予，`kimi-cu doctor` 的检查通过。
-- KimiCU 的 XPC 服务可用。权限通过但服务失败时，工具会报告真实错误；不会退化成另一套截图或输入实现。
-- 桌面变更要求当前 DSH 会话显式选择“完全访问”。只读观察不需要扩大文件沙箱权限。
+| | macOS | Windows |
+|---|---|---|
+| 系统要求 | Apple Silicon，macOS 14 或更高版本 | x64，Windows 10 1903（build 18362）或更高版本，包括 Windows 11 |
+| 安装准备 | 安装后，在系统设置的“隐私与安全性”中为 KimiCU 授予辅助功能和屏幕录制权限 | 安装前，确保 PATH 中的 Node.js 为 24.15.0 或更高版本。可在终端运行 `node --version` 确认 |
+| 安装位置 | `/Applications/KimiCU.app` | OPL 套件目录下的 `kimi-cu/<版本>`，包含 WinCU 插件和运行时 |
 
-## 调用方式
+## 第一次操作
 
-模型先使用 `computer_use` 的 `action` 参数调用 KimiCU 原始工具。常用流程：
+1. 在 Mac 打开“文本编辑”，或在 Windows 打开“记事本”，新建一个空白文稿。
+2. 在 DSH 会话中发送：“用桌面工具找到刚打开的文本编辑窗口，告诉我窗口标题并返回截图。只观察。” 收到对应窗口的截图，就验证了观察能力。
+3. 要验证输入，在当前会话显式选择**完全访问**，再发送：“在刚才的空白文稿里输入‘桌面测试’，然后重新读取窗口，确认这四个字已经出现。” 以操作后的窗口内容确认结果。
 
-1. `list_apps` 配合 `running_only: true` 找到目标应用。
-2. `get_app_state` 读取截图与无障碍树；之后的点击可使用返回的 `snapshot_id` 和节点 `index`。
-3. 在完全访问会话中调用 `click`、`type_text`、`press_key`、`scroll`、`set_value`、`drag` 等动作。
-4. 重新读取状态确认结果；工具返回的“已投递”不等于业务结果已完成。
+启动或激活应用、点击、输入、滚动和拖拽都会改变桌面状态，需要完全访问。系统登录、授权和 Windows UAC 提示由用户处理。操作超时或中断后，先重新观察窗口，再决定是否继续，以免重复输入。
 
-`action` 支持 KimiCU 0.6.6 的原始工具：
+## 查看版本与更新
 
-```text
-list_apps, list_windows, get_window, launch_app, get_app_state,
-get_window_state, activate_window, click, type_text, paste, press_key,
-scroll, set_value, perform_secondary_action, select_text, drag,
-drag_paths, debug_tap
+打开 **设置 → 通用设置 → 更新**。第三列「KimiCU 版本」显示 DSH 在这台电脑上使用的版本。点击「检查更新」会同时检查 OPL DSH 和 KimiCU。
+
+如果只有 KimiCU 有新版，可以从左下角的「↑ 更新」进入设置，点「更新 KimiCU」，完成后无需重启 DSH。如果本机显示「未安装」，检查到可用版本后点「安装 KimiCU」。如果 OPL 增强更新会一并安装 KimiCU，页面会列出将安装的 KimiCU 版本。
+
+自动检查和安装沿用本页的「自动检查更新」和「发现更新后」设置。选择「仅提醒」时，由你决定何时更新。macOS 使用 KimiCU 官方稳定版。Windows 使用通过 OPL 兼容性验证的版本，如果官方发布了更新的版本，页面会提示等待验证。
+
+## 遇到问题
+
+| 现象 | macOS | Windows |
+|---|---|---|
+| 安装了 DSH，会话仍无法调用 KimiCU | 检查应用程序中是否有 KimiCU，以及系统权限是否已授予 | 检查 Node.js 版本，查看套件是否装好了 WinCU 插件 |
+| 读取窗口失败 | 运行下方两条命令，分别检查权限和后台服务 | 先让模型重新列出窗口，再按返回的窗口 ID 读取状态。应用提供的无障碍文本不完整时，可用截图核对 |
+| 可以截图，不能点击或输入 | 检查当前会话是否为完全访问，以及 KimiCU 的辅助功能权限 | 检查当前会话是否为完全访问，并在输入前确认焦点位于目标窗口 |
+
+两个平台的组件安装结果都记录在 OPL 套件目录的 `kimi-cu-installation.json`。在 Mac 上，即使权限检查通过，后台服务仍可能无法连接。可在终端分别运行：
+
+```sh
+/Applications/KimiCU.app/Contents/MacOS/kimi-cu doctor
+/Applications/KimiCU.app/Contents/MacOS/kimi-cu xpc-ping
 ```
 
-`args` 原样传给对应 KimiCU 工具，因此各动作的字段以 `kimi-cu mcp -s user` 返回的 schema 为准。截图会保存为 DSH 附件，并以图像块返回给模型。
+<details>
+<summary>工具接口与验证记录</summary>
 
-## 安装与升级
+两个平台都向原生 DSH 提供 `computer_use`，截图作为 DSH 附件返回。具体动作取决于平台。
 
-macOS 安装器从 KimiCU 官方 `https://cdn.kimi.com/kimi-computer-use/latest/version.json` 选择与当前架构匹配的稳定版本，下载后校验官方 SHA-256，再校验 Developer ID 签名、公证、Team ID、Bundle ID、版本和架构。校验通过后才原子替换 `/Applications/KimiCU.app`；替换后执行 KimiCU 官方 `install`，并完成 MCP `initialize`、`tools/list` 和必需工具检查。macOS 安装模块在 Windows 上直接跳过；Windows 使用下述独立安装模块，不写 `/Applications`。
+| | macOS | Windows |
+|---|---|---|
+| 观察 | `list_apps` 找应用，`get_app_state` 读截图与无障碍树 | `list_windows` 找窗口，`get_window_state` 读截图与无障碍树 |
+| 操作 | 可按快照节点点击，支持 `type_text`、`paste`、`drag_paths` 等动作 | 可按元素索引或截图坐标点击，使用 `type_text` 输入、`drag_path` 拖拽 |
+| 接口 | `args` 传给所选的 KimiCU MCP 工具，参数以该版本的 `tools/list` 为准 | OPL 通过官方插件的 `node-repl.exe` 将声明的动作映射到固定的 `@kimi/cu` 调用 |
 
-已有可信的相同或更高版本会保留并重新检查配置，不降级。已有身份不可信的 KimiCU 会保留原应用并拒绝自动覆盖。下载、验签、安装或配置失败时，旧版本会恢复，DSH 继续安装，结果写入 `kimi-cu-installation.json`。首次安装后仍需在 macOS 系统设置中授予 KimiCU 辅助功能和屏幕录制权限；安装器不会代替用户接受系统权限。
+Windows 已实测从 0.3.10 升到 0.3.13 并在设置中回读版本，0.3.13 也已通过 DSH 适配器读取真实窗口。点击、按键、中英文输入和截图的实机记录来自 0.3.10。
 
-## 权限与失败边界
+macOS 已在运行中的 DSH 核对本机版本和官方稳定版均为 0.7.6，并在临时目录验证了下载、签名校验、安装和版本回读。本次 macOS 验收范围为安装与更新。
 
-- 只读动作：`list_apps`、`list_windows`、`get_window`、`get_app_state`、`get_window_state`。
-- 变更动作：启动或激活应用、点击、输入、粘贴、按键、滚动、设置值、次级操作、选择文本、拖拽和 `debug_tap`。
-- KimiCU 的 MCP 进程按 DSH 会话复用；DSH 会话取消时发送 MCP 取消通知，插件卸载时关闭自有进程。
-- 缺少 KimiCU、权限不足、XPC 服务失联或 KimiCU 返回错误时，工具失败且不自动重试。用户修复 companion 后可重新观察或执行。
-- 截图可能包含桌面内容。调用前应确认目标应用和任务范围；不要用桌面自动化绕过应用自身的认证、授权或安全确认。
-
-## macOS 验证记录
-
-本机 KimiCU 0.6.6 的签名、Bundle ID、Team ID、辅助功能、屏幕录制、SkyLight 和后台输入检查通过；MCP `initialize` 与 `tools/list` 可用。验收时 XPC `permissionStatus` 服务返回失败，因此实际 `list_apps` 不能视为通过。DSH 侧的协议、取消、结果映射和权限门禁由自动测试覆盖；完整的桌面操作仍需在 KimiCU 服务恢复后执行。
-
-## Windows WinCU
-
-Windows 10 1903（build 18362）及更新版本、Windows 11 x64 可使用官方 Windows 插件。安装器将已固定版本 0.3.10 的完整插件与 native runtime 安装到 套件目录下的 `kimi-cu/0.3.10`，校验官方清单 SHA-256 和 Moonshot Authenticode 签名；启动器通过明确的组件路径交给 Host，避免安装进程与独立桌面进程的本地应用目录不同。不增加登录自启，不改 Kimi Code 或 Codex 配置。
-
-实际 MCP 入口是 `plugin/runtime/node-repl.exe`，提供 `js` 工具。DSH 把已声明的桌面动作与 JSON 参数转换为固定的 `@kimi/cu` 调用，不接受任意 JavaScript，不把 native `kimi-cu.exe` 当成 MCP。原生 Agent 由官方插件按需启动；关闭 DSH 的 MCP 连接只释放本连接，不终止其他程序共享的 Agent。
-
-需要 PATH 中的 Node.js 24.15 或更新版本。截图作为 DSH 图片附件返回；窗口观察保留官方窗口 ID、截图 ID、坐标和无障碍索引。Windows 不广告 macOS 专属 `get_app_state`、`paste` 或 `drag_paths`，使用 `get_window_state`、`type_text` 与 `drag_path`。取消、超时或进程退出会失败，不自动重放输入；下一次操作前重新观察目标窗口。
-
-Windows 的点击、输入、滚动等变更操作仍要求当前会话完全访问。只读权限不能借工具绕过该要求。系统认证、UAC 和安全设置由用户操作。
-
-Windows 0.3.10 已通过本机安装后的原生 DSH 4.1 Flash 实测：窗口发现、无障碍文本读取、点击、按键、中文及英文输入、截图附件返回。停止独占测试服务后，正式安装路径的 native Agent 能按需重新启动并继续观察。此结果不代表外部 Harness 自动获得该工具，也不代表所有 Windows 应用都具备完整无障碍支持。
+</details>

@@ -62,7 +62,9 @@ export function UpdatesSection({ controller, navigation: navigationProp, t }: Up
     (operation === 'apply' && !status?.pendingVersion) ||
     Boolean(status?.preparing)
   const handoff = status?.restart?.phase === 'handoff'
-  const busy = operation !== null || checking || preparing || handoff
+  const cu = status?.kimiCu
+  const updatingCu = operation === 'component' || cu?.updating
+  const busy = operation !== null || checking || preparing || handoff || updatingCu
   const writable = view.connected && view.confirmed && !busy && !view.uncertain && status !== null
   const failure = view.failure ?? status?.error
   const failureDetails = status?.failure ?? null
@@ -85,6 +87,8 @@ export function UpdatesSection({ controller, navigation: navigationProp, t }: Up
     status !== null &&
     status.lastSuccessAt !== null &&
     !release &&
+    !cu?.available &&
+    !cu?.error &&
     !status.localCandidate &&
     !status.pendingVersion &&
     !failure &&
@@ -100,7 +104,7 @@ export function UpdatesSection({ controller, navigation: navigationProp, t }: Up
     >
       <h3 className={css.preferenceTitle}>{t('title')}</h3>
       {status && (
-        <dl className={css.facts}>
+        <dl className={`${css.facts} ${updatesCss.versions}`}>
           <div>
             <dt className={css.factLabel}>{t('installedVersion')}</dt>
             <dd className={css.factValue}>{status.installedVersion}</dd>
@@ -108,6 +112,13 @@ export function UpdatesSection({ controller, navigation: navigationProp, t }: Up
           <div>
             <dt className={css.factLabel}>{t('officialVersion')}</dt>
             <dd className={css.factValue}>{status.officialVersion}</dd>
+          </div>
+          <div>
+            <dt className={css.factLabel}>{t('cuVersion')}</dt>
+            <dd className={css.factValue}>
+              {cu?.installedVersion ??
+                t(cu && cu.error !== 'read-failed' ? 'cuMissing' : 'cuUnknown')}
+            </dd>
           </div>
         </dl>
       )}
@@ -218,6 +229,40 @@ export function UpdatesSection({ controller, navigation: navigationProp, t }: Up
           {t('noUpdate')}
         </p>
       )}
+      {cu?.error === 'unvalidated' ? (
+        <p role="status" className={css.muted}>
+          {t('cuUnvalidated', { version: cu.latestVersion })}
+        </p>
+      ) : cu?.error ? (
+        <p role="alert" className={css.error}>
+          {t(
+            cu.error === 'busy'
+              ? 'cuBusy'
+              : cu.error === 'check-failed'
+                ? 'cuCheckFailed'
+                : cu.error === 'install-failed'
+                  ? 'cuInstallFailed'
+                  : 'cuUnavailable',
+          )}
+        </p>
+      ) : null}
+      {updatingCu && (
+        <p role="status" className={css.muted}>
+          {t('cuUpdating')}
+        </p>
+      )}
+      {cu?.available && release?.compatibility !== 'enhancement' && (
+        <div className={css.card}>
+          <h3 className={css.name}>{t('cuAvailable', { version: cu.latestVersion })}</h3>
+          <Button
+            variant="outline"
+            disabled={!writable}
+            onClick={() => void controller.updateKimiCu()}
+          >
+            {t(cu.installedVersion ? 'cuUpdate' : 'cuInstall')}
+          </Button>
+        </div>
+      )}
       {release && (
         <div className={css.card} data-opl-update-release={release.version}>
           <h3 className={css.name}>{t('release', { version: release.version })}</h3>
@@ -233,6 +278,9 @@ export function UpdatesSection({ controller, navigation: navigationProp, t }: Up
           <p className={css.muted}>
             {t(release.compatibility === 'enhancement' ? 'enhancement' : 'fullSuite')}
           </p>
+          {cu?.available && release.compatibility === 'enhancement' && (
+            <p className={css.muted}>{t('cuIncluded', { version: cu.latestVersion })}</p>
+          )}
           <a
             className={updatesCss.link}
             href={release.url}

@@ -542,3 +542,55 @@ describe('Host update discovery and preparation', () => {
     await f.controller.dispose()
   })
 })
+
+describe('independent Computer Use component updates', () => {
+  function setup(mode: 'notify' | 'on-launch' | 'idle') {
+    const { controller, operations } = fixture()
+    operations.policy = () => ({ mode, idleMinutes: 1, countdownSeconds: 15 })
+    vi.mocked(operations.discover).mockResolvedValue(null)
+    const component = vi.fn<NonNullable<UpdateOperations['component']>>(async (action) => ({
+      installedVersion: action === 'install' ? '2.0.0' : '1.0.0',
+      latestVersion: action === 'local' ? null : '2.0.0',
+      available: action === 'check',
+    }))
+    operations.component = component
+    return { controller, operations, component }
+  }
+
+  it('reports and installs a component when OPL release discovery fails', async () => {
+    const f = setup('notify')
+    vi.mocked(f.operations.discover).mockRejectedValue(Error('offline'))
+    const result = await f.controller.check()
+    expect(result.error).toBe('check-failed')
+    expect(result.kimiCu?.available).toBe(true)
+    expect(f.component.mock.calls.map(([a]) => a)).toEqual(['local', 'check'])
+    await Promise.all([f.controller.updateKimiCu(), f.controller.updateKimiCu()])
+    expect(f.component.mock.calls.map(([a]) => a)).toEqual(['local', 'check', 'install'])
+    expect((await f.controller.status()).kimiCu?.installedVersion).toBe('2.0.0')
+    expect(f.operations.prepare).not.toHaveBeenCalled()
+    await f.controller.dispose()
+  })
+
+  it('honors the update policy after startup and user activity', async () => {
+    vi.useFakeTimers()
+    for (const mode of ['notify', 'on-launch', 'idle'] as const) {
+      const f = setup(mode)
+      f.controller.start()
+      await f.controller.status()
+      await vi.advanceTimersByTimeAsync(15_010)
+      expect(f.component.mock.calls.some(([action]) => action === 'install')).toBe(
+        mode === 'on-launch',
+      )
+      await f.controller.activity()
+      await vi.advanceTimersByTimeAsync(59_999)
+      expect(f.component.mock.calls.some(([action]) => action === 'install')).toBe(
+        mode === 'on-launch',
+      )
+      await vi.advanceTimersByTimeAsync(10)
+      expect(f.component.mock.calls.some(([action]) => action === 'install')).toBe(
+        mode !== 'notify',
+      )
+      await f.controller.dispose()
+    }
+  })
+})

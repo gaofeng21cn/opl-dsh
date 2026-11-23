@@ -14,18 +14,18 @@ import {
   WINDOWS_KIMI_CU_SIGNER,
 } from '../installer/kimi-cu-windows.mjs'
 
-const base = 'https://cdn.kimi.com/kimi-computer-use-windows/0.3.10/'
+const base = 'https://cdn.kimi.com/kimi-computer-use-windows/0.3.13/'
 const manifest = {
-  version: '0.3.10',
+  version: '0.3.13',
   plugin: {
     url: `${base}kimi-cu-win-plugin.zip`,
-    sha256: 'aae21d2b5b8eb601f8f89b29e3ccc3ffab32db95f009a1e7e0a5409eefe4cea9',
+    sha256: 'd3bc92f4c9fe6b3321eace98121c7dc2756067ff66ae7a423d8f6ffc2f56565a',
   },
   runtime: {
     url: `${base}kimi-cu-win-runtime.zip`,
-    sha256: '46e2900b93353af6f44391451126575967192340daa3b952b34e92f6a88a9bd4',
+    sha256: 'e592f3ec1134baa2f8720c18b828a25ac3f26db04b83ae36ea96fc38bb4d8096',
     executable_url: `${base}kimi-cu.exe`,
-    executable_sha256: 'ab33418e9bf042775116a9334cb3ea5be923cc8ebcead1c060d86f9742f96936',
+    executable_sha256: 'a65e3e9cd58c3106840a7a566dd8d98ca694577e3d535c679609f0f185b6a8ca',
     signer_sha1: WINDOWS_KIMI_CU_SIGNER,
   },
 }
@@ -91,7 +91,7 @@ test('wrong archive digest never reaches extraction and leaves no installation',
     const calls = []
     const result = await installWindowsKimiCu({
       suiteRoot: join(root, 'suite'),
-      installRoot: join(root, 'managed', '0.3.10'),
+      installRoot: join(root, 'managed', '0.3.13'),
       platform: 'win32',
       arch: 'x64',
       unpack: () => assert.fail('unpack'),
@@ -225,7 +225,7 @@ test(
 
 test('default Windows component directory belongs to the supplied Suite root', async () => {
   await isolated(async (root) => {
-    const target = join(root, 'kimi-cu', '0.3.10')
+    const target = join(root, 'kimi-cu', '0.3.13')
     await mkdir(target, { recursive: true })
     await writeFile(join(target, 'sentinel'), 'preserve')
     const result = await installWindowsKimiCu({

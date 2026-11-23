@@ -7,6 +7,7 @@ import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { registerKimiCuClients, withKimiCuCall } from './update-lease.ts'
 import { WINCU_ACTIONS } from './windows.ts'
 import {
   KIMI_CU_TOOLS,
@@ -103,42 +104,43 @@ export function installComputerUse(
           },
           isConcurrencySafe: (args) => !windows && !KIMI_CU_MUTATIONS.has(args.action),
           timeoutMs: 40_000,
-          execute: async (args, exec) => {
-            if (KIMI_CU_MUTATIONS.has(args.action)) {
-              const preset = ctx.get('permissionPresets')?.current(agent.session)
-              if (preset !== 'danger-full-access')
-                throw Error(
-                  'KimiCU 桌面变更需要当前会话显式选择“完全访问”；只读观察可继续使用 list_apps、list_windows、get_app_state 和 get_window_state。',
-                )
-            }
-            const key = agent.session.id
-            let client = clients.get(key)
-            if (client === undefined) {
-              client = new KimiCuClient()
-              clients.set(key, client)
-            }
-            let raw: unknown
-            try {
-              raw = await client.call(args.action, args.args ?? {}, exec.signal)
-            } catch (error) {
-              clients.delete(key)
-              await client.close()
-              throw error
-            }
-            const result = kimiCuResult(raw)
-            if (result.isError) throw Error(kimiCuFailure(raw))
-            const attachments = await scope.attachments.saveImages(result.images)
-            return {
-              text: result.text,
-              images: attachments.map((attachment) => ({
-                attachmentId: attachment.attachmentId,
-                mediaType: attachment.mediaType,
-                bytes: attachment.bytes,
-                width: attachment.width,
-                height: attachment.height,
-              })),
-            }
-          },
+          execute: async (args, exec) =>
+            withKimiCuCall(async () => {
+              if (KIMI_CU_MUTATIONS.has(args.action)) {
+                const preset = ctx.get('permissionPresets')?.current(agent.session)
+                if (preset !== 'danger-full-access')
+                  throw Error(
+                    'KimiCU 桌面变更需要当前会话显式选择“完全访问”；只读观察可继续使用 list_apps、list_windows、get_app_state 和 get_window_state。',
+                  )
+              }
+              const key = agent.session.id
+              let client = clients.get(key)
+              if (client === undefined) {
+                client = new KimiCuClient()
+                clients.set(key, client)
+              }
+              let raw: unknown
+              try {
+                raw = await client.call(args.action, args.args ?? {}, exec.signal)
+              } catch (error) {
+                clients.delete(key)
+                await client.close()
+                throw error
+              }
+              const result = kimiCuResult(raw)
+              if (result.isError) throw Error(kimiCuFailure(raw))
+              const attachments = await scope.attachments.saveImages(result.images)
+              return {
+                text: result.text,
+                images: attachments.map((attachment) => ({
+                  attachmentId: attachment.attachmentId,
+                  mediaType: attachment.mediaType,
+                  bytes: attachment.bytes,
+                  width: attachment.width,
+                  height: attachment.height,
+                })),
+              }
+            }),
         }),
       )
     })
@@ -148,9 +150,15 @@ export function installComputerUse(
   })
   for (const agent of ctx.agents.list()) install(agent)
   ctx.effect(() => {
-    return () => {
-      for (const client of clients.values()) void client.close()
+    const close = async () => {
+      const children = [...clients.values()]
       clients.clear()
+      await Promise.all(children.map((client) => client.close()))
+    }
+    const unregister = registerKimiCuClients(close)
+    return async () => {
+      unregister()
+      await close()
     }
   }, 'computer-use: KimiCU sessions')
 }

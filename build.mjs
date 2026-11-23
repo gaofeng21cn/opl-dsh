@@ -250,6 +250,7 @@ for (const file of [
   'ofm-upgrade.cjs',
   'ofm-owner.cjs',
   'kimi-cu.mjs',
+  'kimi-cu-component.mjs',
   'kimi-cu-windows.mjs',
   'official-pnpm.cjs',
   'migrate.cjs',
