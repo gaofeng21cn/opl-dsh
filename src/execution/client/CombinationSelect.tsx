@@ -15,6 +15,7 @@ import {
 import type { ExecutionCatalog, CombinationDefinition } from '../contracts/catalog.ts'
 import type { HarnessCatalog } from '../contracts/sessions.ts'
 import type { HarnessReasoningPreflight } from '../../contracts/types.ts'
+import type { PendingCombination } from './pending-combination.ts'
 import { useModelSelection } from './use-model-selection.ts'
 import type { SelectionSource } from './use-model-selection.ts'
 import css from './CombinationSelect.module.css'
@@ -101,7 +102,9 @@ export function CombinationSelect({
   available,
   selectionSource,
   loadingLabel,
+  pendingCombination,
 }: {
+  pendingCombination?: PendingCombination
   available: boolean
   call: Call
   sessionId: string
@@ -431,7 +434,10 @@ export function CombinationSelect({
 
   const selectChoice = async (choice: Choice) => {
     if (busy || !choice.available) return
-    if (choice.combination.id === selection.combination) {
+    if (
+      choice.combination.id === selection.combination &&
+      !pendingCombination?.needsConfirmation(sessionId)
+    ) {
       close(true)
       return
     }
@@ -439,10 +445,9 @@ export function CombinationSelect({
     setPendingChoice(choice)
     setError('')
     try {
-      await call('select-combination', {
-        sessionId,
-        combination: choice.combination.id,
-      })
+      const write = () =>
+        call('select-combination', { sessionId, combination: choice.combination.id })
+      await (pendingCombination ? pendingCombination.select(sessionId, write) : write())
       await reload(sessionId)
       close(true)
     } catch (cause) {
