@@ -1,3 +1,4 @@
+import { authenticatedEntry } from '../../compat/host/browser-entry.ts'
 /** One general launch/update binding; collaboration contributes its optional operations. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
@@ -24,7 +25,7 @@ export function apply(ctx: Context): void {
   const bridge: Pick<TypertGateway, 'invoke' | 'stream'> = {
     invoke: async (request) => {
       if (request.namespace === 'oplSuite' && request.method === 'setupUrl')
-        return ctx.connection.authenticatedUrl(`http://127.0.0.1:${ctx.webServer.port}/#opl-setup`)
+        return authenticatedEntry(ctx, new URL(`http://127.0.0.1:${ctx.webServer.port}/#opl-setup`))
       if (request.namespace === 'oplSuite' && request.method === 'setupStatus')
         return setupStatus(ctx)
       if (request.namespace === 'oplSuite' && request.method === 'finishSetup') {
