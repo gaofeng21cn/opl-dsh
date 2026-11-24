@@ -9,9 +9,11 @@ import { featureSettings } from '../../shared/host/feature-settings.ts'
 import { LlmError } from '../../shared/llm-error.ts'
 import type {} from '../contracts/official-collaboration.ts'
 import type { MiniMaxAccountLoginRequest } from '../contracts/minimax-account.ts'
+import { AntigravityAccount } from './antigravity-account.ts'
 import { MiniMaxAccount } from './minimax-account.ts'
 import { ProgressWatchdog, type ProgressWatchdogLimits } from './progress-watchdog.ts'
 import { executionLimitsSchema } from '../contracts/limits.ts'
+import { normalizeAntigravityUsage } from './adapters/antigravity/usage.ts'
 import { openCodeStreamFailure } from './adapters/opencode/stream-failure.ts'
 import { hostPeer, invokeHostRemote } from '../../compat/host/remote-invocation.ts'
 import { gatewayGroupEnabled } from '../../gateway/host/group-settings.ts'
@@ -293,6 +295,27 @@ export class HarnessService {
   private minimaxIntegrationEnabled: boolean | undefined
   private minimaxLoginAttempt:
     { region: MiniMaxAccountLoginRequest['region']; cancelled: boolean } | undefined
+  private readonly antigravityAccount = new AntigravityAccount(async () =>
+    (await this.catalogStore.get()).harnesses.find((item) => item.id === 'antigravity'),
+  )
+  private accountModelSignature = '[]'
+  async antigravityAccountStatus(refresh = false) {
+    const result = await this.antigravityAccount.status(refresh)
+    const signature = JSON.stringify(result.models)
+    if (signature !== this.accountModelSignature) {
+      this.accountModelSignature = signature
+      this.executionCatalogPending = undefined
+      this.events.emit('catalog')
+    }
+    return result
+  }
+  antigravityAccountCancel() {
+    return this.antigravityAccount.cancel()
+  }
+  antigravityAccountLogin() {
+    return this.antigravityAccount.login()
+  }
+
   private readonly minimaxAccount = new MiniMaxAccount(async () => {
     const harness = (await this.catalogStore.get()).harnesses.find(
       (item) => item.id === 'minimax-code',
@@ -2642,7 +2665,10 @@ export class HarnessService {
             await this.save(record)
           }
         }
-        let usage = acpUsage(result.usage)
+        let usage =
+          record.harnessRef === 'antigravity' && record.modelRef.provider === 'antigravity-google'
+            ? normalizeAntigravityUsage(result.usage)
+            : acpUsage(result.usage)
         // Native bridges publish the owned per-turn marker on the ACP result
         // envelope because ACP does not define a usage metadata field. Keep
         // the legacy nested usage form above, then read that envelope marker.
@@ -3943,6 +3969,7 @@ export class HarnessService {
     this.disposed = true
     clearInterval(this.tick)
     await this.engineUpdates.dispose()
+    await this.antigravityAccount.dispose()
     await this.minimaxAccount.dispose()
     await this.runtimeMaintenance.close()
     await this.ready

@@ -1,4 +1,9 @@
 import {
+  AntigravityAccountCard,
+  antigravityAccountZh,
+  antigravityAccountEn,
+} from './AntigravityAccountCard.tsx'
+import {
   minimaxAccountZh,
   minimaxAccountEn,
   MINIMAX_ACCOUNT_NAMESPACE,
@@ -125,6 +130,26 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
   const composerText = ctx.locale.bind(PROJECTLESS_COMPOSER_NAMESPACE)
   const call = remoteCall(ctx.remote.oplExecution)
   const pendingCombination = new PendingCombination()
+  ctx.effect(() =>
+    ctx.locale.register('settings.antigravityAccount', {
+      zh: antigravityAccountZh,
+      en: antigravityAccountEn,
+    }),
+  )
+  const accountT = ctx.locale.bind('settings.antigravityAccount')
+  const readAccount = () => call('antigravity-account-status')
+  const openAccount = () => call('antigravity-account-login')
+  const cancelAccount = () => call('antigravity-account-cancel')
+  ctx.slots.inject('settings.models.footer', () =>
+    ctx.slots.register({ name: 'settings.models.footer', id: 'opl-antigravity-account' }, () => (
+      <AntigravityAccountCard
+        read={readAccount}
+        login={openAccount}
+        cancel={cancelAccount}
+        t={accountT}
+      />
+    )),
+  )
   ctx.inject(['configForms'], (settings) => {
     const executionForm = settings.configForms.get<
       PermissionMemorySettings & MiniMaxIntegrationSettings

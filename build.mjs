@@ -45,6 +45,10 @@ const hostBuild = await bundle({
   tsconfig: join(root, 'tsconfig.host.json'),
   outfile: join(output, 'package/lib/index.js'),
 })
+await cp(
+  join(root, 'src/execution/host/adapters/antigravity/google-settings.json'),
+  join(output, 'package/lib/google-settings.json'),
+)
 await buildNativeBridge(root, output)
 await bundle({
   entryPoints: [join(root, 'src/shell/host/git-bash.ts')],

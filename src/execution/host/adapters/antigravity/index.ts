@@ -1,5 +1,5 @@
 /** Public adapter entry; program installation and Gateway routing retain their owners. */
-export { antigravityAdapter } from './antigravity.ts'
+export { antigravityAdapter, antigravityGoogleAdapter } from './antigravity.ts'
 export {
   ANTIGRAVITY_HARNESS,
   ANTIGRAVITY_GATEWAY_MODELS,

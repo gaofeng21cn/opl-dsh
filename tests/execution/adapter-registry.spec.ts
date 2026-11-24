@@ -28,6 +28,11 @@ describe('official Harness adapter registry', () => {
     const gatewayGemini = { provider: 'opl-gateway', model: 'gemini::gemini-4-carbon' }
     expect(adapterFor('opencode', gatewayGemini)?.id).toBe('opencode')
     expect(defaultHarness(gatewayGemini)).toBe('antigravity')
+    const account = { provider: 'antigravity-google', model: 'gemini-4-neon-xhigh' }
+    expect(defaultHarness(account)).toBe('antigravity')
+    expect(adapterFor('antigravity', account)?.capabilities.authentication).toBe('official-account')
+    expect(adapterFor('antigravity', gatewayGemini)?.capabilities.authentication).toBe('api-source')
+    for (const id of ['dsh', 'opencode', 'pi']) expect(adapterFor(id, account)).toBeUndefined()
     expect(adapterFor('antigravity', gatewayGemini)?.id).toBe('antigravity')
     expect(defaultHarness({ provider: 'opl-gateway', model: 'gemini::gemini-4-hydrogen' })).toBe(
       'antigravity',
