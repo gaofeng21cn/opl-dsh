@@ -388,17 +388,17 @@ describe('Vibe usage through the real HarnessService', () => {
     },
   )
 
-  it('restores native Session logs after idle new/load, open-turn updates and late closed-turn usage', async () => {
+  it('restores native Session logs after direct conversation binding, idle load and late closed-turn usage', async () => {
     const test = await setup()
     const original = test.open()
-    const created = await test.start(original.service, undefined, test.nativeSession.id)
-    expect(created.nativeSessionId).toBe(test.nativeSession.id)
     expect(test.nativeSession.snapshotEvents()).toEqual([])
 
     test.nativeSession.append('turn/start', { turn: 1 })
     test.nativeSession.append('step/start', { turn: 1, step: 1 })
     await test.stream(original.service, 'first')
+    const [created] = (await original.service.sessions()).items
     const completed = await original.service.snapshot({ sessionId: created.id })
+    expect(completed.nativeSessionId).toBe(test.nativeSession.id)
     expect(completed.turns[0]?.usage).toEqual(firstUsage)
     expect(test.nativeSession.requestContext()).toEqual({ ...ref, contextWindow: 202_144 })
     notifyContext(original.service, created.id, 202_145)
