@@ -20,7 +20,9 @@ import {
   verifyCleanup,
   restoreCleanup,
 } from '../../installer/cleanup-skill/cleanup.mjs'
-const root = realpathSync(mkdtempSync(join(tmpdir(), 'opl-sqlite-recycle-')))
+const root = realpathSync.native(
+  mkdtempSync(join(process.env.RUNNER_TEMP ?? tmpdir(), 'opl-sqlite-recycle-')),
+)
 const home = join(root, 'data'),
   folder = join(home, 'sessions', '.segments')
 const exec = join(root, process.platform === 'win32' ? 'fixture.exe' : 'fixture')

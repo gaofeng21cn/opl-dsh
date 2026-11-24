@@ -14,7 +14,9 @@ import {
 const require = createRequire(join(resolve(process.argv[2]), 'package.json'))
 const load = (name) => import(pathToFileURL(require.resolve('@deepseek-ai/' + name)).href)
 const { Context } = await load('cordis')
-const root = realpathSync(mkdtempSync(join(tmpdir(), 'opl-official-sqlite-')))
+const root = realpathSync.native(
+  mkdtempSync(join(process.env.RUNNER_TEMP ?? tmpdir(), 'opl-official-sqlite-')),
+)
 const home = join(root, 'data'),
   executable = join(root, 'fixture.exe'),
   a = 'test-source',
