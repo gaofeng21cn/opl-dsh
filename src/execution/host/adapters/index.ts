@@ -1,3 +1,4 @@
+import { ANTIGRAVITY_GOOGLE_PROVIDER } from '../../../shared/models.ts'
 import type { ModelRef } from '../../contracts/catalog.ts'
 import { dshAdapter } from './dsh.ts'
 import { grokAdapter } from './grok.ts'
@@ -15,7 +16,7 @@ import { openCodeAdapter } from './opencode/index.ts'
 import { piAdapter } from './pi/index.ts'
 import { kiloAdapter } from './kilo/index.ts'
 import { vibeAdapter } from './vibe.ts'
-import { antigravityAdapter } from './antigravity/index.ts'
+import { antigravityAdapter, antigravityGoogleAdapter } from './antigravity/index.ts'
 import { qwenCodeAdapter } from './qwen/index.ts'
 import type { HarnessAdapter } from './types.ts'
 import type { ExternalModelSources } from '../model-sources.ts'
@@ -46,6 +47,10 @@ export function adapterFor(
   ref: ModelRef,
   sources?: ExternalModelSources,
 ): HarnessAdapter | undefined {
+  if (ref.provider === ANTIGRAVITY_GOOGLE_PROVIDER)
+    return id === antigravityGoogleAdapter.id && antigravityGoogleAdapter.matches(ref)
+      ? antigravityGoogleAdapter
+      : undefined
   return harnessAdapters.find(
     (adapter) =>
       adapter.id === id &&
@@ -58,6 +63,7 @@ export function nativeHarnessMatches(id: string, ref: ModelRef): boolean {
 /** Known channel-specific adapters override vendor pairing; arbitrary models stay manual. */
 export function automaticHarness(ref: ModelRef): string | undefined {
   if (isHiddenOfmSelection(ref)) return undefined
+  if (antigravityGoogleAdapter.matches(ref)) return antigravityGoogleAdapter.id
   if (antigravityAdapter.matches(ref)) return antigravityAdapter.id
   if (officialOpenCodeModel(ref) !== undefined) return 'opencode'
   if (

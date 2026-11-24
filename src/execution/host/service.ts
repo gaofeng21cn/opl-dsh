@@ -1,3 +1,4 @@
+import type { AntigravityAccountStatus } from '../contracts/antigravity-account.ts'
 import type { EngineUpdateState, EngineUpdateSettings } from '../contracts/engine-updates.ts'
 import type {
   MiniMaxAccountStatus,
@@ -47,6 +48,18 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 export class ExecutionService extends TypertRemoteService {
+  @Remote('antigravity-account-status')
+  antigravityAccountStatus(): Promise<AntigravityAccountStatus> {
+    return this.execution.antigravityAccountStatus(true)
+  }
+  @Remote('antigravity-account-cancel')
+  antigravityAccountCancel(): Promise<AntigravityAccountStatus> {
+    return this.execution.antigravityAccountCancel()
+  }
+  @Remote('antigravity-account-login')
+  antigravityAccountLogin(): Promise<AntigravityAccountStatus> {
+    return this.execution.antigravityAccountLogin()
+  }
   @Remote('minimax-execution-region')
   minimaxRegion(): Promise<MiniMaxAccountLoginRequest> {
     return this.execution.minimaxRegion()

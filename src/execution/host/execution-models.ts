@@ -1,4 +1,4 @@
-import { EAC_SPECIALIST_LABELS } from '../../shared/models.ts'
+import { ANTIGRAVITY_GOOGLE_PROVIDER, EAC_SPECIALIST_LABELS } from '../../shared/models.ts'
 import { invokeHostRemote } from '../../compat/host/remote-invocation.ts'
 /** Owns live model/combination projection; persisted catalog stores references only. */
 import type { Context } from '@deepseek-ai/cordis'
@@ -475,7 +475,8 @@ export class ExecutionModelResolver {
     let defaultMigrationChanged = false
     for (const model of catalog.models) {
       const official = officialHarnessFor(model.ref)
-      if (official === 'antigravity' && !nativeGemini) continue
+      if (official === 'antigravity' && model.ref.provider === 'opl-gateway' && !nativeGemini)
+        continue
       const hasDefault = catalog.combinations.some(
         (item) =>
           !isRetiredModel(item.modelRef) &&
@@ -550,7 +551,10 @@ export class ExecutionModelResolver {
             (officialOpenCodeModel(model.ref) ? '（官方免费通道）' : ''),
           modelRef: model.ref,
           harnessRef,
-          permissionPolicy: harnessRef === 'pi' ? 'full-access' : 'read-only',
+          permissionPolicy:
+            harnessRef === 'pi' || model.ref.provider === ANTIGRAVITY_GOOGLE_PROVIDER
+              ? 'full-access'
+              : 'read-only',
           isDefault: true,
           enabled: true,
           generated: true,
@@ -569,6 +573,7 @@ export class ExecutionModelResolver {
         (item) =>
           !(
             item.harnessRef === 'antigravity' &&
+            item.modelRef.provider === 'opl-gateway' &&
             officialHarnessFor(item.modelRef) === 'antigravity' &&
             unmodifiedAutomatic(item)
           ),

@@ -12,6 +12,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { UpdateRuntime } from '../updates/host/runtime-admission.ts'
 import { createHarnessService } from '../execution/host/harness.ts'
 import { installConversationRequest } from '../execution/host/conversation-request.ts'
+import { ANTIGRAVITY_GOOGLE_PROVIDER } from '../shared/models.ts'
+import { AntigravityGoogleModels } from '../execution/host/adapters/antigravity/google-model-provider.ts'
 import { installPermissionMemory } from '../compat/host/permission-memory.ts'
 import { installComputerUse } from '../computer-use/host/index.ts'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
@@ -69,6 +71,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     minimaxCodeEnabled: () => config.minimaxCodeEnabled,
   })
   ctx.provide('oplHarness', harness)
+  ctx.llm.registerAdapter(
+    [ANTIGRAVITY_GOOGLE_PROVIDER],
+    new AntigravityGoogleModels(() => harness.antigravityAccountStatus()),
+  )
   let updateRuntime: UpdateRuntime | undefined
   ctx.inject(['oplUpdateRuntime'], (child) => {
     updateRuntime = child.oplUpdateRuntime

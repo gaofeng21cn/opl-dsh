@@ -2,6 +2,8 @@
 import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { HarnessConfigurationError } from '../../acp.ts'
+import { ANTIGRAVITY_GOOGLE_PROVIDER } from '../../../../shared/models.ts'
+import { googleAccountLaunch } from './google-launch.ts'
 import { executablePath } from '../../harness-registry.ts'
 import { systemEnvironment } from '../environment.ts'
 import { resolveNativeGitBash } from '../native-bash.ts'
@@ -208,5 +210,108 @@ export const antigravityAdapter: HarnessAdapter = {
   acceptResult(outcome) {
     if (outcome.text.trim() === '⚠ Agent execution terminated due to error.')
       return { accepted: false, reason: 'Antigravity 报告执行错误，本轮未正常完成。' }
+  },
+}
+
+/** Resolve an account catalog slug against the ACP session's advertised selectors. */
+function googleSelection(record: HarnessSession, snapshot: AcpSessionSnapshot) {
+  const id = record.modelRef.model
+  const options = antigravityConfigOption(snapshot.configOptions, ANTIGRAVITY_MODEL_OPTION)
+  const variant = /^(.*)-(low|medium|high|xhigh|max|minimal)$/.exec(id)
+  if (variant && record.reasoningEffort && record.reasoningEffort !== variant[2])
+    throw failure('所选推理档位与账号模型不一致，未发送任务。', snapshot)
+  if (options?.values.includes(id))
+    return { model: id, thinking: variant ? undefined : record.reasoningEffort }
+  if (variant && options?.values.includes(variant[1]!))
+    return { model: variant[1]!, thinking: variant[2] }
+  throw failure(`未广告要求的 model=${id}，已停止，未发送任务。`, snapshot)
+}
+
+/** Reuse the official Google account and its tools directly over ACP. */
+export const antigravityGoogleAdapter: HarnessAdapter = {
+  ...antigravityAdapter,
+  acceptResult(outcome) {
+    // agy sends the standalone license rejection as assistant text followed by end_turn.
+    if (
+      outcome.text.trim() ===
+      '⚠ You do not have a valid license of this product. Please contact your administrator to request a license. If you are not an enterprise user and believe you are receiving this message as an error, please try using the latest version and logging in again. (#3501)'
+    )
+      return { accepted: false, reason: 'Antigravity 报告此 Google 账号没有有效许可（#3501）。' }
+    return antigravityAdapter.acceptResult?.(outcome)
+  },
+  capabilities: {
+    ...antigravityAdapter.capabilities,
+    authentication: 'official-account',
+    protocols: [],
+    customEndpoint: false,
+  },
+  matches(ref) {
+    return (
+      ref.provider === ANTIGRAVITY_GOOGLE_PROVIDER &&
+      /^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}$/.test(ref.model)
+    )
+  },
+  acpModelId: (ref) => ref.model,
+  async prepare(_ctx, record, options) {
+    if (record.sandbox !== 'full-access' || record.externalAutoReview)
+      throw new HarnessConfigurationError(
+        'Antigravity Google 账号仅支持完全权限，不支持 Auto Review。',
+      )
+    const path = await executablePath(options.command || 'agy', ANTIGRAVITY_HARNESS)
+    if (!path) throw new HarnessConfigurationError('未找到官方 Antigravity CLI。')
+    return {
+      home: options.home,
+      ...googleAccountLaunch(path, options.prefix, [
+        'acp',
+        '--disable-telemetry',
+        '--dangerously-skip-permissions',
+      ]),
+      promptImageSupport: /^gemini-/i.test(record.modelRef.model),
+      env: { ...systemEnvironment(), AGY_CLI_DISABLE_AUTO_UPDATE: 'true' },
+    }
+  },
+  async authenticate(_acp, _record, agent) {
+    // Interactive OAuth belongs to Settings. New and restored sessions reuse the official login.
+    if (
+      !Array.isArray(agent.authMethods) ||
+      !agent.authMethods.some(
+        (item: unknown) =>
+          typeof item === 'object' && item !== null && 'id' in item && item.id === 'oauth-personal',
+      )
+    )
+      throw new HarnessConfigurationError('此 Antigravity CLI 未提供 Google 账号登录。')
+  },
+  async configureSession(acp, record, snapshot) {
+    const selection = googleSelection(record, snapshot)
+    const sessionId: unknown = snapshot.session.sessionId ?? record.acpSessionId
+    if (typeof sessionId !== 'string' || !sessionId)
+      throw failure('没有返回会话 ID，无法固定模型，未发送任务。', snapshot)
+    let configOptions = await configure(
+      acp,
+      sessionId,
+      ANTIGRAVITY_MODEL_OPTION,
+      selection.model,
+      snapshot,
+    )
+    pinned(configOptions, ANTIGRAVITY_MODEL_OPTION, selection.model, snapshot)
+    if (selection.thinking) {
+      offered(configOptions, ANTIGRAVITY_THINKING_OPTION, selection.thinking, snapshot)
+      configOptions = await configure(
+        acp,
+        sessionId,
+        ANTIGRAVITY_THINKING_OPTION,
+        selection.thinking,
+        snapshot,
+      )
+      pinned(configOptions, ANTIGRAVITY_MODEL_OPTION, selection.model, snapshot)
+      pinned(configOptions, ANTIGRAVITY_THINKING_OPTION, selection.thinking, snapshot)
+    }
+    return { configOptions, modelId: record.modelRef.model }
+  },
+  verifySession(record, snapshot) {
+    const selection = googleSelection(record, snapshot)
+    pinned(snapshot.configOptions, ANTIGRAVITY_MODEL_OPTION, selection.model, snapshot)
+    if (selection.thinking)
+      pinned(snapshot.configOptions, ANTIGRAVITY_THINKING_OPTION, selection.thinking, snapshot)
   },
 }

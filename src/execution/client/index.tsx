@@ -1,5 +1,10 @@
 import { installEffortDirectories } from './official-effort-directory.ts'
 import {
+  AntigravityAccountCard,
+  antigravityAccountZh,
+  antigravityAccountEn,
+} from './AntigravityAccountCard.tsx'
+import {
   minimaxAccountZh,
   minimaxAccountEn,
   MINIMAX_ACCOUNT_NAMESPACE,
@@ -15,6 +20,7 @@ import {
 } from '../../shared/client/FeaturePreferences.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
+import { installGoogleAccountChoices } from './google-account-choices.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import { watchStopEditSession } from './stop-edit-session-watch.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -280,6 +286,33 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
     sessionChanges(ctx, sessionId, listener)
   ctx.effect(() => ctx.uiConversation.events.register(liveTranscriptDefinition))
   ctx.effect(() => ctx.uiConversation.events.register(deliverAssetsDefinition))
+  ctx.effect(() =>
+    ctx.locale.register('settings.antigravityAccount', {
+      zh: antigravityAccountZh,
+      en: antigravityAccountEn,
+    }),
+  )
+  ctx.inject(['modelDirectories'], (scope) => {
+    const directory = scope.get('modelDirectories') as unknown as Parameters<
+      typeof installGoogleAccountChoices
+    >[0]
+    if (directory && typeof directory.directoryFor === 'function')
+      scope.effect(() => installGoogleAccountChoices(directory))
+  })
+  const accountT = ctx.locale.bind('settings.antigravityAccount')
+  const readAccount = () => call('antigravity-account-status')
+  const openAccount = () => call('antigravity-account-login')
+  const cancelAccount = () => call('antigravity-account-cancel')
+  ctx.slots.inject('settings.models.footer', () =>
+    ctx.slots.register({ name: 'settings.models.footer', id: 'opl-antigravity-account' }, () => (
+      <AntigravityAccountCard
+        read={readAccount}
+        login={openAccount}
+        cancel={cancelAccount}
+        t={accountT}
+      />
+    )),
+  )
   ctx.slots.inject('conversation.chat.node', () =>
     ctx.slots.register(
       { name: 'conversation.chat.node', key: LIVE_TRANSCRIPT_KIND, locale: 'chat' },
