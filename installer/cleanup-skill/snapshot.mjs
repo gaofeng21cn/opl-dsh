@@ -59,10 +59,21 @@ export async function loadDshSnapshot({
 
   const sessionRoot = await safeChild(root, 'sessions')
   const sessionEntries = await readDirectory(sessionRoot, blockers, 'sessions-missing')
+  let sqlite = new Map()
+  if (sessionEntries.some((entry) => entry.name === '.segments')) {
+    const dbPath = join(sessionRoot, '.segments', 'sessions.sqlite')
+    try {
+      await safeChild(sessionRoot, '.segments', 'sessions.sqlite')
+      const { readSqliteSessions } = await import('./sqlite-store.mjs')
+      sqlite = readSqliteSessions(root, collectLogReferences)
+    } catch (error) {
+      blockers.push({ code: 'unsupported-session-storage', path: dbPath, detail: error.message })
+    }
+  }
   const sessions = []
   const nativeById = new Map()
   for (const namespace of sessionEntries) {
-    if (namespace.name === '.index-cache') continue
+    if (['.index-cache', '.segments'].includes(namespace.name)) continue
     await ensureSafeEntry(sessionRoot, namespace, blockers)
     if (!namespace.isDirectory()) {
       blockers.push({
@@ -98,7 +109,7 @@ export async function loadDshSnapshot({
         continue
       }
       const path = join(namespacePath, entry.name)
-      const record = await inspectSession(path, entry.name, blockers, stats)
+      const record = await inspectSession(path, entry.name, blockers, stats, sqlite.get(entry.name))
       if (record === undefined) continue
       const identityId = record.headerId ?? record.id
       if (nativeById.has(identityId)) {
@@ -108,6 +119,9 @@ export async function loadDshSnapshot({
       sessions.push(record)
     }
   }
+  for (const id of sqlite.keys())
+    if (!nativeById.has(id))
+      blockers.push({ code: 'sqlite-session-directory-missing', path: sessionRoot, detail: id })
   sessions.sort((left, right) => left.id.localeCompare(right.id))
 
   const externalRecords = await inspectExternalRecords(root, blockers, stats)
@@ -123,6 +137,13 @@ export async function loadDshSnapshot({
 
   for (const session of sessions) {
     if (!session.legacy && session.header) await validateTargetLogs(session, stats, blockers)
+  }
+  for (const session of sessions) {
+    const stored = sqlite.get(session.id)
+    if (!stored) continue
+    session.title = stored.title
+    session.lineageRefs.push(...stored.refs)
+    session.sqlite = { row: stored.row, route: stored.route, history: stored.history }
   }
   if (title !== undefined) {
     const matches = sessions.filter((s) => s.title === title)
@@ -224,11 +245,7 @@ export async function loadDshSnapshot({
 }
 
 /**
- * Detect the optional official SQLite session store before reading JSONL.
- *
- * The SQLite backend can retain an old JSONL import beside the database. Treat
- * the database and its journal files as one opaque store until the official
- * per-session transaction API is available to the cleanup tool.
+ * A database outside the configured Desktop session root has no verified routing namespace.
  */
 async function inspectOfficialStorage(root, blockers) {
   const markerNames = ['sessions.sqlite', 'sessions.sqlite-wal', 'sessions.sqlite-shm']
@@ -247,7 +264,7 @@ async function inspectOfficialStorage(root, blockers) {
       blockers.push({
         code: 'unsupported-session-storage',
         path,
-        detail: 'official SQLite session storage is not supported by this cleanup tool',
+        detail: 'SQLite database is outside the supported Desktop session root',
       })
     } catch (error) {
       if (error?.code !== 'ENOENT')
@@ -508,7 +525,7 @@ function arrayOfStrings(value, path, label, blockers) {
   return [...value]
 }
 
-async function inspectSession(path, directoryId, blockers, stats) {
+async function inspectSession(path, directoryId, blockers, stats, sqlite) {
   if (!isSafeId(directoryId)) {
     blockers.push({
       code: 'session-directory-id-invalid',
@@ -527,7 +544,7 @@ async function inspectSession(path, directoryId, blockers, stats) {
     (entry) =>
       entry.isFile() &&
       !SESSION_FILE_RE.test(entry.name) &&
-      !(process.platform === 'darwin' && entry.name === 'session.lock'),
+      !((process.platform === 'darwin' || sqlite) && entry.name === 'session.lock'),
   )
   const legacy = directoryId.startsWith('session_')
   if (legacy) {
@@ -555,6 +572,18 @@ async function inspectSession(path, directoryId, blockers, stats) {
       path,
       detail: unknownSidecars.map((item) => item.name).join(', '),
     })
+  }
+  if (sqlite && sessionFiles.length === 0) {
+    return {
+      id: directoryId,
+      path,
+      files,
+      header: sqlite.header,
+      active: false,
+      taskRefs: [],
+      lineageRefs: [],
+      blockers: [],
+    }
   }
   if (sessionFiles.length === 0) {
     blockers.push({

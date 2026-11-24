@@ -262,6 +262,20 @@ export function buildCleanupPlan(input) {
     createdAt: new Date().toISOString(),
     stats: input.stats ?? {},
   }
+  const sqlite = [...accepted]
+    .sort()
+    .map((id) => byId.get(id).sqlite)
+    .filter(Boolean)
+  if (sqlite.length) {
+    plan.sqlite = sqlite
+    plan.sqliteProtected = sessions
+      .filter((s) => s.sqlite && !accepted.has(s.id))
+      .map((s) => ({
+        id: s.id,
+        history: s.sqlite.history,
+        header: digest(s.sqlite.row.header),
+      }))
+  }
   return { ...plan, planHash: hashPlan(plan) }
 }
 function assertPlan(plan, expectedHash) {
@@ -417,6 +431,14 @@ function acquireLock(path, planHash, resume) {
     releaseGate()
   }
 }
+async function acquirePlanSessionLocks(plan) {
+  if (plan.sqlite?.length) {
+    const { sqliteLockTargets, acquireSqliteWindowsLocks } = await import('./sqlite-store.mjs')
+    const targets = sqliteLockTargets(plan)
+    if (process.platform === 'win32') return acquireSqliteWindowsLocks(targets)
+    if (process.platform === 'darwin') return acquireMacSessionLocks(targets)
+  } else if (process.platform === 'darwin') return acquireMacSessionLocks(plan.targets)
+}
 /** Recycle exact targets, persist every intent/receipt, then CAS the indices. */
 export async function executeDshCleanup({ plan, expectedHash, mode = 'recycle', resume = false }) {
   assertPlan(plan, expectedHash)
@@ -444,7 +466,7 @@ export async function executeDshCleanup({ plan, expectedHash, mode = 'recycle', 
   }
   let releaseSessionLocks
   try {
-    if (process.platform === 'darwin') releaseSessionLocks = acquireMacSessionLocks(plan.targets)
+    releaseSessionLocks = await acquirePlanSessionLocks(plan)
     let state
     if (existsSync(journal)) {
       if (!resume) throw Error('已有执行记录，请使用 resume')
@@ -461,6 +483,8 @@ export async function executeDshCleanup({ plan, expectedHash, mode = 'recycle', 
       state = { planHash: plan.planHash, plan, items: {}, indicesCommitted: false }
       save(journal, state)
     }
+    if (state.restoring || state.restored) throw Error('会话已进入恢复流程')
+    if (plan.sqlite) (await import('./sqlite-store.mjs')).sqliteOperation(plan, 'check-recycle')
     mark('prepareMs')
     // Recover a receipt if the process stopped after the recycle call.
     for (const target of plan.targets) {
@@ -508,6 +532,7 @@ export async function executeDshCleanup({ plan, expectedHash, mode = 'recycle', 
       if (actual !== index.sha256) throw Error('索引已变化: ' + index.path)
       atomicWrite(index.path, Buffer.from(index.after, 'base64'))
     }
+    if (plan.sqlite) (await import('./sqlite-store.mjs')).sqliteOperation(plan, 'recycle')
     state.indicesCommitted = true
     save(journal, state)
     mark('indexMs')
@@ -515,7 +540,7 @@ export async function executeDshCleanup({ plan, expectedHash, mode = 'recycle', 
     mark('verifyMs')
     return { ...report, journal, timings, elapsedMs: Math.round(performance.now() - started) }
   } finally {
-    releaseSessionLocks?.()
+    await releaseSessionLocks?.()
     unlinkSync(lock)
   }
 }
@@ -526,7 +551,12 @@ export async function verifyCleanup({ plan, expectedHash, skipProcessCheck = fal
   const state = JSON.parse(
     readFileSync(join(plan.home, 'cleanup-history', plan.planHash + '.json'), 'utf8'),
   )
-  if (!state.indicesCommitted || state.planHash !== plan.planHash)
+  if (
+    state.restoring ||
+    state.restored ||
+    !state.indicesCommitted ||
+    state.planHash !== plan.planHash
+  )
     throw Error('清理尚未完成，请使用 resume')
   for (const target of plan.targets) {
     if (existsSync(target.path)) throw Error('目标仍存在: ' + target.id)
@@ -536,11 +566,72 @@ export async function verifyCleanup({ plan, expectedHash, skipProcessCheck = fal
   for (const index of plan.indices)
     if (digest(readFileSync(index.path)) !== index.afterSha256) throw Error('索引验收失败')
   checkInventoryFast(plan, plan.targets.map(targetKey))
+  if (plan.sqlite) (await import('./sqlite-store.mjs')).sqliteOperation(plan, 'verify')
   return {
     targetCount: plan.targets.length,
     protectedCount: plan.protectedSessionIds.length,
     skipped: plan.skipped,
     verified: true,
+  }
+}
+/** Restore an offline SQLite recycle transaction without overwriting newer index changes. */
+export async function restoreCleanup({ plan, expectedHash }) {
+  assertPlan(plan, expectedHash)
+  if (!plan.sqlite?.length) throw Error('此计划不含 SQLite 会话')
+  await assertDesktopStopped(plan.executable, plan.home)
+  const history = join(plan.home, 'cleanup-history')
+  await assertSafePath(history, plan.home)
+  const journal = join(history, plan.planHash + '.json'),
+    lock = join(history, 'operation.lock')
+  acquireLock(lock, plan.planHash, true)
+  let releaseSessionLocks, releaseRestoredLocks
+  try {
+    const alreadyLocked = new Set(plan.targets.filter((t) => existsSync(t.path)).map((t) => t.path))
+    releaseSessionLocks = await acquirePlanSessionLocks(plan)
+    const state = JSON.parse(readFileSync(journal, 'utf8'))
+    if (!equal(state.plan, plan) || !state.indicesCommitted) throw Error('清理回执不完整')
+    const { restoreRecycledTree } = await import('./restore-files.mjs')
+    const { sqliteOperation } = await import('./sqlite-store.mjs')
+    sqliteOperation(plan, 'check-restore')
+    if (!state.restoring && !state.restored) {
+      for (const target of plan.targets) {
+        const item = state.items[targetKey(target)]
+        await recycleIO().verifyRecycledTarget(target, item.receipt, item.operationId)
+      }
+      checkIndices(plan, true)
+      state.restoring = true
+      save(journal, state)
+    }
+    checkIndices(plan, true)
+    for (const target of plan.targets) {
+      await assertSafePath(dirname(target.path), plan.home)
+      await restoreRecycledTree(state.items[targetKey(target)].receipt, target)
+    }
+    if (process.platform === 'darwin')
+      releaseRestoredLocks = acquireMacSessionLocks(
+        plan.targets.filter((t) => !alreadyLocked.has(t.path)),
+      )
+    await assertDesktopStopped(plan.executable, plan.home)
+    sqliteOperation(plan, 'restore')
+    for (const index of plan.indices) {
+      await assertSafePath(index.path, plan.home)
+      const bytes = readFileSync(index.path)
+      if (digest(bytes) === index.sha256) continue
+      if (digest(bytes) !== index.afterSha256) throw Error('索引已变化，保留现场：' + index.path)
+      atomicWrite(index.path, Buffer.from(index.bytes, 'base64'))
+    }
+    for (const target of plan.targets)
+      if (!equal(await safeTree(target.path), target.tree)) throw Error('恢复内容不匹配')
+    checkIndices(plan, false)
+    sqliteOperation(plan, 'verify-restored')
+    state.restored = true
+    state.restoring = false
+    save(journal, state)
+    return { restored: plan.targetSessionIds, verified: true }
+  } finally {
+    await releaseRestoredLocks?.()
+    await releaseSessionLocks?.()
+    unlinkSync(lock)
   }
 }
 export { loadDshSnapshot }
@@ -663,7 +754,7 @@ async function quitWindowsDesktop() {
   return { desktop: 'stopped' }
 }
 const help =
-  'status | quit --confirmed (Windows) | preview (--archived | --title 精确标题 | --id 会话ID | --selector-file 文件) [--plan 文件] [--home 路径 --executable 路径]\nexecute [--reopen] | resume | verify --plan 文件 --hash 预览哈希'
+  'status | quit --confirmed (Windows) | preview (--archived | --title 精确标题 | --id 会话ID | --selector-file 文件) [--plan 文件] [--home 路径 --executable 路径]\nexecute [--reopen] | resume | restore | verify --plan 文件 --hash 预览哈希'
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, ...args] = process.argv.slice(2)
   const run = async () => {
@@ -671,7 +762,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (command === 'quit' && args.length === 1 && args[0] === '--confirmed')
       return quitWindowsDesktop()
     if (command === 'status' && !args.length) return desktopStatus()
-    if (!['preview', 'execute', 'resume', 'verify'].includes(command)) throw Error(help)
+    if (!['preview', 'execute', 'resume', 'restore', 'verify'].includes(command)) throw Error(help)
     const optionSpec =
       command === 'preview'
         ? {
@@ -782,6 +873,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       }
     }
     if (command === 'execute' || command === 'resume') return executeDshCleanup(request)
+    if (command === 'restore') return restoreCleanup(request)
     if (command === 'verify') return verifyCleanup(request)
     throw Error('用法: preview | execute | resume | verify')
   }

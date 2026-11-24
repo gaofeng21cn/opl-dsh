@@ -370,6 +370,8 @@ for (const file of [
   'cleanup-skill/SKILL.md',
   'cleanup-skill/cleanup.mjs',
   'cleanup-skill/snapshot.mjs',
+  'cleanup-skill/sqlite-store.mjs',
+  'cleanup-skill/restore-files.mjs',
   'cleanup-skill/windows-io.mjs',
   'cleanup-skill/macos-io.mjs',
   'cleanup-skill/quit-windows.ps1',

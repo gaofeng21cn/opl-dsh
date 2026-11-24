@@ -111,6 +111,8 @@ export function installCleanupSkill({
     'SKILL.md',
     'cleanup.mjs',
     'snapshot.mjs',
+    'sqlite-store.mjs',
+    'restore-files.mjs',
     'windows-io.mjs',
     'macos-io.mjs',
     'quit-windows.ps1',
