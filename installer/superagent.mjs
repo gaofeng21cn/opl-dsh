@@ -1,7 +1,9 @@
 /** Open the original SuperAgent bundle in its own Desktop or Linux CLI/Web process. */
 import { createHash } from 'node:crypto'
 import { closeSync, openSync } from 'node:fs'
-import { readFile, mkdir, writeFile, unlink } from 'node:fs/promises'
+import { readFile, mkdir, writeFile } from 'node:fs/promises'
+import lockfile from 'proper-lockfile'
+import writeFileAtomic from 'write-file-atomic'
 import { isAbsolute, join } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -102,22 +104,22 @@ export async function openSuperagent(installed, { start, open = openLoginPage } 
   }
   await mkdir(root, { recursive: true, mode: 0o700 })
   const lock = join(root, 'prepare.lock')
-  const previousLock = await read(lock).catch((error) => {
-    if (error.code === 'ENOENT') return undefined
+  let releaseLock
+  try {
+    releaseLock = await lockfile.lock(join(root, 'prepare'), {
+      lockfilePath: lock,
+      realpath: false,
+      stale: 30_000,
+    })
+  } catch (error) {
+    if (error?.code === 'ELOCKED') throw new Error('SuperAgent 正在准备，请稍后重试。')
     throw error
-  })
-  if (previousLock) {
-    if (alive(previousLock.pid)) throw new Error('SuperAgent 正在准备，请稍后重试。')
-    await unlink(lock)
   }
-  await writeFile(lock, JSON.stringify({ pid: process.pid }), { flag: 'wx', mode: 0o600 })
   let suiteLaunch
   try {
     suiteLaunch = await acquireSuiteLaunch(installed.suiteRoot)
   } catch (error) {
-    await unlink(lock).catch((unlinkError) => {
-      if (unlinkError.code !== 'ENOENT') throw unlinkError
-    })
+    await releaseLock().catch(() => {})
     throw error
   }
   try {
@@ -168,7 +170,7 @@ export async function openSuperagent(installed, { start, open = openLoginPage } 
               maxBuffer: 1 << 20,
             },
       )
-      await writeFile(
+      await writeFileAtomic(
         join(root, 'installation.json'),
         JSON.stringify({
           suiteSha256: artifact.suiteSha256,
@@ -179,7 +181,7 @@ export async function openSuperagent(installed, { start, open = openLoginPage } 
     }
     // Keep the primary Suite receipt and personal Skill untouched.
     await mkdir(join(home, 'opl-dsh'), { recursive: true, mode: 0o700 })
-    await writeFile(
+    await writeFileAtomic(
       join(home, 'opl-dsh/installation.json'),
       JSON.stringify({
         ...installed,
@@ -227,7 +229,7 @@ export async function openSuperagent(installed, { start, open = openLoginPage } 
             label: 'superagent',
           })
     if (started.refusal) throw new Error(started.refusal)
-    await writeFile(join(root, 'launch.json'), JSON.stringify({ pid: started.pid }) + '\n', {
+    await writeFileAtomic(join(root, 'launch.json'), JSON.stringify({ pid: started.pid }) + '\n', {
       mode: 0o600,
     })
     for (let attempt = 0; attempt < 180; attempt++) {
@@ -269,6 +271,6 @@ export async function openSuperagent(installed, { start, open = openLoginPage } 
     throw new Error('SuperAgent 未在 90 秒内就绪，请检查独立目录中的 desktop.log。')
   } finally {
     await suiteLaunch.release()
-    await unlink(lock)
+    await releaseLock().catch(() => {})
   }
 }

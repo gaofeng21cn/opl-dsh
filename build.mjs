@@ -29,6 +29,9 @@ async function bundle(options) {
 await generateRpc({ root, ifStale: true })
 await rm(join(output, 'package'), { recursive: true, force: true })
 await mkdir(join(output, 'package/lib'), { recursive: true })
+const esmRequireBanner = {
+  js: "import { createRequire as oplCreateRequire } from 'node:module'; import { fileURLToPath as oplFileURLToPath } from 'node:url'; import { dirname as oplDirname } from 'node:path'; const require = oplCreateRequire(import.meta.url); const __filename = oplFileURLToPath(import.meta.url); const __dirname = oplDirname(__filename);",
+}
 const hostBuild = await bundle({
   metafile: true,
   entryPoints: [join(root, 'src/suite/host.ts')],
@@ -36,8 +39,8 @@ const hostBuild = await bundle({
   platform: 'node',
   format: 'esm',
   target: 'node24',
-  packages: 'external',
-  external: ['@deepseek-ai/*'],
+  external: ['@deepseek-ai/*', 'zod', '@napi-rs/keyring'],
+  banner: esmRequireBanner,
   define: suiteVersionDefine,
   tsconfig: join(root, 'tsconfig.host.json'),
   outfile: join(output, 'package/lib/index.js'),
@@ -49,7 +52,8 @@ await bundle({
   platform: 'node',
   format: 'esm',
   target: 'node24',
-  packages: 'external',
+  external: ['@deepseek-ai/*', 'zod'],
+  banner: esmRequireBanner,
   outfile: join(output, 'package/lib/git-bash.js'),
 })
 for (const [entry, name] of [
@@ -62,6 +66,7 @@ for (const [entry, name] of [
     platform: 'node',
     format: 'esm',
     target: 'node24',
+    banner: esmRequireBanner,
     outfile: join(output, `package/lib/${name}.mjs`),
   })
 }
@@ -78,11 +83,22 @@ for (const [directory, name] of [
     platform: 'node',
     format: 'esm',
     target: 'node24',
+    banner: esmRequireBanner,
     outfile: join(output, `package/lib/${name}.mjs`),
   })
 }
-for (const name of ['muse-bridge.mjs', 'muse-bash-mcp.mjs', 'muse-endpoint.mjs'])
-  await cp(join(root, 'src/execution/host/adapters/muse', name), join(output, 'package/lib', name))
+for (const name of ['muse-bridge.mjs', 'muse-bash-mcp.mjs', 'muse-endpoint.mjs']) {
+  await bundle({
+    entryPoints: [join(root, 'src/execution/host/adapters/muse', name)],
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    target: 'node24',
+    external: ['./muse-bash-mcp.mjs', './muse-endpoint.mjs'],
+    banner: esmRequireBanner,
+    outfile: join(output, 'package/lib', name),
+  })
+}
 /** The official client loader materializes the protocol root, not its pure remote-info leaf. */
 const officialClientRuntime = {
   name: 'official-client-runtime',
@@ -123,7 +139,7 @@ const externalImports = [
   )
 const peers = Object.fromEntries(
   [...new Set(externalImports)]
-    .filter((name) => name !== 'zod')
+    .filter((name) => name !== 'zod' && name !== '@napi-rs/keyring')
     .sort()
     .map((name) => [name, '*']),
 )
@@ -153,6 +169,7 @@ await writeFile(
       },
       peerDependencies: peers,
       dependencies: { zod: project.devDependencies.zod },
+      optionalDependencies: { '@napi-rs/keyring': project.devDependencies['@napi-rs/keyring'] },
       dsh: {
         bundle: { patch: './cordis.patch.yml' },
         client: {
@@ -169,7 +186,15 @@ await cp(join(root, 'src/suite/locale'), join(output, 'package/locale'), { recur
 await cp(join(root, project.icon), join(output, 'package/icon.png'))
 await cp(join(root, 'docs/plugins/opl-dsh.zh.md'), join(output, 'package/README.md'))
 await cp(join(root, 'docs/plugins/opl-dsh.en.md'), join(output, 'package/README.en.md'))
-await cp(join(root, 'installer/skill/harness-mcp.mjs'), join(output, 'package/lib/harness-mcp.mjs'))
+await bundle({
+  entryPoints: [join(root, 'installer/skill/harness-mcp.mjs')],
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node24',
+  banner: esmRequireBanner,
+  outfile: join(output, 'package/lib/harness-mcp.mjs'),
+})
 await cp(join(root, 'cordis.patch.yml'), join(output, 'package/cordis.patch.yml'))
 await mkdir(join(output, 'package/licenses'), { recursive: true })
 await cp(
@@ -212,7 +237,57 @@ console.log(join(output, name))
 
 const installer = join(output, 'OPL DSH 一键安装')
 await rm(installer, { recursive: true, force: true })
+/** Keep relative sibling imports inside installer/ external while bundling node_modules completely. */
+const externalLocalInstallerImports = {
+  name: 'external-local-installer-imports',
+  setup(builder) {
+    builder.onResolve({ filter: /^\.\.?\// }, (args) => {
+      if (args.importer && !args.importer.includes('node_modules')) {
+        return { path: args.path, external: true }
+      }
+      return undefined
+    })
+  },
+}
 await cp(join(root, 'installer'), installer, { recursive: true })
+for (const entry of [
+  'skill/harness-mcp.mjs',
+  'skill/control.mjs',
+  'skill/coordinator/cli.mjs',
+  'cleanup-skill/cleanup.mjs',
+  'kimi-cu.mjs',
+  'desktop-update.mjs',
+  'superagent.mjs',
+  'update.mjs',
+  'update-transaction.mjs',
+]) {
+  await bundle({
+    entryPoints: [join(root, 'installer', entry)],
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    target: 'node24',
+    plugins: [externalLocalInstallerImports],
+    banner: esmRequireBanner,
+    outfile: join(installer, entry),
+  })
+}
+for (const entry of [
+  'compare.cjs',
+  'ofm-desktop-admission.cjs',
+  'model-plugins.cjs',
+  'ofm-upgrade.cjs',
+]) {
+  await bundle({
+    entryPoints: [join(root, 'installer', entry)],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    target: 'node24',
+    plugins: [externalLocalInstallerImports],
+    outfile: join(installer, entry),
+  })
+}
 await cp(join(output, name), join(installer, name))
 for (const plugin of plugins) await cp(join(output, plugin.name), join(installer, plugin.name))
 await cp(join(output, superagent.name), join(installer, superagent.name))

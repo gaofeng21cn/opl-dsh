@@ -1,9 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, readFile, writeFile, rm, link, open } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, rm, link } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import lockfile from 'proper-lockfile'
 import {
   compareVersions,
   inspectOfm,
@@ -192,9 +193,12 @@ test('failed pnpm update restores the manifest and retains only package metadata
 
 test('a live transaction lock rejects a second updater', async () => {
   const dir = await profile('2.8.0')
-  const lock = await open(join(dir, '.ofm-upgrade.lock'), 'wx', 0o600)
+  const release = await lockfile.lock(join(dir, '.ofm-upgrade'), {
+    lockfilePath: join(dir, '.ofm-upgrade.lock'),
+    realpath: false,
+    stale: 30_000,
+  })
   try {
-    await lock.writeFile(JSON.stringify({ pid: process.pid, transactionId: 'fixture' }))
     await assert.rejects(
       upgradeOfm({
         dir,
@@ -204,7 +208,7 @@ test('a live transaction lock rejects a second updater', async () => {
       (error) => error.code === 'ofm-upgrade-in-progress',
     )
   } finally {
-    await lock.close()
+    await release()
     await cleanup(dir)
   }
 })

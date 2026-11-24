@@ -1,8 +1,16 @@
 /** KimiCU stdio MCP bridge for native DSH Agent tools. */
-import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import os from 'node:os'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js'
+import { z } from 'zod'
 import { windowsKimiCuLaunch, windowsKimiCuCall, type WinCuAction } from './windows.ts'
+
+const LooseToolsListResultSchema = z.looseObject({
+  tools: z.array(z.looseObject({ name: z.string() })),
+})
 
 /** Fixed executable and MCP arguments verified by the OPL Framework contract. */
 export const KIMI_CU_EXECUTABLE = '/Applications/KimiCU.app/Contents/MacOS/kimi-cu'
@@ -44,12 +52,21 @@ export interface KimiCuResponse {
   readonly error?: { readonly code?: number; readonly message?: string }
 }
 
+function compactEnv(source: NodeJS.ProcessEnv, electronRunAsNode: boolean): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined) result[key] = value
+  }
+  if (electronRunAsNode) result.ELECTRON_RUN_AS_NODE = '1'
+  else delete result.ELECTRON_RUN_AS_NODE
+  return result
+}
+
 /** One MCP client attached to a single KimiCU process. */
 export class KimiCuClient {
-  private child: ChildProcessWithoutNullStreams | undefined
+  private client: Client | undefined
+  private transport: StdioClientTransport | undefined
   private exitError: Error | undefined
-  private nextId = 1
-  private buffer = ''
   private starting: Promise<void> | undefined
   private closed = false
   private readonly launch: {
@@ -59,16 +76,6 @@ export class KimiCuClient {
     env?: NodeJS.ProcessEnv
     codeMode?: boolean
   }
-  private readonly pending = new Map<
-    number,
-    {
-      resolve: (value: unknown) => void
-      reject: (error: Error) => void
-      timer: NodeJS.Timeout
-      signal?: AbortSignal
-      abort?: () => void
-    }
-  >()
 
   constructor(
     executable?: string,
@@ -94,71 +101,62 @@ export class KimiCuClient {
     if (!existsSync(executable))
       throw Error(`KimiCU 未安装或不可执行：${executable}。请先安装 KimiCU。`)
     const script = executable.endsWith('.mjs')
-    const child = spawn(
-      script ? process.execPath : executable,
-      script ? [executable, ...args] : [...args],
-      {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true,
-        ...(cwd ? { cwd } : {}),
-        env: { ...(env ?? process.env), ELECTRON_RUN_AS_NODE: script ? '1' : undefined },
-      },
-    )
-    this.child = child
-    child.stdout.setEncoding('utf8')
-    child.stdout.on('data', (chunk: string) => this.read(chunk))
-    child.stderr.setEncoding('utf8')
-    child.stderr.on('data', () => {})
-    child.once('error', (error) => {
-      this.exitError = error
-      this.failAll(error)
+    const transport = new StdioClientTransport({
+      command: script ? process.execPath : executable,
+      args: script ? [executable, ...args] : [...args],
+      ...(cwd ? { cwd } : {}),
+      env: compactEnv(env ?? process.env, script),
+      stderr: 'pipe',
     })
-    child.stdin.on('error', (error) => this.failAll(error))
-    child.once('exit', (code, signal) => {
-      this.exitError = Error(
-        `KimiCU MCP 已退出（${signal === null ? `code ${String(code)}` : signal}）。请重启 KimiCU 服务后重试。`,
-      )
-      this.failAll(this.exitError)
-      this.child = undefined
-    })
-    await this.request(
-      'initialize',
-      {
-        protocolVersion: '2025-06-18',
-        capabilities: {},
-        clientInfo: { name: 'opl-dsh', version: suiteVersion },
-      },
-      10_000,
-    )
-    this.write({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} })
-    if (this.launch.codeMode) {
-      const listed = await this.request('tools/list', {}, 10_000)
-      if (
-        !isRecord(listed) ||
-        !Array.isArray(listed.tools) ||
-        !listed.tools.some((tool: unknown) => isRecord(tool) && tool.name === 'js')
-      ) {
-        await this.close()
-        throw Error('Windows KimiCU 未广告已验证的 js 工具，未执行操作。')
+    transport.stderr?.on('data', () => {})
+    const client = new Client({ name: 'opl-dsh', version: suiteVersion })
+    transport.onclose = () => {
+      if (!this.closed && this.exitError === undefined) {
+        this.exitError = Error('KimiCU MCP 已退出。请重启 KimiCU 服务后重试。')
       }
+      this.client = undefined
+      this.transport = undefined
+    }
+    transport.onerror = (error) => {
+      if (this.exitError === undefined) this.exitError = error
+    }
+    this.transport = transport
+    this.client = client
+    try {
+      await client.connect(transport, { timeout: 10_000 })
+      if (this.launch.codeMode) {
+        const listed = await client.request(
+          { method: 'tools/list', params: {} },
+          LooseToolsListResultSchema,
+          { timeout: 10_000 },
+        )
+        if (!listed.tools.some((tool) => tool.name === 'js')) {
+          await this.close()
+          throw Error('Windows KimiCU 未广告已验证的 js 工具，未执行操作。')
+        }
+      }
+    } catch (error) {
+      await this.close().catch(() => {})
+      if (error instanceof McpError && error.code === ErrorCode.RequestTimeout) {
+        throw Error('KimiCU initialize 超时')
+      }
+      throw error
     }
   }
 
   /** Close the owned MCP process and settle every pending request. */
   async close(): Promise<void> {
     this.closed = true
-    this.failAll(Error('KimiCU MCP 已关闭'))
-    const child = this.child
-    this.child = undefined
-    if (child === undefined || child.exitCode !== null) return
-    child.kill('SIGTERM')
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, 1_000)
-      child.once('exit', () => {
-        clearTimeout(timer)
-        resolve()
-      })
-    })
+    const client = this.client
+    const transport = this.transport
+    this.client = undefined
+    this.transport = undefined
+    try {
+      if (client) await client.close()
+      else if (transport) await transport.close()
+    } catch {
+      // Closing an already exited transport is a no-op.
+    }
   }
 
   /** Call one original KimiCU tool and return its unmodified result. */
@@ -166,16 +164,31 @@ export class KimiCuClient {
     if (signal.aborted) throw Error('KimiCU 调用已取消')
     await this.start()
     if (signal.aborted) throw Error('KimiCU 调用已取消')
+    const client = this.client
+    if (client === undefined) throw this.exitError ?? Error('KimiCU MCP 尚未启动')
+    const payload = this.launch.codeMode
+      ? windowsKimiCuCall(action, args)
+      : {
+          name: action,
+          arguments: isRecord(args) ? args : {},
+        }
     let result: unknown
     try {
-      result = await this.request(
-        'tools/call',
-        this.launch.codeMode ? windowsKimiCuCall(action, args) : { name: action, arguments: args },
-        KIMI_CU_CALL_TIMEOUT_MS,
+      result = await client.callTool(payload, undefined, {
+        timeout: KIMI_CU_CALL_TIMEOUT_MS,
         signal,
-      )
+      })
     } catch (error) {
-      if (signal.aborted) throw Error('KimiCU 调用已取消')
+      if (signal.aborted) {
+        void this.close()
+        throw Error('KimiCU 调用已取消')
+      }
+      if (error instanceof McpError && error.code === ErrorCode.RequestTimeout) {
+        void this.close()
+        throw Error(
+          `KimiCU 操作在 ${String(KIMI_CU_CALL_TIMEOUT_MS / 1000)} 秒内没有响应；请检查 KimiCU 服务和系统权限，修复后重新观察，不要自动重试。`,
+        )
+      }
       throw error
     }
     if (isRecord(result) && result.isError === true) {
@@ -183,96 +196,6 @@ export class KimiCuClient {
       throw Error(failure.text || 'KimiCU 操作失败')
     }
     return result
-  }
-
-  private request(
-    method: string,
-    params: unknown,
-    timeoutMs: number,
-    signal?: AbortSignal,
-  ): Promise<unknown> {
-    if (this.child === undefined) return Promise.reject(Error('KimiCU MCP 尚未启动'))
-    const id = this.nextId++
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        signal?.removeEventListener('abort', abort)
-        this.pending.delete(id)
-        this.write({
-          jsonrpc: '2.0',
-          method: 'notifications/cancelled',
-          params: { requestId: id, reason: 'timeout' },
-        })
-        reject(
-          Error(
-            method === 'tools/call'
-              ? `KimiCU 操作在 ${String(KIMI_CU_CALL_TIMEOUT_MS / 1000)} 秒内没有响应；请检查 KimiCU 服务和系统权限，修复后重新观察，不要自动重试。`
-              : `KimiCU ${method} 超时`,
-          ),
-        )
-        if (method === 'tools/call') void this.close()
-      }, timeoutMs)
-      const abort = (): void => {
-        const entry = this.pending.get(id)
-        if (entry === undefined) return
-        clearTimeout(entry.timer)
-        this.pending.delete(id)
-        this.write({
-          jsonrpc: '2.0',
-          method: 'notifications/cancelled',
-          params: { requestId: id, reason: 'cancelled' },
-        })
-        reject(Error('KimiCU 调用已取消'))
-        if (method === 'tools/call') void this.close()
-      }
-      this.pending.set(id, {
-        resolve,
-        reject,
-        timer,
-        ...(signal === undefined ? {} : { signal }),
-        ...(signal === undefined ? {} : { abort }),
-      })
-      signal?.addEventListener('abort', abort, { once: true })
-      this.write({ jsonrpc: '2.0', id, method, params })
-    })
-  }
-
-  private write(value: unknown): void {
-    if (this.exitError) throw this.exitError
-    this.child?.stdin.write(`${JSON.stringify(value)}\n`)
-  }
-
-  private read(chunk: string): void {
-    this.buffer += chunk
-    let newline: number
-    while ((newline = this.buffer.indexOf('\n')) >= 0) {
-      const line = this.buffer.slice(0, newline).trim()
-      this.buffer = this.buffer.slice(newline + 1)
-      if (line === '') continue
-      let response: KimiCuResponse
-      try {
-        response = JSON.parse(line) as KimiCuResponse
-      } catch {
-        continue
-      }
-      if (typeof response.id !== 'number') continue
-      const pending = this.pending.get(response.id)
-      if (pending === undefined) continue
-      clearTimeout(pending.timer)
-      pending.signal?.removeEventListener('abort', pending.abort!)
-      this.pending.delete(response.id)
-      if (response.error !== undefined)
-        pending.reject(Error(response.error.message ?? 'KimiCU MCP 请求失败'))
-      else pending.resolve(response.result)
-    }
-  }
-
-  private failAll(error: Error): void {
-    for (const [id, pending] of this.pending) {
-      clearTimeout(pending.timer)
-      pending.signal?.removeEventListener('abort', pending.abort!)
-      pending.reject(error)
-      this.pending.delete(id)
-    }
   }
 }
 

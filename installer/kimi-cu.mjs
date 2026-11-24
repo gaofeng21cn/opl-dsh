@@ -5,6 +5,14 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import semver from 'semver'
+import { z } from 'zod'
+
+const LooseToolsListResultSchema = z.looseObject({
+  tools: z.array(z.looseObject({ name: z.string() })),
+})
 
 export const KIMI_CU_VERSION_URL = 'https://cdn.kimi.com/kimi-computer-use/latest/version.json'
 export const KIMI_CU_BUNDLE_ID = 'ai.kimi.cu'
@@ -26,24 +34,21 @@ export const KIMI_CU_REQUIRED_TOOLS = [
 ]
 const MAX_MANIFEST_BYTES = 64 * 1024
 const MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
-const VERSION = /^(\d+)\.(\d+)\.(\d+)$/u
 const SHA256 = /^[a-f0-9]{64}$/u
 
 /** Return a comparable stable semantic version, or undefined for a prerelease/malformed one. */
 export function parseStableVersion(value) {
-  const match = VERSION.exec(value)
-  return match === null ? undefined : match.slice(1).map(Number)
+  if (typeof value !== 'string' || !/^\d+\.\d+\.\d+$/u.test(value)) return undefined
+  const parsed = semver.parse(value)
+  if (!parsed || parsed.prerelease.length > 0 || parsed.build.length > 0) return undefined
+  return [parsed.major, parsed.minor, parsed.patch]
 }
 
 /** Compare two stable semantic versions without accepting prerelease downgrades. */
 export function compareStableVersions(left, right) {
-  const a = parseStableVersion(left)
-  const b = parseStableVersion(right)
-  if (a === undefined || b === undefined) throw Error('KimiCU 版本必须为稳定语义版本')
-  for (let index = 0; index < 3; index++) {
-    if (a[index] !== b[index]) return a[index] - b[index]
-  }
-  return 0
+  if (parseStableVersion(left) === undefined || parseStableVersion(right) === undefined)
+    throw Error('KimiCU 版本必须为稳定语义版本')
+  return semver.compare(left, right)
 }
 
 /** Pick the exact official archive for this Mac from the version manifest. */
@@ -194,21 +199,37 @@ export function inspectKimiCu(appPath = KIMI_CU_INSTALL_PATH, expectedArchitectu
   }
 }
 
-function toolNames(output) {
-  const names = []
-  for (const line of output.split(/\r?\n/u)) {
-    try {
-      const value = JSON.parse(line)
-      const tools = value?.result?.tools
-      if (Array.isArray(tools))
-        names.push(...tools.flatMap((tool) => (typeof tool?.name === 'string' ? [tool.name] : [])))
-    } catch {}
+async function probeKimiCuTools(executable) {
+  let stderr = ''
+  const transport = new StdioClientTransport({
+    command: executable,
+    args: [...KIMI_CU_MCP_ARGS],
+    stderr: 'pipe',
+  })
+  transport.stderr?.on('data', (chunk) => {
+    stderr += chunk.toString('utf8')
+  })
+  const client = new Client({ name: 'opl-dsh-installer', version: '0.2.40' })
+  try {
+    await client.connect(transport, { timeout: 15_000 })
+    const listed = await client.request(
+      { method: 'tools/list', params: {} },
+      LooseToolsListResultSchema,
+      { timeout: 15_000 },
+    )
+    return [
+      ...new Set(listed.tools.map((tool) => tool.name).filter((name) => typeof name === 'string')),
+    ]
+  } catch (error) {
+    const detail = stderr.trim() || (error instanceof Error ? error.message : String(error))
+    throw Error(`KimiCU MCP 启动失败：${detail}`)
+  } finally {
+    await client.close().catch(() => {})
   }
-  return [...new Set(names)]
 }
 
 /** Verify the MCP handshake and required tool vocabulary, then initialize the companion. */
-export function configureKimiCu(executable = KIMI_CU_EXECUTABLE) {
+export async function configureKimiCu(executable = KIMI_CU_EXECUTABLE) {
   // Re-register the launch service after an upgrade. Keeping the old registration
   // across bundle replacement can leave launchd pointing at the previous code
   // identity, which then fails with EX_CONFIG even though the new bundle is valid.
@@ -228,24 +249,7 @@ export function configureKimiCu(executable = KIMI_CU_EXECUTABLE) {
   ])
   if (!restarted.ok)
     throw Error(`KimiCU 服务重启失败：${restarted.stderr.trim() || restarted.stdout.trim()}`)
-  const request =
-    [
-      JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: {
-          protocolVersion: '2025-06-18',
-          capabilities: {},
-          clientInfo: { name: 'opl-dsh-installer', version: '0.2.40' },
-        },
-      }),
-      JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} }),
-      JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
-    ].join('\n') + '\n'
-  const probe = command(executable, KIMI_CU_MCP_ARGS, { input: request })
-  if (!probe.ok) throw Error(`KimiCU MCP 启动失败：${probe.stderr.trim()}`)
-  const observed = toolNames(`${probe.stdout}\n${probe.stderr}`)
+  const observed = await probeKimiCuTools(executable)
   const missing = KIMI_CU_REQUIRED_TOOLS.filter((tool) => !observed.includes(tool))
   if (missing.length) throw Error(`KimiCU MCP 工具不完整：${missing.join(', ')}`)
   const doctor = command(executable, ['doctor'])
@@ -335,7 +339,7 @@ export async function installKimiCu({
         before.version !== null &&
         compareStableVersions(before.version, target.version) >= 0
       ) {
-        const configured = configure(before.executable)
+        const configured = await configure(before.executable)
         await record('current', {
           installedVersion: before.version,
           targetVersion: target.version,
@@ -367,7 +371,7 @@ export async function installKimiCu({
           const verified = inspectBundle(appPath)
           if (!verified.verified) throw Error('KimiCU 安装后身份校验失败')
           verifyBundle(appPath, target.version, arch)
-          const configured = configure(verified.executable)
+          const configured = await configure(verified.executable)
           await record('installed', {
             installedVersion: target.version,
             previousVersion: before.version ?? null,
@@ -392,7 +396,7 @@ export async function installKimiCu({
       before.version !== null &&
       process.env.OPL_KIMI_CU_OFFLINE === '1'
     ) {
-      const configured = configure(before.executable)
+      const configured = await configure(before.executable)
       await record('current', {
         installedVersion: before.version,
         targetVersion: before.version,
@@ -417,7 +421,7 @@ export async function installKimiCu({
       before.version !== null &&
       compareStableVersions(before.version, target.version) >= 0
     ) {
-      const configured = configure(before.executable)
+      const configured = await configure(before.executable)
       await record('current', {
         installedVersion: before.version,
         targetVersion: target.version,
@@ -463,7 +467,7 @@ export async function installKimiCu({
         const verified = inspectBundle(appPath)
         if (!verified.verified) throw Error('KimiCU 安装后身份校验失败')
         verifyBundle(appPath, target.version, arch)
-        const configured = configure(verified.executable)
+        const configured = await configure(verified.executable)
         await record('installed', {
           installedVersion: target.version,
           previousVersion: before.version ?? null,

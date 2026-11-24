@@ -5,8 +5,9 @@
  * 部分成功时，靠它区分“什么都没发生”“已经完成”和“结果不确定”，避免盲重发与错误
  * 上下文续发。候选 Runtime 的 operation 台账是进程内状态，不能替代这里。
  */
-import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
+import writeFileAtomic from 'write-file-atomic'
 import { join } from 'node:path'
 import { oplProfilePath } from '../../shared/host/profile-paths.ts'
 import type { StopEditIntent, StopEditResult } from '../contracts/stop-edit.ts'
@@ -80,9 +81,9 @@ export class StopEditIntentStore {
   private async write(intent: StopEditIntent): Promise<void> {
     this.records.set(intent.sessionId, intent)
     await mkdir(this.directory, { recursive: true, mode: 0o700 })
-    const temp = this.filename(intent.sessionId) + '.' + randomUUID() + '.tmp'
-    await writeFile(temp, JSON.stringify(intent), { mode: 0o600 })
-    await rename(temp, this.filename(intent.sessionId))
+    await writeFileAtomic(this.filename(intent.sessionId), JSON.stringify(intent), {
+      mode: 0o600,
+    })
   }
 
   /** 串行落盘并只写变化过的文件；失败时把最新值放回队列，绝不丢一次意图。 */

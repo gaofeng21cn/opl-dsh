@@ -22,6 +22,7 @@ import type {
   WebSearchSource,
 } from '@deepseek-ai/dsh-web'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import { createParser } from 'eventsource-parser'
 
 /** Stable id this provider registers under in `ctx.web`. */
 export const OPL_GATEWAY_SEARCH_PROVIDER_ID = 'opl-gateway'
@@ -172,29 +173,30 @@ export async function readSearchStream(
   signal?: AbortSignal,
 ): Promise<OplSearchStream> {
   const state = emptyAccumulator()
-  const decoder = new TextDecoder()
-  let buffer = ''
+  const decoder = new TextDecoder('utf-8', { ignoreBOM: false })
+  const parser = createParser({
+    onEvent(message) {
+      const payload = message.data.trim()
+      if (payload === '' || payload === '[DONE]') return
+      let event: unknown
+      try {
+        event = JSON.parse(payload)
+      } catch {
+        return
+      }
+      absorbSearchEvent(event, state)
+    },
+  })
   const reader = body.getReader()
   try {
     while (true) {
       const { done, value } = await abortable(reader.read(), signal)
       if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() ?? ''
-      for (const line of lines) {
-        if (!line.startsWith('data:')) continue
-        const payload = line.slice('data:'.length).trim()
-        if (payload === '' || payload === '[DONE]') continue
-        let event: unknown
-        try {
-          event = JSON.parse(payload)
-        } catch {
-          continue
-        }
-        absorbSearchEvent(event, state)
-      }
+      parser.feed(decoder.decode(value, { stream: true }))
     }
+    const tail = decoder.decode()
+    if (tail) parser.feed(tail)
+    parser.feed('\n\n')
   } finally {
     reader.releaseLock()
   }

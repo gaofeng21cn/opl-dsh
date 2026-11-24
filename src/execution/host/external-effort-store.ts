@@ -1,7 +1,7 @@
 /** Conversation choices for CLI effort IDs, separate from provider request controls. */
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import writeFileAtomic from 'write-file-atomic'
 import { oplProfilePath } from '../../shared/host/profile-paths.ts'
 
 export class ExternalEffortStore {
@@ -46,10 +46,10 @@ export class ExternalEffortStore {
       current()
       const values = { ...this.values, [JSON.stringify([sessionId, combination])]: effort ?? null }
       await mkdir(dirname(this.filename), { recursive: true, mode: 0o700 })
-      const temp = this.filename + '.' + randomUUID()
-      await writeFile(temp, JSON.stringify(values, null, 2) + '\n', { mode: 0o600 })
       current()
-      await rename(temp, this.filename)
+      await writeFileAtomic(this.filename, JSON.stringify(values, null, 2) + '\n', {
+        mode: 0o600,
+      })
       this.values = values
     })
     this.queue = write.catch(() => {})

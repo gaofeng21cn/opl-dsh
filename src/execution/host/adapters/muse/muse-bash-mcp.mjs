@@ -31,6 +31,16 @@ import { isAbsolute, resolve } from 'node:path'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
+import { Server } from '@modelcontextprotocol/sdk/server/index.js'
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import {
+  CallToolRequestSchema,
+  CancelledNotificationSchema,
+  ErrorCode,
+  ListToolsRequestSchema,
+  McpError,
+} from '@modelcontextprotocol/sdk/types.js'
+import { z } from 'zod'
 
 const execFileAsync = promisify(execFile)
 
@@ -45,14 +55,6 @@ const MAX_OUTPUT_CEILING = 8 * 1024 * 1024
 const DEFAULT_TIMEOUT_MS = 120_000
 const TIMEOUT_CEILING_MS = 3_600_000
 
-const encode = (value) => JSON.stringify(value)
-
-function reply(id, result) {
-  process.stdout.write(`${encode({ jsonrpc: '2.0', id, result })}\n`)
-}
-function fail(id, code, message) {
-  process.stdout.write(`${encode({ jsonrpc: '2.0', id, error: { code, message } })}\n`)
-}
 function log(line) {
   // stdout is the protocol channel; diagnostics go to stderr, where the CLI
   // collects them instead of corrupting the JSON-RPC stream.
@@ -383,82 +385,16 @@ const TOOLS = [
   },
 ]
 
-async function handle(message, state) {
-  const { id, method, params } = message
-  switch (method) {
-    case 'initialize':
-      return reply(id, {
-        protocolVersion: params?.protocolVersion ?? '2025-06-18',
-        capabilities: { tools: {} },
-        serverInfo: { name: 'opl_muse_git_bash', version: '1' },
-      })
-    case 'tools/list':
-      return reply(id, { tools: TOOLS })
-    case 'ping':
-      return reply(id, {})
-    case 'tools/call': {
-      const tool = params?.name
-      if (tool !== 'run') return fail(id, -32602, `unknown tool: ${String(tool)}`)
-      // Register the control under the request id before the child exists, so a
-      // cancellation that arrives during startup is not lost.
-      const control = new CancellationControl()
-      state.running.set(String(id), control)
-      let result
-      try {
-        result = await runBashCommand(params?.arguments ?? {}, process.env, control)
-      } finally {
-        state.running.delete(String(id))
-      }
-      if (result.refused)
-        return reply(id, {
-          content: [{ type: 'text', text: `Refused: ${result.refused}` }],
-          isError: true,
-        })
-      const summary = [
-        `exit=${result.exitCode}`,
-        result.signal ? `signal=${result.signal}` : '',
-        result.timedOut
-          ? `timedOut after ${params?.arguments?.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms`
-          : '',
-        // A withdrawn call is reported as cancelled, which is a real outcome the
-        // runtime chose, not an error invented by the server.
-        result.cancelled ? 'cancelled' : '',
-        // Only claimed when the tree kill actually reported success.
-        result.timedOut || result.cancelled ? `killConfirmed=${result.killConfirmed}` : '',
-        `shell=${result.shell}`,
-        `cwd=${result.cwd}`,
-        result.truncatedBytes ? `truncatedBytes=${result.truncatedBytes}` : '',
-      ]
-        .filter(Boolean)
-        .join(' ')
-      return reply(id, {
-        content: [
-          {
-            type: 'text',
-            text: `${summary}\n--- stdout ---\n${result.stdout}\n--- stderr ---\n${result.stderr}`,
-          },
-        ],
-        isError: result.exitCode !== 0 || result.timedOut || result.cancelled,
-      })
-    }
-    case 'notifications/cancelled': {
-      // `requestId` names the call being withdrawn. Without it there is nothing to
-      // cancel and nothing is claimed.
-      const target = String(params?.requestId ?? '')
-      const control = state.running.get(target)
-      state.cancelled += 1
-      if (!control) {
-        log(`opl-muse-bash: 取消请求没有对应的运行中调用（requestId=${target || '缺失'}）`)
-        return undefined
-      }
-      control.cancel()
-      return undefined
-    }
-    default:
-      if (id === undefined) return undefined
-      return fail(id, -32601, `Method not implemented: ${String(method)}`)
-  }
-}
+const TolerantInitializeRequestSchema = z.object({
+  method: z.literal('initialize'),
+  params: z
+    .object({
+      protocolVersion: z.string().optional(),
+      capabilities: z.record(z.string(), z.unknown()).optional(),
+      clientInfo: z.record(z.string(), z.unknown()).optional(),
+    })
+    .optional(),
+})
 
 /**
  * Run the server on stdio until the CLI closes the pipe.
@@ -478,33 +414,88 @@ export async function main() {
   log(`opl-muse-bash: serving run through ${shellInfo.shell}`)
 
   const state = { cancelled: 0, running: new Map() }
-  let buffer = ''
-  process.stdin.setEncoding('utf8')
-  process.stdin.on('data', (chunk) => {
-    buffer += chunk
-    for (;;) {
-      const index = buffer.indexOf('\n')
-      if (index < 0) break
-      const line = buffer.slice(0, index).trim()
-      buffer = buffer.slice(index + 1)
-      if (!line) continue
-      let message
-      try {
-        message = JSON.parse(line)
-      } catch (error) {
-        log(
-          `opl-muse-bash: dropped unparsable line: ${error instanceof Error ? error.message : String(error)}`,
-        )
-        continue
+  const server = new Server(
+    { name: 'opl_muse_git_bash', version: '1' },
+    { capabilities: { tools: {} } },
+  )
+
+  server.setRequestHandler(TolerantInitializeRequestSchema, async (request) => ({
+    protocolVersion: request.params?.protocolVersion ?? '2025-06-18',
+    capabilities: { tools: {} },
+    serverInfo: { name: 'opl_muse_git_bash', version: '1' },
+  }))
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
+
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    const tool = request.params.name
+    if (tool !== 'run') throw new McpError(ErrorCode.InvalidParams, `unknown tool: ${String(tool)}`)
+    // Register the control under the request id before the child exists, so a
+    // cancellation that arrives during startup is not lost.
+    const control = new CancellationControl()
+    const requestKey = String(extra.requestId)
+    state.running.set(requestKey, control)
+    let result
+    try {
+      result = await runBashCommand(request.params.arguments ?? {}, process.env, control)
+    } finally {
+      state.running.delete(requestKey)
+    }
+    if (result.refused) {
+      return {
+        content: [{ type: 'text', text: `Refused: ${result.refused}` }],
+        isError: true,
       }
-      Promise.resolve(handle(message, state)).catch((error) => {
-        if (message.id !== undefined)
-          fail(message.id, -32603, error instanceof Error ? error.message : String(error))
-      })
+    }
+    const summary = [
+      `exit=${result.exitCode}`,
+      result.signal ? `signal=${result.signal}` : '',
+      result.timedOut
+        ? `timedOut after ${request.params.arguments?.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms`
+        : '',
+      // A withdrawn call is reported as cancelled, which is a real outcome the
+      // runtime chose, not an error invented by the server.
+      result.cancelled ? 'cancelled' : '',
+      // Only claimed when the tree kill actually reported success.
+      result.timedOut || result.cancelled ? `killConfirmed=${result.killConfirmed}` : '',
+      `shell=${result.shell}`,
+      `cwd=${result.cwd}`,
+      result.truncatedBytes ? `truncatedBytes=${result.truncatedBytes}` : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `${summary}\n--- stdout ---\n${result.stdout}\n--- stderr ---\n${result.stderr}`,
+        },
+      ],
+      isError: result.exitCode !== 0 || result.timedOut || result.cancelled,
     }
   })
-  process.stdin.on('end', () => process.exit(EXIT_OK))
-  process.stdin.on('error', () => process.exit(EXIT_OK))
+
+  server.setNotificationHandler(CancelledNotificationSchema, (notification) => {
+    // `requestId` names the call being withdrawn. Without it there is nothing to
+    // cancel and nothing is claimed.
+    const target = String(notification.params?.requestId ?? '')
+    const control = state.running.get(target)
+    state.cancelled += 1
+    if (!control) {
+      log(`opl-muse-bash: 取消请求没有对应的运行中调用（requestId=${target || '缺失'}）`)
+      return
+    }
+    control.cancel()
+  })
+
+  const transport = new StdioServerTransport()
+  transport.onerror = (error) => {
+    log(`opl-muse-bash: dropped unparsable line: ${error.message}`)
+  }
+  process.stdin.once('error', () => {
+    process.exitCode = EXIT_OK
+  })
+  await server.connect(transport)
 }
 
 // Only self-start when executed as a program; importing for tests must not

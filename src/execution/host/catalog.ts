@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile, copyFile, constants } from 'node:fs/promises'
+import { mkdir, readFile, copyFile, constants } from 'node:fs/promises'
+import writeFileAtomic from 'write-file-atomic'
 import { dirname } from 'node:path'
 import { oplProfilePath } from '../../shared/host/profile-paths.ts'
 import { DSH_COMBINATION, GROK_COMBINATION, type HarnessCatalog } from '../contracts/sessions.ts'
@@ -253,9 +253,7 @@ export class ExecutionCatalogStore {
   private async persist(value: ExecutionCatalog) {
     const { models: _, ...saved } = value
     await mkdir(dirname(this.filename), { recursive: true, mode: 0o700 })
-    const temp = this.filename + '.' + randomUUID()
-    await writeFile(temp, JSON.stringify(saved, null, 2) + '\n', { mode: 0o600 })
-    await rename(temp, this.filename)
+    await writeFileAtomic(this.filename, JSON.stringify(saved, null, 2) + '\n', { mode: 0o600 })
   }
   async get() {
     await this.ready

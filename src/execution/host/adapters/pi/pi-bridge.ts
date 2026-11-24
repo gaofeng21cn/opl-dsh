@@ -51,12 +51,17 @@
  * key is never written to a file, an argument vector, or a log line, and error text is
  * scrubbed against it before anything returns to the host.
  */
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { StringDecoder } from 'node:string_decoder'
 import { join } from 'node:path'
 import { commandLaunch } from '../../harness-registry.ts'
+import {
+  RpcBridgeError,
+  RpcModeProcess,
+  redactCredential,
+  rpcConfigurationError,
+  startRpcModeAcpServer,
+} from '../rpc-mode-bridge-base.ts'
 import { RpcTurnOutcome } from '../rpc-turn-outcome.ts'
 import { PI_CREDENTIAL_ENV, buildPiModelsConfig, buildPiSettings } from './pi-config.ts'
 import { PI_PROVIDER, piLane } from './pi-models.ts'
@@ -92,67 +97,29 @@ const PERMISSION_OPTION = 'permission'
 /** Official dialog methods that block the agent until a response arrives. */
 const DIALOG_METHODS = new Set(['confirm', 'select', 'input', 'editor'])
 
-class PiBridgeError extends Error {
-  constructor(
-    message: string,
-    readonly code: string,
-    readonly turnSettled = false,
-  ) {
-    super(message)
+class PiBridgeError extends RpcBridgeError {
+  constructor(message: string, code: string, turnSettled = false) {
+    super(message, code, turnSettled ? { oplTurnSettled: true } : undefined)
   }
 }
 
-const configuration = (message: string) => new PiBridgeError(message, 'HARNESS_CONFIG')
-
-/**
- * Classify a bridge failure into the error code the host's ACP transport understands.
- *
- * The host maps these codes onto the message a user actually sees
- * (`src/execution/host/acp.ts`), so this choice decides whether a refusal reads as "this
- * combination's parameters were rejected" or as an undifferentiated failure. A
- * configuration refusal therefore uses the standard JSON-RPC `-32602`: a private string
- * code would fall through to the vaguest message the host has.
- */
-function acpErrorCode(error: unknown): string | number {
-  if (!(error instanceof PiBridgeError)) return -32603
-  switch (error.code) {
-    case 'HARNESS_CONFIG':
-      return -32602
-    case 'HARNESS_TIMEOUT':
-      return 'HARNESS_TIMEOUT'
-    case 'HARNESS_PROVIDER':
-    case 'HARNESS_PROVIDER_CLIENT_REQUIRED':
-    case 'HARNESS_PROVIDER_AUTH':
-    case 'HARNESS_PROVIDER_MODEL':
-    case 'HARNESS_PROVIDER_RATE_LIMIT':
-    case 'HARNESS_PROVIDER_TIMEOUT':
-    case 'HARNESS_PROVIDER_NETWORK':
-      return error.code
-    case 'HARNESS_TRANSPORT':
-      // The official process went away: a broken connection, not a bad request.
-      return 'HARNESS_NETWORK'
-    default:
-      return -32603
-  }
-}
+const configuration = rpcConfigurationError
 
 /** Remove the key from any text that can reach the host, a log or an error. */
 function redact(text: string): string {
-  return credential ? text.split(credential).join('[redacted]') : text
+  return redactCredential(text, credential)
 }
 
-const send = (value: object) =>
-  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...value }) + '\n')
+let acpChannel!: ReturnType<typeof startRpcModeAcpServer>
+const send = (value: Record<string, unknown>) => acpChannel.send(value)
 
 // ── Official CLI child ─────────────────────────────────────────────────────────────
-let child: ChildProcessWithoutNullStreams | undefined
-let stdoutBuffer = ''
-const stdoutDecoder = new StringDecoder('utf8')
-let seq = 0
-const pending = new Map<
-  number,
-  { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
->()
+let permissionSeq = 0
+const rpcProcess = new RpcModeProcess({
+  label: '官方 Pi ',
+  onLine: (line) => handleOfficialLine(line),
+  onExit: (reason) => failPending(reason),
+})
 
 let sessionId = ''
 /**
@@ -176,16 +143,12 @@ const asks = new Map<string, (optionId: string | undefined) => void>()
 
 const emit = (update: object) => {
   if (!sessionId) return
-  send({ method: 'session/update', params: { sessionId, update } })
+  acpChannel.notify('session/update', { sessionId, update })
 }
 
 /** Reject everything in flight so no caller waits on a process that is gone. */
 function failPending(reason: string) {
-  for (const entry of pending.values()) {
-    clearTimeout(entry.timer)
-    entry.reject(new PiBridgeError(reason, 'HARNESS_TRANSPORT'))
-  }
-  pending.clear()
+  rpcProcess.failPending(reason)
   for (const release of asks.values()) release(undefined)
   asks.clear()
   rejectTurn?.(new PiBridgeError(reason, 'HARNESS_TRANSPORT'))
@@ -195,9 +158,7 @@ function failPending(reason: string) {
 
 function releaseEverything(reason = '官方 Pi 会话已结束') {
   failPending(reason)
-  const previous = child
-  child = undefined
-  previous?.kill('SIGTERM')
+  rpcProcess.release(reason)
 }
 
 /** Send one official RPC command and await its correlated `response`. */
@@ -206,58 +167,15 @@ function piRequest(
   extra: Record<string, unknown> = {},
   timeoutMs = 60000,
 ): Promise<any> {
-  if (!child) throw configuration('官方 Pi 进程未启动')
-  const id = ++seq
-  return new Promise<any>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      if (pending.delete(id))
-        reject(new PiBridgeError(`官方 Pi 未在 ${timeoutMs}ms 内回应 ${type}`, 'HARNESS_TIMEOUT'))
-    }, timeoutMs)
-    pending.set(id, {
-      timer,
-      resolve: (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      reject: (error) => {
-        clearTimeout(timer)
-        reject(error)
-      },
-    })
-    child!.stdin.write(JSON.stringify({ id, type, ...extra }) + '\n')
-  })
+  return rpcProcess.request(type, extra, timeoutMs)
 }
 
 /** Issue a command that must be accepted; the official failure mode is `success: false`. */
 async function piCommand(type: string, extra: Record<string, unknown> = {}): Promise<any> {
-  const response = await piRequest(type, extra)
-  if (response?.success !== true)
-    throw configuration(`官方 Pi 拒绝了 ${type}，已停止，未继续会话。`)
-  return response.data
+  return rpcProcess.command(type, extra)
 }
 
 // ── Official frames ────────────────────────────────────────────────────────────────
-
-/**
- * Split the official stream on LF only.
- *
- * The official RPC documentation is explicit that Node's `readline` is not
- * protocol-compliant here, because it also splits on U+2028/U+2029, which are valid inside
- * a JSON string. Reimplementing the documented framing instead of importing a generic line
- * reader keeps agent output containing those characters intact.
- */
-function drain(buffer: string, onLine: (line: string) => void): string {
-  let rest = buffer
-  for (;;) {
-    const index = rest.indexOf('\n')
-    if (index === -1) break
-    const raw = rest.slice(0, index)
-    rest = rest.slice(index + 1)
-    const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw
-    if (line.trim().length > 0) onLine(line)
-  }
-  return rest
-}
 
 /**
  * Launch the official CLI in RPC mode.
@@ -270,7 +188,7 @@ function drain(buffer: string, onLine: (line: string) => void): string {
  * variable and the `sessionDir` setting.
  */
 function openAgent(): void {
-  if (child) return
+  if (rpcProcess.running) return
   mkdirSync(agentDir, { recursive: true })
   mkdirSync(sessionDir, { recursive: true })
   const env: NodeJS.ProcessEnv = {
@@ -291,24 +209,10 @@ function openAgent(): void {
     sessionDir,
     ...shellInstructions,
   ])
-  const launched = spawn(launch.command, launch.args, {
+  rpcProcess.spawn(launch.command, launch.args, {
     cwd: process.cwd(),
     env,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: true,
     ...(launch.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
-  }) as ChildProcessWithoutNullStreams
-  child = launched
-  // stdout carries protocol frames only; stderr is diagnostics and is never reflected.
-  launched.stderr.resume()
-  launched.on('error', () => releaseEverything('无法启动官方 Pi，请检查执行引擎中的安装路径'))
-  launched.on('exit', () => releaseEverything('官方 Pi 进程已退出'))
-  launched.stdout.on('data', (chunk: Buffer) => {
-    stdoutBuffer = drain(stdoutBuffer + stdoutDecoder.write(chunk), handleOfficialLine)
-  })
-  launched.stdout.on('end', () => {
-    stdoutBuffer += stdoutDecoder.end()
-    releaseEverything()
   })
 }
 
@@ -322,13 +226,7 @@ function handleOfficialLine(line: string): void {
     releaseEverything('官方 Pi 输出了非协议内容，连接已中断')
     return
   }
-  if (message?.type === 'response' && typeof message.id === 'number') {
-    const entry = pending.get(message.id)
-    if (!entry) return
-    pending.delete(message.id)
-    entry.resolve(message)
-    return
-  }
+  if (message?.type === 'response' && rpcProcess.resolveResponse(message)) return
   if (message?.type === 'extension_ui_request') {
     handleDialog(message)
     return
@@ -356,16 +254,14 @@ function handleDialog(request: any): void {
   const options: string[] = Array.isArray(request?.options) ? request.options : []
   const text = `${String(request?.title ?? '')}\n${String(request?.message ?? '')}`
 
-  const rpcId = `pi-permission-${++seq}`
+  const rpcId = `pi-permission-${++permissionSeq}`
   const respond = (optionId: string | undefined) => {
     asks.delete(rpcId)
-    child?.stdin.write(
-      JSON.stringify({
-        type: 'extension_ui_response',
-        id,
-        ...(optionId === 'allow' ? { value: options[0] ?? 'allow' } : { cancelled: true }),
-      }) + '\n',
-    )
+    rpcProcess.writeFrame({
+      type: 'extension_ui_response',
+      id,
+      ...(optionId === 'allow' ? { value: options[0] ?? 'allow' } : { cancelled: true }),
+    })
   }
   asks.set(rpcId, respond)
   send({
@@ -874,7 +770,7 @@ function serialize<T>(run: () => Promise<T>): Promise<T> {
 // ── ACP request handling ───────────────────────────────────────────────────────────
 async function invoke(method: string, params: any): Promise<unknown> {
   if (method === 'initialize') {
-    if (child) throw configuration('官方 Pi 桥接器已经初始化')
+    if (rpcProcess.running) throw configuration('官方 Pi 桥接器已经初始化')
     writeProviderConfig()
     openAgent()
     // Confirm the documented machine interface before the host is told this session can be
@@ -899,7 +795,7 @@ async function invoke(method: string, params: any): Promise<unknown> {
   }
 
   if (method === 'session/new' || method === 'session/load') {
-    if (!child) throw configuration('官方 Pi 桥接器尚未初始化')
+    if (!rpcProcess.running) throw configuration('官方 Pi 桥接器尚未初始化')
     if (method === 'session/load') {
       const wanted = String(params?.sessionId ?? '')
       let file = ''
@@ -1080,60 +976,16 @@ async function invoke(method: string, params: any): Promise<unknown> {
 }
 
 // ── ACP stdio loop ─────────────────────────────────────────────────────────────────
-let stdinBuffer = ''
-
-const handleAcpLine = (line: string) => {
-  let message: any
-  try {
-    message = JSON.parse(line)
-  } catch {
-    return
-  }
-  // A response to one of this bridge's own permission requests.
-  if (!message.method && message.id !== undefined && typeof message.id === 'string') {
-    answerPermission(message.id, message.result?.outcome)
-    return
-  }
-  if (!message.method) return
-  const id = message.id
-  void (async () => {
-    try {
-      const result = await invoke(message.method, message.params ?? {})
-      if (id !== undefined) send({ id, result })
-    } catch (error) {
-      const code = acpErrorCode(error)
-      if (id !== undefined)
-        // These messages are this bridge's own fixed strings, or text this bridge built from
-        // the official product's documented vocabulary — never an echo of provider- or
-        // agent-controlled output, and always scrubbed of the credential. Suppressing them
-        // would leave the user with "call failed" instead of the reason a session refused
-        // to start.
-        send({
-          id,
-          error: {
-            code,
-            message: redact(error instanceof Error ? error.message : '官方 Pi 调用未完成'),
-            ...(error instanceof PiBridgeError && error.turnSettled
-              ? { data: { oplTurnSettled: true } }
-              : {}),
-          },
-        })
-      if (process.env.OPL_PI_DIAGNOSTICS === '1')
-        process.stderr.write(
-          JSON.stringify({
-            method: message.method,
-            error: redact(error instanceof Error ? error.message : 'failure'),
-          }) + '\n',
-        )
-    }
-  })()
-}
-
-process.stdin.on('data', (chunk: Buffer) => {
-  stdinBuffer = drain(stdinBuffer + chunk.toString('utf8'), handleAcpLine)
+acpChannel = startRpcModeAcpServer({
+  invoke,
+  onPermissionResponse: (id, outcome) => answerPermission(id, outcome as any),
+  redact,
+  defaultErrorMessage: '官方 Pi 调用未完成',
+  diagnosticsEnv: 'OPL_PI_DIAGNOSTICS',
 })
 
 const stop = () => {
+  acpChannel.close()
   releaseEverything()
   process.exit()
 }

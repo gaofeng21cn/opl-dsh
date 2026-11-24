@@ -6,6 +6,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
+import { isBuiltin } from 'node:module'
 import { fileURLToPath } from 'node:url'
 const output = new URL('../dist/', import.meta.url)
 test('tarball checksum and contents bind the installer to an external plugin', async () => {
@@ -172,4 +173,41 @@ test('installer directory files match artifact payloadFiles exactly', async () =
     assert.ok(content, `missing installer payload file ${relative}`)
     assert.equal(createHash('sha256').update(content).digest('hex'), expected, relative)
   }
+})
+
+test('standalone installer and bridge scripts contain zero unbundled npm imports', async () => {
+  const staticImport =
+    /(?:^|[;\n])\s*(?:import|export)\s+(?:[^'"\n]+?\s+from\s+)?['"]([^'"]+)['"]/gm
+  const cjsRequire = /(?<![`'"])\b(?:__)?require\(\s*['"]([^'"]+)['"]\s*\)/g
+  const roots = [
+    fileURLToPath(new URL('OPL DSH 一键安装/', output)),
+    fileURLToPath(new URL('execution-package/package/lib/', output)),
+    fileURLToPath(new URL('package/lib/', output)),
+  ]
+  const offenders = []
+  async function inspectDir(directory, prefix = '', filterStandaloneOnly = false) {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const full = join(directory, entry.name)
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name
+      if (entry.isDirectory()) {
+        if (!filterStandaloneOnly) await inspectDir(full, rel, false)
+        continue
+      }
+      if (!entry.name.endsWith('.mjs') && !entry.name.endsWith('.cjs')) continue
+      if (filterStandaloneOnly && entry.name.endsWith('.js')) continue
+      const source = await readFile(full, 'utf8')
+      for (const pattern of [staticImport, cjsRequire]) {
+        pattern.lastIndex = 0
+        for (const match of source.matchAll(pattern)) {
+          const spec = match[1]
+          if (spec.startsWith('./') || spec.startsWith('../') || isBuiltin(spec)) continue
+          offenders.push(`${rel} -> ${spec}`)
+        }
+      }
+    }
+  }
+  await inspectDir(roots[0], 'installer', false)
+  await inspectDir(roots[1], 'execution-lib', true)
+  await inspectDir(roots[2], 'base-lib', true)
+  assert.deepEqual(offenders, [], `Found unbundled bare imports:\n${offenders.join('\n')}`)
 })

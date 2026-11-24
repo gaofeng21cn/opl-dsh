@@ -1,8 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { createInterface } from 'node:readline'
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, resolve as resolvePath } from 'node:path'
+import { AcpJsonRpcChannel, attachLfLineReader, type LineReaderHandle } from '../../acp-stdio.ts'
 import { commandLaunch } from '../../harness-registry.ts'
 import { EXTERNAL_TOOL_NAME_META } from '../../external-binding.ts'
 import { bridgeFailure, HarnessReportedError } from '../failure-diagnostics.ts'
@@ -75,9 +75,9 @@ const OFM_CREDENTIAL_REQUESTS = {
   resolve: 'opl/ofm-credential/resolve',
 } as const
 
-const send = (value: object) =>
-  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...value }) + '\n')
-const emit = (update: object) => send({ method: 'session/update', params: { sessionId, update } })
+let acpChannel!: AcpJsonRpcChannel
+const send = (value: Record<string, unknown>) => acpChannel.send(value)
+const emit = (update: object) => acpChannel.notify('session/update', { sessionId, update })
 
 let sessionId = '',
   cancelled = false,
@@ -93,10 +93,13 @@ let resolveTurn: ((value: unknown) => void) | undefined,
   rejectTurn: ((e: Error) => void) | undefined
 
 /** Release the child process, the relay and every in-flight request together. */
+let childReader: LineReaderHandle | undefined
 let relay: OfmRelay | undefined
 let apiKey: string | undefined
 function releaseEverything(reason = 'ZCode 会话已结束') {
   failPending(reason)
+  childReader?.close()
+  childReader = undefined
   const previous = child
   child = undefined
   previous?.kill('SIGTERM')
@@ -245,7 +248,7 @@ async function openAgent() {
   child.on('exit', () => {
     if (child === launched) releaseEverything('ZCode 进程退出')
   })
-  createInterface({ input: child.stdout! }).on('line', (line) => {
+  childReader = attachLfLineReader(child.stdout!, (line) => {
     void (async () => {
       let m: any
       try {
@@ -530,53 +533,50 @@ async function invoke(method: string, p: any) {
   throw Error('不支持的调用')
 }
 
-createInterface({ input: process.stdin }).on('line', (line) => {
-  void (async () => {
-    let m: any
-    try {
-      m = JSON.parse(line)
-    } catch {
-      return
-    }
-    if (!m.method) {
-      const credential = hostPending.get(m.id)
-      if (credential) {
-        clearTimeout(credential.timer)
-        hostPending.delete(m.id)
-        if (m.error) credential.reject(Error('Host 凭据读取失败'))
-        else credential.resolve(m.result)
-        return
-      }
-      const answer = asks.get(m.id)
-      if (answer) {
-        asks.delete(m.id)
-        answer(m.result?.outcome?.optionId)
-      }
-      return
-    }
-    try {
-      const result = await invoke(m.method, m.params ?? {})
-      if (m.id !== undefined) send({ id: m.id, result })
-    } catch (error) {
-      const message = redactSecret(
-        String(error instanceof Error ? error.message : 'failure'),
-        apiKey,
-      )
-      if (process.env.OPL_ZCODE_OFM_DIAGNOSTICS === '1')
-        process.stderr.write(JSON.stringify({ method: m.method, error: message }) + '\n')
-      if (m.id !== undefined)
-        send({
-          id: m.id,
-          error: bridgeFailure(error),
-        })
-    }
-  })()
-})
 const stop = () => {
+  acpChannel.close()
   releaseEverything()
   process.exit()
 }
+acpChannel = new AcpJsonRpcChannel(process.stdin, process.stdout, {
+  ignoreNonJson: true,
+  onClose: stop,
+  onMessage: (m: Record<string, any>) => {
+    void (async () => {
+      if (!m.method) {
+        const credential = hostPending.get(m.id)
+        if (credential) {
+          clearTimeout(credential.timer)
+          hostPending.delete(m.id)
+          if (m.error) credential.reject(Error('Host 凭据读取失败'))
+          else credential.resolve(m.result)
+          return
+        }
+        const answer = asks.get(m.id)
+        if (answer) {
+          asks.delete(m.id)
+          answer(m.result?.outcome?.optionId)
+        }
+        return
+      }
+      try {
+        const result = await invoke(m.method, m.params ?? {})
+        if (m.id !== undefined) acpChannel.respond(m.id, result)
+      } catch (error) {
+        const message = redactSecret(
+          String(error instanceof Error ? error.message : 'failure'),
+          apiKey,
+        )
+        if (process.env.OPL_ZCODE_OFM_DIAGNOSTICS === '1')
+          process.stderr.write(JSON.stringify({ method: m.method, error: message }) + '\n')
+        if (m.id !== undefined) {
+          const failure = bridgeFailure(error)
+          acpChannel.respondError(m.id, failure.code, failure.message, failure.data)
+        }
+      }
+    })()
+  },
+})
 process.on('SIGTERM', stop)
 process.on('SIGINT', stop)
-process.stdin.on('end', stop)
 process.on('exit', () => releaseEverything())

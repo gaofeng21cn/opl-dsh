@@ -10,7 +10,6 @@ import {
   lstatSync,
   statSync,
   readdirSync,
-  renameSync,
   openSync,
   closeSync,
   unlinkSync,
@@ -20,6 +19,9 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { performance } from 'node:perf_hooks'
 import { homedir, tmpdir } from 'node:os'
+import { parseArgs } from 'node:util'
+import lockfile from 'proper-lockfile'
+import writeFileAtomic from 'write-file-atomic'
 import { loadDshSnapshot } from './snapshot.mjs'
 import * as windows from './windows-io.mjs'
 import {
@@ -286,15 +288,7 @@ function assertPlan(plan, expectedHash) {
   }
 }
 function atomicWrite(path, bytes) {
-  const temporary = path + '.' + randomUUID() + '.tmp'
-  const fd = openSync(temporary, 'wx', 0o600)
-  try {
-    writeFileSync(fd, bytes)
-    fsyncSync(fd)
-  } finally {
-    closeSync(fd)
-  }
-  renameSync(temporary, path)
+  writeFileAtomic.sync(path, bytes, { mode: 0o600 })
 }
 function captureReferenceDirectories(home) {
   return [
@@ -387,24 +381,40 @@ function checkInventoryFast(plan, completed) {
 }
 
 function acquireLock(path, planHash, resume) {
-  if (existsSync(path)) {
-    const previous = JSON.parse(readFileSync(path, 'utf8'))
-    if (!resume || previous.planHash !== planHash || !Number.isSafeInteger(previous.pid))
-      throw Error('存在其他清理操作')
-    try {
-      process.kill(previous.pid, 0)
-      throw Error('清理操作仍在运行')
-    } catch (error) {
-      if (error.code !== 'ESRCH') throw error
-    }
-    unlinkSync(path)
-  }
-  const fd = openSync(path, 'wx', 0o600)
+  const dir = dirname(path)
+  let releaseGate
   try {
-    writeFileSync(fd, JSON.stringify({ pid: process.pid, planHash }))
-    fsyncSync(fd)
+    releaseGate = lockfile.lockSync(join(dir, 'operation-gate'), {
+      lockfilePath: join(dir, 'operation-gate.lock'),
+      realpath: false,
+      stale: 30_000,
+    })
+  } catch (error) {
+    if (error?.code === 'ELOCKED') throw Error('存在其他清理操作')
+    throw error
+  }
+  try {
+    if (existsSync(path)) {
+      const previous = JSON.parse(readFileSync(path, 'utf8'))
+      if (!resume || previous.planHash !== planHash || !Number.isSafeInteger(previous.pid))
+        throw Error('存在其他清理操作')
+      try {
+        process.kill(previous.pid, 0)
+        throw Error('清理操作仍在运行')
+      } catch (error) {
+        if (error.code !== 'ESRCH') throw error
+      }
+      unlinkSync(path)
+    }
+    const fd = openSync(path, 'wx', 0o600)
+    try {
+      writeFileSync(fd, JSON.stringify({ pid: process.pid, planHash }))
+      fsyncSync(fd)
+    } finally {
+      closeSync(fd)
+    }
   } finally {
-    closeSync(fd)
+    releaseGate()
   }
 }
 /** Recycle exact targets, persist every intent/receipt, then CAS the indices. */
@@ -662,17 +672,41 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       return quitWindowsDesktop()
     if (command === 'status' && !args.length) return desktopStatus()
     if (!['preview', 'execute', 'resume', 'verify'].includes(command)) throw Error(help)
-    const options = new Map()
-    const allowed =
+    const optionSpec =
       command === 'preview'
-        ? ['--archived', '--title', '--id', '--selector-file', '--home', '--executable', '--plan']
+        ? {
+            archived: { type: 'boolean' },
+            title: { type: 'string' },
+            id: { type: 'string' },
+            'selector-file': { type: 'string' },
+            home: { type: 'string' },
+            executable: { type: 'string' },
+            plan: { type: 'string' },
+          }
         : command === 'execute'
-          ? ['--plan', '--hash', '--reopen']
-          : ['--plan', '--hash']
-    for (let i = 0; i < args.length; i++) {
-      const key = args[i]
-      if (!allowed.includes(key) || options.has(key)) throw Error('未知或重复参数：' + key)
-      const v = ['--archived', '--reopen'].includes(key) ? true : args[++i]
+          ? { plan: { type: 'string' }, hash: { type: 'string' }, reopen: { type: 'boolean' } }
+          : { plan: { type: 'string' }, hash: { type: 'string' } }
+    let parsed
+    try {
+      parsed = parseArgs({
+        args,
+        options: optionSpec,
+        strict: true,
+        allowPositionals: false,
+        tokens: true,
+      })
+    } catch (error) {
+      if (error?.code === 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE')
+        throw Error('缺少参数值：' + error.message)
+      throw Error('未知或重复参数：' + error.message)
+    }
+    const options = new Map()
+    for (const token of parsed.tokens ?? []) {
+      if (token.kind !== 'option' || token.inlineValue)
+        throw Error('未知或重复参数：' + token.rawName)
+      const key = token.rawName
+      if (options.has(key)) throw Error('未知或重复参数：' + key)
+      const v = optionSpec[token.name]?.type === 'boolean' ? true : token.value
       if (!v || (typeof v === 'string' && v.startsWith('--'))) throw Error('缺少参数值：' + key)
       options.set(key, v)
     }

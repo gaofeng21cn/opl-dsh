@@ -4,28 +4,18 @@
  * the upstream updater owns its contents. pnpm registers the link and restores
  * the previous dependency if migration fails.
  */
-const {
-  cp,
-  realpath,
-  lstat,
-  mkdir,
-  open,
-  readFile,
-  rename,
-  rm,
-  unlink,
-  writeFile,
-} = require('node:fs/promises')
+const { cp, realpath, lstat, mkdir, readFile, rename, rm, writeFile } = require('node:fs/promises')
 const { createHash, randomUUID } = require('node:crypto')
 const { isAbsolute, join, resolve, sep } = require('node:path')
+const lockfile = require('proper-lockfile')
+const writeFileAtomic = require('write-file-atomic')
 const { parseVersion, compareVersions } = require('./compare.cjs')
-const { isAlive, stopped } = require('./ofm-owner.cjs')
+const { stopped } = require('./ofm-owner.cjs')
 
 const PACKAGE_NAME = 'dsh-our-free-model'
 const LOCK_NAME = '.ofm-upgrade.lock'
 const STATE_NAME = '.ofm-upgrade.json'
 const RECOVERY_DIR = '.ofm-upgrade-recovery'
-const LOCK_PID_PATTERN = /^\d+$/u
 
 function transactionError(code, message = code) {
   const error = Error(message)
@@ -68,85 +58,30 @@ async function readJson(path, optional = false) {
 }
 
 async function atomicJson(path, value) {
-  const temporary = `${path}.${randomUUID()}.tmp`
-  try {
-    await writeFile(temporary, JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' })
-    await rename(temporary, path)
-  } finally {
-    await rm(temporary, { force: true })
-  }
+  await writeFileAtomic(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 })
 }
 
-async function lockRecord(path) {
-  const bytes = await regularFile(path)
-  let value
+/** Acquire the profile-local OFM transaction lock via proper-lockfile. */
+async function acquireLock(dir) {
+  const lockfilePath = join(dir, LOCK_NAME)
+  await regularDirectory(dir)
   try {
-    value = JSON.parse(bytes.toString('utf8'))
-  } catch {
-    throw transactionError('invalid-ofm-lock', 'OFM 升级锁记录无效')
-  }
-  if (!LOCK_PID_PATTERN.test(String(value?.pid ?? '')))
-    throw transactionError('invalid-ofm-lock', 'OFM 升级锁进程无效')
-  return value
-}
-
-async function clearStaleLock(path) {
-  const recoveryPath = `${path}.recovery`
-  let recovery
-  try {
-    recovery = await open(recoveryPath, 'wx', 0o600)
+    const release = await lockfile.lock(join(dir, '.ofm-upgrade'), {
+      lockfilePath,
+      realpath: false,
+      stale: 30_000,
+    })
+    let released = false
+    return async () => {
+      if (released) return
+      released = true
+      await release()
+    }
   } catch (error) {
-    if (error.code === 'EEXIST')
-      throw transactionError('ofm-upgrade-in-progress', '另一项 OFM 升级正在清理锁')
+    if (error?.code === 'ELOCKED')
+      throw transactionError('ofm-upgrade-in-progress', '另一项 OFM 升级正在进行')
     throw error
   }
-  try {
-    const current = await lockRecord(path)
-    if (isAlive(Number(current.pid)))
-      throw transactionError('ofm-upgrade-in-progress', '另一项 OFM 升级正在进行')
-    await unlink(path).catch((error) => {
-      if (error.code !== 'ENOENT') throw error
-    })
-  } finally {
-    await recovery.close()
-    await unlink(recoveryPath).catch((error) => {
-      if (error.code !== 'ENOENT') throw error
-    })
-  }
-}
-
-/** Acquire the profile-local OFM transaction lock, recovering dead owners. */
-async function acquireLock(dir) {
-  const path = join(dir, LOCK_NAME)
-  await regularDirectory(dir)
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const handle = await open(path, 'wx', 0o600)
-      await handle.writeFile(
-        JSON.stringify({
-          pid: process.pid,
-          transactionId: randomUUID(),
-          startedAt: new Date().toISOString(),
-        }),
-      )
-      let released = false
-      return async () => {
-        if (released) return
-        released = true
-        await handle.close()
-        await unlink(path).catch((error) => {
-          if (error.code !== 'ENOENT') throw error
-        })
-      }
-    } catch (error) {
-      if (error.code !== 'EEXIST') throw error
-      const owner = await lockRecord(path)
-      if (isAlive(Number(owner.pid)))
-        throw transactionError('ofm-upgrade-in-progress', '另一项 OFM 升级正在进行')
-      await clearStaleLock(path)
-    }
-  }
-  throw transactionError('ofm-upgrade-lock-failed', '无法取得 OFM 升级锁')
 }
 
 /** Return whether the installed OFM still has pnpm's hard-link ownership. */
@@ -473,7 +408,10 @@ async function migrateOfmLink({ dir, install, plugin, fetchImpl, restoreBundles 
       if ((await realpath(before.packageDir)) !== (await realpath(target)))
         throw transactionError('invalid-ofm-link', 'OFM 链接目标不匹配')
       if (before.managed) throw transactionError('invalid-ofm-link', 'OFM 目标仍有包管理器硬链接')
-      await require('./ofm-desktop-admission.cjs').applyDesktopAdmission(root, before.installedVersion)
+      await require('./ofm-desktop-admission.cjs').applyDesktopAdmission(
+        root,
+        before.installedVersion,
+      )
       return { phase: 'skipped', reason: 'self-managed-link', version: before.installedVersion }
     }
     // Only migrate the suite's exact retained vendor archive dependency.

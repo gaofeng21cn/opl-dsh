@@ -11,6 +11,8 @@ import {
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { createHash } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
+import { build as esbuild } from 'esbuild'
 import { distribution, verifyOfficialDistribution } from './distribution.mjs'
 import {
   assertNotProtected,
@@ -75,6 +77,14 @@ run(args, { cwd: join(base, 'official'), env })
 verifyOfficialDistribution(join(base, 'official'))
 const overlay = new URL('./overlay/', import.meta.url)
 cpSync(overlay, join(base, 'overlay'), { recursive: true })
+await esbuild({
+  entryPoints: [fileURLToPath(new URL('./overlay/acp.mjs', import.meta.url))],
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node24',
+  outfile: join(base, 'overlay/acp.mjs'),
+})
 copyFileSync(resolve(values.license), join(base, 'LICENSE'))
 copyFileSync(node, join(base, 'node.exe'))
 writeFileSync(join(base, 'cli.js'), "import './overlay/cli.mjs'\n")

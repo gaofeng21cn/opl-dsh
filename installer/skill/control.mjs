@@ -1,37 +1,90 @@
 /** Stable dispatch identities over the official DSH Session API. */
-import { readFile, mkdir, open, rename, unlink } from 'node:fs/promises'
+import { readFile, mkdir } from 'node:fs/promises'
 import { join, isAbsolute } from 'node:path'
 import { homedir } from 'node:os'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { execFile as execFileCallback } from 'node:child_process'
-import { promisify } from 'node:util'
+import { parseArgs, promisify } from 'node:util'
+import lockfile from 'proper-lockfile'
+import writeFileAtomic from 'write-file-atomic'
 import { launchIndependent } from './windows-lifecycle.mjs'
 const execFile = promisify(execFileCallback)
 const config = JSON.parse(await readFile(new URL('./config.json', import.meta.url), 'utf8'))
 const rawArgs = process.argv.slice(2)
 const requestedCommand = rawArgs.shift()
-const noAutostart = rawArgs.includes('--no-autostart')
-const argv = rawArgs.filter((value) => value !== '--no-autostart')
 const command = requestedCommand === 'resume-failed' ? 'resumeFailed' : requestedCommand
+const feedbackRequestCommands = ['task', 'receive', 'consume', 'resumeFailed']
+const knownStringOptions = [
+  'cwd',
+  'confirm',
+  'mode',
+  'version',
+  'source',
+  'session',
+  'operation',
+  'decision',
+  'note-file',
+  'task',
+  'combination',
+  'model',
+  'prompt-file',
+  'sandbox',
+  'write-scope-file',
+  'provider',
+  'preset',
+  'coordinator-work',
+  'reasoning-effort',
+  'acceptance',
+  'timeout',
+  'request-file',
+  'consumer',
+  'delivery',
+  'epoch',
+]
+let parsedCli
+try {
+  parsedCli = parseArgs({
+    args: rawArgs,
+    options: {
+      'no-autostart': { type: 'boolean', default: false },
+      ...Object.fromEntries(knownStringOptions.map((name) => [name, { type: 'string' }])),
+    },
+    strict: false,
+    allowPositionals: true,
+    tokens: true,
+  })
+} catch {
+  throw new Error('参数必须为 --name value')
+}
+const noAutostart = Boolean(parsedCli.values['no-autostart'])
 if (
   noAutostart &&
   !['tasks', 'outbox', 'receipts', 'flush', 'coordination-status'].includes(command)
 )
   throw new Error('--no-autostart 仅用于只读状态查询')
-const feedbackRequestCommands = ['task', 'receive', 'consume', 'resumeFailed']
 const args = {}
 const positional = []
-for (let i = 0; i < argv.length; i++) {
-  if (!argv[i].startsWith('--')) {
+const tokens = parsedCli.tokens ?? []
+for (let i = 0; i < tokens.length; i++) {
+  const token = tokens[i]
+  if (token.kind === 'option' && token.name === 'no-autostart') continue
+  if (token.kind === 'positional') {
     if (!feedbackRequestCommands.includes(command)) throw new Error('参数必须为 --name value')
-    positional.push(argv[i])
+    positional.push(token.value)
     continue
   }
-  if (argv[i + 1] === undefined || argv[i + 1].startsWith('--'))
+  if (token.kind !== 'option' || !token.rawName.startsWith('--') || token.inlineValue)
     throw new Error('参数必须为 --name value')
-  const name = argv[i].slice(2)
-  if (Object.hasOwn(args, name)) throw Error('重复参数 --' + name)
-  args[name] = argv[++i]
+  let value = token.value
+  if (value === undefined) {
+    const next = tokens[i + 1]
+    if (!next || next.kind !== 'positional') throw new Error('参数必须为 --name value')
+    value = next.value
+    i++
+  }
+  if (value.startsWith('--')) throw new Error('参数必须为 --name value')
+  if (Object.hasOwn(args, token.name)) throw Error('重复参数 --' + token.name)
+  args[token.name] = value
 }
 let writeScope
 if (args['write-scope-file']) {
@@ -362,7 +415,11 @@ if (command === 'codex-runtime-select') {
   await mkdir(config.ledger, { recursive: true, mode: 0o700 })
   const file = join(config.ledger, requestId + '.json'),
     lock = file + '.lock'
-  const fd = await open(lock, 'wx', 0o600)
+  const releaseLock = await lockfile.lock(file, {
+    lockfilePath: lock,
+    realpath: false,
+    stale: 30_000,
+  })
   try {
     let previous
     try {
@@ -402,15 +459,7 @@ if (command === 'codex-runtime-select') {
         accepted: false,
       }
       async function save(value) {
-        const temp = file + '.' + randomUUID()
-        const out = await open(temp, 'wx', 0o600)
-        try {
-          await out.writeFile(JSON.stringify(value) + '\n')
-          await out.sync()
-        } finally {
-          await out.close()
-        }
-        await rename(temp, file)
+        await writeFileAtomic(file, JSON.stringify(value) + '\n', { mode: 0o600 })
       }
       await save(record)
       const created = await rpc('create', {
@@ -457,8 +506,7 @@ if (command === 'codex-runtime-select') {
       console.log(JSON.stringify(accepted))
     }
   } finally {
-    await fd.close()
-    await unlink(lock)
+    await releaseLock()
   }
 } else if (command === 'sessions') {
   console.log(JSON.stringify(await rpc('list', {})))

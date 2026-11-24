@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseArgs } from 'node:util'
 import { FaceModelEmitter, WorkspaceAnalyzer } from '@deepseek-ai/dsh-typert-generator'
 
 const OUTPUT_FILES = ['host.mjs', 'host.d.mts', 'remote.mjs', 'remote.d.mts', 'remote.d.mts.map']
@@ -202,18 +203,24 @@ export async function generateRpc({
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const check = process.argv.includes('--check')
-  const ifStale = process.argv.includes('--if-stale')
   try {
-    const unsupported = process.argv
-      .slice(2)
-      .filter((value) => !['--check', '--if-stale', '--skip-typecheck'].includes(value))
-    if (unsupported.length) throw new Error(`Unknown arguments: ${unsupported.join(', ')}`)
+    const { values } = parseArgs({
+      args: process.argv.slice(2),
+      options: {
+        check: { type: 'boolean', default: false },
+        'if-stale': { type: 'boolean', default: false },
+        'skip-typecheck': { type: 'boolean', default: false },
+      },
+      strict: true,
+      allowPositionals: false,
+    })
+    const check = values.check
+    const ifStale = values['if-stale']
     if (check && ifStale) throw new Error('Cannot combine --check and --if-stale')
     await generateRpc({
       check,
       ifStale,
-      checkDiagnostics: !process.argv.includes('--skip-typecheck'),
+      checkDiagnostics: !values['skip-typecheck'],
     })
     console.log(
       check

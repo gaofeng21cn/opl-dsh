@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
+import writeFileAtomic from 'write-file-atomic'
 import { dirname } from 'node:path'
 import { usesPrivateUpdateDirectory } from './engine-update-sources.ts'
 import { oplProfilePath } from '../../shared/host/profile-paths.ts'
@@ -64,11 +65,7 @@ export class EngineUpdates {
       throw Error('更新设置无效')
     const write = this.save.then(async () => {
       await mkdir(dirname(this.file), { recursive: true })
-      await writeFile(
-        this.file + '.tmp',
-        JSON.stringify({ enabled: value.enabled, mode: value.mode }),
-      )
-      await rename(this.file + '.tmp', this.file)
+      await writeFileAtomic(this.file, JSON.stringify({ enabled: value.enabled, mode: value.mode }))
       Object.assign(this.state, { enabled: value.enabled, mode: value.mode })
       for (const [id, manual] of this.waiting)
         if (!manual && (!value.enabled || value.mode !== 'auto')) {

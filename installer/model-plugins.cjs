@@ -4,14 +4,13 @@ const {
   readFileSync,
   mkdtempSync,
   mkdirSync,
-  writeFileSync,
-  renameSync,
   cpSync,
   realpathSync,
   rmSync,
 } = require('node:fs')
 const { join } = require('node:path')
-const { createHash, randomUUID } = require('node:crypto')
+const { createHash } = require('node:crypto')
+const writeFileAtomic = require('write-file-atomic')
 
 const MODEL_PLUGINS = [
   {
@@ -56,13 +55,7 @@ async function prepareModelPlugin({ dir, plugin, fetchImpl = fetch }) {
   const bytes = Buffer.from(await response.arrayBuffer())
   verify(bytes)
   mkdirSync(join(dir, 'vendor'), { recursive: true, mode: 0o700 })
-  const temporary = `${archive}.${randomUUID()}`
-  try {
-    writeFileSync(temporary, bytes, { mode: 0o600, flag: 'wx' })
-    renameSync(temporary, archive)
-  } finally {
-    rmSync(temporary, { force: true })
-  }
+  writeFileAtomic.sync(archive, bytes, { mode: 0o600 })
   return archive
 }
 

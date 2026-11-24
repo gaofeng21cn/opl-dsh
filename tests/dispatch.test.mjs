@@ -1,7 +1,7 @@
 /** Exercise the shipped helper against an authenticated Session API. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, mkdir, cp, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, mkdir, cp, readdir, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
@@ -46,6 +46,7 @@ test('a retry sends one prompt; changed content under the same operation is refu
       token: 'test-only',
     }),
   )
+  await symlink(new URL('../node_modules', import.meta.url), join(root, 'node_modules'), 'junction')
   await cp(new URL('../installer/skill/control.mjs', import.meta.url), join(root, 'control.mjs'))
   await cp(
     new URL('../installer/windows-lifecycle.mjs', import.meta.url),
@@ -145,6 +146,7 @@ test('dispatch preserves coordinator bindings on replay and rejects invalid new 
       token: 'test-only',
     }),
   )
+  await symlink(new URL('../node_modules', import.meta.url), join(root, 'node_modules'), 'junction')
   await cp(new URL('../installer/skill/control.mjs', import.meta.url), join(root, 'control.mjs'))
   await cp(new URL('../installer/skill/coordinator', import.meta.url), join(root, 'coordinator'), {
     recursive: true,
@@ -313,6 +315,7 @@ test('delegate-wait returns the persisted snapshot when the control deadline exp
       token: 'test-only',
     }),
   )
+  await symlink(new URL('../node_modules', import.meta.url), join(root, 'node_modules'), 'junction')
   await cp(new URL('../installer/skill/control.mjs', import.meta.url), join(root, 'control.mjs'))
   await cp(
     new URL('../installer/windows-lifecycle.mjs', import.meta.url),

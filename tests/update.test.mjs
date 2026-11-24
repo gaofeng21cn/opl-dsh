@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, utimes } from 'node:fs/promises'
+import lockfile from 'proper-lockfile'
 import { readFileSync, writeFileSync, mkdirSync, cpSync } from 'node:fs'
 import childProcess from 'node:child_process'
 import fsPromises from 'node:fs/promises'
@@ -628,14 +629,14 @@ test('cancellation between the optimistic pending read and lock acquisition prev
   const value = await fixture(t)
   remote(t, releaseFixture())
   await prepareUpdate(value.root, value.application)
-  const originalOpen = fsPromises.open
+  const originalLstat = fsPromises.lstat
   let cancelBeforeLock = true
-  const mocked = t.mock.method(fsPromises, 'open', async (path, ...args) => {
-    if (String(path).endsWith('enhancement-update.lock') && cancelBeforeLock) {
+  const mocked = t.mock.method(fsPromises, 'lstat', async (path, ...args) => {
+    if (String(path) === value.root && cancelBeforeLock) {
       cancelBeforeLock = false
       await cancelPreparedUpdate(value.root)
     }
-    return originalOpen(path, ...args)
+    return originalLstat(path, ...args)
   })
   syncBuiltinESMExports()
   t.after(() => {
@@ -726,7 +727,13 @@ test('a live updater lock prevents concurrent prepare and cancel without changin
   remote(t, releaseFixture())
   await prepareUpdate(value.root, value.application)
   const accepted = await readFile(pendingFile(value.root), 'utf8')
-  await writeFile(join(value.root, 'enhancement-update.lock'), JSON.stringify({ pid: process.pid }))
+  const lockPath = join(value.root, 'enhancement-update.lock')
+  const release = await lockfile.lock(join(value.root, 'enhancement-update'), {
+    lockfilePath: lockPath,
+    realpath: false,
+    stale: 30_000,
+  })
+  t.after(() => release().catch(() => {}))
   await assert.rejects(prepareUpdate(value.root, value.application), {
     message: /正在进行/,
     updateFailure: { stage: 'acquire', reason: 'busy' },
@@ -736,46 +743,49 @@ test('a live updater lock prevents concurrent prepare and cancel without changin
   assert.equal(await readFile(pendingFile(value.root), 'utf8'), accepted)
   assert.equal(value.state.installs.length, 0)
   assert.equal(
-    JSON.parse(await readFile(join(value.root, 'enhancement-update.lock'), 'utf8')).pid,
-    process.pid,
+    await lockfile.check(join(value.root, 'enhancement-update'), {
+      lockfilePath: lockPath,
+      realpath: false,
+      stale: 30_000,
+    }),
+    true,
   )
 })
 
-test('stale lock recovery rechecks ownership before removing a lock', async (t) => {
-  for (const takeover of [false, true]) {
-    await t.test(takeover ? 'new-live-owner' : 'stale-owner', async (t) => {
-      const value = await fixture(t)
-      remote(t, releaseFixture())
-      const lockPath = join(value.root, 'enhancement-update.lock')
-      await writeFile(lockPath, JSON.stringify({ pid: 999999 }))
-      const originalKill = process.kill
-      t.mock.method(process, 'kill', (pid, signal) => {
-        if (pid === 999999) throw Object.assign(Error('fixture stale owner'), { code: 'ESRCH' })
-        return originalKill.call(process, pid, signal)
-      })
-      if (takeover) {
-        const originalOpen = fsPromises.open
-        const mocked = t.mock.method(fsPromises, 'open', async (path, ...args) => {
-          if (String(path).endsWith('.recovery'))
-            await writeFile(lockPath, JSON.stringify({ pid: process.pid }))
-          return originalOpen(path, ...args)
-        })
-        syncBuiltinESMExports()
-        t.after(() => {
-          mocked.mock.restore()
-          syncBuiltinESMExports()
-        })
-        await assert.rejects(prepareUpdate(value.root, value.application), /正在进行/)
-        assert.equal(JSON.parse(await readFile(lockPath, 'utf8')).pid, process.pid)
-      } else {
-        await prepareUpdate(value.root, value.application)
-        assert.equal((await readPreparedUpdate(value.root)).version, '0.2.56')
-        await assert.rejects(readFile(lockPath), { code: 'ENOENT' })
-      }
-      await assert.rejects(readFile(`${lockPath}.recovery`), { code: 'ENOENT' })
-      assert.equal(value.state.installs.length, 0)
+test('stale lock recovery reclaims abandoned locks while rejecting live locks', async (t) => {
+  await t.test('stale-owner', async (t) => {
+    const value = await fixture(t)
+    remote(t, releaseFixture())
+    const lockPath = join(value.root, 'enhancement-update.lock')
+    await mkdir(lockPath)
+    const expired = new Date(Date.now() - 120_000)
+    await utimes(lockPath, expired, expired)
+    await prepareUpdate(value.root, value.application)
+    assert.equal((await readPreparedUpdate(value.root)).version, '0.2.56')
+    await assert.rejects(readFile(lockPath), { code: 'ENOENT' })
+    assert.equal(value.state.installs.length, 0)
+  })
+  await t.test('live-owner', async (t) => {
+    const value = await fixture(t)
+    remote(t, releaseFixture())
+    const lockPath = join(value.root, 'enhancement-update.lock')
+    const release = await lockfile.lock(join(value.root, 'enhancement-update'), {
+      lockfilePath: lockPath,
+      realpath: false,
+      stale: 30_000,
     })
-  }
+    t.after(() => release().catch(() => {}))
+    await assert.rejects(prepareUpdate(value.root, value.application), /正在进行/)
+    assert.equal(
+      await lockfile.check(join(value.root, 'enhancement-update'), {
+        lockfilePath: lockPath,
+        realpath: false,
+        stale: 30_000,
+      }),
+      true,
+    )
+    assert.equal(value.state.installs.length, 0)
+  })
 })
 
 test('failed installation and failed confirmation roll back and preserve the accepted plan', async (t) => {

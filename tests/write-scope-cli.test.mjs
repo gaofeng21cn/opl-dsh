@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, cp, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, cp, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
@@ -33,6 +33,7 @@ test('delegate and follow-up forward exact write ownership without changing perm
       token: 'fixture-only',
     }),
   )
+  await symlink(new URL('../node_modules', import.meta.url), join(root, 'node_modules'), 'junction')
   await cp(new URL('../installer/skill/control.mjs', import.meta.url), join(root, 'control.mjs'))
   await cp(
     new URL('../installer/windows-lifecycle.mjs', import.meta.url),

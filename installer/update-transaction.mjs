@@ -1,7 +1,9 @@
 /** Serialize Suite launches and one durable, independently owned enhancement update. */
-import { open, readFile, lstat, mkdir, rename, unlink, rm, link } from 'node:fs/promises'
+import { open, readFile, lstat, mkdir, unlink, rm, link } from 'node:fs/promises'
 import { join, resolve, isAbsolute } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import lockfile from 'proper-lockfile'
+import writeFileAtomic from 'write-file-atomic'
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u
 const hash = /^[a-f0-9]{64}$/u
@@ -60,18 +62,22 @@ async function json(path, optional = false) {
 }
 
 async function write(path, value, exclusive = false) {
+  const payload = JSON.stringify(value, null, 2) + '\n'
+  if (!exclusive) {
+    await writeFileAtomic(path, payload, { mode: 0o600 })
+    return
+  }
   // Readers must only see complete records. A hard link publishes the fully
   // written same-directory temporary file atomically without replacing an owner.
   const temporary = `${path}.${randomUUID()}.tmp`
   let handle
   try {
     handle = await open(temporary, 'wx', 0o600)
-    await handle.writeFile(JSON.stringify(value, null, 2) + '\n')
+    await handle.writeFile(payload)
     await handle.sync()
     await handle.close()
     handle = undefined
-    if (exclusive) await link(temporary, path)
-    else await rename(temporary, path)
+    await link(temporary, path)
   } finally {
     await handle?.close()
     await rm(temporary, { force: true })
@@ -86,61 +92,26 @@ async function removeOwned(path, expected) {
   await unlink(path)
 }
 
-// This short gate protects lock acquisition, handoff and state replacement. A
-// malformed or interrupted recovery record fails closed instead of removing an
-// unidentifiable owner's lock.
+// This short gate protects lock acquisition, handoff and state replacement.
 async function withGate(root, action) {
   await directory(root)
-  const path = join(root, 'enhancement-suite-gate.lock')
-  const owner = { id: randomUUID(), nonce: randomUUID(), pid: process.pid }
-  const deadline = Date.now() + 5000
-  let retryWindowsPublication = process.platform === 'win32'
-  while (true) {
-    try {
-      await write(path, owner, true)
-      break
-    } catch (error) {
-      // Retry a Windows access denial on this gate link once. Only a successful
-      // atomic publication acquires ownership.
-      if (
-        retryWindowsPublication &&
-        error.code === 'EPERM' &&
-        error.syscall === 'link' &&
-        error.dest === path
-      ) {
-        retryWindowsPublication = false
-        await new Promise((done) => setTimeout(done, 20))
-        continue
-      }
-      if (error.code !== 'EEXIST') throw error
-      const previous = await json(path, true)
-      if (previous === null) continue
-      if (!uuid.test(previous.nonce) || !uuid.test(previous.id)) throw failure('invalid-suite-gate')
-      if (!updateProcessAlive(previous.pid)) {
-        const recoveryPath = `${path}.recovery`
-        await write(recoveryPath, owner, true)
-        try {
-          const current = await json(path, true)
-          if (
-            current &&
-            current.id === previous.id &&
-            current.nonce === previous.nonce &&
-            !updateProcessAlive(current.pid)
-          )
-            await unlink(path)
-        } finally {
-          await removeOwned(recoveryPath, owner)
-        }
-        continue
-      }
-      if (Date.now() >= deadline) throw failure('suite-operation-busy')
-      await new Promise((done) => setTimeout(done, 20))
-    }
+  const lockfilePath = join(root, 'enhancement-suite-gate.lock')
+  let release
+  try {
+    release = await lockfile.lock(join(root, 'enhancement-suite-gate'), {
+      lockfilePath,
+      realpath: false,
+      stale: 10_000,
+      retries: { retries: 40, minTimeout: 20, maxTimeout: 150, factor: 1.2 },
+    })
+  } catch (error) {
+    if (error?.code === 'ELOCKED') throw failure('suite-operation-busy')
+    throw error
   }
   try {
     return await action()
   } finally {
-    await removeOwned(path, owner)
+    await release()
   }
 }
 

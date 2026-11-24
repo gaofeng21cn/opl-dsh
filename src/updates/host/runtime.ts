@@ -1,6 +1,6 @@
 /** Access only the current profile's installation receipt and updater-owned files. */
-import { readFile, writeFile, rename, stat, unlink } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
+import { readFile, stat, unlink } from 'node:fs/promises'
+import writeFileAtomic from 'write-file-atomic'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
@@ -233,15 +233,7 @@ export function updateOperations(ctx: Context): UpdateOperations {
     save: async (status: OplUpdateStatus) => {
       const installed = await installation()
       const file = join(installed.suiteRoot, 'update-status.json')
-      const temporary = `${file}.${randomUUID()}.tmp`
-      try {
-        await writeFile(temporary, JSON.stringify(status) + '\n', { mode: 0o600, flag: 'wx' })
-        await rename(temporary, file)
-      } finally {
-        await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
-          if (error.code !== 'ENOENT') throw error
-        })
-      }
+      await writeFileAtomic(file, JSON.stringify(status) + '\n', { mode: 0o600 })
     },
     discover: async (current, signal) => {
       const installed = await installation()

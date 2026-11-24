@@ -1,15 +1,16 @@
-/** Compare versions via the official SemVer package when run as CLI, or pure SemVer helpers when required. */
-const VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/u
+/** Compare versions via the bundled SemVer package both as CLI and when required. */
+const semver = require('semver')
 
 function parseVersion(value) {
-  const match = VERSION_PATTERN.exec(String(value ?? '').trim())
-  if (!match) return undefined
-  const prerelease = match[4] === undefined ? [] : match[4].split('.')
+  const text = String(value ?? '').trim()
+  if (!/^\d/u.test(text)) return undefined
+  const parsed = semver.parse(text)
+  if (!parsed) return undefined
   return {
-    major: Number(match[1]),
-    minor: Number(match[2]),
-    patch: Number(match[3]),
-    prerelease,
+    major: parsed.major,
+    minor: parsed.minor,
+    patch: parsed.patch,
+    prerelease: parsed.prerelease.map(String),
   }
 }
 
@@ -21,35 +22,11 @@ function compareVersions(left, right) {
     error.code = 'invalid-ofm-version'
     throw error
   }
-  for (const key of ['major', 'minor', 'patch']) {
-    if (a[key] !== b[key]) return a[key] > b[key] ? 1 : -1
-  }
-  if (a.prerelease.length === 0 && b.prerelease.length === 0) return 0
-  if (a.prerelease.length === 0) return 1
-  if (b.prerelease.length === 0) return -1
-  const length = Math.max(a.prerelease.length, b.prerelease.length)
-  for (let index = 0; index < length; index++) {
-    const x = a.prerelease[index]
-    const y = b.prerelease[index]
-    if (x === undefined) return -1
-    if (y === undefined) return 1
-    if (x === y) continue
-    const xNumber = /^\d+$/u.test(x)
-    const yNumber = /^\d+$/u.test(y)
-    if (xNumber && yNumber) return Number(x) > Number(y) ? 1 : -1
-    if (xNumber !== yNumber) return xNumber ? -1 : 1
-    return x > y ? 1 : -1
-  }
-  return 0
+  return semver.compare(String(left).trim(), String(right).trim())
 }
 
 if (require.main === module) {
-  const { createRequire } = require('node:module')
-  const { join } = require('node:path')
-  const [app, installed, available] = process.argv.slice(2)
-  const resources = process.platform === 'win32' ? 'resources' : 'Contents/Resources'
-  const runtime = createRequire(join(app, resources, 'app.asar/dsh/package.json'))
-  const semver = runtime('semver')
+  const [_app, installed, available] = process.argv.slice(2)
   process.exitCode =
     semver.valid(installed) && semver.valid(available) && semver.gte(installed, available) ? 0 : 1
 }

@@ -1,6 +1,7 @@
 import { createServer } from 'node:http'
 import { readFile, readdir, mkdir, writeFile, access } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { parseArgs } from 'node:util'
 import { assertIsolatedRoot, safeBinding } from './qualification-support.mjs'
 import { verifyModelPlugins } from './qualification-model-plugins.mjs'
 import {
@@ -8,7 +9,18 @@ import {
   verifyOfficialCapabilities,
 } from './qualification-official-capabilities.mjs'
 // Run against an already booted, isolated official Desktop. Never target a user's profile.
-const root = await assertIsolatedRoot(process.argv[2] ?? '')
+const { values: cli, positionals } = parseArgs({
+  args: process.argv.slice(2),
+  options: {
+    'verify-git-bash': { type: 'boolean', default: false },
+    'select-git-bash': { type: 'boolean', default: false },
+    'capture-selections': { type: 'boolean', default: false },
+    'readback-selections': { type: 'boolean', default: false },
+  },
+  allowPositionals: true,
+  strict: false,
+})
+const root = await assertIsolatedRoot(positionals[0] ?? '')
 const binding = safeBinding(
   JSON.parse(await readFile(join(root, 'profiles/desktop/control.json'), 'utf8')),
 )
@@ -60,7 +72,7 @@ const harness = (method, input = {}) =>
   wire('oplExecution/' + method, Object.keys(input).length ? { request: input } : {})
 const gateway = (method, input) =>
   wire('oplGatewayModels/' + method, input ? { request: input } : {})
-const nativeShellMode = process.argv.includes('--verify-git-bash') ? 'bash' : 'pwsh'
+const nativeShellMode = cli['verify-git-bash'] ? 'bash' : 'pwsh'
 const verifyGitBash = nativeShellMode === 'bash'
 async function assertNativeShell(enabled) {
   const status = await wire('oplSetup/native-shell')
@@ -68,7 +80,7 @@ async function assertNativeShell(enabled) {
   assert.equal(status.enabled, enabled, status.reason)
   assert.notEqual(status.pending, true, status.reason)
 }
-if (process.argv.includes('--select-git-bash')) {
+if (cli['select-git-bash']) {
   assert.equal(process.platform, 'win32')
   await assertNativeShell(false)
   const status = await wire('oplSetup/select-native-shell', { enabled: true })
@@ -95,8 +107,8 @@ async function settledConversation(sessionId, afterTurn) {
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
 }
-const captureSelections = process.argv.includes('--capture-selections')
-if (captureSelections || process.argv.includes('--readback-selections')) {
+const captureSelections = Boolean(cli['capture-selections'])
+if (captureSelections || cli['readback-selections']) {
   const selections = JSON.parse(
     await readFile(join(root, 'profiles/desktop/combination-selection.json'), 'utf8'),
   )

@@ -1,33 +1,35 @@
 /** Compatibility for metadata-only Chat Completions tool-call deltas from OFM. */
-import { createServer, request, type ClientRequest } from 'node:http'
-import { randomBytes } from 'node:crypto'
-import { Transform, pipeline } from 'node:stream'
-import { StringDecoder } from 'node:string_decoder'
+import { request, type ClientRequest } from 'node:http'
+import { type Transform, pipeline } from 'node:stream'
+import {
+  assertLoopbackOrigin,
+  createSseEventTransform,
+  readBoundedBody,
+  startLoopbackServer,
+  timingSafeTokenMatch,
+} from './loopback-relay.ts'
 
-/** Join tool metadata with its function delta without generating names or arguments. */
-export function normalizeToolDeltaLine(
-  line: string,
-  pendingCalls = new Map<string, Record<string, unknown>>(),
-  started = new Set<string>(),
+function normalizeToolDeltaData(
+  rawData: string,
+  pendingCalls: Map<string, Record<string, unknown>>,
+  started: Set<string>,
 ): string {
-  const match = /^(data:\s*)(.*?)(\r?)$/.exec(line)
-  if (!match) return line
-  if (match[2] === '[DONE]') {
+  if (rawData === '[DONE]') {
     if (pendingCalls.size) throw Error('Chat stream ended with incomplete tool metadata')
-    return line
+    return rawData
   }
   let payload: unknown
   try {
-    payload = JSON.parse(match[2]!)
+    payload = JSON.parse(rawData)
   } catch {
-    return line
+    return rawData
   }
   if (
     !payload ||
     typeof payload !== 'object' ||
     !Array.isArray((payload as { choices?: unknown }).choices)
   )
-    return line
+    return rawData
   let changed = false
   for (const choice of (payload as { choices: unknown[] }).choices) {
     if (!choice || typeof choice !== 'object') continue
@@ -85,40 +87,46 @@ export function normalizeToolDeltaLine(
     if ((choice as { finish_reason?: unknown }).finish_reason && pendingCalls.size)
       throw Error('Chat stream ended with incomplete tool metadata')
   }
-  return changed ? match[1] + JSON.stringify(payload) + match[3] : line
+  return changed ? JSON.stringify(payload) : rawData
 }
 
-/** Transform complete SSE data lines while retaining split UTF-8 and unmodified non-JSON fields. */
+/** Join tool metadata with its function delta without generating names or arguments. */
+export function normalizeToolDeltaLine(
+  line: string,
+  pendingCalls = new Map<string, Record<string, unknown>>(),
+  started = new Set<string>(),
+): string {
+  const match = /^(data:\s*)(.*?)(\r?)$/.exec(line)
+  if (!match) return line
+  const normalized = normalizeToolDeltaData(match[2]!, pendingCalls, started)
+  return normalized === match[2] ? line : match[1] + normalized + match[3]
+}
+
+/** Transform complete SSE events via `eventsource-parser` while retaining split UTF-8 and comments. */
 export function toolDeltaStream(): Transform {
-  const decoder = new StringDecoder('utf8')
-  let pending = ''
   const pendingCalls = new Map<string, Record<string, unknown>>()
   const started = new Set<string>()
-  return new Transform({
-    transform(chunk: Buffer, _encoding, done) {
-      try {
-        pending += decoder.write(chunk)
-        let end: number
-        while ((end = pending.indexOf('\n')) >= 0) {
-          this.push(normalizeToolDeltaLine(pending.slice(0, end), pendingCalls, started) + '\n')
-          pending = pending.slice(end + 1)
-        }
-        // Bound an unframed provider response; this is not a model token limit.
-        if (pending.length > 16 * 1024 * 1024) done(Error('Chat stream frame exceeds relay limit'))
-        else done()
-      } catch (error) {
-        done(error as Error)
-      }
+  return createSseEventTransform({
+    maxBufferSize: 16 * 1024 * 1024,
+    onError(error) {
+      if (error.type === 'max-buffer-size-exceeded')
+        throw Error('Chat stream frame exceeds relay limit')
     },
-    flush(done) {
-      try {
-        pending += decoder.end()
-        if (pending) this.push(normalizeToolDeltaLine(pending, pendingCalls, started))
-        if (pendingCalls.size) done(Error('Chat stream ended with incomplete tool metadata'))
-        else done()
-      } catch (error) {
-        done(error as Error)
-      }
+    onComment(comment, push) {
+      push(`: ${comment}\n\n`)
+    },
+    onRetry(retry, push) {
+      push(`retry: ${retry}\n\n`)
+    },
+    onEvent(event, push) {
+      const normalized = normalizeToolDeltaData(event.data, pendingCalls, started)
+      const header =
+        (event.event ? `event: ${event.event}\n` : '') +
+        (event.id !== undefined ? `id: ${event.id}\n` : '')
+      push(`${header}data: ${normalized}\n\n`)
+    },
+    onFlush() {
+      if (pendingCalls.size) throw Error('Chat stream ended with incomplete tool metadata')
     },
   })
 }
@@ -131,19 +139,10 @@ export async function startChatToolRelay(target: {
   /** Report a provider response that the ACP bridge can map to a terminal error. */
   onUpstreamFailure?: (status?: number) => void
 }) {
-  const upstream = new URL(target.baseURL)
-  if (
-    upstream.protocol !== 'http:' ||
-    !['127.0.0.1', 'localhost'].includes(upstream.hostname) ||
-    !upstream.port ||
-    upstream.username ||
-    upstream.password ||
-    upstream.search ||
-    upstream.hash
+  const upstream = assertLoopbackOrigin(
+    target.baseURL,
+    'Chat compatibility requires the published OFM loopback route',
   )
-    throw Error('Chat compatibility requires the published OFM loopback route')
-  const prefix = upstream.pathname.replace(/\/$/, '')
-  const key = randomBytes(32).toString('hex')
   const inflight = new Set<ClientRequest>()
   let closed = false
   let failureReported = false
@@ -152,107 +151,101 @@ export async function startChatToolRelay(target: {
     failureReported = true
     target.onUpstreamFailure?.(status)
   }
-  const server = createServer((req, res) => {
-    if (
-      closed ||
-      req.method !== 'POST' ||
-      req.url !== prefix + '/chat/completions' ||
-      req.headers.authorization !== 'Bearer ' + key
-    ) {
-      req.resume()
-      res.writeHead(403).end()
-      return
-    }
-    const chunks: Buffer[] = []
-    let size = 0
-    req.on('data', (chunk: Buffer) => {
-      size += chunk.length
-      if (size <= 16 * 1024 * 1024) chunks.push(chunk)
-    })
-    req.on('error', () => res.destroy())
-    req.on('end', () => {
-      if (closed) {
-        res.writeHead(503).end()
+
+  const relay = await startLoopbackServer(
+    (key) => (req, res) => {
+      const bearer = req.headers.authorization?.startsWith('Bearer ')
+        ? req.headers.authorization.slice('Bearer '.length)
+        : undefined
+      if (
+        closed ||
+        req.method !== 'POST' ||
+        req.url !== upstream.prefix + '/chat/completions' ||
+        !timingSafeTokenMatch(bearer, key)
+      ) {
+        req.resume()
+        res.writeHead(403).end()
         return
       }
-      if (size > 16 * 1024 * 1024) {
-        res.writeHead(413).end()
-        return
-      }
-      const body = Buffer.concat(chunks)
-      try {
-        if (JSON.parse(body.toString()).model !== target.model) {
+      void readBoundedBody(req, 16 * 1024 * 1024).then((read) => {
+        if (!read.ok) {
+          if (read.reason === 'too-large') res.writeHead(413).end()
+          else res.destroy()
+          return
+        }
+        if (closed) {
+          res.writeHead(503).end()
+          return
+        }
+        const body = read.body
+        try {
+          if (JSON.parse(body.toString()).model !== target.model) {
+            res.writeHead(400).end()
+            return
+          }
+        } catch {
           res.writeHead(400).end()
           return
         }
-      } catch {
-        res.writeHead(400).end()
-        return
-      }
-      const forward = request(
-        {
-          hostname: upstream.hostname,
-          port: upstream.port,
-          path: prefix + '/chat/completions',
-          method: 'POST',
-          headers: {
-            authorization: 'Bearer ' + target.apiKey,
-            'content-type': 'application/json',
-            'content-length': body.length,
-            'accept-encoding': 'identity',
+        const forward = request(
+          {
+            hostname: upstream.hostname,
+            port: upstream.port,
+            path: upstream.prefix + '/chat/completions',
+            method: 'POST',
+            headers: {
+              authorization: 'Bearer ' + target.apiKey,
+              'content-type': 'application/json',
+              'content-length': body.length,
+              'accept-encoding': 'identity',
+            },
           },
-        },
-        (response) => {
-          const status = response.statusCode ?? 502
-          if (status < 200 || status >= 300) reportFailure(status)
-          res.writeHead(response.statusCode ?? 502, {
-            'content-type': response.headers['content-type'] ?? 'application/json',
-            ...(response.headers['retry-after']
-              ? { 'retry-after': response.headers['retry-after'] }
-              : {}),
-            ...(response.headers['x-should-retry']
-              ? { 'x-should-retry': response.headers['x-should-retry'] }
-              : {}),
-          })
-          const failed = (error: NodeJS.ErrnoException | null) => {
-            if (error) {
-              reportFailure()
-              res.destroy()
+          (response) => {
+            const status = response.statusCode ?? 502
+            if (status < 200 || status >= 300) reportFailure(status)
+            res.writeHead(status, {
+              'content-type': response.headers['content-type'] ?? 'application/json',
+              ...(response.headers['retry-after']
+                ? { 'retry-after': response.headers['retry-after'] }
+                : {}),
+              ...(response.headers['x-should-retry']
+                ? { 'x-should-retry': response.headers['x-should-retry'] }
+                : {}),
+            })
+            const failed = (error: NodeJS.ErrnoException | null) => {
+              if (error) {
+                reportFailure()
+                res.destroy()
+              }
             }
-          }
-          if (String(response.headers['content-type']).includes('text/event-stream'))
-            pipeline(response, toolDeltaStream(), res, failed)
-          else pipeline(response, res, failed)
-        },
-      )
-      inflight.add(forward)
-      forward.once('close', () => inflight.delete(forward))
-      forward.once('error', () => {
-        reportFailure()
-        if (!res.headersSent) {
-          res.writeHead(502).end()
-        } else res.destroy()
+            if (String(response.headers['content-type']).includes('text/event-stream'))
+              pipeline(response, toolDeltaStream(), res, failed)
+            else pipeline(response, res, failed)
+          },
+        )
+        inflight.add(forward)
+        forward.once('close', () => inflight.delete(forward))
+        forward.once('error', () => {
+          reportFailure()
+          if (!res.headersSent) {
+            res.writeHead(502).end()
+          } else res.destroy()
+        })
+        res.once('close', () => forward.destroy())
+        forward.end(body)
       })
-      res.once('close', () => forward.destroy())
-      forward.end(body)
-    })
-  })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', resolve)
-  })
-  const address = server.address()
-  if (!address || typeof address === 'string') throw Error('Chat relay address unavailable')
-  let closing: Promise<void> | undefined
+    },
+    { unavailableMessage: 'Chat relay address unavailable' },
+  )
+
   return {
-    baseURL: `http://127.0.0.1:${address.port}${prefix}`,
-    key,
+    baseURL: relay.baseURL(upstream.prefix),
+    key: relay.token,
     close: () =>
-      (closing ??= new Promise<void>((resolve) => {
+      relay.close(() => {
         closed = true
-        for (const request of inflight) request.destroy()
-        server.closeAllConnections()
-        server.close(() => resolve())
-      })),
+        for (const item of inflight) item.destroy()
+        inflight.clear()
+      }),
   }
 }
