@@ -8,6 +8,8 @@ Linux x64 另有 `installer/install-linux.mjs` 的 CLI/Web 迁移入口。它使
 
 开发依赖统一固定为 DSH `0.2.2-rc.5`、Cordis `4.1.0` API cohort，具体版本以 `package.json` 与锁文件为准。官方桌面以两个安装 feed 的实时版本为准；稳定 Release 要求 macOS arm64 与 Windows x64 feed 版本相同，并在同一冻结版本上完成双平台隔离资格验收。官方版本带 `-rc` 时仍属于上游候选阶段。任一平台资格失败或证据缺失都会阻断 Release。
 
+Windows 的精确目标凭据继续通过 WinCred 读取。`@napi-rs/keyring@2.1.2` 的 `withTarget` 会在构造时写入空值，不能用于读取已有凭据。
+
 安装器通过官方插件管理器安装或修复套件，并在已停止的 profile 上由官方加载器移除已退役的官方 Team bundle 引用；不在安装或迁移时自动启用官方 Auto Review bundle，也不修改应用资源。用户通过官方插件管理器主动开启或停用可选官方插件，已有禁用选择与 `opl-official-bundles.json` 回执保持不变。
 
 ## 本机验证

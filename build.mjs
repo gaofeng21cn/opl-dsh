@@ -39,7 +39,7 @@ const hostBuild = await bundle({
   platform: 'node',
   format: 'esm',
   target: 'node24',
-  external: ['@deepseek-ai/*', 'zod', '@napi-rs/keyring'],
+  external: ['@deepseek-ai/*', 'zod'],
   banner: esmRequireBanner,
   define: suiteVersionDefine,
   tsconfig: join(root, 'tsconfig.host.json'),
@@ -139,7 +139,7 @@ const externalImports = [
   )
 const peers = Object.fromEntries(
   [...new Set(externalImports)]
-    .filter((name) => name !== 'zod' && name !== '@napi-rs/keyring')
+    .filter((name) => name !== 'zod')
     .sort()
     .map((name) => [name, '*']),
 )
@@ -169,7 +169,6 @@ await writeFile(
       },
       peerDependencies: peers,
       dependencies: { zod: project.devDependencies.zod },
-      optionalDependencies: { '@napi-rs/keyring': project.devDependencies['@napi-rs/keyring'] },
       dsh: {
         bundle: { patch: './cordis.patch.yml' },
         client: {

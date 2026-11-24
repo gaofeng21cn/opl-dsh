@@ -34,11 +34,12 @@ import {
   assertKeyringPlatform,
   assertKeyringTarget,
   keyringSupported,
+  wincredArgvScan,
   wincredDelete,
   wincredExists,
   wincredRead,
+  wincredStructSize,
   wincredWrite,
-  type KeyringModule,
 } from '../../src/credentials/host/windows-credential-manager.ts'
 import { bambooStartLuxKeyring } from '../../src/credentials/host/windows-keyring.ts'
 
@@ -188,121 +189,6 @@ async function withPlatform(platform: NodeJS.Platform, body: () => Promise<void>
   }
 }
 
-describe('native @napi-rs/keyring transport contract (cross-platform)', () => {
-  function inMemoryKeyring(): { module: KeyringModule; store: Map<string, Uint8Array> } {
-    const store = new Map<string, Uint8Array>()
-    return {
-      store,
-      module: {
-        AsyncEntry: {
-          withTarget(target: string) {
-            return {
-              async setSecret(secret: Uint8Array) {
-                store.set(target, new Uint8Array(secret))
-              },
-              async getSecret() {
-                const found = store.get(target)
-                return found ? Array.from(found) : null
-              },
-              async deleteCredential() {
-                return store.delete(target)
-              },
-            }
-          },
-        },
-      },
-    }
-  }
-
-  it('stores UTF-16LE blobs under exact target names and round-trips unicode', async () => {
-    await withPlatform('win32', async () => {
-      const { module, store } = inMemoryKeyring()
-      const loadKeyring = async () => module
-      const target = BAMBOO_STARTLUX_KEYRING_TARGET
-      const value = `${synthetic('u')}-中文-秘密-\nsecond\t"quoted"\\slash`
-      expect(await wincredExists(target, { loadKeyring })).toBe(false)
-      expect(await wincredRead(target, { loadKeyring })).toBeUndefined()
-
-      await wincredWrite(target, value, { loadKeyring })
-      expect(store.get(target)).toEqual(new Uint8Array(Buffer.from(value, 'utf16le')))
-      expect(await wincredExists(target, { loadKeyring })).toBe(true)
-      expect(await wincredRead(target, { loadKeyring })).toBe(value)
-
-      expect(await wincredDelete(target, { loadKeyring })).toBe(true)
-      expect(await wincredDelete(target, { loadKeyring })).toBe(false)
-      expect(await wincredExists(target, { loadKeyring })).toBe(false)
-    })
-  })
-
-  it('reports helper-unavailable when the native binding cannot be loaded', async () => {
-    await withPlatform('win32', async () => {
-      const loadKeyring = async () => {
-        throw new Error('Cannot find module @napi-rs/keyring-win32-x64-msvc')
-      }
-      await expect(
-        wincredRead(BAMBOO_STARTLUX_KEYRING_TARGET, { loadKeyring }),
-      ).rejects.toThrowError(expect.objectContaining({ code: 'helper-unavailable' }))
-    })
-  })
-
-  it('redacts secrets from native errors and maps timeouts to helper-unavailable', async () => {
-    await withPlatform('win32', async () => {
-      const secret = 'distinctive-secret-that-must-never-be-echoed'
-      const failing: KeyringModule = {
-        AsyncEntry: {
-          withTarget() {
-            return {
-              async setSecret() {
-                throw new Error(`WinCred refused secret=${secret}`)
-              },
-              async getSecret() {
-                return null
-              },
-              async deleteCredential() {
-                return false
-              },
-            }
-          },
-        },
-      }
-      const err = await wincredWrite(BAMBOO_STARTLUX_KEYRING_TARGET, secret, {
-        loadKeyring: async () => failing,
-      }).catch((e: unknown) => e)
-      expect(err).toMatchObject({ code: 'helper-failed' })
-      expect(String((err as Error).message)).not.toContain(secret)
-      expect(String((err as Error).message)).toContain('[redacted]')
-
-      const hanging: KeyringModule = {
-        AsyncEntry: {
-          withTarget() {
-            return {
-              setSecret(_s, signal) {
-                return new Promise((_res, rej) => {
-                  signal?.addEventListener('abort', () =>
-                    rej(new DOMException('aborted', 'AbortError')),
-                  )
-                })
-              },
-              async getSecret() {
-                return null
-              },
-              async deleteCredential() {
-                return false
-              },
-            }
-          },
-        },
-      }
-      const timeoutErr = await wincredWrite(BAMBOO_STARTLUX_KEYRING_TARGET, secret, {
-        timeoutMs: 10,
-        loadKeyring: async () => hanging,
-      }).catch((e: unknown) => e)
-      expect(timeoutErr).toMatchObject({ code: 'helper-unavailable' })
-      expect(String((timeoutErr as Error).message)).not.toContain(secret)
-    })
-  })
-})
-
 describe.skipIf(!isWindows)('windows credential manager', () => {
   it(
     'stores, reads back, replaces, and removes one credential',
@@ -391,12 +277,32 @@ describe.skipIf(!isWindows)('windows credential manager', () => {
   )
 
   it(
-    'keeps the value out of an error when the operation does not answer',
+    'marshals the documented CREDENTIAL size rather than a guessed one',
+    async () => {
+      // 80 bytes on x64, 52 on x86: the pointer fields take their natural
+      // alignment, so a hardcoded offset table would be wrong on one of them.
+      const size = await wincredStructSize()
+      expect(size).toBe(process.arch === 'x64' ? 80 : 52)
+    },
+    WINDOWS_TEST_TIMEOUT,
+  )
+
+  it(
+    'never puts the value in the helper argv or environment',
+    async () => {
+      const value = synthetic('argvscan')
+      expect(await wincredArgvScan(value)).toEqual({ inArgv: false, inEnv: false })
+    },
+    WINDOWS_TEST_TIMEOUT,
+  )
+
+  it(
+    'keeps the value out of an error when the helper does not answer',
     async () => {
       const value = 'distinctive-secret-that-must-never-be-echoed'
       const target = ownedTarget('timeout')
       try {
-        const failure = await wincredWrite(target, value, { timeoutMs: 0 }).catch(
+        const failure = await wincredWrite(target, value, { timeoutMs: 1 }).catch(
           (error: unknown) => error,
         )
         expect(failure).toBeInstanceOf(Error)
