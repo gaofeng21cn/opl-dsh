@@ -1,4 +1,13 @@
-import { mkdir, mkdtemp, readFile, writeFile, rm, access } from 'node:fs/promises'
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  symlink,
+  writeFile,
+  rm,
+  access,
+} from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -754,10 +763,12 @@ describe('external input rejection and replay', { timeout: 15_000 }, () => {
   it('uses the official current working-directory projection and rejects a moved bound session', async () => {
     const { service, root, session, ctx } = await nativeSetup([{ id: ref.model, name: 'Grok' }])
     const firstCwd = join(root, 'first-worktree')
+    const firstAlias = join(root, 'first-worktree-alias')
     const movedCwd = join(root, 'moved-worktree')
     await mkdir(firstCwd)
     await mkdir(movedCwd)
-    let currentCwd = firstCwd
+    await symlink(firstCwd, firstAlias, 'junction')
+    let currentCwd = firstAlias
     const previousGet = ctx.get
     ctx.get = ((name: string) =>
       name === 'workingDirectory' ? { get: () => currentCwd } : previousGet(name)) as typeof ctx.get
@@ -769,9 +780,20 @@ describe('external input rejection and replay', { timeout: 15_000 }, () => {
     const request = { ...ref, sessionId: session.id, messages: [first] } as GenerateOptions
     await Array.fromAsync(service.conversationStream(request, native))
     const record = (await service.list()).sessions[0]!
-    expect(record.cwd).toBe(firstCwd)
+    expect(record.cwd).toBe(await realpath(firstCwd))
     expect(await readFile(join(firstCwd, 'calls.txt'), 'utf8')).toContain(
       'user: projection-worktree',
+    )
+
+    const aliasFollowup = createUserMessage({
+      source: { kind: 'agent-message', form: 'relay', senderSessionId: 'lead' } as never,
+      content: [{ type: 'text', text: 'continue-in-same-worktree' }],
+    })
+    await Array.fromAsync(
+      service.conversationStream({ ...request, messages: [first, aliasFollowup] }, native),
+    )
+    expect(await readFile(join(firstCwd, 'calls.txt'), 'utf8')).toContain(
+      'continue-in-same-worktree',
     )
 
     currentCwd = movedCwd

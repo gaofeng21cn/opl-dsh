@@ -433,6 +433,51 @@ describe('per-model reasoning in the conversation picker', () => {
 })
 
 describe('CLI effort selection independent of source provider', () => {
+  it('accepts the logical Gateway model without changing the saved native route', async () => {
+    const f = await setup()
+    const native = { provider: 'opl-gateway-gemini', model: 'gemini-4-carbon' }
+    const logical = { provider: 'opl-gateway', model: 'gemini::gemini-4-carbon' }
+    f.groups.push({
+      id: native.provider,
+      name: 'Gateway Gemini',
+      models: [{ id: native.model, name: 'Gemini Carbon' }],
+    })
+    const catalog = await f.service.executionCatalog()
+    const combination = {
+      id: 'gateway-gemini-carbon',
+      name: 'Gateway Gemini Carbon',
+      modelRef: logical,
+      harnessRef: 'antigravity',
+      permissionPolicy: 'workspace' as const,
+      enabled: true,
+      isDefault: false,
+    }
+    vi.spyOn(f.service, 'executionCatalog').mockResolvedValue({
+      ...catalog,
+      combinations: [...catalog.combinations, combination],
+    })
+    vi.spyOn(f.service, 'reasoningPreflight').mockResolvedValue({
+      status: 'known',
+      efforts: [{ id: 'low', name: 'Low' }],
+    })
+    f.session.append('model/selection', native)
+    expect(await f.service.modelSelection(f.session.id)).toMatchObject({
+      current: native,
+      combination: combination.id,
+      effortSource: 'harness',
+    })
+    await f.service.invoke('select-effort', {
+      ...logical,
+      sessionId: f.session.id,
+      reasoningEffort: 'low',
+    })
+    expect(f.select.mock.calls.at(-1)?.[0]).toMatchObject(native)
+    expect((await f.service.modelSelection(f.session.id)).current).toEqual({
+      ...native,
+      reasoningEffort: 'low',
+    })
+  })
+
   async function fixture() {
     const f = await setup()
     const adapter = adapterFor('minimax-code', { provider, model: flash })!

@@ -253,8 +253,12 @@ export async function selectEffort(
   const initial = rawSelection()
   const selectionBinding = host.selections[input.sessionId]
   const selected = await host.modelSelection(input.sessionId)
-  if (modelRefKey(selected.current) !== modelRefKey(input))
+  if (executionModelRefKey(selected.current) !== executionModelRefKey(input))
     throw Error('模型选择已改变，请重新选择推理档位')
+  // The picker can send the logical Gateway alias for a saved native route.
+  const { provider, model } = selected.current
+  const nativeRef = { provider, model }
+  const nativeKey = modelRefKey(nativeRef)
   const definition = (await host.executionCatalog()).combinations.find(
     (c) => c.id === selected.combination,
   )
@@ -267,13 +271,16 @@ export async function selectEffort(
     throw Error('当前 Harness 未提供推理档位，请重新选择')
   if (!definition || !host.cliOwnsEffort(definition)) {
     const { sessionId, ...request } = input
-    const normalized = await host.normalizeConversationSelection(request, definition)
+    const normalized = await host.normalizeConversationSelection(
+      { ...request, ...nativeRef },
+      definition,
+    )
     const current = rawSelection()
     if (
       host.disposed ||
       host.selections[input.sessionId] !== selectionBinding ||
       current?.reasoningEffort !== initial?.reasoningEffort ||
-      (current && modelRefKey(current) !== modelRefKey(input))
+      (current && modelRefKey(current) !== nativeKey)
     )
       throw Error('模型选择已改变，请重新选择推理档位')
     return host.native('selectModel', { sessionId, ...normalized })
@@ -289,11 +296,8 @@ export async function selectEffort(
       host.ctx.agents.get(asSessionId<SessionId>(input.sessionId))?.status === 'running'
     )
       throw Error('会话状态已改变，请重新选择推理档位')
-    const projection = host.ctx.sessionProjections.snapshot(session, ['modelSelection']).values
-      .modelSelection
-    const ref = projection?.next ?? projection?.lastUsed
-    if (ref && modelRefKey(ref) !== modelRefKey(input))
-      throw Error('模型选择已改变，请重新选择推理档位')
+    const ref = rawSelection()
+    if (ref && modelRefKey(ref) !== nativeKey) throw Error('模型选择已改变，请重新选择推理档位')
   }
   current()
   if (input.reasoningEffort !== undefined) {
@@ -311,8 +315,7 @@ export async function selectEffort(
   // Clear any previous native effort while leaving provider defaults to its controller.
   await host.native('selectModel', {
     sessionId: input.sessionId,
-    provider: input.provider,
-    model: input.model,
+    ...nativeRef,
   })
   current()
   await host.externalEfforts.set(input.sessionId, definition.id, input.reasoningEffort, current)
