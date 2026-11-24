@@ -31,10 +31,11 @@
  * shared-build entry the packager has to keep in step.
  */
 import { spawn } from 'node:child_process'
-import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
+import { v7 as uuidV7 } from 'uuid'
+import { AcpJsonRpcChannel, attachLfLineReader } from '../../acp-stdio.ts'
 import { startMuseEndpoint } from './muse-endpoint.mjs'
 
 /**
@@ -66,31 +67,6 @@ const CFG = {
 
 const log = (line) => process.stderr.write(`muse-bridge: ${line}\n`)
 
-/** UUIDv7 command ids: MSP rejects anything else, so this is a protocol requirement. */
-let lastMs = 0
-let seq = 0
-function uuidV7() {
-  const bytes = randomUUID()
-    .replace(/-/gu, '')
-    .match(/../gu)
-    .map((byte) => parseInt(byte, 16))
-  const now = Date.now()
-  const ms = now > lastMs ? now : lastMs
-  seq = ms === lastMs ? (seq + 1) & 0x0fff : 0
-  lastMs = ms
-  bytes[0] = Math.floor(ms / 2 ** 40) & 0xff
-  bytes[1] = Math.floor(ms / 2 ** 32) & 0xff
-  bytes[2] = Math.floor(ms / 2 ** 24) & 0xff
-  bytes[3] = Math.floor(ms / 2 ** 16) & 0xff
-  bytes[4] = Math.floor(ms / 2 ** 8) & 0xff
-  bytes[5] = ms & 0xff
-  bytes[6] = (0x70 | ((seq >>> 8) & 0x0f)) & 0xff
-  bytes[7] = seq & 0xff
-  bytes[8] = (bytes[8] & 0x3f) | 0x80
-  const hex = bytes.map((byte) => byte.toString(16).padStart(2, '0')).join('')
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
-}
-
 /** The official MSP connection to one `muse serve` child. */
 class MspConnection {
   constructor(child) {
@@ -99,10 +75,11 @@ class MspConnection {
     this.pending = new Map()
     this.handlers = new Set()
     this.closed = false
-    createInterface({ input: child.stdout }).on('line', (line) => this.#receive(line))
+    this.lineReader = attachLfLineReader(child.stdout, (line) => this.#receive(line))
     const failed = (error) => {
       if (this.closed) return
       this.closed = true
+      this.lineReader.close()
       for (const { reject } of this.pending.values()) reject(error)
       this.pending.clear()
       for (const handler of this.handlers) handler(null)
@@ -165,22 +142,23 @@ class MspConnection {
   }
 }
 
-/** ACP-side JSON-RPC framing, in the shape the execution engine's transport expects. */
+/** ACP-side JSON-RPC framing over `@agentclientprotocol/sdk` `ndJsonStream`. */
 class AcpSide {
-  constructor() {
+  constructor(channel) {
+    this.channel = channel
     this.nextId = 1
     this.pending = new Map()
     this.handlers = new Set()
   }
 
   respond(id, result) {
-    process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id, result })}\n`)
+    this.channel.respond(id, result)
   }
   reject(id, code, message) {
-    process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } })}\n`)
+    this.channel.respondError(id, code, message)
   }
   notify(method, params) {
-    process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', method, params })}\n`)
+    this.channel.notify(method, params)
   }
   onMessage(handler) {
     this.handlers.add(handler)
@@ -204,7 +182,8 @@ class AcpSide {
     const id = this.nextId++
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject })
-      process.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`)
+      // Write outgoing JSON-RPC requests to stdout (the ACP output stream), never read-only stdin.
+      this.channel.send({ id, method, params })
     })
   }
 }
@@ -222,7 +201,48 @@ const state = {
   cancelled: false,
 }
 
-const acp = new AcpSide()
+let acp
+const acpChannel = new AcpJsonRpcChannel(process.stdin, process.stdout, {
+  ignoreNonJson: true,
+  onClose: () => {
+    void dispose()
+  },
+  onMessage: (message) => {
+    if (acp.accept(message)) return
+    const id = message.id
+    const handler =
+      message.method === 'initialize'
+        ? onInitialize
+        : message.method === 'session/new'
+          ? onSessionNew
+          : message.method === 'session/load'
+            ? onSessionLoad
+            : message.method === 'session/prompt'
+              ? onSessionPrompt
+              : message.method === 'session/cancel'
+                ? onSessionCancel
+                : undefined
+    if (!handler) {
+      if (id !== undefined) acp.reject(id, -32601, `Method not found: ${message.method}`)
+      return
+    }
+    Promise.resolve(handler(message.params ?? {}))
+      .then((result) => acp.respond(id, result ?? null))
+      .catch((error) => {
+        log(`${message.method} 失败：${error.message}`)
+        acp.reject(
+          id,
+          ['HARNESS_PROVIDER_CLIENT_REQUIRED', 'HARNESS_PROVIDER'].includes(error.code)
+            ? error.code
+            : -32000,
+          ['HARNESS_PROVIDER_CLIENT_REQUIRED', 'HARNESS_PROVIDER'].includes(error.code)
+            ? '官方 Muse Code 请求失败'
+            : error.message,
+        )
+      })
+  },
+})
+acp = new AcpSide(acpChannel)
 
 /**
  * Fail the launch when the host's stable surface is not the one this projection knows.
@@ -620,50 +640,4 @@ process.on('SIGTERM', () => {
 })
 process.on('SIGINT', () => {
   void dispose()
-})
-process.stdin.on('end', () => {
-  void dispose()
-})
-
-createInterface({ input: process.stdin }).on('line', (line) => {
-  const trimmed = line.trim()
-  if (!trimmed) return
-  let message
-  try {
-    message = JSON.parse(trimmed)
-  } catch {
-    return
-  }
-  if (acp.accept(message)) return
-  const id = message.id
-  const handler =
-    message.method === 'initialize'
-      ? onInitialize
-      : message.method === 'session/new'
-        ? onSessionNew
-        : message.method === 'session/load'
-          ? onSessionLoad
-          : message.method === 'session/prompt'
-            ? onSessionPrompt
-            : message.method === 'session/cancel'
-              ? onSessionCancel
-              : undefined
-  if (!handler) {
-    if (id !== undefined) acp.reject(id, -32601, `Method not found: ${message.method}`)
-    return
-  }
-  Promise.resolve(handler(message.params ?? {}))
-    .then((result) => acp.respond(id, result ?? null))
-    .catch((error) => {
-      log(`${message.method} 失败：${error.message}`)
-      acp.reject(
-        id,
-        ['HARNESS_PROVIDER_CLIENT_REQUIRED', 'HARNESS_PROVIDER'].includes(error.code)
-          ? error.code
-          : -32000,
-        ['HARNESS_PROVIDER_CLIENT_REQUIRED', 'HARNESS_PROVIDER'].includes(error.code)
-          ? '官方 Muse Code 请求失败'
-          : error.message,
-      )
-    })
 })

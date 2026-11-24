@@ -1,6 +1,6 @@
 /** Keep ACP unchanged while adapting OFM Chat tool-delta framing for the official CLI. */
 import { spawn } from 'node:child_process'
-import { createInterface } from 'node:readline'
+import { attachLfLineReader } from '../acp-stdio.ts'
 import { startChatToolRelay } from './chat-tool-relay.ts'
 
 const family = process.env.OPL_CHAT_CLI
@@ -41,28 +41,39 @@ const child = spawn(command, args, {
 child.stderr.resume()
 const promptIds = new Map<string, number>()
 let upstreamFailed = false
-const input = createInterface({ input: process.stdin, crlfDelay: Infinity })
-const output = createInterface({ input: child.stdout, crlfDelay: Infinity })
-input.on('line', (line) => {
-  if (upstreamFailed) return
-  try {
-    const message = JSON.parse(line) as {
-      id?: unknown
-      method?: unknown
-      params?: { sessionId?: unknown }
-    }
-    if (
-      message.method === 'session/prompt' &&
-      typeof message.id === 'number' &&
-      typeof message.params?.sessionId === 'string'
-    )
-      promptIds.set(message.params.sessionId, message.id)
-  } catch {
-    // The official ACP transport owns validation; this bridge only forwards the line.
-  }
-  if (!child.stdin.destroyed) child.stdin.write(line + '\n')
+let closing: Promise<void> | undefined
+const exited = new Promise<void>((resolve) => {
+  child.once('exit', () => resolve())
+  child.once('error', () => resolve())
 })
-output.on('line', (line) => {
+const input = attachLfLineReader(
+  process.stdin,
+  (line) => {
+    if (upstreamFailed) return
+    try {
+      const message = JSON.parse(line) as {
+        id?: unknown
+        method?: unknown
+        params?: { sessionId?: unknown }
+      }
+      if (
+        message.method === 'session/prompt' &&
+        typeof message.id === 'number' &&
+        typeof message.params?.sessionId === 'string'
+      )
+        promptIds.set(message.params.sessionId, message.id)
+    } catch {
+      // The official ACP transport owns validation; this bridge only forwards the line.
+    }
+    if (!child.stdin.destroyed) child.stdin.write(line + '\n')
+  },
+  {
+    onEnd: () => {
+      void stop()
+    },
+  },
+)
+const output = attachLfLineReader(child.stdout, (line) => {
   if (upstreamFailed) return
   process.stdout.write(line + '\n')
   try {
@@ -74,11 +85,6 @@ output.on('line', (line) => {
   } catch {
     // Forwarding remains lossless even if a CLI writes a non-JSON diagnostic line.
   }
-})
-let closing: Promise<void> | undefined
-const exited = new Promise<void>((resolve) => {
-  child.once('exit', () => resolve())
-  child.once('error', () => resolve())
 })
 function stop() {
   return (closing ??= (async () => {
@@ -135,9 +141,6 @@ child.once('exit', () => {
   input.close()
   output.close()
   void relay.close().then(() => process.exit(child.exitCode ?? 1))
-})
-process.stdin.once('end', () => {
-  void stop()
 })
 process.once('SIGTERM', () => {
   void stop()

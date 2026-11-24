@@ -1,7 +1,7 @@
 /** Bounded JSON-RPC stdio transport for the ACP v1 surface Grok advertises. */
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { createInterface } from 'node:readline'
 import { join } from 'node:path'
+import { AcpJsonRpcChannel, attachLfLineReader, type LineReaderHandle } from './acp-stdio.ts'
 import { failureDiagnosticSuffix, safeFailureDetails } from './adapters/failure-diagnostics.ts'
 import { canonicalHarnessContext, canonicalHarnessUsage } from './usage.ts'
 import type { HarnessStatistics } from '../contracts/usage.ts'
@@ -153,6 +153,8 @@ export interface AcpRequestOptions {
 export class HarnessConfigurationError extends Error {}
 export class AcpProcess {
   private readonly child: ChildProcessWithoutNullStreams
+  private readonly channel: AcpJsonRpcChannel
+  private readonly stderrReader: LineReaderHandle
   private readonly pending = new Map<
     number,
     {
@@ -192,13 +194,9 @@ export class AcpProcess {
       ...(verbatimArguments ? { windowsVerbatimArguments: true } : {}),
     })
     // Always drain stderr; it may contain provider diagnostics and is never reflected into the UI.
-    let diagnostic = ''
-    this.child.stderr.on('data', (chunk: Buffer) => {
-      diagnostic += chunk.toString('utf8')
-      let end: number
-      while ((end = diagnostic.indexOf(String.fromCharCode(10))) >= 0) {
-        const line = diagnostic.slice(0, end)
-        diagnostic = diagnostic.slice(end + 1)
+    this.stderrReader = attachLfLineReader(
+      this.child.stderr,
+      (line) => {
         for (const [id, classify] of this.stderrObservers) {
           if (!this.pending.has(id)) {
             this.stderrObservers.delete(id)
@@ -211,57 +209,57 @@ export class AcpProcess {
             break
           }
         }
-      }
-      if (diagnostic.length > 65536) diagnostic = ''
-    })
+      },
+      { maxLineBytes: 65536 },
+    )
     this.child.stdin.on('error', () => this.fail('Harness ACP 输入通道关闭'))
     this.child.on('error', () => this.fail('无法启动 Harness，请检查官方程序与执行路径'))
     this.child.on('exit', () => this.fail('Harness 进程已结束'))
-    createInterface({ input: this.child.stdout }).on('line', (line) => {
-      let m: Record<string, any>
-      try {
-        m = object(JSON.parse(line))
-      } catch {
-        return
-      }
-      if (m.jsonrpc !== '2.0') return
-      if (this.closed) return
-      if (typeof m.id === 'number' && m.method === undefined) {
-        const p = this.pending.get(m.id)
-        if (!p) return
-        clearTimeout(p.timer)
-        if (p.firstProgressTimer) clearTimeout(p.firstProgressTimer)
-        this.pending.delete(m.id)
-        this.stderrObservers.delete(m.id)
-        if (m.error) {
-          p.reject(
-            new HarnessRequestError(
-              `${harnessFailure(object(m.error).code, object(m.error).data)}（${requestStage(p.method)}）`,
-              p.method,
-              object(m.error).code,
-              object(m.error).data,
-            ),
-          )
-        } else p.resolve(m.result)
-      } else if (m.method === 'session/update') {
-        this.observePromptProgress(m.method, m.params)
-        this.update(m.params)
-      } else if (typeof m.id === 'string' || typeof m.id === 'number') {
-        // 带 id 的是发往本方的请求，必须照常回应；扩展通知永远不会走到这里。
-        if (m.method === 'session/request_permission') {
-          const sessionId = object(m.params).sessionId
-          for (const p of this.pending.values())
-            if (p.method === 'session/prompt' && p.sessionId === sessionId)
-              this.clearFirstProgressTimer(p)
-          this.permission(m.id, m.params)
-        } else if (this.clientRequests?.has(m.method)) {
-          void this.handleClientRequest(m.id, this.clientRequests.get(m.method)!)
-        } else
-          this.send({
-            id: m.id,
-            error: { code: -32601, message: 'Unsupported ACP client request' },
-          })
-      } else if (this.notification !== undefined) this.notification(m.method, m.params)
+    this.channel = new AcpJsonRpcChannel(this.child.stdout, this.child.stdin, {
+      ignoreNonJson: true,
+      onWriteError: () => this.fail('Harness ACP 输入通道关闭'),
+      onMessage: (m: Record<string, any>) => {
+        if (m.jsonrpc !== '2.0') return
+        if (this.closed) return
+        if (typeof m.id === 'number' && m.method === undefined) {
+          const p = this.pending.get(m.id)
+          if (!p) return
+          clearTimeout(p.timer)
+          if (p.firstProgressTimer) clearTimeout(p.firstProgressTimer)
+          this.pending.delete(m.id)
+          this.stderrObservers.delete(m.id)
+          if (m.error) {
+            p.reject(
+              new HarnessRequestError(
+                `${harnessFailure(object(m.error).code, object(m.error).data)}（${requestStage(p.method)}）`,
+                p.method,
+                object(m.error).code,
+                object(m.error).data,
+              ),
+            )
+          } else p.resolve(m.result)
+        } else if (m.method === 'session/update') {
+          this.observePromptProgress(m.method, m.params)
+          this.update(m.params)
+        } else if (typeof m.id === 'string' || typeof m.id === 'number') {
+          // 带 id 的是发往本方的请求，必须照常回应；扩展通知永远不会走到这里。
+          if (m.method === 'session/request_permission') {
+            const sessionId = object(m.params).sessionId
+            for (const p of this.pending.values())
+              if (p.method === 'session/prompt' && p.sessionId === sessionId)
+                this.clearFirstProgressTimer(p)
+            this.permission(m.id, m.params)
+          } else if (this.clientRequests?.has(m.method)) {
+            void this.handleClientRequest(m.id, this.clientRequests.get(m.method)!)
+          } else
+            this.send({
+              id: m.id,
+              error: { code: -32601, message: 'Unsupported ACP client request' },
+            })
+        } else if (this.notification !== undefined && typeof m.method === 'string') {
+          this.notification(m.method, m.params)
+        }
+      },
     })
   }
   private clearFirstProgressTimer(p: {
@@ -286,6 +284,8 @@ export class AcpProcess {
   private fail(message: string) {
     if (this.closed) return
     this.closed = true
+    this.stderrReader.close()
+    this.channel.close()
     for (const p of this.pending.values()) {
       clearTimeout(p.timer)
       this.clearFirstProgressTimer(p)
@@ -296,7 +296,7 @@ export class AcpProcess {
     this.onExit()
   }
   private async handleClientRequest(id: string | number, handler: () => Promise<unknown>) {
-    let response: object
+    let response: Record<string, unknown>
     try {
       response = { id, result: (await handler()) ?? null }
     } catch {
@@ -304,9 +304,9 @@ export class AcpProcess {
     }
     if (!this.closed) this.send(response)
   }
-  private send(value: object) {
+  private send(value: Record<string, unknown>) {
     if (this.closed) throw new Error('Harness ACP 通道已关闭')
-    this.child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...value }) + '\n')
+    this.channel.send(value)
   }
   request(
     method: string,

@@ -2,9 +2,9 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
-import { createInterface } from 'node:readline'
 import type { Readable, Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
+import { attachLfLineReader, type LineReaderHandle } from '../../acp-stdio.ts'
 import { safeFailureDetails } from '../failure-diagnostics.ts'
 import { commandLaunch } from '../../harness-registry.ts'
 import { nativeContextUsageMeta, nativeTurnUsageMeta } from '../native-usage.ts'
@@ -182,8 +182,8 @@ export async function runAntigravityBridge(options: AntigravityBridgeOptions = {
   let exited: Promise<void> = Promise.resolve()
   const pending = new Map<RpcId, PendingRequest>()
   let currentSession = ''
-  let inputLines: ReturnType<typeof createInterface> | undefined
-  let outputLines: ReturnType<typeof createInterface> | undefined
+  let inputLines: LineReaderHandle | undefined
+  let outputLines: LineReaderHandle | undefined
   let outputQueue = Promise.resolve()
 
   const send = (message: JsonObject) =>
@@ -512,15 +512,13 @@ export async function runAntigravityBridge(options: AntigravityBridgeOptions = {
     send(message)
   }
 
-  inputLines = createInterface({ input, crlfDelay: Infinity })
-  outputLines = createInterface({ input: cli.stdout, crlfDelay: Infinity })
-  inputLines.on('line', (line) => {
+  inputLines = attachLfLineReader(input, (line) => {
     void forwardInput(line).catch(() => {
       if (active) fail(active.scope, { kind: 'policy' })
       else void stop().catch(() => {})
     })
   })
-  outputLines.on('line', (line) => {
+  outputLines = attachLfLineReader(cli.stdout, (line) => {
     outputQueue = outputQueue
       .then(() => forwardOutput(line))
       .catch(() => {

@@ -1,7 +1,7 @@
 /** Conversation-only OPL extensions around the pinned official ACP server. */
 import { createHash } from 'node:crypto'
 import { PassThrough, Writable } from 'node:stream'
-import { StringDecoder } from 'node:string_decoder'
+import { attachLfLineReader } from '../../../src/execution/host/acp-stdio.ts'
 
 export const historyCapability = {
   version: 1,
@@ -22,32 +22,40 @@ const fail = (message = 'MiniMax conversation operation was rejected.') => {
   throw Object.assign(new Error(message), { rpcCode: -32602 })
 }
 
-/** Decode JSONL without splitting multibyte text across pipe chunks. */
+/** Decode JSONL on LF-only boundaries without splitting multibyte UTF-8 across pipe chunks. */
 export function jsonLines(receive) {
-  const decoder = new StringDecoder('utf8')
-  let buffered = ''
+  const source = new PassThrough()
+  let streamError
+  const reader = attachLfLineReader(source, receive, {
+    maxLineBytes: 16 * 1024 * 1024,
+    onError: () => {
+      streamError = Error('ACP frame exceeds 16 MiB.')
+    },
+  })
   return new Writable({
     write(chunk, _encoding, done) {
       try {
-        buffered += decoder.write(chunk)
-        if (buffered.length > 16 * 1024 * 1024) throw Error('ACP frame exceeds 16 MiB.')
-        let end
-        while ((end = buffered.indexOf('\n')) !== -1) {
-          const line = buffered.slice(0, end)
-          buffered = buffered.slice(end + 1)
-          if (line.trim()) receive(line)
+        source.write(chunk)
+        if (streamError) {
+          const error = streamError
+          streamError = undefined
+          reader.close()
+          done(error)
+          return
         }
         done()
       } catch (error) {
+        reader.close()
         done(error)
       }
     },
     final(done) {
       try {
-        buffered += decoder.end()
-        if (buffered.trim()) receive(buffered)
-        done()
+        source.end()
+        reader.close()
+        done(streamError)
       } catch (error) {
+        reader.close()
         done(error)
       }
     },
