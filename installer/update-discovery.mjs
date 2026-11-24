@@ -25,6 +25,41 @@ export function newer(candidate, current) {
   return false
 }
 
+// The release writer places its overview between the version banner and the change list.
+function plainOverview(value) {
+  if (typeof value !== 'string' || value.length > 1200) return undefined
+  const text = value.replace(/\s+/gu, ' ').trim()
+  if (
+    !text ||
+    text === '本版更新内容见以下提交记录及对应功能文档。' ||
+    /^(?:#{1,6}|[>*-]|\d+\.)\s/u.test(text)
+  )
+    return undefined
+  return text
+}
+
+function markdownOverview(body) {
+  if (typeof body !== 'string') return undefined
+  const [banner, paragraph] = body.trimStart().split(/\r?\n[ \t]*\r?\n/u, 2)
+  if (!/^官方 DeepSeek Harness[：:]/u.test(banner)) return undefined
+  return plainOverview(paragraph?.replace(/`([^`\n]+)`/gu, '$1'))
+}
+
+function pageOverview(page) {
+  const paragraph = /<p>官方 DeepSeek Harness[：:][^\n]*?<\/p>\s*<p>([\s\S]{1,2000}?)<\/p>/u.exec(
+    page,
+  )?.[1]
+  if (!paragraph) return undefined
+  const text = paragraph.replace(/<\/?(?:code|strong|em)>/gu, '')
+  if (/[<>]/u.test(text)) return undefined
+  return plainOverview(
+    text.replace(
+      /&(?:lt|gt|quot|amp|#39);/gu,
+      (entity) => ({ '&lt;': '<', '&gt;': '>', '&quot;': '"', '&amp;': '&', '&#39;': "'" })[entity],
+    ),
+  )
+}
+
 function validateAsset(asset, tagName, name, limit) {
   if (
     !asset ||
@@ -67,7 +102,9 @@ function validateReleaseIdentity(metadata) {
     'release-manifest.json',
     limits.manifest,
   )
+  const summary = plainOverview(metadata.summary)
   return {
+    ...(summary && { summary }),
     tagName: metadata.tagName,
     url: metadata.url,
     publishedAt: metadata.publishedAt,
@@ -118,6 +155,7 @@ export function releaseForInstallation(current, metadata) {
     current.arch ?? process.arch,
   )
   return {
+    ...(metadata.summary && { summary: metadata.summary }),
     version: manifest.enhancement.version,
     officialVersion,
     url: metadata.url,
@@ -303,6 +341,7 @@ async function publicRelease({ signal }) {
       tagName,
       url: location,
       publishedAt: dates[0][1],
+      summary: pageOverview(page),
       manifestText,
       asset: { ...payload, size: manifest.enhancement.size },
       manifestAsset: { ...manifestAsset, size: bytes.length },
@@ -353,6 +392,7 @@ export async function checkRelease(current, { signal } = {}) {
       tagName: release.tag_name,
       url: release.html_url,
       publishedAt: release.published_at,
+      summary: markdownOverview(release.body),
       asset: assets('OPL-DSH-Enhancements.zip'),
       manifestAsset: assets('release-manifest.json'),
     })
