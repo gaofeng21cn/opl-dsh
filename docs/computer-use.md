@@ -2,7 +2,7 @@
 
 在 OPL DSH 中，你可以让原生 DSH 会话读取窗口、查看截图，也可以让它点击按钮或输入文字。第一次使用时，先选执行引擎为 **DSH** 的模型组合。其他 Harness 的桌面能力由各自的集成提供。
 
-官方 DSH 另有可选的实验性 CUA 插件。如果你同时启用了两者，想使用本页的功能，可以在请求里写“使用 KimiCU”，并在工具记录中核对 `computer_use`。官方 CUA 使用 `cua_run_code`。通用设置里的「KimiCU 版本」只显示 KimiCU 的版本。
+官方 DSH 另有可选的实验性 CUA 插件。如果你同时启用了两者，想使用本页的功能，可以在请求里写“使用 KimiCU”，并在工具记录中核对 `computer_use`。使用官方 CUA 时，标准等非 PTC 预设通过 `cua_run_code` 操作桌面，PTC 预设则在 `run_code` 中使用 `cua`。通用设置里的「KimiCU 版本」只显示 KimiCU 的版本。
 
 ## 首次使用前
 
