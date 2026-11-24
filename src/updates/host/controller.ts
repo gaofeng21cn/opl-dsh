@@ -196,8 +196,10 @@ function cached(value: unknown): Partial<OplUpdateStatus> {
     release.url ===
       `https://github.com/gaofeng21cn/opl-dsh/releases/tag/opl-dsh-v${release.version}` &&
     ['enhancement', 'full-suite'].includes(release.compatibility)
-  )
-    result.release = release
+  ) {
+    const { summary, ...identity } = release
+    result.release = typeof summary === 'string' && summary.length <= 1200 ? release : identity
+  }
   if (
     typeof row.error === 'string' &&
     persistedErrors.has(row.error as Exclude<OplUpdateError, null>)

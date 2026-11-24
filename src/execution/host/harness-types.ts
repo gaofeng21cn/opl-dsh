@@ -1,3 +1,5 @@
+import { realpathSync } from 'node:fs'
+import { normalize } from 'node:path'
 import { createHash } from 'node:crypto'
 import type { AcpProcess } from './acp.ts'
 import type { AdapterLaunch } from './adapters/types.ts'
@@ -75,4 +77,23 @@ export interface SelectionChangeState {
   promise: Promise<void>
   failed: boolean
   error?: unknown
+}
+
+const workingDirectoryKey = (path: string) => {
+  const normalized = normalize(path)
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
+}
+
+export function sameWorkingDirectory(left: string, right: string): boolean {
+  if (workingDirectoryKey(left) === workingDirectoryKey(right)) return true
+  // Harness records store the resolved path, while the official projection
+  // can retain a symlink or junction to that same directory.
+  try {
+    return (
+      workingDirectoryKey(realpathSync.native(left)) ===
+      workingDirectoryKey(realpathSync.native(right))
+    )
+  } catch {
+    return false
+  }
 }

@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { withoutRememberingPermission } from '../../compat/host/permission-memory.ts'
 import { LlmError } from '../../shared/llm-error.ts'
 import type { MessageEditSend, MessageEditState } from '../contracts/message-edit.ts'
@@ -91,6 +91,8 @@ import { parseMiniMaxTurnUsage } from './usage-account.ts'
 import { asSessionId, hash, now, required, type Active } from './harness-types.ts'
 
 export interface HarnessStopEditContext {
+  currentWorkingDirectory(session: Session): string
+  ensureCurrentWorkingDirectory(session: Session): Promise<string>
   readonly ctx: Context
   readonly directory: string
   readonly records: Map<string, HarnessSession>
@@ -1082,7 +1084,10 @@ function nativeStopEditSource(host: HarnessStopEditContext): NativeSessionSource
       const agent = host.ctx.agents.get(asSessionId<SessionId>(sessionId))
       if (agent) await agent.whenIdle()
     },
-    cwd: (sessionId) => sessionOf(sessionId)?.header.cwd,
+    cwd: (sessionId) => {
+      const session = sessionOf(sessionId)
+      return session ? host.currentWorkingDirectory(session) : undefined
+    },
     validateBranch: (sessionId) => {
       const session = sessionOf(sessionId)
       const permissions = host.ctx.get('permissionPresets')
@@ -1117,6 +1122,7 @@ export function stopEditReviewBySession(
     (item) => item.acpSessionId === sessionId || item.nativeSessionId === sessionId,
   )
   const presets = host.ctx.get('permissionPresets')
+  const cwd = session ? host.currentWorkingDirectory(session) : (record?.cwd ?? '')
   return {
     model: record?.modelRef.model ?? '未知',
     ...(record?.reasoningEffort ? { effort: record.reasoningEffort } : {}),
@@ -1126,9 +1132,9 @@ export function stopEditReviewBySession(
         : record
           ? harnessPermissionPreset(record.sandbox)
           : '未知',
-    cwd: session?.header.cwd ?? record?.cwd ?? '',
-    workspaceId: session?.header.cwd ? '已随分支复制' : '',
-    ...(session?.header.cwd ? { project: session.header.cwd } : {}),
+    cwd,
+    workspaceId: cwd ? '已随分支复制' : '',
+    ...(cwd ? { project: cwd } : {}),
     title: '',
   }
 }
@@ -1231,11 +1237,11 @@ export async function rebindNativeBranch(
   const record = [...host.records.values()].find(
     (item) => item.acpSessionId === previousSessionId || item.nativeSessionId === previousSessionId,
   )
-  const cwd = previous?.header.cwd ?? record?.cwd
+  const cwd = previous ? await host.ensureCurrentWorkingDirectory(previous) : record?.cwd
   if (!cwd) throw new StopEditError('rewind-failed', '原会话缺少项目目录，已放弃回退')
   const session = host.ctx.sessions.get(asSessionId<SessionId>(sessionId))
   if (!session) throw new StopEditError('rewind-failed', '新分支会话未就绪')
-  if (session.header.cwd !== cwd)
+  if ((await host.ensureCurrentWorkingDirectory(session)) !== cwd)
     throw new StopEditError('rewind-failed', '新分支的项目目录与原会话不一致，已放弃回退')
   if (!previous) throw new StopEditError('rewind-failed', '原会话已关闭')
   const selection = host.ctx.sessionProjections.snapshot(previous, ['modelSelection']).values

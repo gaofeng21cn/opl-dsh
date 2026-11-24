@@ -286,6 +286,7 @@ export function apply(ctx: Context, config: Config): void {
           gatewayGroupEnabled(ctx, 'codex') &&
           !!(await ctx.get('credentials')?.resolve(credentialRef(CODEX_API_KEY_REF)))?.value,
       },
+      async () => ctx.get('oplHarness')?.codexModelEfforts(),
     ),
   )
 

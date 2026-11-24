@@ -218,6 +218,10 @@ export function normalizeCatalog(value: unknown): ExecutionCatalog {
 }
 export class ExecutionCatalogStore {
   readonly filename: string
+  private writeRevision = 0
+  get revision(): number {
+    return this.writeRevision
+  }
   private value = defaultExecutionCatalog()
   private ready: Promise<void>
   private queue: Promise<void> = Promise.resolve()
@@ -254,6 +258,7 @@ export class ExecutionCatalogStore {
     const { models: _, ...saved } = value
     await mkdir(dirname(this.filename), { recursive: true, mode: 0o700 })
     await writeFileAtomic(this.filename, JSON.stringify(saved, null, 2) + '\n', { mode: 0o600 })
+    this.writeRevision++
   }
   async get() {
     await this.ready

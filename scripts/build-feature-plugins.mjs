@@ -99,6 +99,10 @@ export async function buildFeaturePlugins({ root, output, project, tar, official
       ),
     )
     if (feature.id === 'execution') {
+      await cp(
+        join(root, 'src/execution/host/adapters/antigravity/google-settings.json'),
+        join(destination, 'lib/google-settings.json'),
+      )
       for (const file of await readdir(join(output, 'package/lib'))) {
         if (!file.endsWith('.mjs')) continue
         await cp(join(output, 'package/lib', file), join(destination, 'lib', file))

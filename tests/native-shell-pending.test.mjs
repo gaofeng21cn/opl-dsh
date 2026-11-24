@@ -163,10 +163,8 @@ test('repeated shell toggles retain a single config owner and allow later native
       assert.equal(owners[0].get('config', true).get('other'), 'current user edit')
       assert.equal(owners[0].get('config', true).get('updatePolicyChosen'), !enabled)
     }
-    const include = '@deepseek-ai/cordis-plugin-include'
-    const { entryListSchema } = await import(include)
-    const { load } = createRequire(require.resolve(include))('js-yaml')
-    const patches = load(await readFile(f.file, 'utf8'), { schema: entryListSchema })
+    const { parseEntryYaml } = await import('@deepseek-ai/cordis-plugin-include')
+    const patches = parseEntryYaml(await readFile(f.file, 'utf8'))
     const preset = patches.findLast((row) => row.id === 'preset-standard' && row.config)
     assert.deepEqual(preset.config.plugins[0].disabled, expr('windows'))
     assert.deepEqual(preset.config.plugins[1].disabled, expr('posix'))

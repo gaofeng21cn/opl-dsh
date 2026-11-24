@@ -62,7 +62,7 @@ export async function apply(ctx: Context): Promise<void> {
         {
           name: 'settings.general.item',
           id: 'opl-suite-feature-preferences',
-          order: 34,
+          order: 31,
           locale: 'settings.oplSuiteFeatures',
           inject: () => ({ form: suiteSettings }),
         },

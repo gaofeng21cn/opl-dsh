@@ -6,7 +6,7 @@ Linux CI 继续运行 Host / Client 类型检查、构建与全部自动测试�
 
 Linux x64 另有 `installer/install-linux.mjs` 的 CLI/Web 迁移入口。它使用独立自定义 profile、官方插件管理器和本机浏览器，必须通过实际 Host、控制 RPC、执行组合和 SuperAgent 状态回读验收；这些结果不属于官方 Electron Desktop 资格，也不能据此宣称 Linux Desktop 已发布。
 
-开发依赖统一固定为 DSH `0.2.2-rc.5`、Cordis `4.1.0` API cohort，具体版本以 `package.json` 与锁文件为准。官方桌面以两个安装 feed 的实时版本为准；稳定 Release 要求 macOS arm64 与 Windows x64 feed 版本相同，并在同一冻结版本上完成双平台隔离资格验收。官方版本带 `-rc` 时仍属于上游候选阶段。任一平台资格失败或证据缺失都会阻断 Release。
+当前兼容目标是官方 DSH `0.2.3-alpha.2` 的 Node/API cohort；实际 npm 版本以 `package.json` 与锁文件为准，升级依赖前必须通过新版编译和资格检查。官方桌面以两个安装 feed 的实时版本为准；稳定 Release 要求 macOS arm64 与 Windows x64 feed 版本相同，并在同一冻结版本上完成双平台隔离资格验收。官方版本带 `-alpha` 或 `-rc` 时仍属于上游候选阶段。任一平台资格失败或证据缺失都会阻断 Release。
 
 Windows 的精确目标凭据继续通过 WinCred 读取。`@napi-rs/keyring@2.1.2` 的 `withTarget` 会在构造时写入空值，不能用于读取已有凭据。
 

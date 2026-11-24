@@ -11,6 +11,7 @@ export type * from '../execution/contracts/installations.ts'
 export type * from '../execution/contracts/views.ts'
 export type * from '../execution/contracts/limits.ts'
 export type * from '../execution/contracts/minimax-account.ts'
+export type * from '../execution/contracts/antigravity-account.ts'
 export type * from '../execution/contracts/engine-updates.ts'
 export type * from '../collaboration/host/feedback/types.ts'
 export type * from '../setup/contracts.ts'
@@ -28,6 +29,8 @@ export interface HarnessSelection {
   combination?: string
   /** External CLI effort must not be overwritten by the native provider projection. */
   effortSource?: 'harness'
+  /** Registered Gateway tiers for immediate display while the CLI confirms them. */
+  registeredEfforts?: { levels: string[]; defaultEffort: string; revision: number }
 }
 /** Live reasoning values advertised by the selected external Harness. */
 export interface HarnessReasoningPreflight {

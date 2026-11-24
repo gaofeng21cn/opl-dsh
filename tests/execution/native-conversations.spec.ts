@@ -99,6 +99,16 @@ function setup() {
 }
 
 describe('ordinary official conversations for external tasks', () => {
+  it('opens a delegated child independently of its waiting DSH caller', async () => {
+    const { bridge, record, agents, sessions } = setup()
+    record.origin = { kind: 'dsh', sessionId: 'session-waiting-parent' }
+    record.nativeSessionId = 'session-' + record.id
+    record.turns = []
+    await bridge.ensure(record, async () => {})
+    expect(agents.has(record.nativeSessionId)).toBe(true)
+    expect(sessions.has(record.origin.sessionId)).toBe(false)
+  })
+
   it('leaves an empty shell eligible for the official first-message title after a model switch', async () => {
     const { bridge, record, invoke } = setup()
     record.turns = []
@@ -126,7 +136,10 @@ describe('ordinary official conversations for external tasks', () => {
       await service.sessions()
       expect(resolveAgent).not.toHaveBeenCalled()
       expect(ctx.workspaceRegistry.create).not.toHaveBeenCalled()
-      expect(ctx.typertGateway.invoke).not.toHaveBeenCalled()
+      // Startup preloads the shared model catalog without reopening any Session.
+      expect(
+        vi.mocked(ctx.typertGateway.invoke).mock.calls.map(([r]) => [r.namespace, r.method]),
+      ).toEqual([['session', 'modelCatalog']])
       expect(await store.load()).toHaveLength(40)
     } finally {
       await service?.dispose()

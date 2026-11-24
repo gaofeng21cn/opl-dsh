@@ -40,11 +40,14 @@
   overflow-y: auto;
   padding: 2px;
 }
-.group {
+.group,
+.updateList {
   --item-gap: 8px;
   display: flex;
   flex-direction: column;
   gap: var(--item-gap);
+}
+.group {
   min-inline-size: 0;
   margin: 0;
   padding: 0;
@@ -58,7 +61,8 @@
   line-height: 22px;
 }
 .groupLabel label,
-.item {
+.item,
+.updateChoice {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -98,7 +102,8 @@
   font-size: 12px;
   line-height: 18px;
 }
-.group input {
+.group input,
+.updateChoice input {
   flex-shrink: 0;
   accent-color: var(--dsw-alias-label-primary);
 }

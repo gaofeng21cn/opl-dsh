@@ -1,4 +1,13 @@
-import { mkdir, mkdtemp, readFile, writeFile, rm, access } from 'node:fs/promises'
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  symlink,
+  writeFile,
+  rm,
+  access,
+} from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -160,6 +169,24 @@ it('shares concurrent execution catalog reads', async () => {
   expect(third).toBe(first)
 })
 
+it('returns the persisted catalog while a live catalog refresh is pending', async () => {
+  const { service } = await nativeSetup()
+  const resolver = (service as unknown as { modelResolver: { resolve: () => Promise<unknown> } })
+    .modelResolver
+  const live = Promise.withResolvers<Awaited<ReturnType<typeof resolver.resolve>>>()
+  vi.spyOn(resolver, 'resolve').mockReturnValue(live.promise)
+
+  const started = Date.now()
+  const fast = await service.executionCatalog({ fast: true })
+  expect(Date.now() - started).toBeLessThan(1000)
+  expect(fast.combinations.length).toBeGreaterThan(0)
+
+  live.resolve(fast)
+  await expect(service.executionCatalog()).resolves.toMatchObject({
+    combinations: fast.combinations,
+  })
+})
+
 it('shares overlapping availability probes but refreshes completed and changed results', async () => {
   const { service } = await nativeSetup([{ id: 'deepseek-flash', name: 'DeepSeek' }])
   const snapshot = await service.executionCatalog()
@@ -183,22 +210,17 @@ it('shares overlapping availability probes but refreshes completed and changed r
 })
 
 it('starts execution catalog while the official model catalog is still pending', async () => {
-  const { service, ctx, session } = await nativeSetup()
   const entered = Promise.withResolvers<void>()
   const answer = Promise.withResolvers<unknown>()
-  Object.assign(ctx, {
-    typertGateway: {
-      invoke: async () => {
-        entered.resolve()
-        return answer.promise
-      },
-    },
+  const { service, session } = await nativeSetup(undefined, undefined, undefined, () => {
+    entered.resolve()
+    return answer.promise
   })
   const catalog = vi.spyOn(service, 'executionCatalog')
   const read = service.modelSelection(session.id)
   await entered.promise
   try {
-    expect(catalog).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(catalog).toHaveBeenCalledTimes(1))
   } finally {
     answer.resolve({ default: { provider: 'opl-gateway', model: 'deepseek-flash' }, groups: [] })
     await read
@@ -558,11 +580,15 @@ async function nativeSetup(
   ],
   providers = [{ id: 'opl-gateway', name: 'OPL Gateway' }],
   initialPermission: 'read-only' | 'workspace-write' | 'danger-full-access' = 'danger-full-access',
+  initialCatalog?: () => Promise<unknown>,
 ) {
   const { root, options, service: initial } = await setup()
   await initial.executionCatalog()
   await initial.dispose()
-  let current = { provider: 'opl-gateway', model: 'codex::gpt-test-model' }
+  let current = {
+    provider: providers[0]?.id ?? 'opl-gateway',
+    model: models[0]?.id ?? 'codex::gpt-test-model',
+  }
   let permission = initialPermission
   const session = {
     id: 'native-session',
@@ -581,11 +607,17 @@ async function nativeSetup(
       listProviders: () => providers,
       listConfigurableProviders: () => [],
       listModels: async () => models,
+      resolveModelInfo: async (provider: string, id: string) => {
+        const model = models.find((item) => item.id === id)
+        if (!model) throw Error('模型未配置')
+        return { ...model, provider }
+      },
     },
     sessionProjections: { snapshot: () => ({ values: { modelSelection: { next: current } } }) },
     typertGateway: {
       invoke: async ({ method, args }: any) => {
-        if (method === 'modelCatalog') return { default: current, groups: [] }
+        if (method === 'modelCatalog')
+          return initialCatalog ? initialCatalog() : { default: current, groups: [] }
         if (method === 'selectModel') {
           const { provider, model } = args.request
           current = { provider, model }
@@ -679,6 +711,29 @@ describe('external input rejection and replay', { timeout: 15_000 }, () => {
     throw Error('external input must not fall through to the native provider')
   })
 
+  it('rechecks only the selected Gateway model before first launch and stops on a revoked route', async () => {
+    const { service, root, session, ctx } = await nativeSetup([{ id: ref.model, name: 'Grok' }])
+    await service.selectCombination({ sessionId: session.id, combination: GROK_COMBINATION })
+    const full = vi.spyOn(service, 'executionCatalog')
+    const check = vi
+      .spyOn(ctx.llm, 'resolveModelInfo')
+      .mockRejectedValueOnce(Error('分组凭据未就绪'))
+    const request = {
+      ...ref,
+      sessionId: session.id,
+      messages: [user('fixture')],
+    } as GenerateOptions
+    await expect(Array.fromAsync(service.conversationStream(request, native))).rejects.toThrow(
+      '分组凭据未就绪',
+    )
+    expect(check).toHaveBeenCalledWith(ref.provider, ref.model, undefined)
+    expect(full).toHaveBeenCalledTimes(1)
+    await expect(access(join(root, 'calls.txt'))).rejects.toThrow()
+    full.mockClear()
+    await Array.fromAsync(service.conversationStream(request, native))
+    expect(full).toHaveBeenCalledTimes(1)
+  })
+
   it('continues official member messages once on the same external session', async () => {
     const { service, root, session } = await nativeSetup([{ id: ref.model, name: 'Grok' }])
     await service.selectCombination({ sessionId: session.id, combination: GROK_COMBINATION })
@@ -702,6 +757,57 @@ describe('external input rejection and replay', { timeout: 15_000 }, () => {
     expect(after.turns).toHaveLength(2)
     expect(await readFile(join(root, 'calls.txt'), 'utf8')).toBe(
       'user: member-first-task\nuser: member-revision\n',
+    )
+  })
+
+  it('uses the official current working-directory projection and rejects a moved bound session', async () => {
+    const { service, root, session, ctx } = await nativeSetup([{ id: ref.model, name: 'Grok' }])
+    const firstCwd = join(root, 'first-worktree')
+    const firstAlias = join(root, 'first-worktree-alias')
+    const movedCwd = join(root, 'moved-worktree')
+    await mkdir(firstCwd)
+    await mkdir(movedCwd)
+    await symlink(firstCwd, firstAlias, 'junction')
+    let currentCwd = firstAlias
+    const previousGet = ctx.get
+    ctx.get = ((name: string) =>
+      name === 'workingDirectory' ? { get: () => currentCwd } : previousGet(name)) as typeof ctx.get
+    await service.selectCombination({ sessionId: session.id, combination: GROK_COMBINATION })
+    const first = createUserMessage({
+      source: { kind: 'agent-message', form: 'relay', senderSessionId: 'lead' } as never,
+      content: [{ type: 'text', text: 'projection-worktree' }],
+    })
+    const request = { ...ref, sessionId: session.id, messages: [first] } as GenerateOptions
+    await Array.fromAsync(service.conversationStream(request, native))
+    const record = (await service.list()).sessions[0]!
+    expect(record.cwd).toBe(await realpath(firstCwd))
+    expect(await readFile(join(firstCwd, 'calls.txt'), 'utf8')).toContain(
+      'user: projection-worktree',
+    )
+
+    const aliasFollowup = createUserMessage({
+      source: { kind: 'agent-message', form: 'relay', senderSessionId: 'lead' } as never,
+      content: [{ type: 'text', text: 'continue-in-same-worktree' }],
+    })
+    await Array.fromAsync(
+      service.conversationStream({ ...request, messages: [first, aliasFollowup] }, native),
+    )
+    expect(await readFile(join(firstCwd, 'calls.txt'), 'utf8')).toContain(
+      'continue-in-same-worktree',
+    )
+
+    currentCwd = movedCwd
+    const followup = createUserMessage({
+      source: { kind: 'agent-message', form: 'relay', senderSessionId: 'lead' } as never,
+      content: [{ type: 'text', text: 'must-not-use-old-worktree' }],
+    })
+    await expect(
+      Array.fromAsync(
+        service.conversationStream({ ...request, messages: [first, followup] }, native),
+      ),
+    ).rejects.toMatchObject({ code: 'HARNESS_BINDING' })
+    expect(await readFile(join(firstCwd, 'calls.txt'), 'utf8')).not.toContain(
+      'must-not-use-old-worktree',
     )
   })
 
@@ -1116,7 +1222,6 @@ describe('native conversation combinations', () => {
   })
   it('omits provider reasoning controls when the selected CLI has no effort interface', async () => {
     const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
-    const { service, ctx, session } = await nativeSetup([{ id: ref.model, name: 'Grok' }])
     const adapter = adapterFor('grok-build', ref)!
     const original = adapter.capabilities.reasoning
     adapter.capabilities.reasoning = 'none'
@@ -1139,9 +1244,14 @@ describe('native conversation combinations', () => {
         ],
       },
     ]
+    const { service, ctx, session } = await nativeSetup(
+      [{ id: ref.model, name: 'Grok' }],
+      undefined,
+      undefined,
+      async () => ({ default: ref, groups }),
+    )
     Object.assign(ctx, {
       sessionProjections: { snapshot: () => ({ values: { modelSelection: { next: ref } } }) },
-      typertGateway: { invoke: async () => ({ default: ref, groups }) },
     })
     const selected = await service.modelSelection(session.id)
     expect(selected.groups[0]!.models[0]).not.toHaveProperty('reasoning')

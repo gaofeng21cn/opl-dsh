@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
-import { antigravityAdapter } from '../../../src/execution/host/adapters/antigravity/antigravity.ts'
+import {
+  antigravityAdapter,
+  antigravityGoogleAdapter,
+} from '../../../src/execution/host/adapters/antigravity/antigravity.ts'
 import {
   antigravityConfigOption,
   antigravityWireModel,
@@ -14,6 +17,7 @@ const launchMocks = vi.hoisted(() => ({
 }))
 vi.mock('../../../src/execution/host/harness-registry.ts', () => ({
   executablePath: launchMocks.executablePath,
+  commandLaunch: (command: string, args: string[]) => ({ command, args }),
 }))
 vi.mock('../../../src/execution/host/adapters/native-bash.ts', () => ({
   resolveNativeGitBash: launchMocks.resolveNativeGitBash,
@@ -368,5 +372,85 @@ describe('Antigravity launch and result handling', () => {
         tools: [],
       }),
     ).toBeUndefined()
+  })
+})
+
+describe('Antigravity Google account', () => {
+  it('reports the official Google license rejection while allowing answers that discuss it', () => {
+    const warning =
+      '⚠ You do not have a valid license of this product. Please contact your administrator to request a license. If you are not an enterprise user and believe you are receiving this message as an error, please try using the latest version and logging in again. (#3501)'
+    const result = (text: string) =>
+      antigravityGoogleAdapter.acceptResult!({ stopReason: 'end_turn', text, tools: [] })
+    expect(result(' ' + warning + ' ')).toMatchObject({
+      accepted: false,
+      reason: expect.stringContaining('#3501'),
+    })
+    expect(result('The CLI reported: ' + warning)).toBeUndefined()
+    expect(result('Here is how to resolve (#3501).')).toBeUndefined()
+    expect(result('⚠ Agent execution terminated due to error.')).toMatchObject({ accepted: false })
+  })
+
+  const account = record({
+    modelRef: { provider: 'antigravity-google', model: 'gemini-4-carbon-high' },
+  })
+  it('launches the official account profile without resolving or inheriting API credentials', async () => {
+    const resolve = vi.fn()
+    vi.stubEnv('GEMINI_API_KEY', 'fixture')
+    vi.stubEnv('GOOGLE_GEMINI_BASE_URL', 'http://gateway.invalid')
+    try {
+      const result = await antigravityGoogleAdapter.prepare!({} as never, account, {
+        home: 'fixture',
+        command: 'agy',
+        nativeBridgePath: '',
+        grokCommand: '',
+        modelSources: { resolve } as never,
+      })
+      expect(result.args).toContain('acp')
+      expect(result.command).toBe('C:/managed tools/agy.exe')
+      expect(result.args).toContain('{"modelProvider":""}')
+      expect(result.env.USERPROFILE).toBe(process.env.USERPROFILE)
+      expect(result.env.GEMINI_API_KEY).toBeUndefined()
+      expect(result.env.GOOGLE_GEMINI_BASE_URL).toBeUndefined()
+      expect(result.env.OPL_AGY_ROUTE).toBeUndefined()
+      expect(resolve).not.toHaveBeenCalled()
+      const request = vi.fn()
+      await antigravityGoogleAdapter.authenticate!({ request }, account, {
+        authMethods: [{ id: 'oauth-personal' }],
+      })
+      expect(request).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+  it('pins a catalog variant to the advertised base model and its advertised effort', async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({ configOptions: options('gemini-4-carbon', 'low') })
+      .mockResolvedValueOnce({ configOptions: options('gemini-4-carbon', 'high') })
+    const result = await antigravityGoogleAdapter.configureSession!(
+      { request },
+      account,
+      snapshot(),
+    )
+    expect(result?.modelId).toBe('gemini-4-carbon-high')
+    expect(request.mock.calls.map((call) => call[1].value)).toEqual(['gemini-4-carbon', 'high'])
+    expect(() =>
+      antigravityGoogleAdapter.verifySession!(account, snapshot(options('gemini-4-carbon', 'low'))),
+    ).toThrow(/thought_level/)
+  })
+  it('leaves unspecified reasoning to the account model, including models without a thinking selector', async () => {
+    const model = record({ modelRef: { provider: 'antigravity-google', model: 'orchestrator' } })
+    delete model.reasoningEffort
+    const configOptions = [
+      {
+        id: 'model',
+        type: 'select',
+        currentValue: 'orchestrator',
+        options: [{ value: 'orchestrator' }],
+      },
+    ]
+    const request = vi.fn().mockResolvedValue({ configOptions })
+    await antigravityGoogleAdapter.configureSession!({ request }, model, snapshot(configOptions))
+    expect(request).toHaveBeenCalledTimes(1)
   })
 })

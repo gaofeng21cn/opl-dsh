@@ -1,6 +1,6 @@
 # SuperAgent 仓库协作
 
-OPL DSH 随套件提供 [DeepSeek SuperAgent 原型](https://github.com/deepseek-ai/dsh-superagent-prototype)，版本 `0.1.0`，固定源码提交 `6337fc823ce20251c8de8085948165c81aaa701e`。当前开发 API 为 `0.2.2-rc.5`，上游仍属候选阶段。
+OPL DSH 随套件提供 [DeepSeek SuperAgent 原型](https://github.com/deepseek-ai/dsh-superagent-prototype)，版本 `0.1.0`，固定源码提交 `6337fc823ce20251c8de8085948165c81aaa701e`。当前开发 API 为 `0.2.3-alpha.2`，上游仍属候选阶段。
 
 ## 使用
 

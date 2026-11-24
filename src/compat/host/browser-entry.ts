@@ -3,8 +3,11 @@ import type { Context } from '@deepseek-ai/cordis'
 /** Get a local login URL from the official desktop authentication provider. */
 export function authenticatedEntry(ctx: Context, base: URL): string {
   const connection = ctx.get('connection') ?? ctx.connection
-  if (typeof connection.authenticatedUrl === 'function')
-    return connection.authenticatedUrl(base.href)
+  // The authentication provider moved this helper out of its public service
+  // type in the alpha runtime. Keep the runtime capability probe so the same
+  // adapter works with both the released and alpha desktop hosts.
+  const authenticatedUrl = Reflect.get(connection, 'authenticatedUrl')
+  if (typeof authenticatedUrl === 'function') return authenticatedUrl.call(connection, base.href)
   const entries: { url: string; open?: boolean }[] = []
   type EntryEvent = (
     scope: Context['webServer'],

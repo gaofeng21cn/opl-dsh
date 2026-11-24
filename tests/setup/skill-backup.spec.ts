@@ -58,6 +58,8 @@ test('cleanup Skill upgrades an unowned legacy copy into an installer-managed Sk
     writeFileSync(join(cleanupSource, 'SKILL.md'), 'current\n')
     writeFileSync(join(cleanupSource, 'cleanup.mjs'), 'export {}\n')
     writeFileSync(join(cleanupSource, 'snapshot.mjs'), 'export {}\n')
+    writeFileSync(join(cleanupSource, 'sqlite-store.mjs'), 'export {}\n')
+    writeFileSync(join(cleanupSource, 'restore-files.mjs'), 'export {}\n')
     writeFileSync(join(cleanupSource, 'windows-io.mjs'), 'export {}\n')
     writeFileSync(join(cleanupSource, 'macos-io.mjs'), 'export {}\n')
     writeFileSync(join(cleanupSource, 'quit-windows.ps1'), 'exit 0\n')
@@ -94,6 +96,8 @@ test('cleanup Skill can add packaged resources to an older managed copy', () => 
       ['SKILL.md', 'current\n'],
       ['cleanup.mjs', 'export {}\n'],
       ['snapshot.mjs', 'export {}\n'],
+      ['sqlite-store.mjs', 'export {}\n'],
+      ['restore-files.mjs', 'export {}\n'],
       ['windows-io.mjs', 'export {}\n'],
       ['macos-io.mjs', 'export {}\n'],
       ['quit-windows.ps1', 'exit 0\n'],
@@ -138,6 +142,8 @@ test('cleanup Skill refuses to overwrite changes to an installer-managed file', 
       'SKILL.md',
       'cleanup.mjs',
       'snapshot.mjs',
+      'sqlite-store.mjs',
+      'restore-files.mjs',
       'windows-io.mjs',
       'macos-io.mjs',
       'quit-windows.ps1',

@@ -20,7 +20,7 @@ import { useModelSelection } from './use-model-selection.ts'
 import type { SelectionSource } from './use-model-selection.ts'
 import css from './CombinationSelect.module.css'
 import { modelDefaultEffort } from '../../shared/model-reasoning.ts'
-import { displayModelName } from '../../shared/models.ts'
+import { displayModelName, executionModelRefKey } from '../../shared/models.ts'
 
 import type { ExecutionCall as Call } from '../../shared/client/remote-call.ts'
 type Choice = {
@@ -30,6 +30,16 @@ type Choice = {
   source: string
   available: boolean
 }
+
+/** Controls supplied by the official model-menu extension points. */
+export interface OfficialModelMenuControls {
+  locked: boolean
+  dismiss: () => void
+  reportFailure: (message: string) => void
+}
+
+/** Presentation used when the official DSH model menu owns the trigger. */
+export type CombinationSelectVariant = 'legacy' | 'pane'
 const measureStyle = { visibility: 'hidden', left: 0, top: 0 } as const
 const effortLabels: Record<string, string> = {
   none: '关闭',
@@ -94,6 +104,29 @@ function choiceLabel(choice: Choice): string {
   return `${choice.modelName} · ${choice.harnessName}`
 }
 
+function modelFor(catalog: ExecutionCatalog, combination: CombinationDefinition) {
+  return catalog.models.find(
+    (model) =>
+      model.ref.provider === combination.modelRef.provider &&
+      model.ref.model === combination.modelRef.model,
+  )
+}
+
+function harnessFor(catalog: ExecutionCatalog, combination: CombinationDefinition) {
+  return catalog.harnesses.find((harness) => harness.id === combination.harnessRef)
+}
+
+function sameModel(
+  left: ModelSelection | null | undefined,
+  right: ModelSelection | null | undefined,
+) {
+  return (
+    left?.provider !== undefined &&
+    right?.provider !== undefined &&
+    executionModelRefKey(left) === executionModelRefKey(right)
+  )
+}
+
 /** 官方 DSH 模型菜单的 OPL 组合投影：模型项代表“模型 + Harness”组合。 */
 export function CombinationSelect({
   call,
@@ -103,6 +136,8 @@ export function CombinationSelect({
   selectionSource,
   loadingLabel,
   pendingCombination,
+  variant = 'legacy',
+  officialControls,
 }: {
   pendingCombination?: PendingCombination
   available: boolean
@@ -112,9 +147,15 @@ export function CombinationSelect({
   /** Official per-Session `modelSelection` projection face; absent without a retained Session. */
   selectionSource?: SelectionSource | undefined
   loadingLabel: string
+  /** Render only the OPL detail pane inside the official model menu. */
+  variant?: CombinationSelectVariant
+  /** Controls used by the official menu owner when this is a detail pane. */
+  officialControls?: OfficialModelMenuControls
 }) {
+  const inOfficialPane = variant === 'pane'
   const [catalog, setCatalog] = useState<ExecutionCatalog>()
   const [loadingCatalog, setLoadingCatalog] = useState(true)
+  const [availabilityLoading, setAvailabilityLoading] = useState(true)
   const [loadingSelection, setLoadingSelection] = useState(true)
   const [availability, setAvailability] = useState<HarnessCatalog['combinations']>([])
   const [error, setError] = useState('')
@@ -130,8 +171,9 @@ export function CombinationSelect({
     | undefined
   >()
   const [pendingChoice, setPendingChoice] = useState<Choice>()
-  const [open, setOpen] = useState(false)
-  const [pane, setPane] = useState<'root' | 'model' | 'effort'>('root')
+  const [open, setOpen] = useState(inOfficialPane)
+  const [paneState, setPane] = useState<'root' | 'model' | 'effort'>('root')
+  const renderPane = inOfficialPane ? 'model' : paneState
   const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -163,19 +205,32 @@ export function CombinationSelect({
       const read = ++reads.current
       const current = () => id === addressed.current && read === reads.current
       setLoadingCatalog(true)
+      setAvailabilityLoading(true)
       setLoadingSelection(true)
-      void Promise.all([call('catalog'), call('combinations', {})])
-        .then(([nextCatalog, nextAvailability]) => {
+      void call('catalog')
+        .then((nextCatalog) => {
           if (!current()) return
           setCatalog(nextCatalog)
-          setAvailability(nextAvailability)
-          setError('')
+          setLoadingCatalog(false)
         })
         .catch((cause: unknown) => {
           if (current()) setError(cause instanceof Error ? cause.message : '无法读取组合')
         })
         .finally(() => {
           if (current()) setLoadingCatalog(false)
+        })
+      void call('combinations', {})
+        .then((nextAvailability) => {
+          if (!current()) return
+          setAvailability(nextAvailability)
+          setAvailabilityLoading(false)
+          setError('')
+        })
+        .catch((cause: unknown) => {
+          if (current()) setError(cause instanceof Error ? cause.message : '无法读取执行引擎')
+        })
+        .finally(() => {
+          if (current()) setAvailabilityLoading(false)
         })
       try {
         return await call('model-selection', { sessionId: id })
@@ -185,14 +240,6 @@ export function CombinationSelect({
     },
   })
 
-  const modelFor = (combination: CombinationDefinition) =>
-    catalog?.models.find(
-      (model) =>
-        model.ref.provider === combination.modelRef.provider &&
-        model.ref.model === combination.modelRef.model,
-    )
-  const harnessFor = (combination: CombinationDefinition) =>
-    catalog?.harnesses.find((harness) => harness.id === combination.harnessRef)
   const choices = useMemo<Choice[]>(() => {
     if (!catalog) return []
     return catalog.combinations
@@ -202,8 +249,8 @@ export function CombinationSelect({
           Number(!left.isDefault) - Number(!right.isDefault) || left.name.localeCompare(right.name),
       )
       .map((combination) => {
-        const model = modelFor(combination)
-        const harness = harnessFor(combination)
+        const model = modelFor(catalog, combination)
+        const harness = harnessFor(catalog, combination)
         const status = availability.find((item) => item.id === combination.id)
         return {
           combination,
@@ -221,19 +268,28 @@ export function CombinationSelect({
   const visibleChoices = useMemo(() => {
     const seen = new Set<string>()
     return choices.filter((choice) => {
-      if (!choice.available) return false
+      if (!availabilityLoading && !choice.available) return false
       const label = `${choice.source} · ${choiceLabel(choice)}`
       if (seen.has(label)) return false
       seen.add(label)
       return true
     })
-  }, [choices])
+  }, [availabilityLoading, choices])
+
+  const paneChoices = useMemo(
+    () =>
+      inOfficialPane
+        ? visibleChoices.filter((choice) =>
+            sameModel(choice.combination.modelRef, selection.current),
+          )
+        : visibleChoices,
+    [inOfficialPane, selection.current, visibleChoices],
+  )
 
   const selected = choices.find(
     (choice) =>
       choice.combination.id === selection.combination &&
-      choice.combination.modelRef.provider === selection.current?.provider &&
-      choice.combination.modelRef.model === selection.current?.model,
+      sameModel(choice.combination.modelRef, selection.current),
   )
   const currentModel = selection.current
     ? selection.groups
@@ -320,11 +376,7 @@ export function CombinationSelect({
   const unresolvedCombination =
     !selected &&
     !loadingSelection &&
-    choices.some(
-      (choice) =>
-        choice.combination.modelRef.provider === selection.current?.provider &&
-        choice.combination.modelRef.model === selection.current?.model,
-    )
+    choices.some((choice) => sameModel(choice.combination.modelRef, selection.current))
   const modelLabel = selected
     ? choiceLabel(selected)
     : (currentModel?.name ??
@@ -354,6 +406,10 @@ export function CombinationSelect({
             }))
 
   const close = (restoreFocus = false) => {
+    if (inOfficialPane) {
+      officialControls?.dismiss()
+      return
+    }
     setOpen(false)
     setPane('root')
     if (restoreFocus) queueMicrotask(() => triggerRef.current?.focus())
@@ -433,7 +489,7 @@ export function CombinationSelect({
   }
 
   const selectChoice = async (choice: Choice) => {
-    if (busy || !choice.available) return
+    if (busy || availabilityLoading || !choice.available) return
     if (
       choice.combination.id === selection.combination &&
       !pendingCombination?.needsConfirmation(sessionId)
@@ -519,7 +575,7 @@ export function CombinationSelect({
       ? target
       : triggerRef.current
     )?.focus()
-  }, [open, pane])
+  }, [open, paneState])
   useLayoutEffect(() => {
     if (!open) {
       setMenuPos(null)
@@ -542,7 +598,7 @@ export function CombinationSelect({
       window.removeEventListener('scroll', place, true)
       window.removeEventListener('resize', place)
     }
-  }, [open, pane, visibleChoices.length, error])
+  }, [open, paneState, visibleChoices.length, error])
 
   const moveFocus = (offset: number) => {
     const items = itemRefs.current.filter(
@@ -562,14 +618,14 @@ export function CombinationSelect({
     if (!open) return
     if (event.key === 'Escape') {
       event.preventDefault()
-      if (pane !== 'root' && selection.current !== null) back(pane)
+      if (paneState !== 'root' && selection.current !== null) back(paneState)
       else close(true)
       return
     }
     if (event.key === 'Tab') {
       event.preventDefault()
       if (event.shiftKey) {
-        if (pane !== 'root' && selection.current !== null) back(pane)
+        if (paneState !== 'root' && selection.current !== null) back(paneState)
         else close(true)
         return
       }
@@ -601,8 +657,173 @@ export function CombinationSelect({
     }
   }
   const grouped = new Map<string, Choice[]>()
-  for (const choice of visibleChoices)
+  for (const choice of paneChoices)
     grouped.set(choice.source, [...(grouped.get(choice.source) ?? []), choice])
+
+  const menuBody = (
+    <>
+      {busy && (
+        <div className={css.groupTitle} role="status">
+          {pendingChoice
+            ? `正在切换到 ${choiceLabel(pendingChoice)}…`
+            : effortSwitch === undefined
+              ? '正在保存推理强度…'
+              : '正在保存思考设置…'}
+        </div>
+      )}
+      {renderPane === 'root' && (
+        <>
+          <button
+            ref={itemRef()}
+            type="button"
+            role="menuitem"
+            className={css.cell}
+            onClick={() => drill('model')}
+          >
+            <span className={css.cellLabel}>模型</span>
+            <span className={css.cellValue}>{modelLabel}</span>
+            <IconChevronRightOutlineRegular className={css.cellChevron} />
+          </button>
+          {displayedReasoning !== undefined && !offOnly && (
+            <button
+              ref={itemRef()}
+              type="button"
+              role="menuitem"
+              className={css.cell}
+              onClick={() => drill('effort')}
+            >
+              <span className={css.cellLabel}>{effortTitle}</span>
+              <span className={css.cellValue}>{currentEffortLabel ?? '未报告当前档位'}</span>
+              <IconChevronRightOutlineRegular className={css.cellChevron} />
+            </button>
+          )}
+          {externalCliControlsEffort &&
+            preflight?.key === preflightKey &&
+            preflight.state === 'loading' && (
+              <div className={css.groupTitle} role="status">
+                正在读取推理设置…
+              </div>
+            )}
+          {externalCliControlsEffort &&
+            livePreflight?.status === 'unavailable' &&
+            preflight?.state === 'ready' && (
+              <button
+                type="button"
+                className={css.cell}
+                onClick={() => setPreflightRevision((revision) => revision + 1)}
+              >
+                重新读取推理设置
+              </button>
+            )}
+        </>
+      )}
+      {renderPane === 'model' && (
+        <>
+          {error && (
+            <div className={css.error} role="alert">
+              {error}
+            </div>
+          )}
+          <div className={`${css.groups} scrollable`}>
+            {[...grouped].map(([source, choices]) => (
+              <section key={source} className={css.group} role="group" aria-label={source}>
+                <div className={css.groupTitle}>{source}</div>
+                {choices.map((choice) => {
+                  const selectedChoice = selected?.combination.id === choice.combination.id
+                  return (
+                    <button
+                      key={choice.combination.id}
+                      ref={itemRef()}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selectedChoice}
+                      className={`${css.option} ${selectedChoice ? css.selected : ''}`}
+                      disabled={busy}
+                      title={`${source} · ${choiceLabel(choice)}`}
+                      onClick={() => void selectChoice(choice)}
+                    >
+                      <span className={css.optionCopy}>
+                        <span className={css.modelName}>
+                          {inOfficialPane ? choice.harnessName : choiceLabel(choice)}
+                        </span>
+                      </span>
+                      <span className={css.check}>
+                        {busy && pendingChoice?.combination.id === choice.combination.id ? (
+                          <StateDot state="ongoing" />
+                        ) : selectedChoice ? (
+                          <IconCheckOutlineRegular />
+                        ) : null}
+                      </span>
+                    </button>
+                  )
+                })}
+              </section>
+            ))}
+            {paneChoices.length === 0 && (
+              <div className={css.empty} role={loadingCatalog ? 'status' : undefined}>
+                {loadingCatalog
+                  ? loadingLabel
+                  : inOfficialPane
+                    ? '当前模型没有可用的执行引擎'
+                    : '当前没有可用的模型组合'}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+      {renderPane === 'effort' && (
+        <>
+          {error && (
+            <div className={css.error} role="alert">
+              {error}
+            </div>
+          )}
+          {effortChoices.length === 0 ? (
+            <div className={css.empty}>
+              {effortSwitch === undefined ? '当前模型未提供推理强度' : '当前模型未提供思考开关'}
+            </div>
+          ) : (
+            effortChoices.map((level) => {
+              const checked = effectiveEffort === level.effort
+              return (
+                <button
+                  key={level.key}
+                  ref={itemRef()}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={checked}
+                  className={`${css.option} ${checked ? css.selected : ''}`}
+                  disabled={busy}
+                  onClick={() => void selectEffort(level.effort)}
+                >
+                  <span className={css.optionCopy}>
+                    <span className={css.modelName}>{level.label}</span>
+                  </span>
+                  {effortSwitch !== undefined ? (
+                    <span className={css.switch} data-on={checked ? 'true' : 'false'}>
+                      <span className={css.switchThumb} />
+                    </span>
+                  ) : (
+                    <span className={css.check}>
+                      {checked ? <IconCheckOutlineRegular /> : null}
+                    </span>
+                  )}
+                </button>
+              )
+            })
+          )}
+        </>
+      )}
+    </>
+  )
+
+  if (inOfficialPane) {
+    return (
+      <div ref={menuRef} className={css.pane} onKeyDown={onKeyDown}>
+        {menuBody}
+      </div>
+    )
+  }
 
   return (
     <div ref={rootRef} className={css.root} onKeyDown={onKeyDown}>
@@ -641,157 +862,7 @@ export function CombinationSelect({
             role="menu"
             aria-label={`模型与${effortTitle}`}
           >
-            {busy && (
-              <div className={css.groupTitle} role="status">
-                {pendingChoice
-                  ? `正在切换到 ${choiceLabel(pendingChoice)}…`
-                  : effortSwitch === undefined
-                    ? '正在保存推理强度…'
-                    : '正在保存思考设置…'}
-              </div>
-            )}
-            {pane === 'root' && (
-              <>
-                <button
-                  ref={itemRef()}
-                  type="button"
-                  role="menuitem"
-                  className={css.cell}
-                  onClick={() => drill('model')}
-                >
-                  <span className={css.cellLabel}>模型</span>
-                  <span className={css.cellValue}>{modelLabel}</span>
-                  <IconChevronRightOutlineRegular className={css.cellChevron} />
-                </button>
-                {displayedReasoning !== undefined && !offOnly && (
-                  <button
-                    ref={itemRef()}
-                    type="button"
-                    role="menuitem"
-                    className={css.cell}
-                    onClick={() => drill('effort')}
-                  >
-                    <span className={css.cellLabel}>{effortTitle}</span>
-                    <span className={css.cellValue}>{currentEffortLabel ?? '未报告当前档位'}</span>
-                    <IconChevronRightOutlineRegular className={css.cellChevron} />
-                  </button>
-                )}
-                {externalCliControlsEffort &&
-                  preflight?.key === preflightKey &&
-                  preflight.state === 'loading' && (
-                    <div className={css.groupTitle} role="status">
-                      正在读取推理设置…
-                    </div>
-                  )}
-                {externalCliControlsEffort &&
-                  livePreflight?.status === 'unavailable' &&
-                  preflight?.state === 'ready' && (
-                    <button
-                      type="button"
-                      className={css.cell}
-                      onClick={() => setPreflightRevision((revision) => revision + 1)}
-                    >
-                      重新读取推理设置
-                    </button>
-                  )}
-              </>
-            )}
-            {pane === 'model' && (
-              <>
-                {error && (
-                  <div className={css.error} role="alert">
-                    {error}
-                  </div>
-                )}
-                <div className={`${css.groups} scrollable`}>
-                  {[...grouped].map(([source, choices]) => (
-                    <section key={source} className={css.group} role="group" aria-label={source}>
-                      <div className={css.groupTitle}>{source}</div>
-                      {choices.map((choice) => {
-                        const selectedChoice = selected?.combination.id === choice.combination.id
-                        return (
-                          <button
-                            key={choice.combination.id}
-                            ref={itemRef()}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={selectedChoice}
-                            className={`${css.option} ${selectedChoice ? css.selected : ''}`}
-                            disabled={busy}
-                            title={`${source} · ${choiceLabel(choice)}`}
-                            onClick={() => void selectChoice(choice)}
-                          >
-                            <span className={css.optionCopy}>
-                              <span className={css.modelName}>{choiceLabel(choice)}</span>
-                            </span>
-                            <span className={css.check}>
-                              {busy && pendingChoice?.combination.id === choice.combination.id ? (
-                                <StateDot state="ongoing" />
-                              ) : selectedChoice ? (
-                                <IconCheckOutlineRegular />
-                              ) : null}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </section>
-                  ))}
-                  {visibleChoices.length === 0 && (
-                    <div className={css.empty} role={loadingCatalog ? 'status' : undefined}>
-                      {loadingCatalog ? loadingLabel : '当前没有可用的模型组合'}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-            {pane === 'effort' && (
-              <>
-                {error && (
-                  <div className={css.error} role="alert">
-                    {error}
-                  </div>
-                )}
-                {effortChoices.length === 0 ? (
-                  <div className={css.empty}>
-                    {effortSwitch === undefined
-                      ? '当前模型未提供推理强度'
-                      : '当前模型未提供思考开关'}
-                  </div>
-                ) : (
-                  effortChoices.map((level) => {
-                    const checked = effectiveEffort === level.effort
-                    return (
-                      <button
-                        key={level.key}
-                        ref={itemRef()}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={checked}
-                        className={`${css.option} ${checked ? css.selected : ''}`}
-                        disabled={busy}
-                        onClick={() => void selectEffort(level.effort)}
-                      >
-                        <span className={css.optionCopy}>
-                          <span className={css.modelName}>{level.label}</span>
-                        </span>
-                        {effortSwitch !== undefined ? (
-                          // A thinking control is a switch, not a strength level: the
-                          // track states 开启/关闭 at a glance while the label keeps
-                          // the exact wording used by the official selection.
-                          <span className={css.switch} data-on={checked ? 'true' : 'false'}>
-                            <span className={css.switchThumb} />
-                          </span>
-                        ) : (
-                          <span className={css.check}>
-                            {checked ? <IconCheckOutlineRegular /> : null}
-                          </span>
-                        )}
-                      </button>
-                    )
-                  })
-                )}
-              </>
-            )}
+            {menuBody}
           </MenuSurface>,
           document.body,
         )}
@@ -801,5 +872,133 @@ export function CombinationSelect({
         </span>
       )}
     </div>
+  )
+}
+
+/**
+ * Add the OPL combination entry to the official model menu.
+ *
+ * The official model selector owns the trigger and the model/reasoning panes;
+ * this entry only opens the OPL-owned detail pane. Keeping this as a separate
+ * component prevents OPL from shadowing official menu extensions such as Agent
+ * Team.
+ */
+export function OfficialCombinationOption({
+  locked,
+  openPane,
+  call,
+  sessionId,
+  available,
+  selectionSource,
+}: {
+  locked: boolean
+  openPane: (pane: { key: string; title: string }) => void
+  call: Call
+  sessionId: string
+  available: boolean
+  selectionSource?: SelectionSource | undefined
+}) {
+  const [catalog, setCatalog] = useState<ExecutionCatalog>()
+  const [availability, setAvailability] = useState<HarnessCatalog['combinations']>([])
+  const { selection } = useModelSelection({
+    sessionId,
+    available,
+    selectionSource,
+    onError: () => {},
+    load: async (id: string) => {
+      void call('catalog').then(setCatalog)
+      void call('combinations', {}).then(setAvailability)
+      const nextSelection = await call('model-selection', { sessionId: id })
+      return nextSelection
+    },
+  })
+  const currentChoices = useMemo(() => {
+    if (!catalog || !selection.current) return []
+    return catalog.combinations
+      .filter(
+        (combination) => combination.enabled && sameModel(combination.modelRef, selection.current),
+      )
+      .filter(
+        (combination) =>
+          availability.length === 0 ||
+          availability.find((item) => item.id === combination.id)?.available,
+      )
+  }, [availability, catalog, selection.current])
+  if (!available) return null
+  // Keep the row mounted while the per-session selection and catalog are being
+  // read. The official menu opens before those RPCs settle, and returning null
+  // here made the OPL entry disappear permanently on a slow or cold session.
+  const loading = catalog === undefined || selection.current === null
+  if (!loading && currentChoices.length === 0) return null
+  if (loading) {
+    return (
+      <button
+        type="button"
+        role="menuitem"
+        className={css.cell}
+        data-model-menu-pane="opl-combinations"
+        disabled={locked}
+        onClick={() => openPane({ key: 'opl-combinations', title: '执行引擎' })}
+      >
+        <span className={css.cellLabel}>执行引擎</span>
+        <span className={css.cellValue}>加载中…</span>
+        <IconChevronRightOutlineRegular className={css.cellChevron} />
+      </button>
+    )
+  }
+  const selected = currentChoices.find((choice) => choice.id === selection.combination)
+  const selectedHarness = selected === undefined ? undefined : harnessFor(catalog, selected)
+  const onlyHarness =
+    currentChoices.length === 1 ? harnessFor(catalog, currentChoices[0]) : undefined
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className={css.cell}
+      data-model-menu-pane="opl-combinations"
+      disabled={locked}
+      onClick={() => openPane({ key: 'opl-combinations', title: '执行引擎' })}
+    >
+      <span className={css.cellLabel}>执行引擎</span>
+      <span className={css.cellValue}>
+        {loading ? '加载中…' : (selectedHarness?.name ?? onlyHarness?.name ?? '请选择')}
+      </span>
+      <IconChevronRightOutlineRegular className={css.cellChevron} />
+    </button>
+  )
+}
+
+/** The OPL combination selector rendered inside the official model-menu pane. */
+export function OfficialCombinationPane({
+  pendingCombination,
+  call,
+  sessionId,
+  locked,
+  dismiss,
+  reportFailure,
+  selectionSource,
+  loadingLabel,
+}: {
+  pendingCombination?: PendingCombination
+  call: Call
+  sessionId: string
+  locked: boolean
+  dismiss: () => void
+  reportFailure: (message: string) => void
+  selectionSource?: SelectionSource | undefined
+  loadingLabel: string
+}) {
+  return (
+    <CombinationSelect
+      {...(pendingCombination ? { pendingCombination } : {})}
+      call={call}
+      sessionId={sessionId}
+      locked={locked}
+      available
+      selectionSource={selectionSource}
+      loadingLabel={loadingLabel}
+      variant="pane"
+      officialControls={{ locked, dismiss, reportFailure }}
+    />
   )
 }

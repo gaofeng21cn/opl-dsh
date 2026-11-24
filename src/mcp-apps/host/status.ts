@@ -5,7 +5,7 @@ import type { McpAppHostStatus } from '../contracts/status.ts'
 
 const require = createRequire(import.meta.url)
 const resourceTools = ['list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource']
-const assessedVersions = new Set(['0.2.2-rc.3', '0.2.2-rc.5'])
+const assessedVersions = new Set(['0.2.2-rc.3', '0.2.2-rc.5', '0.2.3-alpha.2'])
 
 export function officialMcpBridgeVersion(): string | null {
   try {

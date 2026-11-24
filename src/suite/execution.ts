@@ -12,6 +12,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { UpdateRuntime } from '../updates/host/runtime-admission.ts'
 import { createHarnessService } from '../execution/host/harness.ts'
 import { installConversationRequest } from '../execution/host/conversation-request.ts'
+import { ANTIGRAVITY_GOOGLE_PROVIDER } from '../shared/models.ts'
+import { AntigravityGoogleModels } from '../execution/host/adapters/antigravity/google-model-provider.ts'
 import { installPermissionMemory } from '../compat/host/permission-memory.ts'
 import { installComputerUse } from '../computer-use/host/index.ts'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
@@ -69,6 +71,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     minimaxCodeEnabled: () => config.minimaxCodeEnabled,
   })
   ctx.provide('oplHarness', harness)
+  const googleModels = ctx.llm.registerAdapter(
+    [ANTIGRAVITY_GOOGLE_PROVIDER],
+    new AntigravityGoogleModels(() => harness.antigravityAccountModels()),
+  )
+  ctx.effect(() =>
+    harness.onAntigravityModelsChanged(() => googleModels.replace([ANTIGRAVITY_GOOGLE_PROVIDER])),
+  )
+  void harness.antigravityAccountStatus().catch(() => {})
   let updateRuntime: UpdateRuntime | undefined
   ctx.inject(['oplUpdateRuntime'], (child) => {
     updateRuntime = child.oplUpdateRuntime
@@ -100,11 +110,24 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     bind: (agent: { session: { id: string } }, request: { callId?: string }) =>
       harness.externalApprovalBinding(agent.session.id, request.callId),
   })
-  // Apply model defaults on official/custom routes before the request is logged.
+  const firstSteps = new WeakMap<object, number>()
+  ctx.on('session/event', (session, event) => {
+    if (event.type === 'turn/start') firstSteps.set(session, performance.now())
+    if (event.type === 'turn/end') firstSteps.delete(session)
+  })
   ctx.on('agent/pre-step', async (payload, next) => {
+    const started = firstSteps.get(payload.agent.session)
+    const entered = performance.now()
     const decision = await next()
+    const decided = performance.now()
     if (decision.kind === 'enter')
       await harness.claimMessageEdit(payload.agent, decision.messages, payload.turn, payload.step)
+    if (started !== undefined) {
+      firstSteps.delete(payload.agent.session)
+      ctx.logger.info(
+        `First step (ms) before OPL pre-step=${Math.round(entered - started)} downstream=${Math.round(decided - entered)} edit claim=${Math.round(performance.now() - decided)}`,
+      )
+    }
     return decision
   })
   installConversationRequest(ctx, harness)
