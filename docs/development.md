@@ -42,15 +42,11 @@ Issue 在实现前记录这些判断，PR 在合并前核对实现与用户目�
 
 ## 模块与依赖
 
-开发与验证使用 TypeScript 7、React 19 和当前 Zod。TypeScript 7 的 AST 检查通过公开 snapshot API 读取真实源码；测试转译复用构建所用的 esbuild。官方 Typert 生成器继续使用它声明的编译器依赖。Client 产物仍把 React 留给官方加载器；本地 React 19 测试不代表替换了官方桌面的 React。
+开发与验证使用 TypeScript 7、React 19 和 Zod（具体版本以 `package.json` 与 `package-lock.json` 为准）。TypeScript 7 的 AST 检查通过公开 snapshot API 读取真实源码；测试转译复用构建所用的 esbuild。官方 Typert 生成器继续使用它声明的编译器依赖。Client 产物仍把 React 留给官方加载器；本地 React 19 测试不代表替换了官方桌面的 React。
 
-增强包显式安装自己的 Zod 4.6.7。官方 0.2.2-rc.2 的 projection/storage-domain 声明绑定其私有 Zod 4.6.6，但运行边界只读取 `parse/safeParse`；`compat/host/validation-schema.ts` 在此处保留实际解析结果、转换、默认值和错误，不把 Zod 内部身份交给官方服务。此适配不用于工具 schema、JSON Schema 转换或 schema 组合。官方桌面资格会回读增强包与两个官方消费者各自解析的 Zod 路径和版本，并继续校验官方应用未被修改。
+增强包显式安装自己的 Zod（`package.json` 中声明为 `4.6.7`）。官方桌面的 projection/storage-domain 声明绑定其私有 Zod 版本，运行边界只读取 `parse/safeParse`；`src/compat/host/validation-schema.ts` 在此处保留实际解析结果、转换、默认值和错误，不把 Zod 内部身份交给官方服务（此适配不用于工具 schema、JSON Schema 转换或 schema 组合）。官方桌面资格会回读增强包与官方消费者各自解析的 Zod 路径和版本，并继续校验官方应用未被修改。
 
-截至 2026-11-13，官方 0.2.2-rc.2 私有依赖中的 Zod 4.6.6、Undici 8.11.2 和 MCP SDK 仍由官方应用负责解析；profile 依赖或 override 不能替换这些内部导入。OPL 自有 Zod 4.6.7 让已声明的集合上限在元素解析前拒绝超限输入；它不为官方无界历史、模型或 checkpoint 集合增加上限，也不代表官方依赖图已完成安全修复。
-
-官方 HTTP MCP 客户端没有公开自定义 fetch 或重定向控制入口。双 loopback 验证已确认，跨 origin 的 HTTP 307 可以继续携带自定义 header、MCP session ID 和请求 body，Authorization 会被移除；这是传输行为验证，并非真实远程泄露事件。SDK 2.3.0 起已有对应修复，官方当前仍固定 2.2.0。仅把配置改成一次观察到的最终 URL 无法阻止服务以后再次重定向；只有具体服务提供等价 stdio 入口时，才可按该服务实际合同改用 stdio。
-
-官方 npm Undici dispatcher 只在存在代理策略，或已有策略转换为 `none` 时接入；首次策略就是 `none` 时不会安装，因此不能把依赖存在解释成全部模型请求都经过这个版本。已识别的 TLS 1.2 重协商／断言风险属于这些路径的条件性风险；公开策略 API 没有 TLS/connect 配置入口，不能通过全局强制 TLS 1.3 或替换 dispatcher 绕过官方生命周期。后续以未修改的官方修复版，或其新增公开传输扩展点重新评估，不把本仓源码和隔离运行通过写成官方私有依赖已修复。
+官方桌面私有依赖（如内置 Zod、Undici 与 MCP SDK）由官方应用负责解析，profile 依赖或 override 不能替换这些内部导入。OPL 自有 Zod 让已声明的集合上限在元素解析前拒绝超限输入，不为官方无界集合增加上限。官方 HTTP MCP 客户端当前无公开自定义 fetch 或重定向控制入口（跨 origin HTTP 307 会继续携带自定义 header、MCP session ID 与请求 body，仅移除 Authorization）；官方 npm Undici dispatcher 仅在存在代理策略或策略转为 `none` 时接入，公开策略 API 无 TLS/connect 配置入口。上述上游边界须跟随未修改官方新版或新增公开扩展点重新评估。
 
 | 目录                | 职责                                                     | 依赖边界                                                                                |
 | ------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -72,7 +68,7 @@ Issue 在实现前记录这些判断，PR 在合并前核对实现与用户目�
 
 ### 插件展示与拆分
 
-已安装插件使用官方包展示接口：每包提供中英文名称、说明、离线详情、OPL 图标及维护者与项目地址。OPL 不修改官方插件管理器。Our Free Model 与 SuperAgent 保留各自来源和名称。
+已安装插件使用官方包展示接口：每包提供中英文名称、说明、离线详情（`docs/plugins/*.md` 由 `scripts/build-feature-plugins.mjs` 打包）、OPL 图标及维护者与项目地址。OPL 不修改官方插件管理器。Our Free Model 与 SuperAgent 保留各自来源和名称。
 
 | 展示名称         | 包与配置 owner                                           | 职责与关闭行为                                                    |
 | ---------------- | -------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -88,15 +84,13 @@ Issue 在实现前记录这些判断，PR 在合并前核对实现与用户目�
 
 ## 构建与契约
 
-官方升级同时承担能力迁回。先以用户任务判断新版官方 DSH、官方插件和公开接口是否已覆盖 [复用审计](dsh-reuse-audit.md) 中仍由 OPL 保留的差异。已覆盖时，在同次升级中验证最小真实链路，切换唯一调用者，再移除重复实现；只保留无法由官方表达的业务语义。官方 Team、Subagent、preset/persona 与原生权限不建立第二套 OPL 状态。模型与 Harness 的持久组合、外部协议和交付验收在官方尚未覆盖时继续由当前 owner 负责。新增 OPL 能力须写明官方缺口、接入位置与迁回条件；不以永久双写或静默回退维持旧路径。
+官方升级同时承担能力迁回。先以用户任务判断新版官方 DSH、官方插件和公开接口是否已覆盖 [复用审计](dsh-reuse-audit.md) 中仍由 OPL 保留的差异。已覆盖时，在同次升级中验证最小真实链路，切换唯一调用者，再移除重复实现；只保留无法由官方表达的业务语义。官方 Team、Subagent、preset/persona 与原生权限不建立第二套 OPL 状态。新增 OPL 能力须写明官方缺口、接入位置与迁回条件；不以永久双写或静默回退维持旧路径。
 
-开发使用 Node.js 24.9.0 或更新版本。
-
-SuperAgent 原型以固定源码快照保存在 `vendor/dsh-superagent`，通过同一 npm workspace 和锁文件安装开发依赖。根类型检查覆盖它，测试可通过 `npm run test:superagent` 按需运行；构建生成独立 bundle 并把摘要写入套件清单。官方服务仍为运行时 peer，原版面板与存储保持自身 owner；适配范围见其 `UPSTREAM.md` 和[使用说明](superagent.md)。
+开发使用 Node.js 24.9.0 或更新版本。SuperAgent 原型以固定源码快照保存在 `vendor/dsh-superagent`，通过同一 npm workspace 和锁文件安装开发依赖。根类型检查覆盖它，测试可通过 `npm run test:superagent` 按需运行；构建生成独立 bundle 并把摘要写入套件清单。官方服务仍为运行时 peer，原版面板与存储保持自身 owner；适配范围见其 `UPSTREAM.md` 和[使用说明](superagent.md)。
 
 ```sh
 npm ci --ignore-scripts
-npm run generate:rpc
+npm run check:rpc
 npm run typecheck
 npm run check:boundaries
 npm run format:check
@@ -106,29 +100,23 @@ npm test
 
 `src/generated` 不再由 Git 追踪；首次运行或修改 `@Remote` 参数与返回值后，由 `pretypecheck`、`prebuild`、`pretest`（通过 `npm run generate:rpc -- --if-stale`）按需生成，也可显式执行 `npm run generate:rpc`。`npm run check:rpc` 只检查漂移，不改文件。生成器使用安装的官方 `dsh-typert-generator`：在临时目录建立它要求的 workspace 布局，分析真实源代码和原版 protocol 声明，完成后移除临时目录。没有手写平行 Schema 或修改上游生成器。
 
-原生 Client、兼容控制入口和 Skill 调用使用同一个生成契约。Provider 专有模型字段使用可递归的 JSON 类型，经过前后端校验后保留，避免编辑显示名称时丢掉模型能力配置。
+原生 Client、兼容控制入口和 Skill 调用使用同一个生成契约。Provider 专有模型字段使用可递归的 JSON 类型，经过前后端校验后保留，避免编辑显示名称时丢掉模型能力配置。Host 内部 Remote 调用通过统一兼容入口携带官方 Peer（转发保留调用者身份，后台调用使用随 Context 释放的 owner Peer；旧桌面缺失该工厂时沿用原有内部调用）。
 
-`build.mjs` 先生成契约，再构建 Host、Client 和外部执行器协议桥。官方服务保持 runtime peer；peer 清单来自构建器依赖元数据。Client 样式跟随插件生命周期释放。增强清单记录官方目标版本、内部修订、源提交、dirty 状态、源树摘要及各发布文件摘要，避免将未提交构建误认为纯 HEAD 产物。
+`build.mjs` 先生成契约，再构建 Host、Client 和外部执行器协议桥。官方服务保持 runtime peer；peer 清单来自构建器依赖元数据。Client 样式跟随插件生命周期释放。增强清单记录官方目标版本、内部修订、源提交、dirty 状态、源树摘要及各发布文件摘要，避免将未提交构建误认为纯 HEAD 产物。源树摘要从 Git 已跟踪文件动态取集，排除派生的 Homebrew Cask，包含新增运行文件；本地未跟踪的审看资料不参与产品来源身份。
 
-源树摘要从 Git 已跟踪文件动态取集，排除派生的 Homebrew Cask，包含新增运行文件；本地未跟踪的审看资料不参与产品来源身份。未提交改动仍由 dirty 状态标明，不能作为清洁发布来源。
-
-`npm run format` 统一格式；生成文件不经过二次格式化。`npm run package` 创建分发入口。Mac 图形安装器需要系统工具，Windows 安装入口的打包需要 NSIS；用户安装无需自行准备 Node.js。
+插件安装使用所选官方桌面 `runtime/primary-runtime/dependencies/pnpm/bin/pnpm.mjs`（兼容旧版 `runtime/pnpm/bin` 下的 `pnpm.mjs` 或 `pnpm.cjs`），不借用系统 pnpm；失败证据保留隔离 profile 中最多四份包管理器日志的末尾以便定位入口变化或依赖下载错误。`npm run format` 统一格式（生成文件不经二次格式化）；`npm run package` 创建 DMG/EXE/ZIP 分发产物。
 
 ## 执行器与协作
 
-`execution/host/adapters` 中的 DSH、Grok Build、Codex CLI、Claude Code 各自声明匹配规则和启动方式。外部程序仍保存自己的上下文、工具与原生会话。Codex 使用 app-server，Claude 使用官方 Agent SDK，Grok 使用 ACP。OPL 只转换协议、权限与状态。Harness 注册表同时搜索桌面 PATH、登录 Shell PATH、常见用户目录和官方应用附带 CLI；Codex CLI 与 Claude Code 的安装/更新只走固定官方入口，安装完成后必须重新回读绝对路径和版本。设置页把 DSH、Codex CLI、Claude Code、Grok Build、Antigravity CLI 与 OpenCode 作为常用引擎直接列出，其余适配器放在“更多执行引擎”折叠目录中；分类只决定信息层级，不改变检测、安装、更新、路径或代理能力。
+`execution/host/adapters` 中的各执行器各自声明匹配规则和启动方式，外部程序保留自己的上下文、工具与原生会话（Codex 使用 app-server、Claude 使用官方 Agent SDK、Grok 使用 ACP）。Harness 注册表同时搜索桌面 PATH、登录 Shell PATH、常见用户目录和官方应用附带 CLI；Codex CLI 与 Claude Code 的安装/更新只走固定官方入口并重读绝对路径和版本。设置页把 DSH、Codex CLI、Claude Code、Grok Build、Antigravity CLI 与 OpenCode 作为常用引擎直接列出，其余适配器放在“更多执行引擎”折叠目录中；分类只决定信息层级。
 
-CLI 维护回读绕过版本缓存，并检查安装器返回的实际安装目录；已配置入口与新安装不一致时报告两者，不自动替换用户入口。维护命令复用该 Harness 的代理设置。Codex app-server 在启动时和每次创建、加载会话时核验同一个 provider，避免线程参数与全局 Responses 客户端使用不同渠道。
+CLI 维护回读绕过版本缓存，并检查安装器返回的实际安装目录；维护命令复用该 Harness 的代理设置。Codex app-server 在启动时和每次创建、加载会话时核验同一个 provider，避免线程参数与全局 Responses 客户端使用不同渠道。已有 CLI 的发现与版本验证不依赖 npm；显式路径保留用户选择。
 
-已有 CLI 的发现与版本验证不依赖 npm；npm 只用于需要它的安装或更新。排查以 Desktop 实际采用的路径、版本和脱敏失败原因为准，终端中的另一个同名程序可运行不等于当前入口已通过验证。显式路径保留用户选择；多个安装入口不按目录名猜测最新版本。
+组合目录只保存模型引用、Harness 引用、默认/启用状态和权限。`ExecutionModelResolver` 从官方模型注册表和 Gateway 读取投影，不另存模型连接。MiniMax 官方 mcode 路线继续由专用 ACP 适配器拥有，它的 opt-out 归 `opl-execution` 的 volatile `minimaxCodeEnabled`（默认 `true`），Client 执行页开关、目录重载和账号 Gate 共用官方 `configForms` snapshot。
 
-组合目录只保存模型引用、Harness 引用、默认/启用状态和权限。`ExecutionModelResolver` 从官方模型注册表和 Gateway 读取投影，不另存模型连接。新增执行器应提供一个适配器及其协议/权限/恢复测试，不在中心服务增加账户或 Provider 配置分支。
+DSH 内部新子任务由官方 Subagent/Team 管理。导入外部 Harness 历史后，使用官方 Workspace 的 `attachSession` 登记原会话（`session.create` 仅负责创建或复用空会话）。OPL 协作后台只为跨 Harness 任务保留父子映射、明确任务、验收要求、执行状态、交付和回传状态，并兼容已有 OPL 原生任务。普通会话不因使用同一目录而排队，只读任务可并行；只有双方显式声明且范围重叠的 `writeScope` 才等待，并行 Git 写任务优先使用官方 worktree。取消父任务传递给后代，子任务不能扩大权限。主界面保持官方 DSH 会话 UI，外部 Codex 开关只限制外部桥接，不关闭内部 Codex CLI 组合。
 
-MiniMax 官方 mcode 路线继续由专用 ACP 适配器拥有，不并入通用 native custom-provider。它的 opt-out 归 `opl-execution` 的 volatile `minimaxCodeEnabled`（默认 `true`）：Host 只在对应 changed path 到达时同步官方 adapter registration 的空/固定路由集，Client 的执行页开关、目录重载和账号 Gate 共用官方 `configForms` snapshot，不新增读写 RPC。停用仅过滤最终实时投影；持久化迁移和普通目录保存保留隐藏行。账号新操作与 mcode 新轮次受门禁，已有登录的协作取消不受门禁。
-
-DSH 内部新子任务由官方 Subagent/Team 管理。OPL 协作后台只为跨 Harness 任务保留父子映射、明确任务、验收要求、执行状态、交付和回传状态，并兼容已有 OPL 原生任务。执行完成不等于验收通过。普通会话不因使用同一目录而排队，只读任务可并行；只有双方显式声明且范围重叠的 `writeScope` 才等待，并行 Git 写任务优先使用官方 worktree。取消父任务传递给后代，子任务不能扩大权限。主界面保持官方 DSH 会话 UI，不渲染第二套外部会话列表；外部 Codex 开关只限制外部桥接，不关闭内部 Codex CLI 组合。
-
-TaskFeedback 的事件投影、纯状态决策、持久回执与投递调度分别位于 `session-facts.ts`、`state.ts`、`receipts.ts`、`delivery.ts`。Remote 服务仍负责唯一的恢复与编排，不再增加一套通知数据库。
+TaskFeedback 的事件投影（`taskFeedbackFacts` 投影缓存版本为 2，含待处理审批 ID 与最后审批事件位置，旧缓存从原始会话日志重投影而不改写日志或 task/outbox/receipt 格式）、纯状态决策、持久回执与投递调度分别位于 `src/collaboration/host/feedback/` 下的 `session-facts.ts`、`state.ts`、`receipts.ts`、`delivery.ts`。尚未送出的审批或问题通知在确认解决后从投递队列退役并保留 outbox 记录，接收方先 `receive` 并在 `review`/`resume` 时核对最新会话再请用户操作。
 
 ## MCP Apps 与无 UI 交接
 
@@ -146,37 +134,23 @@ TaskFeedback 的事件投影、纯状态决策、持久回执与投递调度分�
 | 套件版本、更新缓存与状态 | 安装回执中的 `suiteRoot`；Mac 默认 `~/Library/Application Support/OPL DSH Suite`，Windows 默认 `%APPDATA%/OPL DSH Suite`，Linux 默认 `~/.local/share/OPL DSH Suite` |
 | Codex Skill 与派发账本   | 回执中的 `skillDir`、`ledgerDir`；已有账本路径在修复时保留                                                               |
 
-安装回执明确 `suiteRoot`、`profileHome`、`skillDir`、`ledgerDir`，profile 下的回执用于找到 Suite。旧回执可从已有 release 路径解析，不猜另一个根目录。自定义 profile 的升级、回滚与启动都显式传递原 profile。
+安装回执明确 `suiteRoot`、`profileHome`、`skillDir`、`ledgerDir`，profile 下的回执用于找到 Suite。自定义 profile 的升级、回滚与启动都显式传递原 profile。
 
-旧 `harness-sessions.json` 首次读取时迁移为按会话文件，完成标记在数据写完后保存；旧文件原样保留。中断迁移补齐缺失文件，不覆盖已经落盘的新数据。非法身份、权限或记录会报错并保留原文件。只序列化和落盘变更的会话；重启把未完成轮次标记为中断，不自动重派。
+旧 `harness-sessions.json` 首次读取时迁移为按会话文件，完成标记在数据写完后保存；旧文件原样保留。会话列表返回分页摘要，选中会话返回最近轮次；更早轮次按需加载，新 UI 不轮询全量历史。`releases` 保留已安装版本和恢复资料，回执记录 `previousRelease`。
 
-会话列表返回分页摘要，选中会话返回最近轮次；修订号未变时不返回历史正文。更早轮次按需加载。任务卡片只读取任务摘要与最新验收/回传元数据。分页和全量旧协议各自保持明确调用者，新 UI 不轮询全量历史。
+### Windows 桌面独立生命周期
 
-`releases` 保留已安装版本和恢复资料，回执记录 `previousRelease`。当前不会自动删除可能被其他 profile 使用的 release。回滚插件前应保留当前 profile 快照；旧插件无法读取新布局中新发生的会话变更，保留旧文件不等于逆向迁移。
+Windows 安装后自动启动与 Codex Skill 自动启动均通过 WMI（`Win32_Process.Create`）创建套件启动器，再经统一 `launch.vbs → setup.mjs` 入口设置 profile 与应用路径，使官方桌面不继承调用方的 Windows Job（关闭 Codex 启动进程不会连带终止桌面）。启动器按安装选择的 Codex home 显式设置 `CODEX_HOME`，且不传递调用方自定义环境块。原生 DSH 网络代理读取系统启动环境或 DSH 主目录 `.env` 中的 `HTTP_PROXY`/`HTTPS_PROXY`（项目 `.env` 不允许设置），执行引擎内的代理只影响对应外部 CLI 及其维护命令。若系统策略禁用 WMI 或启动失败，自动启动明确拒绝且不回退共享 Job，不创建持久服务或计划任务，也不要求提权。
 
-## 两套更新与安装入口
+## 更新与发布边界
 
-协议 1 增强包不要求包含本地候选版的 `ofm-upgrade.cjs` 或 `update-errors.mjs`；清单列出的所有文件仍必须通过逐文件摘要校验。下载完成后的 ZIP、清单或协议校验失败记录为 `verify/integrity`，供更新入口区分下载和校验失败。
+官方桌面自行更新；OPL 增强层的自动检查、下载校验与退出后一次性后台 watcher 规则，以及 GitHub API 限流降级与联合发布合同，统一归[发布约定](release-policy.md)与[稳定发布 SOP](release-sop.md)。协议 1 增强包不要求包含本地候选版的 `ofm-upgrade.cjs` 或 `update-errors.mjs`，下载或逐文件摘要校验失败记录为 `verify/integrity`。
 
-官方桌面自行更新。OPL Host 启动 15 秒后异步检查正式 Release，随后每 6 小时检查一次；「通用设置 → 更新」提供自动检查开关、手动检查、发布说明和准备更新。Client 通过 Remote 状态流接收变化，侧边栏仅在有新版本或待更新包时显示轻提示。检查失败保留最后一次成功结果并明确标出失败，不报告为最新。
-
-后台检查只读取发布元数据和已校验的小型清单。默认策略在发现兼容更新后自动下载固定版本，校验 GitHub 摘要、套件清单与逐文件字节，保存与当前安装身份绑定的待更新计划。计划出现时 Host 启动一次性后台 watcher；watcher 先预留官方 Desktop 的 profile 初始化锁，再等待当前 Host、Electron 与该官方应用的进程全部退出。快速重开不会在更新前启动旧 profile。所有 profile 退出且待更新计划摘要未变时，watcher 使用官方插件管理器安装，完成后释放锁并由下一次正常启动加载新版本。watcher 不常驻、不注册服务或计划任务，也不主动退出应用；“仅提醒”和“空闲时自动重启”仍是用户可选的显式策略。原安装改变、文件被修改、桌面版本不匹配或安装失败时保留旧版本和更新计划，不安装另一版替代。取消下载等待本次请求结束后移除计划，保留暂存文件。官方桌面版本与发布要求不同则使用完整安装包，不自动安装不匹配的增强。官方应用使用官方 feed，校验 SHA-512、Bundle ID、Developer ID/Windows 发布者签名及实际版本，不关闭 TLS 或修改签名资源。
-
-Homebrew Cask 固定对应 Release 的 URL 和摘要，调用相同安装器；终端入口解析最新正式 Release。卸载兼容入口保留官方应用、数据和 Skill。旧 V5 开发会话格式仍不伪装成已迁移的官方历史。
-
-## 验证与发布边界
-
-Linux CI 执行契约漂移、模块边界、格式、Host/Client 类型、构建与测试。构建必须先于 artifact 测试。
-
-SuperAgent 的 POSIX 服务控制、账户 Shell wrapper、Unix 信号与权限测试在 Linux/macOS 执行；Windows 保留共享逻辑、文档与 Git 配置语义检查，只跳过依赖 POSIX 的具体用例或测试组。Windows 官方兼容与发布资格任务也运行这套共享测试；通过不代表提供 Windows SuperAgent 启动入口。
-
-官方桌面资格工作流在相关变更、发布及手动触发时覆盖 macOS arm64 与 Windows。它使用独立临时 profile 和模拟模型，验证实际 Client 插槽、RPC、两类协议模型流、官方工具、重启恢复及官方应用未修改，产出 JSON 和截图。具体命令和平台要求见 [兼容验证](compatibility.md)。
-
-本地模拟验证不等于真实 Gateway 或所有外部 Harness 组合验收；一台 Mac 的通过也不代表 Windows 通过。发布还需要实际公开资产与摘要回读。本地实现请求不自动触发提交、推送、发布或用户 profile 升级。
+Linux CI 执行契约漂移、模块边界、格式、Host/Client 类型、构建与测试（构建必须先于 artifact 测试）。SuperAgent 的 POSIX 服务控制、账户 Shell wrapper、Unix 信号与权限测试在 Linux/macOS 执行，Windows 仅运行共享语义测试且不提供 Windows SuperAgent 启动入口。官方桌面资格边界见[官方桌面兼容验证](compatibility.md)。
 
 ## Linux CLI/Web 迁移
 
-Linux 使用独立 CLI/Web profile，不加载 Electron 专属 `desktop` profile。默认名称为 `opl-linux`，启动器显式设置 `DSH_PROFILE`、`DSH_PROFILE_DIR` 和 `OPL_PROFILE_NAME`，避免继承调用方其他 profile 的环境。OPL 状态文件统一由 `src/shared/host/profile-paths.ts` 解析到实际 profile，Desktop 未提供这些变量时仍回退到 `desktop`。
+Linux 使用独立 CLI/Web profile，不加载 Electron 专属 `desktop` profile。默认名称为 `opl-linux`，启动器显式设置 `DSH_PROFILE`、`DSH_PROFILE_DIR` 和 `OPL_PROFILE_NAME`，OPL 状态文件统一由 `src/shared/host/profile-paths.ts` 解析。
 
 ```sh
 npm ci --ignore-scripts
@@ -190,7 +164,3 @@ node installer/install-linux.mjs "dist/OPL DSH 一键安装"
 ## 本地候选安装
 
 从 PR 分支安装供本机验收的包时，对 `installer/install.mjs` 追加 `--local-candidate`。候选版可检查公开 Release，但不会自动覆盖；用户可以明确准备兼容的新版本，或运行完整安装器替换。安装验收须在完全退出官方应用后，通过当前安装版本所带的更新入口或其兼容维护启动器应用候选，并回读实际组合和安装摘要。
-
-## 更新发现的 GitHub 限流
-
-更新发现优先读取 GitHub Releases API。只有明确的匿名额度耗尽（403 且 remaining=0）或 429 才改用同仓库的官方 latest 发布重定向，并固定该 tag 读取发布信息和资产摘要。清单与安装包仍需通过独立摘要、身份和大小验证；其他 403 直接报告失败。公开页面结构变化时停止，不使用凭据或跳过校验。

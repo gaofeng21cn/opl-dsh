@@ -4,141 +4,69 @@
 
 ## 显式来源注册
 
-`ctx.oplExternalModelSources.register(ctx, source)` 允许来源插件声明精确的模型与外部 Harness 配对。`source.provider` 使用官方 LLM 注册表的原始 Provider ID；`supports(harness, ref)` 声明配对，`resolve(harness, ref)` 在 Host 返回 `baseURL`、实际 `model`、`apiKey` 和 `protocol`。协议为 `responses`、`messages` 或 `chat`，必须与适配器一致。凭据由来源插件读取，不进入公开模型目录或组合配置。
+`ctx.oplExternalModelSources.register(ctx, source)` 允许来源插件声明精确的模型与外部 Harness 配对。`source.provider` 使用官方 LLM 注册表的原始 Provider ID；`supports(harness, ref)` 声明配对，`resolve(harness, ref)` 在 Host 返回 `baseURL`、实际 `model`、`apiKey` 和 `protocol`（`responses`、`messages` 或 `chat`，必须与适配器一致）。凭据由来源插件读取，不进入公开模型目录或组合配置。
 
-注册通过来源插件的 effect 管理，卸载后拒绝新的解析；异步解析期间来源被替换或卸载也拒绝启动。OPL Gateway 保持已有配置读取路径。其他来源必须显式注册，不能按模型名称猜账号、拆解虚拟轮换链或复制插件私有设置。
+注册通过来源插件的 effect 管理，外部适配器在解析前调用 `lease(harness, ref)`，并在最后一次异步启动检查后调用 `assertCurrent()`；卸载或替换即拒绝启动，但 `lease` 不代替实时目录校验。只有声明 `customEndpoint` 的适配器接受新来源（Codex 支持 Responses，Claude 支持 Messages）；仅有固定端点的 Harness 不因协议相似而接受任意来源。OPL Gateway 保持已有路径。
 
-外部适配器在解析前调用 `lease(harness, ref)`，在最后一次异步启动检查后调用 `assertCurrent()`；即使同一来源对象卸载后再次注册，旧 lease 也失效。lease 只核对注册生命周期与声明配对，实时模型目录和连接数据仍由来源 owner 校验；OPL Gateway 继续使用其原有路径。
+## Our Free Model 与渠道适配
 
-只有声明 `customEndpoint` 的适配器接受新来源。Codex 支持 Responses，Claude 支持 Messages；仅有官方账号或固定端点的 Harness 不因为模型协议相似就接受任意来源。
+默认仅生成厂商官配。OpenCode、Pi、Kilo 和 ZCode 的已适配渠道在“添加执行组合”中提供推荐选项；未知模型需手动配置，不可用组合不进入对话选择列表。`combo:` 虚拟轮换链不加入对话选择器，`step-5-preview-free`、`muse-spark-1.2-contributor-free` 当前从选择器隐藏，`jev-1.13-free` 与 `nvidia/nemotron-3.5-content-safety:free` 明确排除。
 
-## Our Free Model 组合
+- **来源标签与状态**：“OFM 新模型发现”只展示来源当前目录中的模型，不补入已下架条目；发现与已启用列表共用“目录已移除”“未启用”“状态未确认”“不可用”标签（读取失败标记状态未确认，不认定下架）。普通保存保留隐藏配置，“取消全选”或按 Harness 取消同步停用对应隐藏组合；单独“移除”仅停用配置，不删除历史会话。
+- **免费车道与账号车道**：套件通过 OFM 的公开 `/clients` 接口读取免费车道运行端点、Key 与目录并在启动前复核官方注册表，须先在 OFM「本地转发」启用免费车道；账号车道 `our-free-model-region`（保留 `region-limited` 标识）不借用免费车道端点。OpenCode 官方免费通道保留独立来源名称。
+- **同名模型与前缀规则**：同名路线按精确完整 ID（如 `opencode/`、`amd/`、`z-ai/`、`:free` vs 裸 ID）与所属渠道分开配置和转发，绝不互相合并或替换。旧 Space Bunny 会话保留原模型身份。
 
-默认仅生成厂商官配。OpenCode、Pi、Kilo 和 ZCode 的已适配渠道在“添加执行组合”中提供推荐选项，选择后填入模型、执行引擎和名称，保存后才加入列表。推荐采用来源与模型的精确 ID，不按名称猜测；用户自定义默认组合、停用选择和权限保留。未知模型需手动配置，不可用组合不进入对话选择列表。
+| 模型或渠道家族 | 首选 / 适配 Harness | 协议与关键适配边界 |
+| --- | --- | --- |
+| Kimi K2.6、K3、K3.1 Pro（K3.1 Pro 须开启思考） | Kimi Code | Messages；`KIMI_LOOP_MAX_ATTEMPTS_PER_STEP=1` 避免叠加重试，另可映射 Plan 模式 |
+| MiMo v2.6 Flash（`mimo-v2.6-flash-free`、`amd/MiMo-V2.6-Flash`） | MiMo Code / OpenCode | Chat；MiMo Code 不暴露原生档位菜单，空正文且无工具结果判失败 |
+| Laguna S / XS 2.1（`poolside/laguna-*`） | Poolside | Chat；使用 `--settings=<路径>` 固定参数 |
+| GLM 5.3 / 5.3 Flash（`z-ai/*`、`amd/GLM-5.3-Flash`） | ZCode | Chat；首条编辑新建官方 ZCode 会话并保留原 DSH 会话身份 |
+| EAC DeepSeek V4.1 / V4 Flash（`deepseek-ai/deepseek-v4.1-flash`、`amd/DeepSeek-*`） | DSH | Chat / 原生模型服务；DSH 菜单 light/balanced/deep 控制输出预算 |
+| Step 5 Preview（`stepfun-ai/step-5-preview`、`stepfun/step-5-preview-free`） | StepCode | Chat；估算上下文占用并经 CLI 回读窗口，支持官方 RPC 分叉 |
+| Mistral Large 4（`mistralai/mistral-large-4-1t-a52b`） | Mistral Vibe 3.0.4 | Chat；独立 `VIBE_HOME`，需手填 `vibe-acp` 路径，仅支持完全访问、无推理档位 |
+| `muse-spark-1.3-contributor-free` | Muse Code 1.4.7-R6101.1 | Responses（`endpoint_transport`）；当前无默认启用组合，需手动配置 |
+| `amd/Qwen3.8-27B` | Pi（默认推荐）/ Qwen Code 0.27.3（可选） | Chat；Qwen Code 仅支持文本输入与完全访问，Windows 需 Git Bash |
+| EAC OpenCode 免费车道（`opencode/*`）、`big-pickle`、OpenCode 裸 ID 免费模型（Cat Jam、LongCat 2.5、Beam、Hy4、Tidepool、Flint 40B 等） | OpenCode | Chat；`opencode/big-pickle` 等裸 ID 走官方免费通道并启用 `--print-logs`（捕获 `AI_APICallError`），OFM 转发通道合并工具分片并设 90s 首个有效进展保护 |
+| Kilo 频道模型（Ling 3.1/3.2 Flash、ERNIE-5.5-Flash-Preview、Particle-1、Apodex 1.1 Mini、LFM3-1.7B、Inkling 2 Small、Nemotron 3 Super、Flint v1.0、Beam、Dots、Glyph 等） | Kilo Code | Chat；Kilo ACP 无可写 effort 选项，保持来源默认设置不显示推理菜单（`liquid/lfm-3-1.7b:free` 显式档位请求发送前拒绝）；Kilo Beam 透传 `interleaved` `reasoning_content` |
+| EAC Pi 车道（Nemotron 3.5 Lightning/Bolt/Super VL、Nemotron 3 Ultra、Nano Omni、Muse Glimmer 30B、AMD MiniCPM/Gemma 4/Qwen3.8、Gemma 4 31B、Inkling/LFM2.5） | Pi Coding Agent | Chat；通过 `--mode rpc` 桥接，Windows 经 `--append-system-prompt` 提示 Git Bash 语法 |
+| GPT-OSS 20B（`openai/gpt-oss-20b`） | Codex CLI | Responses |
 
-OFM 来源统一使用 `Our Free Model` 写法，区域渠道保留 `region-limited` 标识，OpenCode 官方免费通道保留独立来源名称。“新模型发现”和“已启用的组合”共用同一组红色状态标签：当前目录不再包含模型时显示“目录已移除”，停用时显示“未启用”，目录读取失败时显示“状态未确认”；其他执行准入失败显示“不可用”，悬停可查看原因。发现列表另行保留官方、推荐或待适配的 Harness 信息，可用模型不显示失败标签。不可用模型不进入“选择与添加组合”；普通保存保留未操作的隐藏配置，“取消全选”及按 Harness 取消会同时停用对应的隐藏组合。不可用的已启用组合也可单独“移除”，只停用配置，不删除会话；来源恢复后不会自动重新启用。
+### Gateway Gemini 路线边界
 
-套件通过 OFM 的公开 `/clients` 接口读取免费车道的运行端点、Key 与模型目录，并在启动前再次核对官方 LLM 注册表。先在 OFM 的「本地转发」启用免费车道；未启用、模型撤销、来源卸载或准入失败时拒绝启动。账号车道 `our-free-model-region` 不借用免费车道的端点。
+- **现行模型集合**：`GATEWAY_ANTIGRAVITY_GEMINI_MODELS` 包含 `gemini-4-carbon`、`gemini-4-hydrogen`、`gemini-4-argon` 和 `gemini-3.8-flash`（`gemini-3.1-pro` 已从现行集合退役，仅保留旧配置迁移识别）。
+- **Antigravity CLI（默认官配）**：使用 Gateway 原生 Gemini 端点与该组凭据，无需 Google 账号登录；新建与恢复固定模型及推理档位（Carbon/Argon/3.8 Flash 支持 `low`/`medium`/`high`，Hydrogen 另支持 `xhigh`，未指定时默认 `high`）。支持来源声明的图片输入；Windows 通过独占 profile Hook 使用 Git Bash；仅支持完全访问且不支持 Auto Review；仅支持首条消息编辑重开。
+- **OpenCode / Pi（可选备选）**：OpenCode 适配以上全部四项 Gateway Gemini 模型作为备选组合（中途编辑可选 OpenCode）；Pi 适配 `gemini-4-carbon` 与 `gemini-4-hydrogen`（文本输入与完全访问）。Antigravity 失败不自动转发到 OpenCode；自定义 Chat 地址不推断原生 Gemini 地址。
 
-旧会话续发与编辑重发也核对当前 OFM 目录。目录缺失、读取失败与实际不支持推理档位分别报告，不能用已保存的档位推断模型能力；编辑被拒绝时不改动原消息或外部历史。CLI 自己管理的推理档位不写入原生模型请求，Kilo 和 OpenCode 当前不提供档位选择，Pi 按实时广告验证、设置并回读档位；Gemma 保持渠道默认思考设置。
+### 渠道错误、编辑与计量边界
 
-| 模型                                                                                                                          | 首选 Harness                    | 协议      |
-| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | --------- |
-| Kimi K2.6、K3、K3.1 Pro（K3.1 Pro 必须保持思考开启）                                                                          | Kimi Code                       | Messages  |
-| MiMo v2.6 Flash（mimo-v2.6-flash-free）                                                                                       | OpenCode，官方免费通道          | Chat      |
-| EAC Laguna XS 2.1、Kilo Laguna S、XS 2.1                                                                                                              | Poolside                        | Chat      |
-| GLM 5.3、5.3 Flash（z-ai 原始 ID）                                                                                            | ZCode                           | Chat      |
-| EAC GLM 5.3 Flash Free（opencode/glm-5.3-flash-free）                                                                         | OpenCode，经 OFM 转发           | Chat      |
-| EAC DeepSeek V4.1 Flash Free（opencode/deepseek-v4.1-flash-free）                                                             | OpenCode，经 OFM 转发           | Chat      |
-| EAC Nemotron 3.5 Lightning Free（opencode/nemotron-3.5-lightning-free）、Super VL Free（opencode/nemotron-3.5-super-vl-free） | OpenCode，经 OFM 转发           | Chat      |
-| EAC Flint 40B Free（opencode/flint-40b-free）                                                                                 | OpenCode，经 OFM 转发           | Chat      |
-| EAC DeepSeek V4.1 Flash（deepseek-ai/deepseek-v4.1-flash）                                                                    | DSH，经 OFM 原生模型服务        | Chat      |
-| EAC MiniMax M3.1 Flash（minimaxai/minimax-m3.1-flash）                                                                        | OpenCode，经 OFM 转发           | Chat      |
-| EAC Step 5 Preview（stepfun-ai/step-5-preview）                                                                               | StepCode，经 OFM 转发           | Chat      |
-| EAC Mistral Large 4（mistralai/mistral-large-4-1t-a52b）                                                                      | Mistral Vibe 3.0.4，经 OFM 转发 | Chat      |
-| Big Pickle（big-pickle）                                                                                                      | OpenCode，官方免费通道          | Chat      |
-| Nemotron 3 Super 120B（nvidia/nemotron-3-super-120b-a12b:free）                                                               | Kilo Code，经 OFM 转发          | Chat      |
-| Flint v1.0 Free（recursive/flint-v1.0:free）                                                                                  | Kilo Code，经 OFM 转发          | Chat      |
-| Kilo Ling 3.1 Flash 1019（inclusionai/ling-3.1-flash-1019-free）                                                              | Kilo Code，经 OFM 转发          | Chat      |
-| Kilo Crouton Alpha（stealth/crouton-alpha）                                                                                  | Kilo Code，经 OFM 转发          | Chat      |
-| Kilo LFM3-1.7B（liquid/lfm-3-1.7b:free）                                                                                     | Kilo Code，经 OFM 转发          | Chat      |
-| Kilo Inkling 2 Small（thinkingmachines/inkling-2-small:free） | Kilo Code，经 OFM 转发 | Chat |
-| Flint 40B Free（flint-40b-free）                                                                                              | OpenCode，经 OFM 转发           | Chat      |
-| GPT-OSS 20B                                                                                                                   | Codex CLI                       | Responses |
-| Kilo Step 5 Preview（stepfun/step-5-preview-free）                                                                            | StepCode                        | Chat      |
-| Ling、LongCat、North Mini Code、Nemotron 3.5、Space Bunny、OpenRouter Free                                                    | OpenCode                        | Chat      |
-| OPL Gateway Gemini 4 Carbon、Gemini 4 Hydrogen | Antigravity CLI（默认），Pi Coding Agent 或 OpenCode（可选） | Gemini 原生（Antigravity、Pi），Chat（OpenCode） |
-| EAC Nemotron 3.5 Lightning、Bolt、Super VL、Nemotron 3 Ultra、Nano Omni Reasoning、Muse Glimmer 30B | Pi Coding Agent | Chat |
-| Nemotron Nano Omni、LFM2.5、Inkling Small、Inkling、Gemma 4 31B                                                               | Pi Coding Agent                 | Chat      |
-| Dots、Glyph、Kilo Auto Free、Kilo Beam、Xing 4.0                                                                              | Kilo Code                       | Chat      |
+- **Kimi Code 渠道错误与编辑**：Kimi Code ACP 可能将非认证类渠道失败返回为 `end_turn`。OPL 为每个 Kimi 进程提供独立本机 Messages 转发观察错误，将上游停用模型、缺失路由、限额和超时显示为固定诊断（不回显原始正文/账号/凭据，也不重试或换模）。读取 Kimi 编辑边界需临时断开 ACP 并恢复同一原生会话，期间阻塞并发发送、编辑与切换执行器。
+- **结构化错误与超时**：OpenCode/Kilo 区分接口请求失败、上下文超限与结构化输出失败；OFM 转发遇到非 2xx 响应立即终止连接并向 DSH 报错，不冒充未收到的 HTTP 状态。Codex/ZCode/ACP 仅提取明确错误类别、HTTP 状态和 RPC 错误码。
+- **Token、上下文与推理档位**：外部 Harness 仅在官方协议确认本轮边界与独立 Token buckets 时接入 DSH 用量统计（缺失字段不补零、不按上下文估算）；上下文占用与窗口分别来自来源配置/CLI 回读，不代替接口容量探测。模型菜单仅在当前组合确认支持可选档位时显示推理设置，且延续与编辑前均实时核对能力；Codex/Claude/MiniMax 普通对话传入当前选择档位，外部 CLI 独立保存的档位不被原生模型投影覆盖。
 
-EAC 的 LongCat 2.5 Free、MiMo V2.6 Flash Free、Hy4 Flash Free、Tidepool Alpha Free、Beam Free、Iceman Free 和 Big Pickle 推荐使用 OpenCode。发送时保留目录中的 `opencode/` 前缀，通过 OFM 转发。
+## Windows Git Bash 与权限矩阵
 
-表格描述适配器配对，不是当前在线可用性承诺；模型必须仍在来源目录中且通过启动前检查。Cat Jam、MiMo v2.6 Flash、Muse Spark 1.3、Longcat 2.5、OpenCode 的 DeepSeek/GLM/Beam/Nemotron 免费条目、Space Bunny 和 Big Pickle 的精确裸 ID 使用 OpenCode 官方免费通道。Kilo 频道的 Nemotron 3 Super 120B 使用 Kilo 执行器并经 OFM Chat 转发，不折叠成 OpenCode 路线。Flint 的 `flint-40b-free` 与 EAC 的 `opencode/flint-40b-free` 均由 OpenCode 经 OFM Chat 转发，保留各自的完整 ID；`recursive/flint-v1.0:free` 由 Kilo 执行并经 OFM 转发。同名模型不互相替换。
+外部程序的过滤环境保留 Git 安装根目录与显式 `OPL_GIT_BASH_PATH`（无效时拒绝启动，不改用其他 Shell）。Windows 增强包通过 Git for Windows 的 `bash.exe` 提供原生环境；工作目录若因官方 Windows ACL 后端返回 Win32 5，可由用户在管理员 PowerShell 中运行 Skill 的 `repair-acl --cwd <目录> --confirm yes` 后新建 `workspace-write` 会话验证（dispatch 不自动执行修复）。官方 `rc.2+` 的 Low-integrity restricted token 会阻止 MSYS2 外部程序创建 `\\BaseNamedObjects\\msys-2.0*`，导致 Git Bash 在 `workspace-write` 下仍可能触发 `0xC0000022`；需要运行外部 Git Bash 工具时须选用用户明确授权的 `danger-full-access`，不能自动提权或绕过限制。
 
-Kilo ERNIE-5.5-Flash-Preview 使用精确 ID `baidu/ernie-5.5-flash-preview:free`，通过 Kilo Code 和 OFM Chat 转发执行；默认推荐该组合。来源目录声明推理能力，但 Kilo ACP 自定义 provider 未提供可写档位，因此保持来源默认思考设置，不显示推理档位菜单。
+| Harness | Git Bash 后端 | 完整访问与受限权限边界 |
+| --- | --- | --- |
+| Claude Code | 使用官方 `CLAUDE_CODE_GIT_BASH_PATH`，启动前验证 Git for Windows 路径 | 完整访问映射为官方 `bypassPermissions` 且关闭 sandbox；Windows 受限任务若无可用官方 sandbox 后端则拒绝 |
+| Grok Build | 使用官方 `GROK_SHELL=bash`，按候选顺序核对首个实际存在的 Git 安装 | 显式完整访问映射为 `--sandbox off --permission-mode bypassPermissions`；Windows 只读/工作区任务在读取凭据与创建 profile 前拒绝 |
+| Codex CLI | 官方 `0.160.1`/`0.161.0` 无模型探针仍为 PowerShell；自用候选须显式设置 `OPL_NATIVE_CODEX_GIT_BASH=1` 并通过 `thread/shellCommand` 实测 Bash | 权限映射为官方 `read-only`/`workspace-write`/`danger-full-access`（审批 `never`）；候选 Bash 仅接受显式完整访问，受限请求不自动放宽 |
+| MiniMax mcode | 需支持 `_meta["minimax-code/shell"]` 回读的独立候选，详见[MiniMax 文档](minimax-code.md) | 仅接受显式完整访问并回读 `bypassPermissions`（Full access），不代答已挂起人工审批 |
 
-当前另支持 Kilo Particle-1（`particle-ai/particle-1:free`）和 Kilo Apodex 1.1 Mini（`apodex/apodex-1.1-mini:free`）：两者保留精确 ID，通过 Kilo Code 和 OFM Chat 转发执行，默认推荐 Kilo Code，不显示推理档位。
+各 Harness 保留自己的工具与会话，不通过提示词包装 `bash.exe` 伪装后端；自动生成组合的只读默认值不覆盖显式授权，已保存的受限会话不能在续作时扩大权限。除 Kimi 另支持 Plan 模式（工具层拒绝写入，非系统隔离）外，其余通用新适配器（OpenCode、Kilo、Pi、StepCode、Mistral Vibe、Muse Code、Qwen Code）在现行边界下均仅接受明确选择的完全访问并拒绝只读/工作区权限。
 
-Kilo Ling 3.2 Flash（`inclusionai/ling-3.2-flash:free`）默认推荐 Kilo Code，经 OFM Chat 转发，保留来源的默认思考设置，不显示推理档位菜单；上下文容量与用量沿用实时目录及官方统计。
+## Windows Codex Git Bash 运行时
 
-EAC 的 AMD 路由保留完整 `amd/` ID：`amd/DeepSeek-V4.1-Flash`、`amd/DeepSeek-V4-Flash` 推荐 DSH；`amd/MiMo-V2.6-Flash` 推荐 MiMo Code；`amd/GLM-5.3-Flash` 推荐 ZCode；`amd/Qwen3.8-27B`、`amd/MiniCPM-V-4.7-35B-A3B`、`amd/MiniCPM5-2B`、`amd/Gemma-4-31B-IT`、`amd/MiniCPM-V-4.7-1B` 推荐 Pi。均经 OFM 的 EAC Chat 转发，不与同名免费渠道合并。来源当前未声明这些路由的真实推理档位，外部 Harness 保留来源默认设置；DSH 来源菜单的 light、balanced、deep 控制输出预算。图片与上下文能力沿用来源实时声明，不根据模型名称补齐。
+Windows 可为 Codex CLI 显式选择套件拥有的自建 Git Bash 便携构建（默认仍使用已配置的官方 Codex CLI，不修改官方程序或日常配置）。当前候选为 `0.169.0-opl-gitbash.20261116.1`（基于 `rust-v0.169.0` 加公开补丁构建，未签名开发版本，仅支持 Windows x64 与完全访问任务，每次建/恢会话均实测 Bash 且不回退 PowerShell）。
 
-`amd/Qwen3.8-27B` 也可以显式添加 Qwen Code 组合。该组合使用官方 Qwen Code 0.27.3 和 OFM 免费转发，只启用文本输入与完全访问；Windows 需要 Git Bash。已有执行组合及 Pi 推荐不变。
+- **打包与导入**：`scripts/codex-candidate/lifecycle.mjs` 的 `packageCodexCandidate` 可从已验收 `codex.exe` 生成便携目录（含可执行文件、`manifest.json` 固定 SHA-256、许可证与补丁）；拒绝额外文件、错误版本、符号链接及 junction。也可从仓库公开交付包解压含 `manifest.json` 的目录导入。
+- **切换与回退**：通过安装后的协作 Skill（按 Electron Node 启动方式）执行 `control.mjs codex-runtime-select --mode git-bash --version 0.169.0-opl-gitbash.20261116.1 --source <便携目录绝对路径>`（省略 `--source` 可重选已导入版本），`--mode official` 恢复官方命令及前缀。有活动任务、人工等待或在途启动时拒绝切换，失败保留原选择，Auto Review 仍由实际 Codex app-server 回读决定。
 
-OFM 的 Kilo 目录对 `liquid/lfm-3-1.7b:free` 声明 `low`、`medium`、`high` 三档推理强度，默认 `high`，且不提供关闭思考。当前 OPL 适配使用的官方 Kilo ACP 自定义 provider 没有可写的 effort 配置项，因此不把来源档位伪装成 Kilo 选项；显式档位请求会在发送前拒绝，未指定档位时保留上游默认设置。
+## 通用执行保护与验收
 
-EAC 的 `opencode/nemotron-3.5-lightning-free`、`opencode/nemotron-3.5-super-vl-free` 和 `opencode/flint-40b-free` 保留完整 ID，使用 OFM 转发，不改成裸 ID 的 OpenCode 直连通道。Pi 的 `thinkingmachines/inkling:free` 与已有的 `thinkingmachines/inkling-small:free` 分开配置；Kilo 的 `thinkingmachines/inkling-2-small:free` 是独立的 Kilo Gateway 免费路由；`google/gemma-4-31b-it:free` 不提供推理档位菜单。EAC 的 `deepseek-ai/deepseek-v4.1-flash` 在新模型发现中推荐 DSH；其他未知模型不会因此变成推荐项，组合仍需用户选择添加。
-
-“OFM 新模型发现”只展示来源当前目录中的模型，不因本地保留了旧组合而补入下架条目。仍启用的旧组合在“已启用的组合”提示“目录已移除”，取消启用后不再展示；内部配置保留，不删除历史会话。模型重新上架后可再次选择添加，但不会自动恢复已取消的选择。目录读取失败只标记状态未确认，不认定模型已下架。
-
-外部 Harness 只有在本轮边界和 Token buckets 都能由官方协议确认时才接入 DSH 的 Token 统计；缓存、输入、输出和思考字段缺失时保持缺失，不按上下文占用推算。OpenCode/Kilo 使用同一官方消息图的父级链和 `step-finish` 记录汇总，Pi、Codex、Claude、ZCode 使用各自桥接器的已验证字段；Kimi 只有 transcript steps 能拆出独立 cache buckets 时才记账。StepCode 汇总本轮已结束消息及压缩调用的用量，Mistral Vibe 对发送前后确认的累计计数取差，恢复时没有基线就不显示本轮账单。账单汇总与当前上下文分别保存；缺失数据不补零。
-
-上下文沿用官方圆环和详情，不增加独立文字栏。StepCode 的占用由官方会话统计估算，窗口使用来源配置并经 CLI 回读；Mistral Vibe 的窗口是 CLI 生效的压缩预算，占用来自最新请求统计。它们不是接口最大容量的探测结果。切换模型、运行中或没有完整读数时不显示旧值；压缩后占用未知时保留未知，不能用整轮累计账单代替。
-
-`step-5-preview-free` 与 `muse-spark-1.2-contributor-free` 当前从 OPL 选择器隐藏；Jev 与 Content Safety 不作为编码组合提供。Muse Code 没有可用默认组合，不默认登记或提示安装，已有程序与显式配置保留。
-
-OPL Gateway 的 Gemini 4 Carbon 与 Gemini 4 Hydrogen 默认搭配官方 Antigravity CLI，通过 Gateway 原生 Gemini 接口使用该分组凭据，无需 Google 账号登录。新建和恢复均先固定模型及 CLI 实际广告的推理档位并回读（Gemini 4 Carbon 支持 `low`、`medium`、`high`，Gemini 4 Hydrogen 支持 `low`、`medium`、`high`、`xhigh`）；没有指定档位时明确使用 `high`。支持来源声明的图片输入，Windows 命令通过独占 profile 的官方 Hook 使用 Git Bash。只支持明确选择的完全权限，不支持 Auto Review。Token 账单取本轮 ACP 用量，上下文占用另取最后一次模型请求的估计，不混用累计用量。
-
-使用默认 OPL Gateway 地址时，可在「执行与组合」中启用 Carbon 或 Hydrogen 的 Pi Coding Agent 组合。Pi 通过原生 Gemini 协议复用现有 Gemini 分组凭据，使用独立会话目录。当前 Pi 组合接收文本，需要会话明确选择完全权限。
-
-OpenCode 保留为这两个模型的可选组合，已有会话及用户明确设置的默认组合保留绑定；Antigravity 失败不会自动转发到 OpenCode。Antigravity 当前只支持首条消息编辑重开，底层旧会话保留且不撤销文件；中途编辑可选 OpenCode。已退役的 Gemini 3.1 Pro、3.8 Flash 与 4 Argon 不再登记 OpenCode 默认路线，避免把旧组合继续显示为可用。自定义 Chat 地址不能推断原生 Gemini 地址，需使用 OPL 默认原生端点或保留 OpenCode 组合。
-
-MiniMax M3.1 Flash 的三条车道分别保留原始 ID：`minimax-m3.1-flash-free` 使用 OpenCode 官方免费通道，Kilo 的 `minimax/minimax-m3.1-flash:free` 和 EAC 的 `minimaxai/minimax-m3.1-flash` 使用 OpenCode 经 OFM 转发。EAC 车道不使用 MiniMax Code 账号。StepCode 的 `stepfun-ai/step-5-preview` 使用独立 EAC 配置，不与 `stepfun/step-5-preview-free` 的 Kilo 车道合并。旧 Space Bunny 会话保留原模型身份，不自动替换历史路由。
-
-Mistral Vibe 使用官方 3.0.4 ACP 发行包并保留随附文件，在“执行与组合 → 执行引擎与网络代理”登记 `vibe-acp`（Windows 为 `vibe-acp.exe`）的绝对路径；当前不提供一键安装。套件使用独立的 `VIBE_HOME`，OFM Key 仅传给子进程环境，新建、恢复与发送前核对模型和 `auto-approve` 模式。该组合仅支持显式完全访问；未确认推理档位，模型菜单不显示推理设置。
-
-手动会话的初始标题取真实用户输入，不取交给外部 Harness 的历史上下文说明。任何 Harness 回传本轮转发的历史或注入上下文片段作为标题时均不覆盖原标题，正常标题更新仍生效；空会话在首条消息到达前切换 Harness 时不把旧组合名固定成官方标题。
-
-OpenCode 与 Kilo 的显式完全访问会话通过官方 `permission: "allow"` 配置执行工具，该配置只传给本次 CLI 进程；不会改写用户的配置文件。原生 DSH 组合同样支持显式完全访问，并使用官方持久化权限预设。受限权限与已有会话的权限不会因此升级。
-
-经 OFM 本地端点转发给 OpenCode/Kilo 的 Chat 流会合并先到的工具编号与后续函数分片，以兼容官方 CLI 的响应校验；不生成函数名、参数或完成标记。上游返回非 2xx 响应头时，转发器立即把受控的认证、模型、限流、超时或接口失败及 HTTP 状态回传给 DSH，关闭本轮自有连接与 CLI，不等待响应体结束或 CLI 重试。连接中断、流截断或工具分片冲突也结束本轮，但不冒充收到上游 HTTP 状态。原始响应体不写入诊断，晚到的 CLI 输出不能覆盖失败结果。若没有任何可识别的上游错误，OpenCode 在九十秒内没有正文、思考、工具或授权进展时由 OPL 结束本轮；收到首个有效进展后不再使用这个保护时限。兼容进程使用临时回环端口与独立密钥，随 CLI 关闭；直接连接 OpenCode 免费通道和 OPL Gemini 的请求不经过此处理。
-
-Kilo Beam 的工具后续请求要求 `reasoning_content` 字段，即使本次思考为空。该组合使用官方 `interleaved` 配置回传已保存的思考，不补写思考正文或改变推理档位。
-
-这些组合保留 OFM 的原始模型 ID，只有当前目录仍提供的模型才可启动。Free/Auto 虚拟路由保留其虚拟身份，不声称已固定到某个底层模型。程序仍在「执行与组合 → 执行引擎与网络代理」选择安装路径，凭据仍由 OFM 管理。MiMo Code 没有推理档位接口，模型菜单不显示其 provider 的原生档位；托管任务保留提交时的设置，不继承原生请求自动填入的档位。Big Pickle 使用 `our-free-model` 的精确 `big-pickle` 车道和官方 OpenCode 的 `opencode/big-pickle` wire 值；官方 OpenCode 适配器不广告推理档位，组合不显示推理强度，OFM 目录的 light/balanced/deep token budget 不会被映射成 `high`/`max`，显式档位会被拒绝。CLI 内部带 provider 前缀的模型 ID 由适配器显式映射，仍与回读值严格比对。新适配器支持明确选择的完全访问，缺少 Git Bash 时拒绝启动；不自动改变会话权限。Kimi 另可映射官方 Plan 模式，实测 Bash 写入被工具层拒绝，这不代表操作系统隔离。其余新适配器拒绝只读和工作区权限。它们不提供 DSH Auto Review。
-
-Muse Code 1.4.7-R6101.1 使用独占设置中的 `endpoint_transport` 接入模型供应商的 Responses 端点。MSP 桥接负责会话、模型和思考档位回读，Git Bash 通过官方 MCP 工具接口执行；本机认证转发器转换工具命名与流事件，不替换官方执行循环。来源未提供端点或凭据、模型已移除或协议不匹配时拒绝启动。MiMo Code、Pi 和 StepCode 返回空正文且没有成功工具结果时，任务标为失败；官方未回报的上游错误不推测为某个 HTTP 状态。
-
-独占官方 CLI 与受控 provider 检查覆盖工具、模型回读、恢复、取消和 Git Bash；这些检查不等同于 OFM 联网模型质量验收。执行插件配置 `ofmConnectionTimeoutMs` 控制公开连接读取超时，默认 10000 毫秒。
-
-OpenCode/Kilo 的结构化错误类型可区分模型接口请求失败、上下文超限与结构化输出失败。Codex、ZCode 和 ACP 错误回传保留 CLI 明确报告的 HTTP 错误状态、已识别错误类别、RPC 错误码和结束状态；原始消息、响应正文、地址及凭据不进入此诊断。未知内部错误保持未定性；接口失败未提供 HTTP 状态时，不推测为认证或限额问题。
-
-用户停止当前轮次后，即使 CLI 迟到返回 `end_turn`，外部任务仍记为取消；CLI 的原始结束原因单独保留。取消标记先于持久保存和子任务等待建立，后续停止操作不会落到新轮次。Codex 正文同时接收流式增量和官方完成事件中实际返回的文本，重复内容只展示一次；完成事件没有正文时不生成回答。
-
-外部程序的过滤环境保留 Git 安装根目录与显式 `OPL_GIT_BASH_PATH`，即使 Desktop 的 PATH 不含 Git 也能解析后端。显式路径无效时拒绝启动，不改用其他 Shell。
-
-## 能力与验收
-
-每个适配器声明传输、认证、协议、自定义端点、权限、恢复、取消、推理档位和 Auto Review 类型。公开 Harness 检测结果返回这些声明，不包含密钥。声明描述接入接口，实际服务可用性仍由真实调用验证。
-
-`HarnessAcceptance` 复用真实适配器的新建、恢复、模型与推理档位核对、真实工具事件和取消检查。调用者负责进程生命周期、独立读取产物以及向 `observe` 传入 ACP 通知。文本声称执行成功不通过；恢复必须保留会话身份，取消回执必须等待原 prompt 确认取消。
-
-接入具体来源时依次验证：来源与协议负例、真实登录或 Key、真实模型工具调用、新建与恢复、取消、权限与人工审批、Auto Review、失败与卸载。不同 Harness 的协议适配仍需实现，通用注册和验收步骤不能代替这些证据。
-Kimi Code 的 OFM 组合通过官方 `KIMI_LOOP_MAX_ATTEMPTS_PER_STEP=1` 限制每步仅发起一次请求，避免将来源层恢复叠加为 CLI 默认的十次尝试。请求失败后由用户决定是否重发；该设置不改变权限或模型。
-
-Kimi 的消息编辑边界读取需要临时断开 ACP 并恢复同一原生会话。轮次完成等待、后续发送和编辑入口读取都会等待该收尾结束，再使用恢复后的连接；收尾期间不能切换执行程序。读取编辑边界失败不会丢弃已经完成的回答，也不会自动重发提示词。
-
-外部请求收到明确终态错误时，也先完成编辑台账持久化与历史收尾，再向对话流和编辑入口发布终态。收尾期间的元数据更新不会提前释放发送或编辑入口；未知传输结果继续阻断，不自动重放。
-
-Pi 在 Windows 通过官方 `--append-system-prompt` 明示真实 Git Bash 语法与路径形式；该说明进入官方 CLI 的系统请求，不切换 Shell、不转换模型命令，也不承诺模型不会写错命令。
-
-OpenCode 内置免费端点启用官方 `--print-logs`。Host 仅将当前在途会话的主推理 `AI_APICallError` 转换为固定失败提示；额度耗尽明确显示，不等待首次进展超时。标题任务、其他会话与普通日志不触发终止，原始诊断不回显。没有错误信号时仍保留无进展保护。
-
-手动停止外部任务保留 cancelled 状态，不把取消引发的连接关闭显示成上游错误。ZCode 的结构化原因链仅提取已知错误类别及 HTTP 状态，不回显响应体。会话输入栏显示本地排队状态；排队时请求尚未发往模型，不能计为模型无进展。Pool 使用 `--settings=路径` 固定单个参数，避免配置路径解析歧义。
-
-执行插件的 `executionLimits` 配置统一约束原生和外部请求：`firstProgressMs` 默认 90000，`idleProgressMs` 默认 90000，单位均为毫秒，设置页保存后对后续执行轮次生效，正在运行的轮次保留启动时快照。计时从实际执行开始，排队不计入；心跳和空更新不延长等待，重试不重置当前轮次预算。工具执行与公开人工等待暂停无进展计时。不设置单轮总时长上限；持续产生有效进展的任务不会因累计运行时间被终止，旧配置中的 `totalMs` 不再生效。无进展截止后停止本轮，不自动重发；未收到明确错误时只报告无进展，不推断上游原因。
-
-模型菜单仅在已确认的执行组合提供可选档位时显示推理设置。组合已停用、目录缺失或预检未完成时，不使用供应商通用档位代替 Harness 能力；旧会话保存的档位不在当前选项中时也不展示为生效值。
-
-普通对话的权限以输入框选择的官方会话权限为准，切换执行组合不会改变权限，组合编辑不再提供重复的权限选项。已有外部轮次仍保留原权限，权限不一致时不会自动扩大；派活接口继续校验显式权限和历史任务限制。
-
-旧组合编号被移除后，若当前目录中只有一个启用的组合与原记录的模型来源、模型 ID 和 Harness 完全相同，旧对话自动接续该组合并恢复原外部会话，保留历史、权限和推理档位。原组合明确停用、匹配不唯一或来源发生变化时，提示用户重新选择，不自动改走 DSH。
-
-普通对话的模型菜单与发送共用 Host 组合选择：优先保留明确绑定，其次使用同来源、同模型的唯一默认组合（包括 DSH）；没有默认项但只有一个启用组合时使用该组合。多个启用组合且无唯一默认项、或仅有停用组合时，发送前要求明确选择。首次发送固定已解析组合，后续修改默认项不改变该会话。菜单不根据模型名称猜测 Harness；外部 CLI 的推理档位不被原生模型投影覆盖。
-
-模型切换与后续发送按同一官方会话串行执行：请求先等最新一次选择落定，再由官方请求流程生成模型参数。切换失败后，后续发送仍会被拒绝，直到用户重新选择成功；切换期间已经生成的旧模型请求也会被拒绝，需明确重新发送，不会自动改用旧模型或重发。
-
-模型选择的官方目录与执行组合目录并行读取；同一目录快照的重叠可用性检查合并为一次。检查完成或失败即释放共享结果，后续刷新仍读取当前状态，不增加目录有效期。CLI 推理能力仍以当前连接或实际预检为准。
-
-外部模型菜单区分官方模型选择保存的档位与 CLI 独立保存的档位。Codex、Claude 和 MiniMax 普通对话将当前官方请求的档位传入真实外部轮次；CLI 档位继续使用会话与组合的独立选择。能力预检等待或失败不清除 Host 已确认的 CLI 档位显示，发送前仍校验实际能力。
+- **无进展超时保护 (`executionLimits`)**：统一约束原生和外部请求，默认 `firstProgressMs = 90000`、`idleProgressMs = 90000`（单位毫秒），保存后对后续轮次生效；排队、工具执行与公开人工等待暂停计时，心跳和空更新不延长等待。不设置单轮总时长上限（旧 `totalMs` 字段不再有效），超时仅终止本轮不自动重发。
+- **取消、标题与并发**：用户停止轮次时先落盘取消标记再等待收尾，迟到 `end_turn` 不改写 cancelled 状态；普通会话初始标题取真实用户输入，不被注入上下文或空会话切换组合覆盖。
+- **组合选择与串行一致性**：普通对话按“明确绑定 → 同源同模唯一默认 → 唯一启用组合”解析，首次发送固定选择；模型切换与发送按同一官方会话串行执行，切换失败或切换期旧请求均拒绝。同一快照的目录检查合并去重但不设有效期缓存，预检失败不清除已确认 CLI 档位显示但发送前仍强校验。
+- **能力宣言与验收 (`HarnessAcceptance`)**：适配器声明传输、认证、协议、`customEndpoint`、权限、恢复、取消、推理档位与 Auto Review 类型。接入新来源或执行器须依次验证：来源与协议负例、真实登录/Key、真实工具事件、新建与恢复（保留会话 ID 与历史身份）、取消确认、权限与审批、Auto Review 及卸载恢复。

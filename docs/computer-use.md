@@ -44,7 +44,7 @@ OPL 安装器会为当前平台安装 KimiCU。两端都可以先在现有会话
 ```
 
 <details>
-<summary>工具接口与验证记录</summary>
+<summary>工具接口与平台差异</summary>
 
 两个平台都向原生 DSH 提供 `computer_use`，截图作为 DSH 附件返回。具体动作取决于平台。
 
@@ -53,9 +53,5 @@ OPL 安装器会为当前平台安装 KimiCU。两端都可以先在现有会话
 | 观察 | `list_apps` 找应用，`get_app_state` 读截图与无障碍树 | `list_windows` 找窗口，`get_window_state` 读截图与无障碍树 |
 | 操作 | 可按快照节点点击，支持 `type_text`、`paste`、`drag_paths` 等动作 | 可按元素索引或截图坐标点击，使用 `type_text` 输入、`drag_path` 拖拽 |
 | 接口 | `args` 传给所选的 KimiCU MCP 工具，参数以该版本的 `tools/list` 为准 | OPL 通过官方插件的 `node-repl.exe` 将声明的动作映射到固定的 `@kimi/cu` 调用 |
-
-Windows 已实测从 0.3.10 升到 0.3.13 并在设置中回读版本，0.3.13 也已通过 DSH 适配器读取真实窗口。点击、按键、中英文输入和截图的实机记录来自 0.3.10。
-
-macOS 已在运行中的 DSH 核对本机版本和官方稳定版均为 0.7.6，并在临时目录验证了下载、签名校验、安装和版本回读。本次 macOS 验收范围为安装与更新。
 
 </details>

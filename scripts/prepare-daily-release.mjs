@@ -1,7 +1,7 @@
 /** Daily GitHub-owned release preparation; all packaging and qualification stay in the existing workflow. */
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { appendFile, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { writeDailyReleaseNotes } from './daily-release-notes.mjs'
@@ -42,6 +42,108 @@ const frozenOfficialVersion = (root, tag) =>
   git(root, ['for-each-ref', '--format=%(contents)', `refs/tags/${tag}`]).match(
     /^Official DeepSeek Harness: (\S+)$/m,
   )?.[1]
+
+const readLatestRelease = () => {
+  const response = spawnSync('gh', ['api', `repos/${repository}/releases/latest`], {
+    encoding: 'utf8',
+  })
+  if (response.status !== 0 && !/HTTP 404/.test(response.stderr))
+    throw Error('Cannot read public Latest; no version or tag was written')
+  return response.status === 0 ? JSON.parse(response.stdout) : undefined
+}
+
+const previousReleaseTag = (root, targetRef, excludeTag) => {
+  const result = spawnSync(
+    'git',
+    ['describe', '--tags', '--abbrev=0', '--match', 'opl-dsh-v*', `${targetRef}^`],
+    { cwd: root, encoding: 'utf8' },
+  )
+  if (result.status !== 0) return undefined
+  const tag = result.stdout.trim()
+  return tag && tag !== excludeTag ? tag : undefined
+}
+
+async function ensureReleaseNotesDraft(
+  root,
+  { version, baseline, targetRef, officialVersion, publishedOfficialVersion },
+) {
+  const distDir = join(root, 'dist')
+  await mkdir(distDir, { recursive: true })
+  const notesFile = join(distDir, `release-notes-draft-${version}.md`)
+  // Keep an explicit draft prepared for this exact version in dist/.
+  try {
+    await readFile(notesFile)
+    return notesFile
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+  const range = baseline ? `${baseline}..${targetRef}` : targetRef
+  let changes = git(root, [
+    'log',
+    '--no-merges',
+    `--format=- %s ([查看提交](https://github.com/${repository}/commit/%H))`,
+    range,
+    '--',
+    ...productPaths,
+  ])
+  if (publishedOfficialVersion && publishedOfficialVersion !== officialVersion)
+    changes = [
+      `- 跟随官方 DeepSeek Harness：\`${publishedOfficialVersion}\` → \`${officialVersion}\`；按既有双平台流程重新验收联合版本。`,
+      changes,
+    ]
+      .filter(Boolean)
+      .join('\n')
+  const evidencePaths = [
+    ...productPaths,
+    'README.md',
+    'docs',
+    ':!package-lock.json',
+    ':!src/generated',
+    ':!docs/release-notes-*.md',
+  ]
+  const diff = spawnSync(
+    'git',
+    baseline
+      ? ['diff', baseline, targetRef, '--', ...evidencePaths]
+      : ['show', '--format=', targetRef, '--', ...evidencePaths],
+    { cwd: root, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 },
+  )
+  const result = await writeDailyReleaseNotes(
+    {
+      version,
+      baseline: baseline ?? null,
+      sourceCommit: git(root, ['rev-parse', targetRef]),
+      officialVersion,
+      publishedOfficialVersion: publishedOfficialVersion ?? null,
+      commitsMarkdown: changes,
+      commitDetails: git(root, [
+        'log',
+        '--no-merges',
+        '--format=%h %s%n%b',
+        range,
+        '--',
+        ...productPaths,
+      ]),
+      diff: diff.status === 0 ? diff.stdout : '',
+      diffComplete: diff.status === 0,
+    },
+    {
+      apiKey: process.env.OPL_RELEASE_NOTES_CODEX_API_KEY,
+      copilotToken: process.env.GITHUB_TOKEN,
+    },
+  )
+  await writeFile(notesFile, result.notes)
+  console.log(
+    JSON.stringify({
+      releaseNotes: result.mode,
+      model: result.model,
+      policy: result.policy,
+      reason: result.reason,
+      attempts: result.attempts,
+    }),
+  )
+  return notesFile
+}
 
 /** Bind the comparison to the public Latest asset bytes, never Release-note prose. */
 export function readPublishedOfficialVersion(latest, command = execFileSync) {
@@ -172,6 +274,8 @@ export async function prepareDailyRelease(root, { request = fetch } = {}) {
   const officialVersion = feeds['mac-arm64'].version
   const officialWindowsVersion = feeds['win-x64'].version
   let candidate
+  let latest
+  let publishedOfficialVersion
   if (/^refs\/tags\/opl-dsh-v\d+\.\d+\.\d+$/.test(ref ?? '')) {
     const tag = ref.slice('refs/tags/'.length)
     const version = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version
@@ -185,90 +289,21 @@ export async function prepareDailyRelease(root, { request = fetch } = {}) {
     git(root, ['fetch', 'origin', 'main', '--tags'])
     if (git(root, ['rev-parse', 'HEAD']) !== git(root, ['rev-parse', 'origin/main']))
       throw Error('main moved; retry the next daily check from fresh main')
-    const response = spawnSync('gh', ['api', `repos/${repository}/releases/latest`], {
-      encoding: 'utf8',
-    })
-    if (response.status !== 0 && !/HTTP 404/.test(response.stderr))
-      throw Error('Cannot read public Latest; no version or tag was written')
-    const latest = response.status === 0 ? JSON.parse(response.stdout) : undefined
-    const publishedOfficialVersion = latest && readPublishedOfficialVersion(latest)
+    latest = readLatestRelease()
+    publishedOfficialVersion = latest && readPublishedOfficialVersion(latest)
     candidate = await planDailyRelease(root, latest, {
       officialVersion,
       officialWindowsVersion,
       publishedOfficialVersion,
     })
     if (candidate.action === 'prepare') {
-      let changes = git(root, [
-        'log',
-        '--no-merges',
-        `--format=- %s ([查看提交](https://github.com/${repository}/commit/%H))`,
-        candidate.baseline ? `${candidate.baseline}..HEAD` : 'HEAD',
-        '--',
-        ...productPaths,
-      ])
-      if (publishedOfficialVersion && publishedOfficialVersion !== officialVersion)
-        changes = [
-          `- 跟随官方 DeepSeek Harness：\`${publishedOfficialVersion}\` → \`${officialVersion}\`；按既有双平台流程重新验收联合版本。`,
-          changes,
-        ]
-          .filter(Boolean)
-          .join('\n')
-      const notesFile = join(root, 'docs', `release-notes-${candidate.version}.md`)
-      // A maintainer's prepared notes remain authoritative.
-      try {
-        await readFile(notesFile)
-      } catch (error) {
-        if (error.code !== 'ENOENT') throw error
-        const evidencePaths = [
-          ...productPaths,
-          'README.md',
-          'docs',
-          ':!package-lock.json',
-          ':!src/generated',
-          ':!docs/release-notes-*.md',
-        ]
-        const diff = spawnSync(
-          'git',
-          candidate.baseline
-            ? ['diff', candidate.baseline, 'HEAD', '--', ...evidencePaths]
-            : ['show', '--format=', 'HEAD', '--', ...evidencePaths],
-          { cwd: root, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 },
-        )
-        const result = await writeDailyReleaseNotes(
-          {
-            version: candidate.version,
-            baseline: candidate.baseline ?? null,
-            sourceCommit: git(root, ['rev-parse', 'HEAD']),
-            officialVersion,
-            publishedOfficialVersion: publishedOfficialVersion ?? null,
-            commitsMarkdown: changes,
-            commitDetails: git(root, [
-              'log',
-              '--no-merges',
-              '--format=%h %s%n%b',
-              candidate.baseline ? candidate.baseline + '..HEAD' : 'HEAD',
-              '--',
-              ...productPaths,
-            ]),
-            diff: diff.status === 0 ? diff.stdout : '',
-            diffComplete: diff.status === 0,
-          },
-          {
-            apiKey: process.env.OPL_RELEASE_NOTES_CODEX_API_KEY,
-            copilotToken: process.env.GITHUB_TOKEN,
-          },
-        )
-        await writeFile(notesFile, result.notes)
-        console.log(
-          JSON.stringify({
-            releaseNotes: result.mode,
-            model: result.model,
-            policy: result.policy,
-            reason: result.reason,
-            attempts: result.attempts,
-          }),
-        )
-      }
+      await ensureReleaseNotesDraft(root, {
+        version: candidate.version,
+        baseline: candidate.baseline,
+        targetRef: 'HEAD',
+        officialVersion,
+        publishedOfficialVersion,
+      })
       for (const path of ['package.json', 'package-lock.json']) {
         const file = join(root, path)
         const value = JSON.parse(await readFile(file, 'utf8'))
@@ -278,12 +313,7 @@ export async function prepareDailyRelease(root, { request = fetch } = {}) {
       }
       git(root, ['config', 'user.name', 'github-actions[bot]'])
       git(root, ['config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'])
-      git(root, [
-        'add',
-        'package.json',
-        'package-lock.json',
-        `docs/release-notes-${candidate.version}.md`,
-      ])
+      git(root, ['add', 'package.json', 'package-lock.json'])
       if (git(root, ['diff', '--cached', '--name-only']))
         git(root, ['commit', '-m', `release: prepare OPL DSH v${candidate.version}`])
       candidate.tag = `opl-dsh-v${candidate.version}`
@@ -302,6 +332,25 @@ export async function prepareDailyRelease(root, { request = fetch } = {}) {
       if (remote.split(/\s/)[0] !== candidate.sourceCommit)
         throw Error('Remote tag readback differs')
     }
+  }
+  if (candidate.action === 'resume') {
+    if (!latest) {
+      latest = readLatestRelease()
+      publishedOfficialVersion = latest && readPublishedOfficialVersion(latest)
+    }
+    const version = candidate.tag.replace(/^opl-dsh-v/, '')
+    const baseline =
+      latest?.tag_name && latest.tag_name !== candidate.tag
+        ? latest.tag_name
+        : previousReleaseTag(root, candidate.sourceCommit, candidate.tag)
+    await ensureReleaseNotesDraft(root, {
+      version,
+      baseline,
+      targetRef: candidate.sourceCommit,
+      officialVersion,
+      publishedOfficialVersion:
+        baseline === latest?.tag_name ? publishedOfficialVersion : undefined,
+    })
   }
   candidate.officialVersion = officialVersion
   candidate.officialWindowsVersion = officialWindowsVersion

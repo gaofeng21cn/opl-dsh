@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm, readFile, copyFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, readFile, copyFile, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, delimiter } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -23,6 +23,7 @@ async function fixture(t) {
   git('config', 'user.name', 'Release fixture')
   git('config', 'user.email', 'fixture@example.invalid')
   for (const dir of ['src', 'Casks', 'docs']) await mkdir(join(root, dir))
+  await writeFile(join(root, '.gitignore'), 'dist/\n')
   await writeFile(join(root, 'package.json'), JSON.stringify({ version: '0.2.21' }))
   await writeFile(join(root, 'src/plugin.ts'), 'export const value = 1\n')
   await writeFile(join(root, 'Casks/opl-dsh.rb'), 'old metadata\n')
@@ -528,7 +529,11 @@ for (const { prepared, upstreamOnly } of [
           if (value.packages?.['']) value.packages[''].version = '0.2.22'
           await writeFile(join(root, file), JSON.stringify(value, null, 2) + '\n')
         }
-        await writeFile(join(root, 'docs/release-notes-0.2.22.md'), '维护者已准备的发布说明\n')
+        await mkdir(join(root, 'dist'), { recursive: true })
+        await writeFile(
+          join(root, 'dist/release-notes-draft-0.2.22.md'),
+          '维护者已准备的发布说明\n',
+        )
       }
       commit()
       // The official-only case must have no unpublished product bytes at all.
@@ -580,10 +585,11 @@ for (const { prepared, upstreamOnly } of [
       if (prepared) {
         assert.equal(first.sourceCommit, preparedCommit)
         assert.equal(
-          await readFile(join(root, 'docs/release-notes-0.2.22.md'), 'utf8'),
+          await readFile(join(root, 'dist/release-notes-draft-0.2.22.md'), 'utf8'),
           '维护者已准备的发布说明\n',
         )
       }
+      await assert.rejects(access(join(root, 'docs/release-notes-0.2.22.md')), { code: 'ENOENT' })
       assert.ok(
         git('ls-remote', 'origin', 'refs/tags/opl-dsh-v0.2.22^{}').startsWith(first.sourceCommit),
       )
@@ -597,14 +603,20 @@ for (const { prepared, upstreamOnly } of [
           `Official DeepSeek Harness: ${officialVersion}`,
         ),
       )
+      const draftPath = join(root, 'dist/release-notes-draft-0.2.22.md')
       if (upstreamOnly) {
-        const notes = await readFile(join(root, 'docs/release-notes-0.2.22.md'), 'utf8')
+        const notes = await readFile(draftPath, 'utf8')
         assert.ok(notes.includes('0.2.1-rc.5') && notes.includes('0.2.2-rc.1'))
+        await rm(draftPath)
       }
       const second = run()
       assert.equal(second.action, 'resume')
       assert.equal(second.sourceCommit, first.sourceCommit)
       assert.equal(git('status', '--porcelain'), '')
+      if (upstreamOnly) {
+        const resumedNotes = await readFile(draftPath, 'utf8')
+        assert.ok(resumedNotes.includes('0.2.1-rc.5') && resumedNotes.includes('0.2.2-rc.1'))
+      }
       if (upstreamOnly) {
         await writeFile(
           runner,

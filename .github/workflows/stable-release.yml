@@ -44,6 +44,13 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           OPL_RELEASE_NOTES_CODEX_API_KEY: ${{ secrets.OPL_RELEASE_NOTES_CODEX_API_KEY }}
         run: node scripts/prepare-daily-release.mjs
+      - name: Upload prepared release-notes draft
+        if: steps.candidate.outputs.tag != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: dist/release-notes-draft-*.md
+          if-no-files-found: error
 
   package:
     needs: prepare
@@ -204,6 +211,10 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: release-candidate
+          path: dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-notes
           path: dist
       - uses: actions/download-artifact@v8
         with:

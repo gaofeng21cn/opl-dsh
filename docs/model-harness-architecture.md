@@ -2,7 +2,7 @@
 
 OPL DSH 在官方桌面上提供账号自动配置、Harness 管理和组合选择。模型配置继续由 DSH 保存，官方 DSH 和外部 Harness 分别执行各自的 Agent 循环。
 
-能力边界按官方 `0.2.2-rc.3` 公开接口核对，检查日期为 2026-11-13。官方已有能力交给官方插件和持久状态；OPL 只维护当前用户任务仍需要的差额。具体复用情况、迁移范围与后续撤除条件见[官方能力复用检查](dsh-reuse-audit.md)。
+能力边界按当前 `0.2.2-rc.5` 公开接口核对。官方已有能力交给官方插件和持久状态；OPL 只维护当前用户任务仍需要的差额，具体复用与迁回条件见[官方能力复用检查](dsh-reuse-audit.md)。
 
 ## 数据职责
 
@@ -20,8 +20,6 @@ OPL DSH 在官方桌面上提供账号自动配置、Harness 管理和组合选�
 组合不再保存连接或协议。模型列表是 DSH 注册表的只读投影，不写入组合文件。DSH 原生模型页中的 OPL Gateway 子树通过官方 `settings.mutate` 保存模型：DeepSeek 分组位于 `opl-suite.gateway.models`，其他分组位于官方 `llm-pi-ai` 的对应 Provider profile。编辑和运行读取同一份配置。
 
 ## Gateway 分组
-
-第三方模型插件同样通过官方 LLM 注册表进入组合目录。Our Free Model 原样安装，保留全部渠道与虚拟模型；OPL 只保存组合引用，不接管它的账号、模型路由或更新。详见[第三方模型插件](model-plugins.md)。
 
 账号页管理 DeepSeek、OpenAI 协议、Grok、Gemini、Claude、Kiro、AWS 七种分组的独立凭据。没有某一组的权限不阻止账号登录，也不影响其他已授权组。页面区分未配置、未授权、凭据就绪和同步错误；凭据就绪不等于真实模型调用已经验收。
 
@@ -45,88 +43,68 @@ OPL DSH 在官方桌面上提供账号自动配置、Harness 管理和组合选�
 
 同名模型具有不同身份：DeepSeek 分组保持历史 ID `deepseek-flash`，OpenAI 协议分组使用 `codex::deepseek-flash`。线上请求仍发送 `deepseek-flash`；组合引用同时确定分组，用户不需要输入内部限定 ID。GPT 通过 OpenAI 协议分组直接调用。默认自动目录不会将 DeepSeek Flash 复制到该渠道，用户可在模型页主动加入。
 
+### Messages 断流恢复
+
+原生 OPL Gateway 把 `STREAM_CLOSED` 纳入默认模型请求重试。Messages 流缺少完整的 `message_stop` 时，官方循环保留失败记录，在当前步骤重新请求；不会把未完成的工具参数当作可执行调用，也不会重新发送整段用户任务。
+
+默认使用官方 `normal` 策略：最多额外重试 5 次，沿用官方指数退避和抖动。`EMPTY_RESPONSE`、`RATE_LIMIT`、`SERVER`、`TIMEOUT`、`TRANSPORT` 继续按同一策略处理；重试次数在当前步骤内共享。用户已配置的 `gateway.retryPolicy` 优先，含 `maxRetries: 0` 的禁用策略和自定义错误列表都保持原值。取消会终止重试等待；权限、凭据和无效请求错误不因此被自动重试。
+
+失败响应保存在官方 `assistant/attempt`，重试及实际重新请求分别记录为 `llm/retry`、`llm/retry-started`。此前步骤的成功工具结果仍在会话中，恢复不回退磁盘文件。次数耗尽后保留真实失败，不补造结束事件、不自动切换模型。外部 Harness 的请求恢复仍由各自官方实现处理。`STREAM_CLOSED` 与连接异常 `TRANSPORT`、空闲超时 `TIMEOUT` 分别记录，排查具体截断环节须将失败请求编号与网关、模型上游日志对应。
+
+## 第三方模型插件
+
+OPL 安装器通过官方插件管理器接入 [Our Free Model](https://github.com/Ebony-Vinyl/dsh-our-free-model)。首次安装使用固定校验的官方 `v2.8.3` 完整发布包（`installer/model-plugins.cjs`），验证 SHA-256 与 SHA-512 后保存到 profile 的 `vendor/` 目录供安装和后续修复；下载或摘要校验失败即停止，不使用旧版源码包替代。
+
+为兼容官方桌面的路由认证要求，`installer/ofm-desktop-admission.cjs` 在安装或修复时识别 OFM `2.8.3` 与 `2.9.0` 的已知官方文件，只对独立程序目录内的 `index.js` 与 `src/trust.js` 应用[管理接口修正](https://github.com/Ebony-Vinyl/dsh-our-free-model/pull/911)，保留用户已修改文件。如果从 OFM 页面更新后再次遇到管理接口返回 503，可重新运行 OPL 安装器修复已知版本。
+
+OPL 为 OFM 使用 profile 内的独立程序目录，通过官方插件管理器以相对 `link:` 依赖登记。OFM 页面保留原版检查更新、升级与热重载功能；程序文件由 OFM 自行更新，pnpm 只管理链接，OPL 重装保留该目录和已升级版本。插件的数据、账号与路由设置仍由 OFM 在原数据位置管理；停机安装时只迁移确认属于本套件的归档安装，保留用户指定来源、停用状态和宿主管理模式。
+
+OPL 从官方 LLM 注册表读取插件公开的 Provider 和模型，以原始 `provider` 与 `model` 保存组合引用，不复制模型目录或导入密钥。OFM 的 `combo:` 降级与轮换链不作为可执行模型加入对话选择器，外部 Harness 需要绑定已适配的具体模型；OFM 渠道与路由适配规则集中在[外部 Harness 适配](harness-adaptation.md)。第三方模型插件沿用这一条官方注册表与 `ctx.oplExternalModelSources` 显式路由路径，OPL 不另建供应商模型列表或账号池。
+
 ## 设置与使用
 
-- **Computer Use**：原生 DSH Agent 可通过单一 `computer_use` 工具调用本机 KimiCU 的原始 MCP 动作。KimiCU 继续拥有应用发现、截图、无障碍树和桌面输入；OPL 只负责会话绑定、参数透传、附件投影、取消与权限门禁。只读观察可直接使用，桌面变更要求当前会话显式选择“完全访问”。KimiCU 不可用或权限不足时工具失败，不伪造状态，也不新增独立设置页。
+- **Computer Use**：原生 DSH Agent 通过单一 `computer_use` 工具调用 KimiCU 原始 MCP 动作，桌面变更要求会话显式“完全访问”；详情见[桌面观察与操作](computer-use.md)。
+- **推理档位默认值**：DeepSeek 4.1 Flash 的 DeepSeek 与 OpenAI 协议渠道默认推理档位为 `high`；GPT 模型默认 `medium`。MiniMax M3.1 默认 `max`，M3 默认开启思考。默认值仅在未选择档位时使用，同一对话按模型和渠道保存的选择优先，切换模型不沿用其他模型的档位。外部 Harness 在切换组合后自动读取官方能力并显示已确认档位（Antigravity 与 Grok 默认 `high`，不支持档位的组合不显示选项），能力读取不发送模型提示词。
+- **OPL Gateway / 模型**：账号页管登录、用量、分组权限与凭据；模型页沿用官方页面并置顶 OPL Gateway，默认平铺模型（高级字段在编辑区展开）。
+- **Harness**：检测安装、版本与路径，区分文件存在与版本验证成功，Windows npm 入口选择 `.cmd` 等可执行启动器；ZCode 桌面入口不在检测时启动。内置 DSH 随官方桌面更新，不可删除。执行引擎页常显 DSH、Codex CLI、Claude Code、Grok Build、Antigravity CLI 与 OpenCode，其余已适配引擎收在“更多执行引擎”中；未提供一键安装的引擎保留官方说明与路径登记入口。
+- **组合**：从 DSH 模型目录选择模型，绑定 Harness 与权限。每个模型可指定默认组合；没有自定义默认时，GPT 默认 Codex CLI、Claude 默认 Claude Code，Gemini 组默认 Antigravity CLI，其他模型使用已配置的官方默认组合。
 
-DeepSeek 4.1 Flash 的 DeepSeek 与 OpenAI 协议渠道默认推理档位为 `high`；GPT 模型默认 `medium`。MiniMax M3.1 默认 `max`，M3 默认开启思考。默认值仅在未选择档位时使用，同一对话按模型和渠道保存的选择优先，切换模型不沿用其他模型的档位。
+对话输入栏复用官方模型目录、模型选择投影、菜单组件与 Slot；OPL 的组合选择菜单显示“模型 · Harness”，来源仅作为展开菜单的分组标题。没有凭据的官方 DeepSeek 模型不作为可选项。DSH 原生组合调用官方 Session 的模型选择接口；外部 Harness 组合绑定到当前官方 Session，由 Host 在 `llm/stream` 阶段转发同一轮请求并把文本流回官方 Session。自动生成组合的权限只作为新委派任务的缺省值，切换模型保留当前会话选择的权限；显式只读组合通过官方只读预设同时设置 sandbox 与审批策略，不会静默扩大当前权限。
 
-外部 Harness 的推理菜单在切换组合后自动读取官方能力，并显示已确认的当前档位；未手选时也读取适配器配置后的实际值。Antigravity 与 Grok 默认配置为 `high`。CLI 未报告当前值时不猜测；查询暂时失败会有限重试，明确不支持档位的组合不显示选项。能力读取不发送模型提示词。
+厂商官配自动组合来自预先维护的 `OFFICIAL_HARNESSES` 表并在模型就绪后启用；OpenCode、Kilo、Pi 等通用执行器官配列表为空，可在“添加执行组合”中手动选择或从 OFM 推荐添加（跨厂商或通用配对标为“自定义”），经 OFM 本地转发的手动外部组合要求 OFM 本地转发已启用。用户手动停用后，自动投影不会重新打开该组合。
 
-- **OPL Gateway**：Gateway 登录、用量、分组权限与凭据。其他 Provider 保留官方的配置入口。
-- **模型**：沿用官方模型页面；OPL Gateway 排在第一位，其他 Provider 和自定义 API 使用官方表单。Gateway 默认显示模型及必要的渠道选项，手动字段和协议放进高级编辑，不要求重填 Key。
-- **Harness**：检测已接入 CLI 的安装、版本与路径；可登记其他程序。检测区分文件存在与版本验证成功，Windows npm 入口选择 `.cmd` 等可执行启动器；ZCode 的桌面入口不在检测时启动。安装与更新使用固定官方入口，npm 使用实际全局安装目录；维护完成后重新验证入口与版本。首次安装的默认入口保存为验证过的绝对路径，显式路径和自定义命令保持原值，发现的其他安装单独展示。内置 DSH 随官方桌面更新，不可删除。执行引擎页常显 DSH、Codex CLI、Claude Code、Grok Build、Antigravity CLI 与 OpenCode；其余已适配引擎仍在“更多执行引擎”中完整可管，避免用平铺列表把适配数量当作产品优先级。未提供一键安装的引擎保留官方说明与路径登记入口，不伪造安装动作。
-- **组合**：从 DSH 模型目录选择模型，绑定 Harness 与权限。每个模型可指定一个默认组合；没有自定义默认时，GPT 默认 Codex CLI、Claude 默认 Claude Code，其他模型使用已配置的官方默认组合。
+独立配置的原生 Provider 另有 DSH fallback：当官方 `ctx.llm.listProviders()`、`listModels()` 与 `listConfigurableProviders()` 确认 Provider 已进入可配置目录、模型可用且既无官配也无自动外部推荐时，自动生成只读 DSH 组合（OPL Gateway、OFM 和外部 CLI 账号专属来源不适用此 fallback）。已有自定义默认、显式停用与 `defaultDisabled` 选择优先。
 
-对话输入栏复用官方模型目录、模型选择投影、菜单组件与 Slot；OPL 的组合选择菜单显示“模型 · Harness”，来源仅作为展开菜单的分组标题。没有凭据的官方 DeepSeek 模型不作为可选项。DSH 原生组合调用官方 Session 的模型选择接口；外部 Harness 组合绑定到当前官方 Session，由 Host 在 `llm/stream` 阶段转发同一轮请求并把文本流回官方 Session。自动生成组合的权限只作为新委派任务的缺省值，切换模型保留当前会话选择的权限；显式只读组合通过官方只读预设同时设置 sandbox 与审批策略，不产生两者混用的 custom 状态，也不会静默扩大当前权限。原生会话列表不增加第二套 OPL 管理页面。普通原生子任务的目标入口是官方 Subagent/Team；OPL 委派工具负责跨 Harness 与显式交付验收所需的额外语义。
+MiniMax 官方账号与 mcode ACP 专用集成的开关归唯一偏好 `opl-execution.minimaxCodeEnabled`（默认开启）；停用仅过滤最终实时投影并门禁新轮次/账号操作，保留已有配置、凭据与历史。
 
-厂商官配自动组合来自预先维护的“Harness + 官配模型”表，并在对应模型已经就绪后启用。DSH 的官配是 DeepSeek 自家模型；Codex、Claude、Grok Build、MiniMax、ZCode、Kimi、MiMo、Poolside、StepCode、Muse 只在厂商自家模型与对应 CLI 配对时自动生成。OpenCode、Kilo、Pi 等通用执行器没有自己的模型，官配列表为空，不会因为适配器支持某模型就生成内置组合；需要时可在“添加执行组合”中手动选择模型与执行器，跨厂商或通用执行器配对会标记为“自定义”。经 OFM 本地转发执行的手动外部组合还要求 OFM 本地转发已启用并运行。组合设置页会把“可启用但当前停用”的项目折叠；用户手动停用后，自动投影不会重新打开该组合。
+每个原生对话选中的组合 ID 保存在 OPL 自有的 `combination-selection.json`，用于重启后区分同一模型的多个自定义组合，冷会话通过公开 `session.projections` 读取。
 
-除官配外，独立配置的原生 Provider 还有一种 DSH fallback：官方 `ctx.llm.listProviders()`、`listModels()` 与 `listConfigurableProviders()` 投影确认 Provider 已进入可配置目录、模型可用，并且该模型既没有官配也没有自动外部 Harness 推荐时，OPL 自动生成只读 DSH 组合，让启用执行插件后的官方对话有可选入口。OPL Gateway 及其内部路由、OFM 和外部 CLI 账号专属来源不使用此 fallback；已有外部推荐仍保持推荐，不会自动改走 DSH。fallback 只保存原始 `provider` / `model` 引用与 `dsh` 绑定，模型连接、协议和凭据仍由原 Provider 及官方模型设置负责，不复制模型配置，也不改变连接 owner。已有自定义默认、显式停用与 `defaultDisabled` 选择优先；已保存的自动行再次解析时保持身份，不做无谓清理、重建或重复持久化。
+执行器使用官方 DSH、Grok Build、本机 Codex CLI 的 app-server，以及官方 Claude Agent SDK 驱动的本机 Claude Code，Codex 与 Claude 的配置及会话保存在套件自有目录。OpenCode 也可承载 OPL Gateway Gemini 的四项 `GATEWAY_ANTIGRAVITY_GEMINI_MODELS`（Gemini 4 Carbon、Gemini 4 Hydrogen、Gemini 4 Argon 与 Gemini 3.8 Flash），Pi 可承载 Carbon 与 Hydrogen，具体协议与推理边界见[外部 Harness 适配](harness-adaptation.md)。Antigravity 暂仅支持本机管理；Claude Code 的官方 SDK 思考增量独立显示，不显示签名。
 
-MiniMax 的官方账号模型与 mcode ACP 路线是一条专用集成，不走通用 custom-provider 配置。`opl-execution.minimaxCodeEnabled` 是唯一偏好，默认开启；Host 通过官方 volatile 更新事件增删原生 Provider 路由，目录 Resolver 只在最终投影隐藏官方 Provider 或 mcode Harness 的组合，持久文件仍保留原行。执行页和 `settings.models.footer` 账号 Gate 读取同一个官方 `ConfigForm`，没有第二份 enabled 状态。停用后的 start、resume、prompt、连接和原生流门禁拒绝新 mcode 工作，旧原生选择不会 fall through 到其他 Provider；重新启用恢复原引用，凭据和历史不归该开关删除。
-
-每个原生对话选中的组合 ID 保存在 OPL 自有的 `combination-selection.json`，用于重启后区分同一模型的多个自定义组合。它只关联官方会话 ID，不改变官方会话格式。模型选择以官方 live/cold 投影为准，冷会话通过公开 `session.projections` 读取，不借用新建会话激活历史；组合停用或模型被其他入口切换后，不再采用失配的关联。
-
-执行器使用官方 DSH、Grok Build、本机 Codex CLI 的 app-server，以及官方 Claude Agent SDK 驱动的本机 Claude Code。OPL 只做协议、权限、显示和协作映射，不实现 Agent 循环。Codex 与 Claude 的配置及会话保存在套件自有目录，不改日常 CLI 配置。OpenCode 也可承载 OPL Gateway Gemini 的两个固定组合：Gemini 4 Carbon 和 Gemini 4 Hydrogen；它们仍从 Gateway 读取凭据和 OpenAI Chat Completions 路由，OpenCode 只负责 Agent 循环与工具执行。OFM 的 `big-pickle` 与官方 OpenCode 免费车道同样由 OpenCode 执行；OpenCode 不广告推理档位，这些组合不显示推理强度。Kilo 频道的 `nvidia/nemotron-3-super-120b-a12b:free`、`recursive/flint-v1.0:free` 和 `liquid/lfm-3-1.7b:free` 由 Kilo 读取 OFM Chat 端点；`flint-40b-free` 由 OpenCode 读取 OFM Chat 端点。它们保留 OFM 作为模型来源。Antigravity 暂仅支持本机管理。
-
-Claude Code 的官方 SDK 思考增量映射到对话中的思考流，正文增量仍独立显示；签名不显示，已完成的内容块不重复追加。只展示 SDK 实际发送的思考，渠道未发送时不补写。
-
-图片经官方附件服务接收与读取；外部轮次只持久化附件引用，发送时才编码，不读取模型提供的 URI。模型来源必须声明支持图片，CLI 必须广告图片能力，或满足已验证的版本兼容条件。Grok Build 1.0.46 的 ACP 图片广告为 false，但实际支持图片；兼容判定仅接受 Grok Build 适配器及该版本的初始化元数据，其他未声明支持的版本与实现仍拒绝发送。文字和多张图片保持输入顺序，不支持的输入在发送前拒绝，不降成文字。图片消息编辑保留原图片，且要求持久引用与 CLI 历史的图片数量一致；Grok 历史缺少可靠图片计数时仍不提供图片消息编辑。此路径不扩展为音频或通用文件上传。
-
-各已接入 Harness 的协作工具可以先查询可用组合，再使用组合 ID 派发同项目子任务。Codex Skill 同样通过组合目录派发。各 Harness 保留自己的上下文，交接依靠明确的任务说明。
-
-官方具名 Subagent provider 适合简单的一次性委派，例如给 Codex provider 配置固定模型与权限，并通过专用工具调用。其结果不包含 OPL 连续会话、流式工具展示或交付验收合同。官方 preset/persona 可以承载固定角色说明；这不等于可以删除处理任意模型与 Harness 连续对话的组合目录。两类任务复用各自已有入口，不按“Bot”名称复制配置。
+图片经官方附件服务接收与读取；外部轮次只持久化附件引用，发送时编码，要求模型来源与 CLI 均声明支持图片（Grok Build `1.0.46` 除外，按已验证版本识别）。各 Harness 协作工具与 Codex Skill 可先查询可用组合再按组合 ID 派发。官方具名 Subagent provider 与 `preset/persona` 适合固定配置的一次性任务，不替代需要连续会话、流式工具或交付验收的组合目录。
 
 ## 迁移与验证
 
-旧组合目录首次读取时先保留 `.v1.backup`，再转为模型引用。用户名称、默认选择、权限和原会话映射保留；旧自定义模型若未进入原生模型系统，会显示未配置，原声明仍在备份中。发现旧组合的连接与其模型来源冲突时停止迁移并保留文件，避免猜错账号。此迁移只涉及 OPL 组合文件，不改变官方会话格式。
-
-隔离验收使用由官方 feed 确定的未修改桌面与本地模拟模型端点，覆盖原生设置写入、模型目录回读、DeepSeek Messages、Codex Chat Completions、官方工具执行及后续模型回复。真实 Gateway 新增分组模型和外部 CLI 的完整调用，需要对应服务和安装环境，不能由本地模拟验收替代。
+旧组合目录首次读取时先保留 `.v1.backup`，再转为模型引用；连接与模型来源冲突时停止迁移并保留文件，不改变官方会话格式。隔离验收方法与验证范围见[官方桌面兼容验证](compatibility.md)。
 
 ## 模型与组合的界面规则
 
-模型配置继续写入 DSH 原生设置。Gateway 账号页只管理账号、用量和分组凭据；模型页中的 OPL Gateway 卡片默认平铺模型，同名模型以必要的渠道标记区分，编辑时才展开各调用路由和协议。Key 同步状态不表示真实调用已验证。
+模型配置继续写入 DSH 原生设置，页面按模型来源、执行与组合、协作与行为、应用扩展组织：
 
-新增组合只列出凭据就绪的模型。同名模型的不同计费渠道可分别选用：DeepSeek Flash 的 DeepSeek/OpenAI 协议，以及 Claude Opus 5.5、Fable 5.2 的 Claude/AWS/Kiro；DeepSeek Flash 的 OpenAI 协议渠道必须由用户主动加入。组合绑定精确渠道，不在失败后静默换组。倍率仅显示 Gateway 实际返回值。已有组合的精确模型引用和权限保持不变，失效组合保留并说明原因，不把不可用模型当作新增选项。对话按钮显示“模型 · Harness”，来源只在展开菜单中分组展示。
-
-设置导航统一按账户与模型来源、执行与组合、协作与行为、应用扩展排列。BambooNode StartLux 与 TypeSafe Jev 注册到官方可配置提供商目录，复用“添加模型提供商”、原生编辑器与删除确认。官方编辑器仍只识别 DeepSeek 与 pi-ai 两种布局，因此兼容层扩展原有 `llm-pi-ai` 的公开 Schema，保留原条目和原版适配器；Jev 的固定模型发现只适配该 namespace 下的精确 provider 查询，其他发现交回官方实现，卸载恢复原方法。个人 Key 通过固定目标存入 Windows Credential Manager。官方设置、插件管理、Agent 预设和原版 OFM 的组件、配置与更新继续由各自维护者拥有；OPL 只统一导航和展示。
-
-华为云 MaaS 的模型目录、供应商入口、专属凭据迁移、请求转发及执行适配已撤除。旧用户配置、系统凭据和会话原样保留，但不再被 OPL 探测、迁移或自动恢复；已有组合保留为不可用引用。ZCode 继续服务已适配的 OFM 模型，使用 OFM 的连接与凭据。
-
-系统通知属于本机通用偏好，通过官方 `settings.general.item` 条目复用通用设置页面；保留原偏好键、默认值和通知控制器，不增加独立导航或配置副本。对话的 token 用量和上下文占用使用官方 DSH 统计；旧上下文预算服务、Remote 与未挂载 UI 已删除。外部 Harness 的网络代理位于“执行与组合 → 执行引擎与网络代理”的现有卡片内，与路径、检测及维护共用页面操作状态；按 Harness 写入原组合目录中的同一字段，不在组合列表重复提供。工具审批也收在同一页的折叠区，使用原有路线、预算和保存流程，不占独立导航。检测接口返回所检测 Harness 的原配置引用投影，读取和编辑代理不要求先加载模型目录。Gateway 账户需要登录、用量与分组权限管理，OFM 需要保留原版多渠道、路由和更新功能，因此继续使用各自已有入口。
-
-导航名称与顺序集中定义在 `src/shared/client/settings-navigation.ts`。设置导航统一只显示文字，官方入口与第三方入口使用相同的文字布局。当前官方没有导航展示设置接口，`src/compat/client/settings-navigation.ts` 调整公开 Slot 条目的标签与顺序，并通过局部样式隐藏设置导航图标，保留原条目身份、组件、注入参数和子 Slot；不改官方或 OFM 的包文件。适配随条目注册与热重载更新，卸载后恢复原元数据并移除样式，未列入名称规则的第三方入口保留原标签。官方提供对应接口后可替换这处兼容实现。
-
-新增或吸收第三方能力时，按[功能接入与 UI 成本判断](development.md#功能接入与-ui-成本判断)决定能力 owner 和界面位置。当前设置信息架构中，供应商与凭据在模型来源入口，执行程序、组合绑定、网络代理和工具审批在“执行与组合”；OFM 的完整原版管理能力通过入口适配保留，决策模型配置复用原生供应商交互。这是当前合理落点，不排除未来依据新的用户任务调整或增加必要入口。
+- 账号页管账号、用量与分组凭据；模型页平铺展示模型并仅以渠道标记区分同名路由，编辑时展开协议和高级字段，不因新增供应商或决策模型复制独立设置页。
+- BambooNode StartLux 与 TypeSafe Jev 注册到官方可配置提供商目录，兼容层扩展 `llm-pi-ai` 公开 Schema 并提供固定凭据目标（Windows Keyring）与精确 Jev 发现，卸载恢复原方法。
+- 系统通知复用官方通用设置条目，token 用量与上下文占用复用官方统计（旧上下文预算服务与未挂载 UI 已删除）；外部 Harness 网络代理和工具审批折叠区收在“执行与组合”内，不占独立导航。
+- 导航名称与顺序集中定义在 `src/shared/client/settings-navigation.ts`，由 `src/compat/client/settings-navigation.ts` 仅在界面层调整公开 Slot 标签与顺序、隐藏导航图标，不改动官方或 OFM 包文件。新增能力与 UI 放置依据见[功能接入与 UI 成本判断](development.md#功能接入与-ui-成本判断)。
 
 ## 原生协作与跨 Harness 交付
 
-官方 `dsh-subagent` 拥有原生 local spawn/fork 的父子关系、消息与继续执行。官方实验 Team 在此之上拥有 lead、具名 teammate、持久 roster 和 task DAG。Team 当前只支持可继续的本地 provider，外部 Codex、Claude、ACP 与 DSH SDK provider 每次执行一次任务，不能作为这类 teammate；Team 的工具也未提供每次任意选择模型与 Harness 的参数。
+官方 `dsh-subagent` 与实验 Team 拥有原生本地父子任务、roster 和 task DAG；DSH Agent 发起的新 DSH 内部子任务只走官方工具，OPL 委派工具仅列出并接受外部 Harness 目标（已有 OPL DSH 子任务可凭原 `sessionId` 继续）。角色绑定与领域智能体预设链路见[跨 Harness 团队接入](cross-harness-team.md)。
 
-DSH Agent 发起的新 DSH 内部子任务只走官方工具与生命周期。`list_harness_combinations` 只提供外部 Harness 目标，`delegate_to_harness` 在工具与 service 两层拒绝新建内部 DSH 目标；已有 OPL DSH 子任务可携原 sessionId 继续，保留其原交付与验收关系。
-
-跨 Harness 连续会话和交付验收仍进入 OPL 路径：`HarnessService` 是该路径的唯一 owner，`harness-sessions/` 保存冻结的模型引用、任务要求、轮次、交付和验收，并关联官方会话或外部会话。Agent-scoped 工具在 `src/collaboration/host/tools.ts` 注册；外部 Harness 的私有 MCP capability 绑定真实父会话后调用相同的 delegate/result/report/review/cancel 方法。外部 Codex 入口位于 `src/collaboration/host/external-codex.ts`。这些映射不接管官方原生 Subagent/Team 状态。
-
-执行状态与验收状态分开；完成轮次进入 pending 验收，父对话基于实际产物选择 accepted 或 changes_requested。后续修改沿用子会话和 taskId，使用新 operationId。原 operation 重试幂等，变更内容被拒绝。回传以持久 ID 和官方 prompt requestId 去重，只有用户显式重试创建新的交付尝试。重启不会自动重新执行未完成的轮次。
-
-OPL 不按相同 cwd 自动串行化会话，也不实现项目写队列。普通 write 的冲突由 Git 和具体文件工具暴露；需要隔离的写任务由官方 worktree 从已提交基线创建独立目录与分支，在各自 checkout 中执行。`writeScope` 只在双方都显式声明且范围重叠时计算互斥，省略不表示独占项目。同步委派的 `waiting_child` 表示父子生命周期，不是写锁；只读任务始终可以并发。
-
-worktree 中的写入完成并经过仓库要求的检查后，以该 checkout 的提交作为可审阅结果，再由 Git 或官方 Forge 合入。官方 Forge 的合并针对固定 `headSha`，并要求用户或既有自动化合同确认；OPL 不接管 worktree、PR、评审或合并状态，也不绕过验收自动合并。详细边界见[并行写入与工作树](parallel-writes.md)。
-
-主界面使用官方会话列表、消息流和输入框。OPL 路径中的组合关联、外部会话映射、任务轮次、交付与验收由 `HarnessService` 持久化；官方 Subagent/Team 的对象继续由官方拥有，不合并成新的 OPL Bot 存储。官方 Team 完成表示其任务状态，不代表父对话已经核验产物并接受 OPL 交付。
-
-原生会话的读取、队列、fork 和等待使用官方 Session Controller。OPL 已删除私有等待状态投影，对外结果通过官方 wait、observeEvent 和 events 进行兼容映射；反馈服务只保留自身交付所需事实。官方 Goal 管同会话目标和预算，Workflow 管前台脚本执行，不能替代跨 Harness 持久任务与验收。跨进程反馈的 outbox、receipt、幂等唤醒仍有独立职责，官方 Team 消息不提供同样的可靠交付合同。
+跨 Harness 连续会话与交付验收由 `HarnessService`（`harness-sessions/`）持久化，Agent 工具注册在 `src/collaboration/host/tools.ts`，外部 Codex 入口位于 `src/collaboration/host/external-codex.ts`。执行态与验收态分离，通知回传经 `taskFeedbackFacts`（v2 投影缓存）与 outbox/receipt 幂等去重，已解决的待审批/提问通知在确认后从投递队列退役并保留审计记录。普通写任务不因共享 cwd 排队；并发 Git 写任务遵循[并行写入与工作树](parallel-writes.md)。
 
 ## 审批、计量与 MCP 边界
 
-原生 Auto Review 的 `auto` 权限预设、pre-execute gate、决策策略与插件生命周期由官方 `dsh-experimental-auto-review` 拥有。OPL 已撤除重复的原生审批 gate，只保留公开 `llm/stream` 的 `purpose: 'auto-review'` 路由、预算、原始请求/响应记录，以及 ZCode 外部审批桥。原始记录表示 reviewer 的请求与响应，不另行宣称官方已执行某个审批结果。
-
-安装器通过官方 profile manifest/bundle 接口一次迁移启用 Team profile 与 Auto Review，先确认与桌面同版。已有明确禁用和迁移后的用户选择不重置；启用、禁用、卸载与生命周期归官方插件管理器。安装不会为会话切换权限，使用 Auto Review 仍需该会话选择官方 `auto` 预设。OPL reviewer 适配默认关闭，其面板只控制路由、预算与外部桥；关闭后官方仍可使用当前会话模型审批，不卸载或关闭官方 Auto 插件。
-
-原生 token 与上下文压力、构成使用官方 token meter。外部 Harness 的真实 usage 来源于各 CLI/SDK 的事件，OPL 只映射实际值；排除编辑替换历史的 turns/steps 计数也保留独立语义。原生待处理队列的编辑不等于已完成历史的停止后编辑与重发，后者仍需现有适配。
-
-MCP 工具、Resources 与连接由官方 MCP Client 管理。标准 MCP Apps 能力协商、UI metadata 与同连接 AppBridge 缺少完整公开接口时，OPL 保留必要展示适配；官方补齐后沿同一连接切换，不新增独立 MCP 连接或状态。
+原生 Auto Review 的权限预设、pre-execute gate 与生命周期由官方 `dsh-experimental-auto-review` 负责，安装器不再自动启用它；OPL 仅保留路由、预算、记录与 ZCode 外部审批桥，详见[Auto Review 工具审批](auto-review.md)。原生计量与编辑统计、MCP Apps 公开接口缺口分别见[日常使用指南](everyday-guide.md)与[MCP Apps 支持范围](mcp-apps.md)。
 
 ## 实现边界
 

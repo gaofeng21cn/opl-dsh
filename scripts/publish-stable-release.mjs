@@ -222,20 +222,18 @@ export async function publishStableRelease(root) {
   files.push('SHA256SUMS')
   sums.SHA256SUMS = hash(await readFile(join(dist, 'SHA256SUMS')))
   const notesFile = join(dist, 'release-notes.md')
-  const notes = renderReleaseNotes(
-    await readFile(join(root, 'docs', `release-notes-${version}.md`), 'utf8'),
-    {
-      version,
-      officialVersion: manifest.official.version,
-      officialVersions: Object.fromEntries(
-        Object.entries(manifest.official.feeds ?? {}).map(([platform, feed]) => [
-          platform,
-          feed.version,
-        ]),
-      ),
-      sourceCommit,
-    },
-  )
+  const draftFile = join(dist, `release-notes-draft-${version}.md`)
+  const notes = renderReleaseNotes(await readFile(draftFile, 'utf8'), {
+    version,
+    officialVersion: manifest.official.version,
+    officialVersions: Object.fromEntries(
+      Object.entries(manifest.official.feeds ?? {}).map(([platform, feed]) => [
+        platform,
+        feed.version,
+      ]),
+    ),
+    sourceCommit,
+  })
   await writeFile(notesFile, notes)
   const previous = JSON.parse(
     command('gh', ['api', '--paginate', '--slurp', `repos/${repository}/releases?per_page=100`]),

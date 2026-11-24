@@ -70,14 +70,14 @@ One Person Lab 面向论文、基金申请、研究报告等需要多轮审阅�
 
 | 想做什么 | 从这里开始 |
 | --- | --- |
-| 换模型来源，或确认组合支持哪些权限和输入 | [OFM 免费模型](docs/model-plugins.md) · [MiniMax 官方账号](docs/minimax-code.md) · [各渠道与执行引擎的适配范围](docs/harness-adaptation.md) |
+| 换模型来源，或确认组合支持哪些权限和输入 | [OFM 免费模型](docs/model-harness-architecture.md#第三方模型插件) · [MiniMax 官方账号](docs/minimax-code.md) · [各渠道与执行引擎的适配范围](docs/harness-adaptation.md) |
 | 给团队成员分配不同引擎，或从仓库接收任务 | [DSH 团队与角色](docs/cross-harness-team.md) · [SuperAgent 仓库协作](docs/superagent.md) |
 | 管理长对话上下文 | DSH 引擎默认启用 [Billion Context](https://github.com/ranxianglei/billion-context)。在新会话输入 `/acp` 查看压缩状态。在「插件 → 已安装插件」停用或卸载后重启，可恢复 DSH 自带的压缩。 |
 | 在对话中搜索网页 | 登录 OPL Gateway 后，默认通过网关使用 GPT-6.1 Sol 搜索，无需另配搜索密钥。如果已配置 DeepSeek 官方 API Key，可在「设置 → 网页搜索与获取」的「搜索」中选择 **DeepSeek Search API**，直接使用 DeepSeek 官方搜索。 |
 | 将任务交给专业应用继续处理 | [Agent 应用交接与 MCP Apps 支持范围](docs/mcp-apps.md) |
 | 配置工具审批或桌面操作 | [Auto Review 审批](docs/auto-review.md) · [Computer Use](docs/computer-use.md) |
-| 对话与文件 | [不在项目中工作](docs/everyday-guide.md#在项目外聊天) · [编辑消息并重发](docs/everyday-guide.md#修改已经发出的消息) · [打开交付文件](docs/file-deliveries.md) · [将指定会话移到回收站](docs/everyday-guide.md#把指定的-dsh-会话移到回收站) |
-| 任务进展与用量 | [设置无进展超时](docs/everyday-guide.md#progress-timeout) · [后台任务通知](docs/desktop-notifications.md) · [选择轮次统计范围](docs/everyday-guide.md#编辑后为什么有两种轮数) · [查看 token 用量和上下文窗口](docs/everyday-guide.md#token-context) |
+| 对话与文件 | [不在项目中工作](docs/everyday-guide.md#在项目外聊天) · [编辑消息并重发](docs/everyday-guide.md#修改已经发出的消息) · [打开交付文件](docs/everyday-guide.md#打开回复里交付的文件) · [将指定会话移到回收站](docs/everyday-guide.md#把指定的-dsh-会话移到回收站) |
+| 任务进展与用量 | [设置无进展超时](docs/everyday-guide.md#progress-timeout) · [后台任务通知](docs/everyday-guide.md#desktop-notifications) · [选择轮次统计范围](docs/everyday-guide.md#编辑后为什么有两种轮数) · [查看 token 用量和上下文窗口](docs/everyday-guide.md#token-context) |
 | 使用习惯 | [记住权限预设](docs/everyday-guide.md#remember-permissions) · [固定 Windows 窗口标题](docs/everyday-guide.md#window-title) · [在 Windows 使用 Git Bash](docs/everyday-guide.md#git-bash) |
 
 ## 更新与数据
@@ -93,6 +93,6 @@ One Person Lab 面向论文、基金申请、研究报告等需要多轮审阅�
 
 ## 关于
 
-OPL DSH 由 One Person Lab 独立维护，与 DeepSeek 官方无隶属关系。桌面、会话和权限由官方 DeepSeek Harness 或所选执行引擎提供。[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) · [模型与 Harness 架构](docs/model-harness-architecture.md) · [兼容性验证](docs/compatibility.md)
+OPL DSH 由 One Person Lab 独立维护，与 DeepSeek 官方无隶属关系。桌面、会话和权限由官方 DeepSeek Harness 或所选执行引擎提供。[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) · [文档导航](docs/README.md) · [模型与 Harness 架构](docs/model-harness-architecture.md) · [兼容性验证](docs/compatibility.md)
 
 采用 [MIT 许可](LICENSE)，来源声明见 [NOTICE](NOTICE)。

@@ -8,11 +8,31 @@ DSH 原生 Auto Review 由官方 `@deepseek-ai/dsh-experimental-auto-review` 插
 
 开启 OPL 适配后，DSH 原生和 ZCode 默认使用 OPL Gateway 的专用 `codex-auto-review`，与聊天模型及其推理强度分开。也可以显式选择已注册的无工具 LLM reviewer 或决策模型。原生请求通过官方公开 `llm/stream` 的 `auto-review` 用途接入；OPL 保留官方生成的策略和逐条消息，只适配模型与预算，最终输出由官方插件解析并决定原生工具是否执行。
 
-BambooNode StartLux 使用同步 decisions API，将请求转换为联合选择题；它不提供工具、不创建执行会话，也不进入普通聊天模型列表。Windows API Key 保存在 Credential Manager。缺少 Key、请求失败、未知选择或不确定结果均使审查失败。
-
-同一下拉列表提供 **OpenCode · Jev / Jev 1.13 Free**，无需个人 API Key。它调用 OpenCode 发布的 System One 决策接口，不经过 OFM 聊天转发，也不进入普通聊天列表。只有选择概率、置信度和结果一致性均通过验证时才返回允许；限额或不可用使本次审查失败。详见 [Jev 决策模型](jev-auto-review.md)。
+除通用 LLM reviewer 外，下拉列表还提供 StartLux 与 Jev 三条专用无工具决策模型路线（均见下节[StartLux 与 Jev 决策模型](#startlux-与-jev-决策模型)）。
 
 升级已有 profile 时，套件通过官方设置接口补入缺失的隐藏审查 provider，保留已有聊天 provider、模型列表与审查 provider。配置冲突保留原配置。开启 OPL 适配后，选定路线缺失、请求失败、超时、结果不完整或记录失败均使该次审查失败，不临时切换模型。其他原生执行检查仍生效。
+
+## StartLux 与 Jev 决策模型
+
+### BambooNode StartLux
+
+在 **设置 → 模型供应商 → 添加模型提供商** 中选择 **BambooNode · StartLux**，填写 Bamboo API Key 后保存。Key 只写入 Windows Credential Manager 的固定目标 `OPLDSH:BambooStartLux:ApiKey`，不会写入 `.credentials.yaml`、`.env`、日志或对话记录（不支持 Windows Keyring 的平台不提供个人密钥存储；系统 Keyring 用于避免明文落盘，不能阻止同用户下已运行的恶意程序调用系统凭据 API）。
+
+StartLux 只作为工具审批的无工具审查路线，不作为普通聊天模型显示在执行模型列表中。它使用 Bamboo 的同步 `/v1/decisions` JSON 接口，将当前审查策略和冻结事实转换成一个联合选择题；不提供 DSH 工具调用或执行会话绑定。返回缺失、未知、无把握、超时、HTTP 错误或结果无法保存时均拒绝放行。保存 Key 只证明凭据已写入系统 Keyring，不代表网络连通已通过；验收仅使用合成案例，不发送私人会话、源码或凭据。
+
+### OpenCode Jev（免费）
+
+在 **设置 → 执行与组合 → 审查模型路线** 中启用 OPL 路线适配，选择 **决策模型 → OpenCode · Jev / Jev 1.13 Free**，保存后用于选择 Auto 权限的 DSH 或 ZCode 会话（现有路线和会话权限不自动切换）。
+
+该路线调用 OpenCode 官方公布的 `https://opencode.ai/inference/systemone/v1/systemone`（模型 `jev-1.13-free`），无需个人 API Key；不提供聊天、工具执行或推理档位接口，不进入普通聊天或独立 reviewer 列表，OFM 同名聊天条目也不能作为审查路线。它直接使用 System One 协议，不经过 OFM 转发，也不使用 OpenCode CLI。接口依据：[OpenCode Jev 文档](https://opencode.ai/v2/docs/console/models/#jev)、[TypeSafe Choice 响应](https://docs.typesafe.ai/primitives/choice)。
+
+适配器严格校验模型标识、选择类型、全部选项概率、概率总和与最大项；允许结论要求所选项概率与置信度均至少为 `0.9`。不确定选择、低置信度、字段缺失、矛盾结果、HTTP 错误和取消均不放行。限流或调整开放范围时不借用其他账号、伪造客户端身份、重发动作或改用其他模型；持久授权、新鲜度、超时、下游检查和审核记录仍由 Auto Review 负责。默认测试使用本地固定响应；设置 `OPL_JEV_LIVE=1` 后可单独运行 `tests/auto-review/jev-live.spec.ts`，以合成文本验证接口连通性。
+
+### TypeSafe Jev（个人 API）
+
+在 **设置 → 模型供应商** 添加 **TypeSafe · Jev** 并保存自己的 API Key，然后在审查模型路线的“决策模型”下拉列表选择 **TypeSafe · Jev / Jev 1.13 · 个人 API**。密钥仅保存在 Windows Credential Manager 的 `OPLDSH:TypeSafeJev:ApiKey`（不支持 Windows Keyring 的平台不提供）；未配置或无法读取密钥时不展示此路线。
+
+个人路线固定调用 `https://api.typesafe.ai/v1/systemone`（稳定版本 `jev-1.13.0`），按个人 TypeSafe 账户额度使用，与 OpenCode 免费路线分开。删除密钥后路线立即撤下，在途请求发送前仍重读密钥；不会自动切换免费接口、环境变量或明文凭据，已发出的请求不能通过删除本地密钥撤回。接口依据：[TypeSafe System One](https://docs.typesafe.ai/api/system-one)、[官方模型列表](https://docs.typesafe.ai/models)。
 
 ## 外部 Harness
 

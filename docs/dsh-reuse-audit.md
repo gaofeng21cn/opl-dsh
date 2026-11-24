@@ -1,6 +1,6 @@
 # 官方 DSH 能力复用检查
 
-2026-11-23 复核官方 `0.2.2-rc.5`。macOS 和 Windows 安装 feed 均为 rc.5，开发依赖和 SuperAgent 的 DSH peer 随官方版本组固定。Agent、Session Controller、App Boot、Auto Review、MCP Client/Resources、权限预设、会话投影、Subagent 和工具包的公开入口和已编译接口沿用 rc.3，表中的复用边界仍适用。rc.5 的公开 MCP 接口缺口由同连接协议测试复核。用户安装的实际版本和双平台资格以各自回执为准。
+当前开发依赖和 SuperAgent 的 DSH peer 固定为官方 `0.2.2-rc.5`（以 `package.json` 与 `package-lock.json` 为准），与双平台官方安装 feed 对齐。rc.5 的公开 MCP 接口缺口由同连接协议测试复核；用户安装的实际版本和双平台资格以各自回执为准。
 
 OPL 先定义用户需要完成的任务，再选择能力负责人。官方已有的能力使用官方插件、公开 API 与持久状态；OPL 只补官方尚未覆盖的部分。官方后续补齐时，在同一升级任务中验证真实调用链、切换调用者并退役重复实现，避免把过渡适配变成永久分叉。
 
@@ -27,26 +27,16 @@ OPL 先定义用户需要完成的任务，再选择能力负责人。官方已�
 | Computer Use                 | KimiCU 原始 MCP、官方工具与附件接口                                                                                                          | OPL 只做会话绑定、透传、附件展示、取消和权限门禁。                                                                                                                                   |
 | 发布与后续迁回               | 官方桌面 feed、既有每日兼容检查与联合发布流程                                                                                                | 新版检查同时核对本表中的缺口；有替代能力时优先完成同一用户任务的迁移，再验证增强包，不新增一套升级调度器。                                                                           |
 
-## 近期新增能力的实际范围
+## 保留适配的边界说明
 
-官方 Team 目前只接收可继续的本地 spawn/fork provider。它不把一次性 Codex、Claude 或 ACP provider 变成可持续 teammate，也不为每次 `spawn_teammate` 提供任意模型/Harness 选择。团队共享工作目录；需要并行修改时使用官方 worktree，不能把 OPL 扩展成按共享 cwd 串行的项目写队列。
+官方 Team 目前只接收可继续的本地 spawn/fork provider，不把一次性 Codex、Claude 或 ACP provider 变成可持续 teammate，也不为每次 `spawn_teammate` 提供任意模型/Harness 选择；团队共享工作目录，需要并行修改时使用官方 worktree。OPL 跨引擎团队使用官方 local spawn 承载身份与生命周期，在 `llm/stream` 扩展点转接 Codex/Claude，经每会话 MCP capability 调用官方 `tools.resolve` 与 `tools.execute`，待官方提供完整外部连续成员合同后直接替换。
 
-OPL 跨引擎团队使用官方 local spawn 的成员会话承载身份与生命周期，在 llm/stream 扩展点转接 Codex/Claude。外部 CLI 经每会话 MCP capability 调用官方 tools.resolve 与 tools.execute；不绕过官方权限，也不复制消息、任务板或成员目录。已在 macOS 的未修改官方桌面中验证 Codex、Claude、DSH 三方通信、任务完成、取消与冷恢复；双平台安装资格与发布状态另行记录。官方提供完整外部连续成员合同后，可直接替换这些适配点。
+官方外部 Subagent provider 每次执行新任务并返回最终结果，local spawn/fork 的父子身份、消息与取消归官方 `subagents` 管理，OPL 不再复制原生子任务生命周期。官方 Session Controller 的 `wait` 返回 idle、input-required 或 timeout，具体 turn 成败与审批标识从官方历史和待处理请求读取，不把 idle 自动解释为验收通过。
 
-官方外部 Subagent provider 每次执行新任务并返回最终结果。local spawn/fork 可继续、可恢复，但其父子身份、消息与取消归官方 `subagents` 管理。OPL 不应为了统一命名，再复制一份原生子任务生命周期。
+官方 Auto Review 使用当前会话模型发起 `purpose: 'auto-review'` 的无工具评审。Team 已并入官方基础与 Web 组件且原 `@deepseek-ai/dsh-experimental-agent-team-profile` 已进入 `RETIRED_BUNDLES`，`installer/profile.cjs` 在 profile 停止时调用官方加载器移除已退役 Team 引用，不再安装旧包；安装与迁移**不会自动启用** Auto Review 插件，已有禁用项和官方插件管理器中的选择保持不变，启用 Auto Review 后仍须每个会话显式选择 `auto` 预设。OPL reviewer 适配默认关闭，其面板只管理路线、预算与 ZCode 外部审批桥。
 
-官方 Session Controller 已覆盖原生会话管理与等待，但 `wait` 返回的是 idle、input-required 或 timeout，以及官方会话状态。OPL 旧接口中的具体 turn 成败和审批标识要从官方历史与待处理请求读取，不能将 idle 自动解释为某轮验收通过。
+官方 `ProviderEditor.layoutOf` 仍只识别 DeepSeek 与 pi-ai 布局；Bamboo/TypeSafe 的独立决策协议保留现有 namespace 的公开 Schema 扩展、精确 Jev 发现与固定凭据目标，官方开放插件编辑布局后撤去。官方模型选择身份仍只有 provider/model；公开接口覆盖 Harness 绑定后迁回组合选择适配。
 
-官方 Auto Review 使用当前会话模型发起 `purpose: 'auto-review'` 的无工具评审。独立 reviewer、专用决策协议以及外部 Harness 的审批请求仍需适配。原生审批策略、预设和卸载行为应跟随官方实现，不保留 OPL 的策略副本。
+## 迁回要求
 
-安装器通过官方 profile manifest/bundle 接口在首次迁移时启用当前桌面附带的可选能力，并保留已有禁用项和后续官方插件管理器中的选择。`0.2.2-rc.1` 使用可选 Team profile；`0.2.2-rc.2` 将 Team 并入基础与 Web 组件，`0.2.2-rc.3` 保持该官方装配并修复 Windows 应用内更新与重开问题。安装器在 profile 停止时调用官方加载器移除已退役的 Team profile 引用，不再安装或启用旧包。其余可选包必须来自当前桌面的同一官方版本组。启用 Auto Review 插件只注册能力，不改变会话权限；每个会话仍需选择官方 `auto` 预设。OPL reviewer 适配默认关闭，其面板不负责卸载或关闭官方插件。
-
-## 实施状态与迁回要求
-
-本轮源码已切换会话等待、DSH 内部子任务入口和原生 Auto Review 负责人，并加入官方 bundle 一次迁移与能力资格读取。原生 Agent 循环、会话日志、模型注册表与投影、原生统计、MCP 连接及第三方模型插件继续沿用原负责人。源码状态不替代类型检查、测试、未修改官方桌面隔离运行或发布证据；各层验证以本次实际执行结果及发布资格回读为准。
-
-保留的 OPL 能力需能指出官方当前缺失的具体语义。升级发现官方提供等价能力时，先验证最小真实路径，再切换唯一写入者与调用者，删除重复服务、配置、UI 和测试。已有用户数据保留必要的单次迁移或只读兼容，不通过自动回退长期运行两套负责人。
-
-官方 `ProviderEditor.layoutOf` 仍只识别 DeepSeek 与 pi-ai 布局；Bamboo/TypeSafe 的独立决策协议保留现有 namespace 的公开 Schema 扩展、精确 Jev 发现与固定凭据目标。官方开放插件编辑布局后撤去这处兼容。官方模型选择身份仍只有 provider/model；其公开接口覆盖 Harness 绑定后，再迁回组合选择适配。
-
-此前已退役的华为云模型、专属凭据迁移、请求转发和适配不恢复。旧配置、系统凭据与会话保持原样，已有失效组合按缺失模型处理。OFM 的 ZCode/Kimi 及共享协议继续保留。
+升级发现官方提供等价能力时，先验证最小真实路径，再切换唯一写入者与调用者，删除重复服务、配置、UI 和测试。已有用户数据保留必要的单次迁移或只读兼容，不通过自动回退长期运行两套负责人。源码状态不替代类型检查、测试、未修改官方桌面隔离运行或发布证据。
