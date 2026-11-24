@@ -1,6 +1,7 @@
 /** Translate Muse MCP namespaces to the OFM listener's flat Responses tools. */
-import { createServer } from 'node:http'
-import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
+import { createHash } from 'node:crypto'
+import { createParser } from 'eventsource-parser'
+import { readBoundedBody, startLoopbackServer, timingSafeTokenMatch } from '../loopback-relay.ts'
 
 /** Preserve namespace identities across tool declarations, history and returned calls. */
 export function museToolWire(body) {
@@ -123,14 +124,14 @@ export async function startMuseEndpoint({ baseURL, apiKey }) {
     source.hash
   )
     throw Error('Invalid Muse source endpoint')
-  const token = randomBytes(32).toString('hex')
   const work = new Set()
   let closing = false
-  const server = createServer((req, res) => {
+  const relay = await startLoopbackServer((token) => (req, res) => {
     const abort = new AbortController()
-    const expected = Buffer.from(`Bearer ${token}`)
-    const received = Buffer.from(req.headers.authorization ?? '')
-    if (closing || received.length !== expected.length || !timingSafeEqual(received, expected)) {
+    const bearer = req.headers.authorization?.startsWith('Bearer ')
+      ? req.headers.authorization.slice('Bearer '.length)
+      : undefined
+    if (closing || !timingSafeTokenMatch(bearer, token)) {
       res.writeHead(401)
       res.end()
       return
@@ -149,17 +150,13 @@ export async function startMuseEndpoint({ baseURL, apiKey }) {
           res.end()
           return
         }
-        let size = 0
-        const parts = []
-        for await (const chunk of req) {
-          size += chunk.length
-          if (size > 64 * 1024 * 1024) throw Error('Muse request exceeds the relay input limit')
-          parts.push(chunk)
+        const read = await readBoundedBody(req, 64 * 1024 * 1024)
+        if (!read.ok) {
+          if (read.reason === 'too-large') throw Error('Muse request exceeds the relay input limit')
+          return
         }
         const wire =
-          req.method === 'POST'
-            ? museToolWire(JSON.parse(Buffer.concat(parts).toString('utf8')))
-            : undefined
+          req.method === 'POST' ? museToolWire(JSON.parse(read.body.toString('utf8'))) : undefined
         const upstream = await fetch(`${source.href.replace(/\/$/u, '')}${path}`, {
           method: req.method,
           headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
@@ -172,27 +169,45 @@ export async function startMuseEndpoint({ baseURL, apiKey }) {
         if (!wire || !upstream.ok) {
           for await (const chunk of upstream.body ?? []) res.write(chunk)
         } else if (contentType.includes('text/event-stream')) {
-          let buffer = ''
-          const decoder = new TextDecoder()
+          let flushing = false
+          let streamError
+          const parser = createParser({
+            onComment(comment) {
+              if (!flushing) res.write(`: ${comment}\n\n`)
+            },
+            onEvent(event) {
+              if (flushing) {
+                streamError ??= Error('Muse endpoint stream ended inside a frame')
+                return
+              }
+              try {
+                if (!event.data || event.data === '[DONE]') {
+                  const prefix = event.event ? `event: ${event.event}\n` : ''
+                  res.write(`${prefix}data: ${event.data}\n\n`)
+                  return
+                }
+                for (const item of wire.events(JSON.parse(event.data)))
+                  res.write(`event: ${item.type}\ndata: ${JSON.stringify(item)}\n\n`)
+              } catch (error) {
+                streamError ??= error instanceof Error ? error : Error(String(error))
+              }
+            },
+            onError() {
+              if (flushing) streamError ??= Error('Muse endpoint stream ended inside a frame')
+            },
+          })
+          const decoder = new TextDecoder('utf-8', { ignoreBOM: false })
           for await (const chunk of upstream.body ?? []) {
-            buffer = (buffer + decoder.decode(chunk, { stream: true })).replace(/\r\n/gu, '\n')
-            let end
-            while ((end = buffer.indexOf('\n\n')) >= 0) {
-              const frame = buffer.slice(0, end)
-              buffer = buffer.slice(end + 2)
-              const data = frame
-                .split('\n')
-                .filter((line) => line.startsWith('data:'))
-                .map((line) => line.slice(5).trim())
-                .join('\n')
-              if (!data || data === '[DONE]') res.write(frame + '\n\n')
-              else
-                for (const event of wire.events(JSON.parse(data)))
-                  res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
-            }
+            parser.feed(decoder.decode(chunk, { stream: true }))
+            if (streamError) throw streamError
           }
-          buffer = (buffer + decoder.decode()).replace(/\r\n/gu, '\n')
-          if (buffer.trim()) throw Error('Muse endpoint stream ended inside a frame')
+          const tail = decoder.decode()
+          if (tail) parser.feed(tail)
+          if (streamError) throw streamError
+          flushing = true
+          parser.feed('\n\n')
+          flushing = false
+          if (streamError) throw streamError
         } else res.write(JSON.stringify(wire.restore(await upstream.json())))
         res.end()
       } catch {
@@ -211,18 +226,14 @@ export async function startMuseEndpoint({ baseURL, apiKey }) {
       for (const entry of work) if (entry.operation === operation) work.delete(entry)
     })
   })
-  await new Promise((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', resolve)
-  })
   return {
-    baseURL: `http://127.0.0.1:${server.address().port}`,
-    apiKey: token,
+    baseURL: relay.baseURL(),
+    apiKey: relay.token,
     async close() {
       closing = true
-      for (const entry of work) entry.abort.abort()
-      server.closeAllConnections()
-      await new Promise((resolve) => server.close(resolve))
+      await relay.close(() => {
+        for (const entry of work) entry.abort.abort()
+      })
       await Promise.allSettled([...work].map((entry) => entry.operation))
     },
   }

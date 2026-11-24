@@ -16,7 +16,13 @@
  * @module zcode-ofm/zcode-ofm-relay
  */
 
-import type { Socket } from 'node:net'
+import { Agent, request as httpRequest } from 'node:http'
+import {
+  assertLoopbackOrigin,
+  readBoundedBody,
+  startLoopbackServer,
+  timingSafeTokenMatch,
+} from '../loopback-relay.ts'
 import {
   OFM_RELAY_HOST,
   OFM_RELAY_MAX_BODY_BYTES,
@@ -36,23 +42,6 @@ export interface OfmRelay {
 export interface OfmRelayTarget {
   /** The owner's published endpoint. Loopback http on a concrete port. */
   readonly baseURL: string
-}
-
-const upstreamOf = (baseURL: string) => {
-  const url = new URL(baseURL)
-  if (
-    url.protocol !== 'http:' ||
-    !url.port ||
-    (url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash
-  )
-    throw Error('Our Free Model 转发通道地址无效')
-  // Trailing slash removed so joining a request path never produces `//`.
-  const prefix = url.pathname.replace(/\/+$/, '')
-  return { port: Number(url.port), prefix }
 }
 
 /**
@@ -83,128 +72,94 @@ export async function startOfmRelay(
   getApiKey: () => Promise<string | undefined>,
   target: OfmRelayTarget,
 ): Promise<OfmRelay> {
-  const { randomBytes, timingSafeEqual } = await import('node:crypto')
-  const { createServer } = await import('node:http')
-  const { request: httpRequest, Agent } = await import('node:http')
-  const upstream = upstreamOf(target.baseURL)
+  const upstream = assertLoopbackOrigin(target.baseURL, 'Our Free Model 转发通道地址无效')
   // `http.request` ignores proxy environment variables, so a loopback lane is
   // reached directly and a corporate proxy cannot swallow or reroute it.
   const agent = new Agent({ keepAlive: true })
-  const sockets = new Set<Socket>()
-  const ticket = randomBytes(24).toString('hex')
-  const server = createServer((req, res) => {
-    // Refusals never reveal whether a credential exists.
-    const refuse = (status: number) => res.writeHead(status).end()
-    // The body is consumed before any decision. Answering while a request body is
-    // still arriving tears the socket down under the client, which surfaces as an
-    // intermittent hang rather than as the status the caller needs.
-    const body = new Promise<Buffer | 'too-large' | 'aborted'>((resolve) => {
-      const chunks: Buffer[] = []
-      let size = 0
-      req.on('data', (chunk: Buffer) => {
-        size += chunk.length
-        if (size > OFM_RELAY_MAX_BODY_BYTES) {
-          resolve('too-large')
-          return
-        }
-        chunks.push(chunk)
-      })
-      req.on('end', () => resolve(Buffer.concat(chunks)))
-      req.on('aborted', () => resolve('aborted'))
-      req.on('error', () => resolve('aborted'))
-    })
-    void (async () => {
-      // Only the completion POST is forwarded; any other verb is refused outright.
-      if (req.method !== 'POST') return refuse(405)
-      const payload = await body
-      if (payload === 'aborted') return
-      if (payload === 'too-large') return refuse(413)
-      const presented = req.headers[OFM_RELAY_TICKET_HEADER]
-      const value = Array.isArray(presented) ? presented[0] : presented
-      const a = Buffer.from(value ?? '')
-      const b = Buffer.from(ticket)
-      if (a.length !== b.length || !timingSafeEqual(a, b)) return refuse(403)
-      const apiKey = await getApiKey()
-      if (!apiKey) return refuse(503)
-      // A request that is not the pinned lane's own path is refused before a socket is
-      // opened, so the relay cannot be turned into a forwarder for another target.
-      const path = upstreamPath(upstream.prefix, req.url)
-      if (path === undefined) return refuse(404)
-      const forwarded = httpRequest(
-        {
-          host: '127.0.0.1',
-          port: upstream.port,
-          method: req.method,
-          path,
-          agent,
-          headers: {
-            // The placeholder never leaves this process; the real key goes on the wire.
-            authorization: `Bearer ${apiKey}`,
-            'content-type': String(req.headers['content-type'] ?? 'application/json'),
-            'content-length': String(payload.length),
-            accept: String(req.headers.accept ?? 'text/event-stream'),
-          },
-        },
-        (upstreamRes) => {
-          // An upstream error body can echo request headers, which would carry the
-          // real key back into a response the CLI may log. Preserve the status only.
-          if ((upstreamRes.statusCode ?? 502) >= 400) {
-            upstreamRes.resume()
-            res.writeHead(upstreamRes.statusCode ?? 502, { 'content-type': 'application/json' })
-            res.end(JSON.stringify({ error: { message: 'Our Free Model request failed' } }))
+  let relay
+  try {
+    relay = await startLoopbackServer(
+      (ticket) => (req, res) => {
+        // Refusals never reveal whether a credential exists.
+        const refuse = (status: number) => res.writeHead(status).end()
+        // The body is consumed before any decision. Answering while a request body is
+        // still arriving tears the socket down under the client, which surfaces as an
+        // intermittent hang rather than as the status the caller needs.
+        const bodyPromise = readBoundedBody(req, OFM_RELAY_MAX_BODY_BYTES)
+        void (async () => {
+          // Only the completion POST is forwarded; any other verb is refused outright.
+          if (req.method !== 'POST') return refuse(405)
+          const read = await bodyPromise
+          if (!read.ok) {
+            if (read.reason === 'too-large') return refuse(413)
             return
           }
-          res.writeHead(upstreamRes.statusCode ?? 502, {
-            'content-type': String(upstreamRes.headers['content-type'] ?? 'application/json'),
-            'cache-control': 'no-cache',
+          const payload = read.body
+          const presented = req.headers[OFM_RELAY_TICKET_HEADER]
+          const value = Array.isArray(presented) ? presented[0] : presented
+          if (!timingSafeTokenMatch(value, ticket)) return refuse(403)
+          const apiKey = await getApiKey()
+          if (!apiKey) return refuse(503)
+          // A request that is not the pinned lane's own path is refused before a socket is
+          // opened, so the relay cannot be turned into a forwarder for another target.
+          const path = upstreamPath(upstream.prefix, req.url)
+          if (path === undefined) return refuse(404)
+          const forwarded = httpRequest(
+            {
+              host: '127.0.0.1',
+              port: upstream.port,
+              method: req.method,
+              path,
+              agent,
+              headers: {
+                // The placeholder never leaves this process; the real key goes on the wire.
+                authorization: `Bearer ${apiKey}`,
+                'content-type': String(req.headers['content-type'] ?? 'application/json'),
+                'content-length': String(payload.length),
+                accept: String(req.headers.accept ?? 'text/event-stream'),
+              },
+            },
+            (upstreamRes) => {
+              // An upstream error body can echo request headers, which would carry the
+              // real key back into a response the CLI may log. Preserve the status only.
+              if ((upstreamRes.statusCode ?? 502) >= 400) {
+                upstreamRes.resume()
+                res.writeHead(upstreamRes.statusCode ?? 502, { 'content-type': 'application/json' })
+                res.end(JSON.stringify({ error: { message: 'Our Free Model request failed' } }))
+                return
+              }
+              res.writeHead(upstreamRes.statusCode ?? 502, {
+                'content-type': String(upstreamRes.headers['content-type'] ?? 'application/json'),
+                'cache-control': 'no-cache',
+              })
+              // Streamed through untouched so server-sent events keep arriving incrementally.
+              upstreamRes.pipe(res)
+            },
+          )
+          // A cancelled or torn-down turn must not leave an upstream request running.
+          req.on('aborted', () => forwarded.destroy())
+          res.on('close', () => forwarded.destroy())
+          forwarded.on('error', () => {
+            if (!res.headersSent) res.writeHead(502).end()
+            else res.end()
           })
-          // Streamed through untouched so server-sent events keep arriving incrementally.
-          upstreamRes.pipe(res)
-        },
-      )
-      // A cancelled or torn-down turn must not leave an upstream request running.
-      req.on('aborted', () => forwarded.destroy())
-      res.on('close', () => forwarded.destroy())
-      forwarded.on('error', () => {
-        if (!res.headersSent) res.writeHead(502).end()
-        else res.end()
-      })
-      forwarded.setTimeout(180000, () => forwarded.destroy())
-      forwarded.end(payload)
-    })().catch(() => {
-      if (!res.headersSent) res.writeHead(500).end()
-    })
-  })
-  server.on('connection', (socket) => {
-    sockets.add(socket)
-    socket.on('close', () => sockets.delete(socket))
-  })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, OFM_RELAY_HOST, () => {
-      server.removeListener('error', reject)
-      resolve()
-    })
-  }).catch((error) => {
+          forwarded.setTimeout(180000, () => forwarded.destroy())
+          forwarded.end(payload)
+        })().catch(() => {
+          if (!res.headersSent) res.writeHead(500).end()
+        })
+      },
+      { host: OFM_RELAY_HOST, tokenBytes: 24, unavailableMessage: '未能启动本地鉴权转发' },
+    )
+  } catch (error) {
     agent.destroy()
     throw error
-  })
-  const address = server.address()
-  const port = typeof address === 'object' && address ? address.port : 0
-  if (!port) {
-    server.close()
-    throw Error('未能启动本地鉴权转发')
   }
-  // Tracked so closing the relay also tears down anything still in flight, rather than
-  // leaving sockets open behind a server that will no longer accept them.
   return {
-    baseUrl: `http://${OFM_RELAY_HOST}:${port}${upstream.prefix}`,
-    ticket,
+    baseUrl: relay.baseURL(upstream.prefix),
+    ticket: relay.token,
     close: () => {
-      for (const socket of sockets) socket.destroy()
-      sockets.clear()
-      server.close()
-      agent.destroy()
+      relay.closeSync(() => agent.destroy())
     },
   }
 }
