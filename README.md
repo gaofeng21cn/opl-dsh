@@ -70,7 +70,7 @@ One Person Lab 面向论文、基金申请、研究报告等需要多轮审阅�
 
 | 想做什么 | 从这里开始 |
 | --- | --- |
-| 换模型来源，或确认组合支持哪些权限和输入 | [OFM 免费模型](docs/model-harness-architecture.md#第三方模型插件) · [MiniMax 官方账号](docs/minimax-code.md) · [各渠道与执行引擎的适配范围](docs/harness-adaptation.md) |
+| 换模型来源，或确认组合支持哪些权限和输入 | [OFM 免费模型](docs/model-harness-architecture.md#第三方模型插件) · [MiniMax 官方账号](docs/minimax-code.md) · [Google 账号与 Antigravity CLI](docs/model-harness-guide.md#换一种模型来源时哪些步骤会变) · [各渠道与执行引擎的适配范围](docs/harness-adaptation.md) |
 | 给团队成员分配不同引擎，或从仓库接收任务 | [DSH 团队与角色](docs/cross-harness-team.md) · [SuperAgent 仓库协作](docs/superagent.md) |
 | 管理长对话上下文 | DSH 引擎默认启用 [Billion Context](https://github.com/ranxianglei/billion-context)。在新会话输入 `/acp` 查看压缩状态。在「插件 → 已安装插件」停用或卸载后重启，可恢复 DSH 自带的压缩。 |
 | 在对话中搜索网页 | 登录 OPL Gateway 后，默认通过网关使用 GPT-6.1 Sol 搜索，无需另配搜索密钥。如果已配置 DeepSeek 官方 API Key，可在「设置 → 网页搜索与获取」的「搜索」中选择 **DeepSeek Search API**，直接使用 DeepSeek 官方搜索。 |
@@ -85,7 +85,8 @@ One Person Lab 面向论文、基金申请、研究报告等需要多轮审阅�
 | 更新对象 | 操作入口 |
 | --- | --- |
 | 官方 DSH 桌面 | 使用 DeepSeek Harness 自带的更新入口。 |
-| OPL 增强层 | 在「通用设置 → 更新」选择更新方式。兼容更新准备好后可点「立即更新」。 |
+| OPL 增强层 | 在「通用设置 → 更新」查看可用版本。发行页提供摘要时，版本号下方会列出更新内容。兼容更新准备好后可点「立即更新」。 |
+| KimiCU 桌面操作工具 | 在同一更新页检查 KimiCU 版本，按页面提示安装或更新。[桌面操作指南](docs/computer-use.md) |
 | 执行引擎 | 在「执行与组合 → 执行引擎与网络代理 → 管理更新」选择引擎并更新。标注「单独管理」的引擎通过原安装渠道更新。[引擎更新指南](docs/model-harness-guide.md#更新引擎) |
 | OFM 插件 | 在「OFM 模型服务」使用插件自己的升级入口。 |
 
