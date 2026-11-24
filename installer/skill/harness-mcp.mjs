@@ -1,12 +1,17 @@
 /** MCP stdio adapter with a per-parent capability, never the general Host token. */
-import { createInterface } from 'node:readline'
 import { readFile } from 'node:fs/promises'
+import { Server } from '@modelcontextprotocol/sdk/server/index.js'
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { z } from 'zod'
+
 const binding = process.env.OPL_HARNESS_BINDING_FILE
   ? JSON.parse(await readFile(process.env.OPL_HARNESS_BINDING_FILE, 'utf8'))
   : {}
 const endpoint = binding.endpoint ?? process.env.OPL_HARNESS_ENDPOINT,
   token = binding.token ?? process.env.OPL_HARNESS_TOKEN
 if (!endpoint || !token) throw Error('Missing OPL Harness capability')
+
 const call = async (method, input) => {
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -18,6 +23,7 @@ const call = async (method, input) => {
   if (!result.ok) throw Error(result.error)
   return result.value
 }
+
 const str = { type: 'string' },
   bool = { type: 'boolean' },
   list = { type: 'array', items: str }
@@ -78,69 +84,59 @@ const methods = {
   review_harness_task: 'review',
   cancel_harness_task: 'cancel',
 }
-async function handle(m) {
-  if (m.id === undefined) return
-  let result
-  try {
-    if (m.method === 'initialize')
-      result = {
-        protocolVersion: '2024-11-05',
-        capabilities: { tools: {} },
-        serverInfo: { name: 'opl-harness-cooperation', version: '1.0.0' },
-      }
-    else if (m.method === 'ping') result = {}
-    else if (m.method === 'tools/list') {
-      const catalog = await call('official-tools', {})
-      result = {
-        tools: [
-          ...(catalog.enabled ? tools : []),
-          ...catalog.tools.map((tool) => ({ ...tool, name: 'dsh_' + tool.name })),
-        ],
-      }
-    } else if (m.method === 'tools/call') {
-      const a = m.params?.arguments ?? {}
-      let value
-      try {
-        const method = methods[m.params?.name]
-        if (!method && m.params?.name?.startsWith('dsh_')) {
-          result = await call('official-call', { name: m.params.name.slice(4), arguments: a })
-        } else if (!method) {
-          throw Error('Unknown collaboration tool')
-        } else {
-          value = await call(method, a)
-          result = { content: [{ type: 'text', text: JSON.stringify(value) }] }
-        }
-      } catch (e) {
-        result = {
-          isError: true,
-          content: [
-            { type: 'text', text: e instanceof Error ? e.message : 'Harness request failed' },
-          ],
-        }
-      }
-    } else {
-      process.stdout.write(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id: m.id,
-          error: { code: -32601, message: 'Method not found' },
-        }) + '\n',
-      )
-      return
-    }
-    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result }) + '\n')
-  } catch {
-    process.stdout.write(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        id: m.id,
-        error: { code: -32603, message: 'MCP request failed' },
-      }) + '\n',
-    )
-  }
-}
-createInterface({ input: process.stdin }).on('line', (line) => {
-  try {
-    void handle(JSON.parse(line))
-  } catch {}
+
+const TolerantInitializeRequestSchema = z.object({
+  method: z.literal('initialize'),
+  params: z
+    .object({
+      protocolVersion: z.string().optional(),
+      capabilities: z.record(z.string(), z.unknown()).optional(),
+      clientInfo: z.record(z.string(), z.unknown()).optional(),
+    })
+    .optional(),
 })
+
+const server = new Server(
+  { name: 'opl-harness-cooperation', version: '1.0.0' },
+  { capabilities: { tools: {} } },
+)
+
+server.setRequestHandler(TolerantInitializeRequestSchema, async () => ({
+  protocolVersion: '2024-11-05',
+  capabilities: { tools: {} },
+  serverInfo: { name: 'opl-harness-cooperation', version: '1.0.0' },
+}))
+
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+  const catalog = await call('official-tools', {})
+  return {
+    tools: [
+      ...(catalog.enabled ? tools : []),
+      ...catalog.tools.map((entry) => ({ ...entry, name: 'dsh_' + entry.name })),
+    ],
+  }
+})
+
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  const a = request.params.arguments ?? {}
+  try {
+    const method = methods[request.params.name]
+    if (!method && request.params.name.startsWith('dsh_')) {
+      return await call('official-call', { name: request.params.name.slice(4), arguments: a })
+    }
+    if (!method) {
+      throw Error('Unknown collaboration tool')
+    }
+    const value = await call(method, a)
+    return { content: [{ type: 'text', text: JSON.stringify(value) }] }
+  } catch (e) {
+    return {
+      isError: true,
+      content: [{ type: 'text', text: e instanceof Error ? e.message : 'Harness request failed' }],
+    }
+  }
+})
+
+const transport = new StdioServerTransport()
+transport.onerror = () => {}
+await server.connect(transport)
