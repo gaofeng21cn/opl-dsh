@@ -448,19 +448,24 @@ export class HarnessService {
     return this.executionLimits()
   }
 
-  private readonly antigravityAccount = new AntigravityAccount(async () =>
-    (await this.catalogStore.get()).harnesses.find((item) => item.id === 'antigravity'),
-  )
-  private accountModelSignature = '[]'
-  async antigravityAccountStatus(refresh = false) {
-    const result = await this.antigravityAccount.status(refresh)
-    const signature = JSON.stringify(result.models)
-    if (signature !== this.accountModelSignature) {
-      this.accountModelSignature = signature
-      this.executionCatalogPending = undefined
+  private readonly antigravityAccount = new AntigravityAccount(
+    async () => (await this.catalogStore.get()).harnesses.find((item) => item.id === 'antigravity'),
+    () => {
       this.events.emit('catalog')
+      this.events.emit('antigravity-models')
+    },
+  )
+  antigravityAccountModels() {
+    return this.antigravityAccount.modelCatalog()
+  }
+  onAntigravityModelsChanged(listener: () => void) {
+    this.events.on('antigravity-models', listener)
+    return () => {
+      this.events.off('antigravity-models', listener)
     }
-    return result
+  }
+  antigravityAccountStatus(refresh = false) {
+    return this.antigravityAccount.status(refresh)
   }
   antigravityAccountCancel() {
     return this.antigravityAccount.cancel()
@@ -1062,7 +1067,9 @@ export class HarnessService {
               ? { ...h, command: fresh.path }
               : h,
           )
-          await this.catalogStore.set(latest)
+          const saved = await this.catalogStore.set(latest)
+          if (id === 'antigravity')
+            this.antigravityAccount.updateRoute(saved.harnesses.find((item) => item.id === id))
         }
         this.maintenance.set(id, {
           ...state,
@@ -1400,7 +1407,8 @@ export class HarnessService {
     const changed = JSON.stringify(launch(previous)) !== JSON.stringify(launch(next))
     const publish = async () => {
       if (changed) await this.assertNoGlobalActivity()
-      await this.catalogStore.set(next)
+      const saved = await this.catalogStore.set(next)
+      this.antigravityAccount.updateRoute(saved.harnesses.find((item) => item.id === 'antigravity'))
       this.events.emit('catalog')
       return this.executionCatalog()
     }

@@ -168,8 +168,16 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
     const owner = scope.get('modelDirectories') as unknown as Parameters<
       typeof installEffortDirectories
     >[0]
-    if (owner && typeof owner.directoryFor === 'function')
-      scope.effect(() => installEffortDirectories(owner, call, changes, pendingCombination))
+    if (owner && typeof owner.directoryFor === 'function') {
+      scope.effect(() => {
+        const restoreEfforts = installEffortDirectories(owner, call, changes, pendingCombination)
+        const restoreGoogleChoices = installGoogleAccountChoices(owner)
+        return () => {
+          restoreGoogleChoices()
+          restoreEfforts()
+        }
+      })
+    }
   })
   ctx.inject(['configForms'], (settings) => {
     const executionForm = settings.configForms.get<
@@ -292,13 +300,6 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
       en: antigravityAccountEn,
     }),
   )
-  ctx.inject(['modelDirectories'], (scope) => {
-    const directory = scope.get('modelDirectories') as unknown as Parameters<
-      typeof installGoogleAccountChoices
-    >[0]
-    if (directory && typeof directory.directoryFor === 'function')
-      scope.effect(() => installGoogleAccountChoices(directory))
-  })
   const accountT = ctx.locale.bind('settings.antigravityAccount')
   const readAccount = () => call('antigravity-account-status')
   const openAccount = () => call('antigravity-account-login')

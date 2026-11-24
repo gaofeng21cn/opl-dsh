@@ -39,6 +39,8 @@ function accountEnvironment(proxy: HarnessProxy | undefined) {
 
 /** Only an explicit login request may initiate OAuth. Model discovery has no interactive fallback. */
 export class AntigravityAccount {
+  private catalog = empty('unknown')
+  private routeKey: string | undefined
   private cache?: {
     key: string
     result: Promise<AntigravityAccountStatus>
@@ -50,13 +52,44 @@ export class AntigravityAccount {
   private closed = false
   private loginEpoch = 0
 
-  constructor(private readonly getRoute: () => Promise<Route | undefined>) {}
+  constructor(
+    private readonly getRoute: () => Promise<Route | undefined>,
+    private readonly onModelsChanged?: () => void,
+  ) {}
+
+  /** Generic model catalogs use the last completed CLI read while discovery runs separately. */
+  modelCatalog(): AntigravityAccountStatus {
+    void this.status().catch(() => {})
+    return this.catalog
+  }
+
+  updateRoute(route: Route | undefined) {
+    const key = JSON.stringify([route?.command, route?.prefix, route?.proxy])
+    if (this.routeKey !== key) {
+      this.routeKey = key
+      delete this.cache
+      this.publishCatalog(empty('unknown'))
+    }
+    return key
+  }
+
+  private publishCatalog(next: AntigravityAccountStatus) {
+    const previous = this.catalog
+    this.catalog = next
+    if (
+      JSON.stringify([previous.models, previous.labels]) !==
+      JSON.stringify([next.models, next.labels])
+    )
+      this.onModelsChanged?.()
+  }
 
   async status(refresh = false): Promise<AntigravityAccountStatus> {
     if (this.oauth || this.loginStart) return empty('signing-in')
     if (this.closed) return empty('unavailable')
     const route = await this.getRoute()
-    const key = JSON.stringify(route) ?? ''
+    if (this.oauth || this.loginStart) return empty('signing-in')
+    if (this.closed) return empty('unavailable')
+    const key = this.updateRoute(route)
     if (
       this.cache?.key === key &&
       (this.cache.pending || (!refresh && this.cache.expires > Date.now()))
@@ -69,10 +102,11 @@ export class AntigravityAccount {
       expires: Date.now() + 60_000,
       pending: true as boolean,
     })
-    void result.then(() => {
+    return result.then((next) => {
       entry.pending = false
+      if (this.cache === entry && !this.closed) this.publishCatalog(next)
+      return next
     })
-    return result
   }
 
   private async inspect(route: Route | undefined): Promise<AntigravityAccountStatus> {
@@ -105,9 +139,13 @@ export class AntigravityAccount {
 
   login(): Promise<AntigravityAccountStatus> {
     if (this.oauth) return Promise.resolve(empty('signing-in'))
-    return (this.loginStart ??= this.beginLogin(++this.loginEpoch).finally(() => {
+    if (this.loginStart) return this.loginStart
+    this.loginStart = this.beginLogin(++this.loginEpoch).finally(() => {
       this.loginStart = undefined
-    }))
+    })
+    delete this.cache
+    this.publishCatalog(empty('signing-in'))
+    return this.loginStart
   }
 
   private async beginLogin(epoch: number): Promise<AntigravityAccountStatus> {

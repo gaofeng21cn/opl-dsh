@@ -8,7 +8,7 @@ import { ANTIGRAVITY_GOOGLE_PROVIDER as provider } from '../../../src/shared/mod
 
 it('offers only account-advertised routes without requiring a Gateway endpoint or credential', async () => {
   let status: AntigravityAccountStatus = { status: 'signed-out', models: [] }
-  const adapter = new AntigravityGoogleModels(async () => status)
+  const adapter = new AntigravityGoogleModels(() => status)
   const model = 'gemini-4-neon-xhigh'
   const ctx = {
     get: () => undefined,

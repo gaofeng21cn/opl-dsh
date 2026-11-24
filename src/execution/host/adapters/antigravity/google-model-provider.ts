@@ -5,14 +5,14 @@ import type { AntigravityAccountStatus } from '../../../contracts/antigravity-ac
 
 /** Project the signed-in CLI's model IDs into the official Session selector. */
 export class AntigravityGoogleModels extends LlmAdapter {
-  constructor(private readonly account: () => Promise<AntigravityAccountStatus>) {
+  constructor(private readonly account: () => AntigravityAccountStatus) {
     super()
   }
   override providerInfo(provider: string) {
     return { id: provider, name: displayModelSource({ provider, model: '' }) }
   }
   override async listModels(provider: string) {
-    const state = await this.account()
+    const state = this.account()
     return state.status === 'ready'
       ? state.models.map((id) => ({
           provider,

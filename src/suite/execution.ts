@@ -71,10 +71,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     minimaxCodeEnabled: () => config.minimaxCodeEnabled,
   })
   ctx.provide('oplHarness', harness)
-  ctx.llm.registerAdapter(
+  const googleModels = ctx.llm.registerAdapter(
     [ANTIGRAVITY_GOOGLE_PROVIDER],
-    new AntigravityGoogleModels(() => harness.antigravityAccountStatus()),
+    new AntigravityGoogleModels(() => harness.antigravityAccountModels()),
   )
+  ctx.effect(() =>
+    harness.onAntigravityModelsChanged(() => googleModels.replace([ANTIGRAVITY_GOOGLE_PROVIDER])),
+  )
+  void harness.antigravityAccountStatus().catch(() => {})
   let updateRuntime: UpdateRuntime | undefined
   ctx.inject(['oplUpdateRuntime'], (child) => {
     updateRuntime = child.oplUpdateRuntime

@@ -1,7 +1,11 @@
 import type { PendingCombination } from './pending-combination.ts'
 import type { ModelCatalog, ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { ExecutionCall } from '../../shared/client/remote-call.ts'
-import { executionModelRef, executionModelRefKey } from '../../shared/models.ts'
+import {
+  ANTIGRAVITY_GOOGLE_PROVIDER,
+  executionModelRef,
+  executionModelRefKey,
+} from '../../shared/models.ts'
 
 type State = {
   current: ModelSelection | null
@@ -60,7 +64,15 @@ export function installEffortDirectories(
       route = key
       const epoch = ++generation
       active = undefined
-      if (!key || disposed) return
+      // The account directory maps each advertised tier to its own model ID.
+      if (
+        !key ||
+        disposed ||
+        source.store.getSnapshot().current?.provider === ANTIGRAVITY_GOOGLE_PROVIDER
+      ) {
+        pending = undefined
+        return
+      }
       const current = () => !disposed && generation === epoch && key === keyOf()
       const task = (async () => {
         const selection = await call('model-selection', { sessionId: id })
@@ -227,6 +239,7 @@ export function installEffortDirectories(
       return snapshot()
     }
     const select = async (selection: ModelSelection) => {
+      if (selection.provider === ANTIGRAVITY_GOOGLE_PROVIDER) return source.select(selection)
       const key = executionModelRefKey(selection)
       const sameModel = key === keyOf()
       if (sameModel && (!active || pending)) await read()

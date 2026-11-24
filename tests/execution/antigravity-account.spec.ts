@@ -6,6 +6,8 @@ import {
   AntigravityAccount,
   readAntigravityModels,
 } from '../../src/execution/host/antigravity-account.ts'
+import { AntigravityGoogleModels } from '../../src/execution/host/adapters/antigravity/google-model-provider.ts'
+import { ANTIGRAVITY_GOOGLE_PROVIDER } from '../../src/shared/models.ts'
 
 describe('official Antigravity Google account', () => {
   it('uses advertised slugs including reasoning variants, ignoring UI text', () => {
@@ -22,6 +24,44 @@ describe('official Antigravity Google account', () => {
   })
 
   afterEach(() => vi.unstubAllEnvs())
+
+  it('answers catalog readers while discovery is pending and publishes completed model data', async () => {
+    const route = Promise.withResolvers<{ command: string; prefix: string[] }>()
+    const changed = vi.fn()
+    let configured = route.promise
+    const account = new AntigravityAccount(() => configured, changed)
+    const adapter = new AntigravityGoogleModels(() => account.modelCatalog())
+    const pending = account.status()
+    expect(await adapter.listModels(ANTIGRAVITY_GOOGLE_PROVIDER)).toEqual([])
+    expect(changed).not.toHaveBeenCalled()
+
+    route.resolve({
+      command: process.execPath,
+      prefix: ['--eval', 'console.log("gemini-test-high  Gemini Test (High)")', '--'],
+    })
+    await pending
+    expect(await adapter.listModels(ANTIGRAVITY_GOOGLE_PROVIDER)).toMatchObject([
+      { id: 'gemini-test-high', name: 'Gemini Test (High)' },
+    ])
+    expect(changed).toHaveBeenCalledTimes(1)
+
+    await account.status(true)
+    expect(changed).toHaveBeenCalledTimes(1)
+
+    const replacement = {
+      command: process.execPath,
+      prefix: ['--eval', 'console.log("gemini-new-low  Gemini New (Low)")', '--'],
+    }
+    configured = Promise.resolve(replacement)
+    account.updateRoute(replacement)
+    expect(await adapter.listModels(ANTIGRAVITY_GOOGLE_PROVIDER)).toEqual([])
+    await account.status()
+    expect(await adapter.listModels(ANTIGRAVITY_GOOGLE_PROVIDER)).toMatchObject([
+      { id: 'gemini-new-low', name: 'Gemini New (Low)' },
+    ])
+    expect(changed).toHaveBeenCalledTimes(3)
+    await account.dispose()
+  })
 
   it('only requests personal OAuth on explicit login and re-reads models after authorization', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'opl-agy-account-'))
