@@ -99,7 +99,9 @@ export function EngineUpdates({
           aria-label="执行引擎更新"
         >
           <div className={css.preferenceRow}>
-            <span className={css.preferenceTitle}>自动检查执行引擎更新</span>
+            <div className={css.preferenceText}>
+              <span className={css.preferenceTitle}>自动检查执行引擎更新</span>
+            </div>
             <Switch
               label="自动检查执行引擎更新"
               disabled={!state || busy}
