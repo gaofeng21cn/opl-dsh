@@ -130,26 +130,6 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
   const composerText = ctx.locale.bind(PROJECTLESS_COMPOSER_NAMESPACE)
   const call = remoteCall(ctx.remote.oplExecution)
   const pendingCombination = new PendingCombination()
-  ctx.effect(() =>
-    ctx.locale.register('settings.antigravityAccount', {
-      zh: antigravityAccountZh,
-      en: antigravityAccountEn,
-    }),
-  )
-  const accountT = ctx.locale.bind('settings.antigravityAccount')
-  const readAccount = () => call('antigravity-account-status')
-  const openAccount = () => call('antigravity-account-login')
-  const cancelAccount = () => call('antigravity-account-cancel')
-  ctx.slots.inject('settings.models.footer', () =>
-    ctx.slots.register({ name: 'settings.models.footer', id: 'opl-antigravity-account' }, () => (
-      <AntigravityAccountCard
-        read={readAccount}
-        login={openAccount}
-        cancel={cancelAccount}
-        t={accountT}
-      />
-    )),
-  )
   ctx.inject(['configForms'], (settings) => {
     const executionForm = settings.configForms.get<
       PermissionMemorySettings & MiniMaxIntegrationSettings
@@ -265,6 +245,26 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
     sessionChanges(ctx, sessionId, listener)
   ctx.effect(() => ctx.uiConversation.events.register(liveTranscriptDefinition))
   ctx.effect(() => ctx.uiConversation.events.register(deliverAssetsDefinition))
+  ctx.effect(() =>
+    ctx.locale.register('settings.antigravityAccount', {
+      zh: antigravityAccountZh,
+      en: antigravityAccountEn,
+    }),
+  )
+  const accountT = ctx.locale.bind('settings.antigravityAccount')
+  const readAccount = () => call('antigravity-account-status')
+  const openAccount = () => call('antigravity-account-login')
+  const cancelAccount = () => call('antigravity-account-cancel')
+  ctx.slots.inject('settings.models.footer', () =>
+    ctx.slots.register({ name: 'settings.models.footer', id: 'opl-antigravity-account' }, () => (
+      <AntigravityAccountCard
+        read={readAccount}
+        login={openAccount}
+        cancel={cancelAccount}
+        t={accountT}
+      />
+    )),
+  )
   ctx.slots.inject('conversation.chat.node', () =>
     ctx.slots.register(
       { name: 'conversation.chat.node', key: LIVE_TRANSCRIPT_KIND, locale: 'chat' },

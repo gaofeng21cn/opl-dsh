@@ -295,27 +295,6 @@ export class HarnessService {
   private minimaxIntegrationEnabled: boolean | undefined
   private minimaxLoginAttempt:
     { region: MiniMaxAccountLoginRequest['region']; cancelled: boolean } | undefined
-  private readonly antigravityAccount = new AntigravityAccount(async () =>
-    (await this.catalogStore.get()).harnesses.find((item) => item.id === 'antigravity'),
-  )
-  private accountModelSignature = '[]'
-  async antigravityAccountStatus(refresh = false) {
-    const result = await this.antigravityAccount.status(refresh)
-    const signature = JSON.stringify(result.models)
-    if (signature !== this.accountModelSignature) {
-      this.accountModelSignature = signature
-      this.executionCatalogPending = undefined
-      this.events.emit('catalog')
-    }
-    return result
-  }
-  antigravityAccountCancel() {
-    return this.antigravityAccount.cancel()
-  }
-  antigravityAccountLogin() {
-    return this.antigravityAccount.login()
-  }
-
   private readonly minimaxAccount = new MiniMaxAccount(async () => {
     const harness = (await this.catalogStore.get()).harnesses.find(
       (item) => item.id === 'minimax-code',
@@ -458,6 +437,27 @@ export class HarnessService {
     )
     this.configureProgressLimits(limits)
     return this.executionLimits()
+  }
+
+  private readonly antigravityAccount = new AntigravityAccount(async () =>
+    (await this.catalogStore.get()).harnesses.find((item) => item.id === 'antigravity'),
+  )
+  private accountModelSignature = '[]'
+  async antigravityAccountStatus(refresh = false) {
+    const result = await this.antigravityAccount.status(refresh)
+    const signature = JSON.stringify(result.models)
+    if (signature !== this.accountModelSignature) {
+      this.accountModelSignature = signature
+      this.executionCatalogPending = undefined
+      this.events.emit('catalog')
+    }
+    return result
+  }
+  antigravityAccountCancel() {
+    return this.antigravityAccount.cancel()
+  }
+  antigravityAccountLogin() {
+    return this.antigravityAccount.login()
   }
 
   private readonly runtimeMaintenance = new RuntimeMaintenance()
