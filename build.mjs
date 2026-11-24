@@ -29,6 +29,9 @@ async function bundle(options) {
 await generateRpc({ root, ifStale: true })
 await rm(join(output, 'package'), { recursive: true, force: true })
 await mkdir(join(output, 'package/lib'), { recursive: true })
+const esmRequireBanner = {
+  js: "import { createRequire as oplCreateRequire } from 'node:module'; const require = oplCreateRequire(import.meta.url);",
+}
 const hostBuild = await bundle({
   metafile: true,
   entryPoints: [join(root, 'src/suite/host.ts')],
@@ -36,8 +39,8 @@ const hostBuild = await bundle({
   platform: 'node',
   format: 'esm',
   target: 'node24',
-  packages: 'external',
-  external: ['@deepseek-ai/*'],
+  external: ['@deepseek-ai/*', 'zod', '@napi-rs/keyring'],
+  banner: esmRequireBanner,
   define: suiteVersionDefine,
   tsconfig: join(root, 'tsconfig.host.json'),
   outfile: join(output, 'package/lib/index.js'),
@@ -49,7 +52,8 @@ await bundle({
   platform: 'node',
   format: 'esm',
   target: 'node24',
-  packages: 'external',
+  external: ['@deepseek-ai/*', 'zod'],
+  banner: esmRequireBanner,
   outfile: join(output, 'package/lib/git-bash.js'),
 })
 for (const [entry, name] of [
@@ -123,7 +127,7 @@ const externalImports = [
   )
 const peers = Object.fromEntries(
   [...new Set(externalImports)]
-    .filter((name) => name !== 'zod')
+    .filter((name) => name !== 'zod' && name !== '@napi-rs/keyring')
     .sort()
     .map((name) => [name, '*']),
 )
@@ -153,6 +157,7 @@ await writeFile(
       },
       peerDependencies: peers,
       dependencies: { zod: project.devDependencies.zod },
+      optionalDependencies: { '@napi-rs/keyring': project.devDependencies['@napi-rs/keyring'] },
       dsh: {
         bundle: { patch: './cordis.patch.yml' },
         client: {

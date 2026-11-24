@@ -63,7 +63,10 @@ export async function buildFeaturePlugins({ root, output, project, tar, official
       platform: 'node',
       format: 'esm',
       target: 'node24',
-      packages: 'external',
+      external: ['@deepseek-ai/*', 'zod'],
+      banner: {
+        js: "import { createRequire as oplCreateRequire } from 'node:module'; const require = oplCreateRequire(import.meta.url);",
+      },
       define: { __OPL_SUITE_VERSION__: JSON.stringify(project.version) },
       tsconfig: join(root, 'tsconfig.host.json'),
       outfile: join(destination, 'lib/index.js'),
