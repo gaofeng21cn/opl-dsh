@@ -102,7 +102,6 @@
     "@deepseek-ai/schemastery": "3.19.0",
     "@earendil-works/pi-ai": "1.5.2",
     "@modelcontextprotocol/sdk": "1.32.2",
-    "@napi-rs/keyring": "2.1.2",
     "@types/jsdom": "30.0.0",
     "@types/node": "^26.6.6",
     "@types/proper-lockfile": "4.1.4",
