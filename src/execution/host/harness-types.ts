@@ -1,3 +1,4 @@
+import { normalize } from 'node:path'
 import { createHash } from 'node:crypto'
 import type { AcpProcess } from './acp.ts'
 import type { AdapterLaunch } from './adapters/types.ts'
@@ -75,4 +76,12 @@ export interface SelectionChangeState {
   promise: Promise<void>
   failed: boolean
   error?: unknown
+}
+
+export const sameWorkingDirectory = (left: string, right: string): boolean => {
+  const normalizedLeft = normalize(left)
+  const normalizedRight = normalize(right)
+  return process.platform === 'win32'
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight
 }

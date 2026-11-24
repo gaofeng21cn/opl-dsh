@@ -100,11 +100,24 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     bind: (agent: { session: { id: string } }, request: { callId?: string }) =>
       harness.externalApprovalBinding(agent.session.id, request.callId),
   })
-  // Apply model defaults on official/custom routes before the request is logged.
+  const firstSteps = new WeakMap<object, number>()
+  ctx.on('session/event', (session, event) => {
+    if (event.type === 'turn/start') firstSteps.set(session, performance.now())
+    if (event.type === 'turn/end') firstSteps.delete(session)
+  })
   ctx.on('agent/pre-step', async (payload, next) => {
+    const started = firstSteps.get(payload.agent.session)
+    const entered = performance.now()
     const decision = await next()
+    const decided = performance.now()
     if (decision.kind === 'enter')
       await harness.claimMessageEdit(payload.agent, decision.messages, payload.turn, payload.step)
+    if (started !== undefined) {
+      firstSteps.delete(payload.agent.session)
+      ctx.logger.info(
+        `First step (ms) before OPL pre-step=${Math.round(entered - started)} downstream=${Math.round(decided - entered)} edit claim=${Math.round(performance.now() - decided)}`,
+      )
+    }
     return decision
   })
   installConversationRequest(ctx, harness)

@@ -14,7 +14,7 @@ export interface Config {
   updatePolicyChosen: Volatile<boolean>
   /** Whether the activity pill counts retained conversation steps or every historical step. */
   conversationStats: Volatile<'current' | 'history'>
-  /** Opt in to the OPL activity-pill count projection; official counts remain the default. */
+  /** Legacy master switch retained only to migrate older profiles. */
   enhancedConversationStats: Volatile<boolean>
   /** Keep the desktop window and taskbar title fixed instead of following the active Session. */
   fixedWindowTitle: Volatile<boolean>
@@ -36,7 +36,7 @@ export const Config = z.object({
     .default({})
     .volatile(),
   updatePolicyChosen: z.boolean().default(false).volatile(),
-  conversationStats: z.union(['current', 'history']).default('current').volatile(),
+  conversationStats: z.union(['current', 'history']).default('history').volatile(),
   enhancedConversationStats: z.boolean().default(false).volatile(),
   fixedWindowTitle: z.boolean().default(true).volatile(),
   gatewayGroups: z.dict(z.boolean()).default({}).volatile(),

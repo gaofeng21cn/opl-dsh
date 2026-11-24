@@ -3,18 +3,21 @@ import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { StatisticsSettings } from '../../conversation-stats/client/PreferenceRow.tsx'
+import { StatisticsPreferenceRow } from '../../conversation-stats/client/PreferenceRow.tsx'
 import css from './SettingsSection.module.css'
 
-export interface SuiteFeatureSettings extends StatisticsSettings {
-  enhancedConversationStats: boolean
-}
+export type SuiteFeatureSettings = StatisticsSettings
 
 export const labels = {
   zh: {
     title: '界面增强',
     description: '可选的会话统计展示。',
-    counts: '增强会话统计',
-    countsDescription: '替换官方统计中的轮次和步数。',
+    countsScopeTitle: '轮次与步数',
+    countsScopeDescription: '选择对话下方轮次与步数的统计范围。',
+    countsScopeCurrent: '当前对话',
+    countsScopeHistory: '历史累计',
+    countsScopeHelp:
+      '当前对话不计被编辑替换的执行记录；历史累计包含全部执行记录。此选项不改变耗时和用量统计。',
     remember: '记住权限预设',
     rememberDescription: '将此后在原生会话中明确选择的权限预设保存为官方默认权限，用于新会话。',
     saveFailed: '设置未能保存，请重试。',
@@ -22,8 +25,12 @@ export const labels = {
   en: {
     title: 'Interface enhancements',
     description: 'Optional conversation statistics display.',
-    counts: 'Enhanced conversation statistics',
-    countsDescription: 'Replace the official turn and step counts. Off by default.',
+    countsScopeTitle: 'Turn and step counts',
+    countsScopeDescription: 'Choose which turns and steps are counted below the conversation.',
+    countsScopeCurrent: 'Current conversation',
+    countsScopeHistory: 'All history',
+    countsScopeHelp:
+      'Current conversation excludes execution records replaced by an edit; all history includes every execution record. Time and token accounting are unchanged.',
     remember: 'Remember permission preset',
     rememberDescription:
       'Save future explicit native-session permission choices as the official default permission for new conversations.',
@@ -113,13 +120,17 @@ export function SuiteFeaturePreferences({
   t,
 }: PropsLocale<'settings.oplSuiteFeatures'> & { form: ConfigForm<SuiteFeatureSettings> }) {
   return (
-    <div data-opl-preference="suite-features">
-      <FeatureSwitch
+    <div className={css.preferenceGroup} data-opl-preference="suite-features">
+      <StatisticsPreferenceRow
         form={form}
-        field="enhancedConversationStats"
-        title={t('counts')}
-        description={t('countsDescription')}
-        saveFailed={t('saveFailed')}
+        labels={{
+          title: t('countsScopeTitle'),
+          description: t('countsScopeDescription'),
+          current: t('countsScopeCurrent'),
+          history: t('countsScopeHistory'),
+          help: t('countsScopeHelp'),
+          saveFailed: t('saveFailed'),
+        }}
       />
     </div>
   )

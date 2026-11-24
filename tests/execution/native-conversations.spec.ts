@@ -126,7 +126,10 @@ describe('ordinary official conversations for external tasks', () => {
       await service.sessions()
       expect(resolveAgent).not.toHaveBeenCalled()
       expect(ctx.workspaceRegistry.create).not.toHaveBeenCalled()
-      expect(ctx.typertGateway.invoke).not.toHaveBeenCalled()
+      // Startup preloads the shared model catalog without reopening any Session.
+      expect(
+        vi.mocked(ctx.typertGateway.invoke).mock.calls.map(([r]) => [r.namespace, r.method]),
+      ).toEqual([['session', 'modelCatalog']])
       expect(await store.load()).toHaveLength(40)
     } finally {
       await service?.dispose()

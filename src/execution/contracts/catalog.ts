@@ -1,8 +1,14 @@
-import { modelRefKey, type ModelRef, type ModelDefinition } from '../../shared/models.ts'
+import {
+  executionModelRefKey,
+  modelRefKey,
+  type ModelRef,
+  type ModelDefinition,
+} from '../../shared/models.ts'
 import type { CodexGitBashRuntime } from './codex-runtime.ts'
 import { isOfficialPairing } from './official-harnesses.ts'
 import { DSH_COMBINATION } from './sessions.ts'
 export * from '../../shared/models.ts'
+export { executionModelRefKey }
 /** Network routing for this external CLI and its children; omission inherits Desktop. */
 export type HarnessProxy =
   { mode: 'inherit' } | { mode: 'direct' } | { mode: 'custom'; url: string }

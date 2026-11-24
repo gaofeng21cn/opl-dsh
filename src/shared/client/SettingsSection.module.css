@@ -26,6 +26,22 @@
   flex-direction: column;
 }
 
+.preferenceGroup {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.preferenceGroup > .officialRow,
+.preferenceGroup > .preferenceRow {
+  border-bottom: 0;
+}
+
+.preferenceGroup > .preferenceRow {
+  padding-top: 16px;
+}
+
 [data-opl-preference='minimax-integration'] > .officialRow {
   padding-top: 0;
 }

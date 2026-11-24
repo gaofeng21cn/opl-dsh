@@ -1,3 +1,4 @@
+import { installEffortDirectories } from './official-effort-directory.ts'
 import {
   minimaxAccountZh,
   minimaxAccountEn,
@@ -23,7 +24,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { PendingCombination } from './pending-combination.ts'
-import { CombinationSelect } from './CombinationSelect.tsx'
+import {
+  CombinationSelect,
+  OfficialCombinationOption,
+  OfficialCombinationPane,
+} from './CombinationSelect.tsx'
 import { ExecutionSettings } from './ExecutionSettings.tsx'
 import { HarnessToolRow } from './HarnessToolRow.tsx'
 import { LiveTranscriptRow } from './LiveTranscriptRow.tsx'
@@ -72,6 +77,27 @@ export const inject = [
   'remote.oplExecution',
   'remote.session',
 ]
+
+/** Runtime view used to bridge the model-menu extension slots across DSH versions. */
+type DynamicSlotApi = {
+  entries: (key: string) => ReadonlyArray<{ children?: Readonly<Record<string, unknown>> }>
+  inject: (key: string, callback: () => unknown) => () => void
+  register: (options: Record<string, unknown>, component: unknown) => () => void
+}
+
+/**
+ * The alpha model selector owns these child slots. Older DSH releases do not
+ * declare them, so the OPL replacement remains active there.
+ */
+export function hasOfficialModelMenuExtensions(slots: DynamicSlotApi): boolean {
+  return slots
+    .entries('conversation.input.model')
+    .some(
+      (entry) =>
+        entry.children?.['conversation.input.model.options'] !== undefined &&
+        entry.children?.['conversation.input.model.pane'] !== undefined,
+    )
+}
 
 /**
  * The official durable model selection of one Session.
@@ -123,8 +149,22 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
     }),
   )
   const composerText = ctx.locale.bind(PROJECTLESS_COMPOSER_NAMESPACE)
-  const call = remoteCall(ctx.remote.oplExecution)
   const pendingCombination = new PendingCombination()
+  const executionRemote = remoteCall(ctx.remote.oplExecution)
+  const changes = new EventTarget()
+  const call: typeof executionRemote = async (method, ...args) => {
+    const result = await executionRemote(method, ...args)
+    if (method === 'select-combination' && args[0] && 'sessionId' in args[0])
+      changes.dispatchEvent(new Event(String(args[0].sessionId)))
+    return result
+  }
+  ctx.inject(['modelDirectories'], (scope) => {
+    const owner = scope.get('modelDirectories') as unknown as Parameters<
+      typeof installEffortDirectories
+    >[0]
+    if (owner && typeof owner.directoryFor === 'function')
+      scope.effect(() => installEffortDirectories(owner, call, changes, pendingCombination))
+  })
   ctx.inject(['configForms'], (settings) => {
     const executionForm = settings.configForms.get<
       PermissionMemorySettings & MiniMaxIntegrationSettings
@@ -259,12 +299,16 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
       HarnessToolRow,
     ),
   )
-  ctx.slots.inject('conversation.input.model', () =>
-    ctx.slots.register(
+  const dynamicSlots = ctx.slots as unknown as DynamicSlotApi
+  // The alpha model selector owns the trigger and its official child panes.
+  // Keep the legacy replacement only while those declarations are absent.
+  ctx.slots.inject('conversation.input.model', () => {
+    if (hasOfficialModelMenuExtensions(dynamicSlots)) return () => {}
+    return dynamicSlots.register(
       {
         name: 'conversation.input.model',
         priority: -10,
-        inject: (sessionId) => ({
+        inject: (sessionId: string) => ({
           call,
           sessionId,
           pendingCombination,
@@ -274,6 +318,40 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
         }),
       },
       CombinationSelect,
+    )
+  })
+  // These keys are dynamically bridged so the same source remains loadable by
+  // the previous DSH package, which has no corresponding declarations.
+  dynamicSlots.inject('conversation.input.model.options', () =>
+    dynamicSlots.register(
+      {
+        name: 'conversation.input.model.options',
+        id: 'opl-combination',
+        order: 100,
+        inject: (sessionId: string) => ({
+          call,
+          sessionId,
+          available: ctx.sessions.subagentAddress(sessionId as SessionId) === undefined,
+          selectionSource: (id: string) => modelSelectionFace(ctx, id),
+        }),
+      },
+      OfficialCombinationOption,
+    ),
+  )
+  dynamicSlots.inject('conversation.input.model.pane', () =>
+    dynamicSlots.register(
+      {
+        name: 'conversation.input.model.pane',
+        key: 'opl-combinations',
+        inject: (sessionId: string) => ({
+          pendingCombination,
+          call,
+          sessionId,
+          loadingLabel: composerText('loadingModels'),
+          selectionSource: (id: string) => modelSelectionFace(ctx, id),
+        }),
+      },
+      OfficialCombinationPane,
     ),
   )
   ctx.slots.inject('conversation.input.right', () =>

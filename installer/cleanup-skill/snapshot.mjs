@@ -43,6 +43,7 @@ export async function loadDshSnapshot({
   validateSelectorIds(selector)
   const root = await safeRoot(home)
   const blockers = []
+  await inspectOfficialStorage(root, blockers)
   const stats = {
     targetHashBytes: 0,
     targetHashFiles: 0,
@@ -219,6 +220,43 @@ export async function loadDshSnapshot({
     indices,
     blockers: effectiveBlockers,
     stats,
+  }
+}
+
+/**
+ * Detect the optional official SQLite session store before reading JSONL.
+ *
+ * The SQLite backend can retain an old JSONL import beside the database. Treat
+ * the database and its journal files as one opaque store until the official
+ * per-session transaction API is available to the cleanup tool.
+ */
+async function inspectOfficialStorage(root, blockers) {
+  const markerNames = ['sessions.sqlite', 'sessions.sqlite-wal', 'sessions.sqlite-shm']
+  for (const name of markerNames) {
+    const path = await safeChild(root, '.segments', name)
+    try {
+      const entry = await lstat(path)
+      if (entry.isSymbolicLink()) {
+        blockers.push({
+          code: 'unsupported-session-storage',
+          path,
+          detail: 'official SQLite storage marker is a link or reparse point',
+        })
+        continue
+      }
+      blockers.push({
+        code: 'unsupported-session-storage',
+        path,
+        detail: 'official SQLite session storage is not supported by this cleanup tool',
+      })
+    } catch (error) {
+      if (error?.code !== 'ENOENT')
+        blockers.push({
+          code: 'session-storage-unreadable',
+          path,
+          detail: String(error),
+        })
+    }
   }
 }
 

@@ -28,6 +28,8 @@ export interface HarnessSelection {
   combination?: string
   /** External CLI effort must not be overwritten by the native provider projection. */
   effortSource?: 'harness'
+  /** Registered Gateway tiers for immediate display while the CLI confirms them. */
+  registeredEfforts?: { levels: string[]; defaultEffort: string; revision: number }
 }
 /** Live reasoning values advertised by the selected external Harness. */
 export interface HarnessReasoningPreflight {

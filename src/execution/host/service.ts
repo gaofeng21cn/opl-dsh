@@ -95,7 +95,7 @@ export class ExecutionService extends TypertRemoteService {
   }
   @Remote('catalog')
   catalog(): Promise<ExecutionCatalog> {
-    return this.execution.executionCatalog()
+    return this.execution.executionCatalog({ fast: true })
   }
   /** Import or select an immutable MiniMax candidate while all projects are idle. */
   @Remote('select-minimax-candidate')

@@ -71,6 +71,14 @@
   position: fixed;
   overflow: hidden;
 }
+.pane {
+  min-width: min(260px, calc(100vw - 32px));
+  max-width: min(480px, calc(100vw - 32px));
+  color: var(--dsw-alias-label-primary);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
 .cell {
   box-sizing: border-box;
   border-radius: var(--dsw-radius-md, 8px);

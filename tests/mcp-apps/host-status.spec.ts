@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createScope } from '@deepseek-ai/dsh-scope'
@@ -13,6 +14,7 @@ import { inspectMcpAppHost, officialMcpBridgeVersion } from '../../src/mcp-apps/
 
 async function registry() {
   const ctx = new Context()
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(Tools)
   return ctx
@@ -130,7 +132,7 @@ describe('MCP Apps no-UI handoff', () => {
       const exec = { signal: new AbortController().signal } as never
       const result = (await tool.execute({}, exec)) as Record<string, any>
       expect(result.structuredContent).toMatchObject({ object_id: 'fixture-1', revision: 3 })
-      expect(officialMcpBridgeVersion()).toBe('0.2.2-rc.5')
+      expect(officialMcpBridgeVersion()).toBe('0.2.3-alpha.2')
       expect(inspectMcpAppHost(() => true).officialBridge.assessment).toBe('known-public-api-gap')
       expect(result.structuredContent.capabilities).not.toHaveProperty('extensions')
       expect(tool).not.toHaveProperty('_meta')

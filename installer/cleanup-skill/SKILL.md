@@ -23,6 +23,8 @@ description: 按用户指定范围精确识别并清理 OPL DSH 会话、外部�
 
 使用本 Skill 目录中的 `node cleanup.mjs preview --archived`、`preview --title "精确标题"` 或 `preview --id 会话ID`。工具从安装回执定位数据，无回执或安装不一致时才核实路径。标题重名或缺失时向用户展示候选，不按相似标题猜选。核对输出的会话、保护清单、阻塞及跳过项后，沿用输出的 planFile 和 planHash 运行 `execute --plan 文件 --hash 哈希`，其返回 verified 已包含提交后的完整核验。Windows 若已获授权重开，在 execute 命令加 `--reopen`，一次返回回收与重开结果，无需另查启动入口或重复 verify。单独复查时使用 verify。不要手动移除 session.lock，也不要绕过进程检查。
 
+如果预览发现 `.segments/sessions.sqlite`、其 `-wal` 或 `-shm` 文件，输出会包含 `unsupported-session-storage` 阻塞。官方 SQLite 或 JSONL 与 SQLite 混合存储暂不支持本 Skill 的逐会话回收，必须停在预览阶段并保留数据，不能按旧 JSONL 清单执行。
+
 1. **定位当前数据根。** 读取当前安装回执、公开 Session/Task 接口和当前 Skill 配置，确定实际 `DSH_HOME`、profile、Session 存储、Workspace 登记和外部 Harness 记录目录。不能沿用历史绝对路径，不能读取或输出 `control.json`、凭据或完整环境。
 2. **盘点并建立清单。** 为每个目标记录 ID、实际路径、文件集合、大小、SHA-256、归档/工作区归属、父子/种子/分支关系、TaskFeedback 引用、外部 Harness 记录和索引基线。完整读取所有可读日志代次；压缩日志或迁移 successor 缺失时保留目标。“清空已归档”另记录冻结的 `archivedTargetIds`、完整 `protectedSessionIds` 及每个受保护会话和外部记录的文件哈希。
 3. **分类并冻结。** 运行中、排队中、等待审批/输入、状态未知、仍被开发派活或保留任务引用的对象默认保留。清理前确认相关原生与外部任务静止；按前述确认流程正常退出目标 Desktop。清单建立后出现文件、索引或任务漂移就停止并重建清单。

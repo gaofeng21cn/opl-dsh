@@ -22,6 +22,13 @@ afterEach(async () => {
 
 async function fixture(workspaceIds: string[] = []) {
   const ctx = new Context()
+  ctx.provide('uiSession', {
+    sessionStatus: {
+      getSnapshot: () => new Map(),
+      subscribe: () => () => {},
+      mark: async () => {},
+    },
+  })
   let ready = false
   const release = vi.fn()
   const create = vi.fn(async () => 'official-blank')
@@ -48,6 +55,7 @@ async function fixture(workspaceIds: string[] = []) {
     create,
   }
   let workspace!: UiWorkspaceService
+  const recentViewLimitFixture = { getSnapshot: () => undefined, subscribe: () => () => {} }
   const plugin = await ctx.plugin({
     apply(owner: Context) {
       new (class extends Service {
@@ -65,6 +73,7 @@ async function fixture(workspaceIds: string[] = []) {
         sessions as unknown as ConstructorParameters<typeof UiWorkspaceService>[3],
         { pinSessionOrder: vi.fn() },
         vi.fn(),
+        recentViewLimitFixture,
       )
     },
   })
