@@ -2889,6 +2889,11 @@ describe('restart and cancellation boundaries', () => {
     const { root, service, ctx, options } = await setup(),
       parent = await start(service, root, 'parent')
     await service.prompt({ sessionId: parent.id, text: 'wait', operationId: 'in-flight' })
+    // Wait for the fixture to record the prompt before shutting down its process.
+    const calls = join(root, 'calls.txt')
+    await vi.waitFor(async () => expect(await readFile(calls, 'utf8')).toBe('wait\n'), {
+      timeout: 5000,
+    })
     const filename = new HarnessSessionStore(options.home).filename(parent.id),
       before = await readFile(filename, 'utf8')
     await service.dispose()
@@ -2896,7 +2901,7 @@ describe('restart and cancellation boundaries', () => {
     const restored = new HarnessService(ctx, options)
     cleanups.push(() => restored.dispose())
     expect((await restored.snapshot({ sessionId: parent.id })).state).toBe('interrupted')
-    expect((await readFile(join(root, 'calls.txt'), 'utf8')).trim().split('\n')).toEqual(['wait'])
+    expect(await readFile(calls, 'utf8')).toBe('wait\n')
   })
   it('does not automatically wake a parent after the user cancels it', async () => {
     const { root, service } = await setup(),
