@@ -582,6 +582,10 @@ export class HarnessService {
     this.directory = options.home ?? dshHomePath()
     this.events.on('catalog', () => {
       this.catalogEpoch++
+      this.officialModelCatalogSnapshot = undefined
+      this.officialModelCatalogPending = undefined
+      this.executionCatalogSnapshot = undefined
+      this.executionCatalogPending = undefined
     })
     this.modelSources = new ExternalModelSources(ctx, () => this.events.emit('catalog'))
     this.sessionStore = new HarnessSessionStore(this.directory)

@@ -24,6 +24,7 @@ it('collapses exact route aliases while preserving distinct channels, diagnostic
     routableProviders: ['opl-gateway', 'opl-gateway-openai', 'opl-gateway-auto-review', 'custom'],
     failures: [{ id: 'opl-gateway-gemini', name: 'Gemini', message: 'offline' }],
   }
+  catalog.groups[0]!.models.push({ id: 'deepseek-flash', name: '自选名称' })
   const result = projectGatewayModelCatalog(catalog)
   expect(result.groups.map((g) => g.id)).toEqual(['opl-gateway', 'opl-gateway-openai', 'custom'])
   expect(result.groups[1]?.models.map((m) => m.id)).toEqual(['child-only'])
@@ -32,6 +33,7 @@ it('collapses exact route aliases while preserving distinct channels, diagnostic
     'Claude Opus 5.5 · AWS',
     'Claude Opus 5.5 · Kiro',
     'codex::codex-auto-review',
+    '自选名称',
   ])
   expect(result.default).toEqual({
     provider: 'opl-gateway',

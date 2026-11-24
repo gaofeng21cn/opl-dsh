@@ -22,7 +22,10 @@ export function projectGatewayModelCatalog(catalog: ModelCatalog): ModelCatalog 
           ...group,
           models: group.models.map((model) => ({
             ...model,
-            name: displayModelName({ provider: group.id, model: model.id }, model.name),
+            name:
+              model.name && model.name !== model.id && model.name !== model.id.split('::').at(-1)
+                ? model.name
+                : displayModelName({ provider: group.id, model: model.id }, model.name),
           })),
         },
       ]
