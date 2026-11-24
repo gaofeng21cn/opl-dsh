@@ -290,10 +290,6 @@ select.input {
   justify-content: space-between;
   gap: 16px;
 }
-.engineUpdateName {
-  flex: 1;
-  text-align: start;
-}
 .engineBatch {
   display: grid;
   gap: 4px;

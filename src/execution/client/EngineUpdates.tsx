@@ -3,6 +3,7 @@ import { Button, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ExecutionCall } from '../../shared/client/remote-call.ts'
 import type { EngineUpdateState } from '../contracts/engine-updates.ts'
 import css from '../../shared/client/SettingsSection.module.css'
+import choices from './RecommendationPicker.module.css'
 import { safeFailureMessage } from './proxy-draft.ts'
 
 const labels = {
@@ -132,26 +133,32 @@ export function EngineUpdates({
           {state?.enabled && state.mode === 'auto' && (
             <p className={css.muted}>正在使用的执行引擎将在空闲后更新。</p>
           )}
-          {available.map((item) => (
-            <label className={css.row} key={item.id}>
-              <input
-                type="checkbox"
-                disabled={busy}
-                checked={selected.includes(item.id)}
-                onChange={(e) =>
-                  setSkipped(
-                    e.currentTarget.checked
-                      ? skipped.filter((id) => id !== item.id)
-                      : [...skipped, item.id],
-                  )
-                }
-              />
-              <span className={css.engineUpdateName}>{item.name}</span>
-              <span className={css.muted}>
-                {item.current} → {item.target}
-              </span>
-            </label>
-          ))}
+          {available.length > 0 && (
+            <div className={choices.updateList}>
+              {available.map((item) => (
+                <label className={choices.updateChoice} key={item.id}>
+                  <input
+                    type="checkbox"
+                    disabled={busy}
+                    checked={selected.includes(item.id)}
+                    onChange={(e) =>
+                      setSkipped(
+                        e.currentTarget.checked
+                          ? skipped.filter((id) => id !== item.id)
+                          : [...skipped, item.id],
+                      )
+                    }
+                  />
+                  <span className={choices.itemText}>
+                    <span>{item.name}</span>
+                    <span className={css.muted}>
+                      {item.current} → {item.target}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
           <div className={`${css.actions} ${css.engineUpdateToolbar}`}>
             <Button
               variant="outline"
