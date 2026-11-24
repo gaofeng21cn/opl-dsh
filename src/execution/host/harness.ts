@@ -626,6 +626,12 @@ export class HarnessService {
           // A persisted native identity already belongs to the official Session
           // store. Reopen that Session when it is used, not every desktop startup.
           if (record.nativeSessionId) {
+            if (
+              record.assignment &&
+              record.origin.kind === 'dsh' &&
+              record.nativeSessionId === record.origin.sessionId
+            )
+              continue
             if (this.selections[record.nativeSessionId] === undefined)
               await this.bindSelection(record.nativeSessionId, record.combination)
             continue
@@ -748,7 +754,11 @@ export class HarnessService {
     }
   }
   private async ensureConversation(record: HarnessSession) {
-    if (record.harnessRef !== 'dsh' && record.origin.kind === 'dsh') {
+    if (
+      record.harnessRef !== 'dsh' &&
+      record.origin.kind === 'dsh' &&
+      (!record.nativeSessionId || record.nativeSessionId === record.origin.sessionId)
+    ) {
       if (!record.nativeSessionId) {
         record.nativeSessionId = record.origin.sessionId
         await this.save(record)
@@ -1602,6 +1612,8 @@ export class HarnessService {
       input.existingSessionId ??
       `harness-${hash([origin, input.taskId ?? randomUUID(), cwd, input.combination]).slice(0, 24)}`
     const prior = this.records.get(id)
+    if (prior?.assignment && origin.kind === 'dsh' && prior.nativeSessionId === origin.sessionId)
+      throw Error('旧委派任务与发起会话共用记录，请新建委派任务')
     if (input.existingSessionId && !prior) throw Error('指定会话不存在，不会自动创建替代会话')
     // Creating a combination session is a dispatch: it needs an addressable
     // reviewer. Resuming an existing record stays allowed, so a historical
@@ -1659,6 +1671,10 @@ export class HarnessService {
         ? { externalAutoReview: autoReview }
         : {}),
       ...(definition.harnessRef === 'zcode' ? { zcodeMode: this.zcodeModeForOrigin(origin) } : {}),
+      // A delegated turn needs an independent native driver while its caller awaits the tool.
+      ...(origin.kind === 'dsh' && definition.harnessRef !== 'dsh' && !followConversationPermission
+        ? { nativeSessionId: `session-${id}` }
+        : {}),
       acpSessionId: '',
       title: definition.name,
       createdAt: now(),

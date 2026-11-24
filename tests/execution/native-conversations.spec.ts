@@ -99,6 +99,16 @@ function setup() {
 }
 
 describe('ordinary official conversations for external tasks', () => {
+  it('opens a delegated child independently of its waiting DSH caller', async () => {
+    const { bridge, record, agents, sessions } = setup()
+    record.origin = { kind: 'dsh', sessionId: 'session-waiting-parent' }
+    record.nativeSessionId = 'session-' + record.id
+    record.turns = []
+    await bridge.ensure(record, async () => {})
+    expect(agents.has(record.nativeSessionId)).toBe(true)
+    expect(sessions.has(record.origin.sessionId)).toBe(false)
+  })
+
   it('leaves an empty shell eligible for the official first-message title after a model switch', async () => {
     const { bridge, record, invoke } = setup()
     record.turns = []

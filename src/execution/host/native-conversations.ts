@@ -122,7 +122,12 @@ export class NativeHarnessConversations {
 
   /** Create/adopt the exact project Session and import its settled historical operations once. */
   ensure(record: HarnessSession, persist: () => Promise<void>): Promise<void> {
-    if (record.harnessRef === 'dsh' || record.origin.kind === 'dsh') return Promise.resolve()
+    if (
+      record.harnessRef === 'dsh' ||
+      (record.origin.kind === 'dsh' &&
+        (!record.nativeSessionId || record.nativeSessionId === record.origin.sessionId))
+    )
+      return Promise.resolve()
     const pending = this.jobs.get(record.id)
     if (pending) return pending
     const job = this.prepare(record, persist).finally(() => this.jobs.delete(record.id))
