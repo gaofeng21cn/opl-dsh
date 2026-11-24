@@ -1,4 +1,5 @@
 import writeFileAtomic from 'write-file-atomic'
+import { CodexEfforts } from './codex-efforts.ts'
 import { EngineUpdates } from './engine-updates.ts'
 import {
   checkEngineUpdate,
@@ -18,7 +19,7 @@ import { gatewayGroupEnabled } from '../../gateway/host/group-settings.ts'
 import { inspectHarness, inspectInstalledHarness } from './harness-registry.ts'
 import { maintainHarness } from './harness-maintenance.ts'
 import type { HarnessInstallation } from '../contracts/installations.ts'
-import { isRemovableCombination, modelRefKey } from '../contracts/catalog.ts'
+import { executionModelRefKey, isRemovableCombination, modelRefKey } from '../contracts/catalog.ts'
 import type { MiniMaxCandidateRequest, MiniMaxCandidateResult } from '../contracts/candidate.ts'
 import { RuntimeMaintenance } from './runtime-maintenance.ts'
 import { prepareMiniMaxCandidate } from './minimax-candidate.ts'
@@ -88,6 +89,9 @@ import { minimaxExecutionRegion, saveMinimaxExecutionRegion } from './minimax-ex
 import { oplProfilePath } from '../../shared/host/profile-paths.ts'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { ModelCatalog } from '@deepseek-ai/dsh-api-session-controller/types'
+import { sameWorkingDirectory } from './harness-types.ts'
+import type {} from '@deepseek-ai/dsh-working-directory'
 import type {} from '@deepseek-ai/dsh-workspace'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import type {} from '@deepseek-ai/dsh-permission-presets'
@@ -293,6 +297,11 @@ export class HarnessService {
   private minimaxIntegrationEnabled: boolean | undefined
   private minimaxLoginAttempt:
     { region: MiniMaxAccountLoginRequest['region']; cancelled: boolean } | undefined
+  private readonly codexEfforts = new CodexEfforts()
+  async codexModelEfforts() {
+    const entry = (await this.catalogStore.get()).harnesses.find((item) => item.id === 'codex')
+    return this.codexEfforts.read(entry?.command || 'codex', entry?.prefix ?? [])
+  }
   private readonly minimaxAccount = new MiniMaxAccount(async () => {
     const harness = (await this.catalogStore.get()).harnesses.find(
       (item) => item.id === 'minimax-code',
@@ -508,6 +517,7 @@ export class HarnessService {
   private readonly starting = new Map<string, Promise<HarnessSnapshot>>()
   private readonly connecting = new Map<string, Promise<void>>()
   private readonly reasoningPreflights = new Map<string, Promise<HarnessReasoningPreflight>>()
+  private catalogEpoch = 0
   private readonly events = new EventEmitter()
   private writeQueue: Promise<void> = Promise.resolve()
   private readonly ready: Promise<void>
@@ -532,6 +542,12 @@ export class HarnessService {
   /** Share one catalog build among the parallel catalog/combination/selection reads. */
   private executionCatalogPending:
     { minimaxCodeEnabled: boolean; promise: Promise<ExecutionCatalog> } | undefined
+  /** Last live catalog, used by the picker while the next OFM refresh is pending. */
+  private executionCatalogSnapshot:
+    { minimaxCodeEnabled: boolean; catalog: ExecutionCatalog } | undefined
+  /** Reuse the official model catalogue between picker reads and warm it at startup. */
+  private officialModelCatalogSnapshot: ModelCatalog | undefined
+  private officialModelCatalogPending: Promise<ModelCatalog> | undefined
   private readonly availabilityPending = new WeakMap<
     ExecutionCatalog,
     Promise<Map<string, { available: boolean; reason?: string }>>
@@ -564,6 +580,13 @@ export class HarnessService {
     this.minimaxCodeEnabledSource = options.minimaxCodeEnabled
     this.minimaxIntegrationEnabled = this.isMinimaxCodeEnabled()
     this.directory = options.home ?? dshHomePath()
+    this.events.on('catalog', () => {
+      this.catalogEpoch++
+      this.officialModelCatalogSnapshot = undefined
+      this.officialModelCatalogPending = undefined
+      this.executionCatalogSnapshot = undefined
+      this.executionCatalogPending = undefined
+    })
     this.modelSources = new ExternalModelSources(ctx, () => this.events.emit('catalog'))
     this.sessionStore = new HarnessSessionStore(this.directory)
     this.catalogStore = new ExecutionCatalogStore(this.directory)
@@ -574,6 +597,9 @@ export class HarnessService {
       options.readOfm,
       () => this.isMinimaxCodeEnabled(),
     )
+    // Start the official catalogue read before the potentially large external
+    // history restore. The picker can reuse this result as soon as it opens.
+    void this.officialModelCatalog().catch(() => {})
     this.events.setMaxListeners(100)
     this.stopEditIntents = new StopEditIntentStore(this.directory)
     this.messageEditStore = new MessageEditStore(this.directory)
@@ -600,6 +626,12 @@ export class HarnessService {
           // A persisted native identity already belongs to the official Session
           // store. Reopen that Session when it is used, not every desktop startup.
           if (record.nativeSessionId) {
+            if (
+              record.assignment &&
+              record.origin.kind === 'dsh' &&
+              record.nativeSessionId === record.origin.sessionId
+            )
+              continue
             if (this.selections[record.nativeSessionId] === undefined)
               await this.bindSelection(record.nativeSessionId, record.combination)
             continue
@@ -722,7 +754,11 @@ export class HarnessService {
     }
   }
   private async ensureConversation(record: HarnessSession) {
-    if (record.harnessRef !== 'dsh' && record.origin.kind === 'dsh') {
+    if (
+      record.harnessRef !== 'dsh' &&
+      record.origin.kind === 'dsh' &&
+      (!record.nativeSessionId || record.nativeSessionId === record.origin.sessionId)
+    ) {
       if (!record.nativeSessionId) {
         record.nativeSessionId = record.origin.sessionId
         await this.save(record)
@@ -748,8 +784,49 @@ export class HarnessService {
     if (!session) throw Error('ZCode 的原生会话已不存在')
     return this.ctx.permissionPresets.current(session) === 'auto' ? 'build' : 'yolo'
   }
-  private conversationBinding(session: Session, definition: CombinationDefinition) {
-    if (!session.header.cwd) throw Error('请先选择项目目录')
+  private currentWorkingDirectory(session: Session): string {
+    try {
+      const projection = this.ctx.sessionProjections.snapshot(session, ['workingDirectory']).values
+        .workingDirectory
+      if (projection) return projection
+    } catch {
+      // Older test hosts may not mount the official projection registry.
+    }
+    const service = this.ctx.get('workingDirectory') as
+      { get(session: Session): string; defaultDirectory?: string } | undefined
+    if (service && service.defaultDirectory === undefined) return service.get(session)
+    if (session.header.cwd) return session.header.cwd
+    return service?.get(session) ?? ''
+  }
+
+  /**
+   * Resolve the directory that the next model request will execute in.
+   *
+   * The Session header records the original project. Official DSH can move a
+   * live Session to another directory, so external Harness admission must use
+   * the working-directory projection and let its service recover a missing
+   * current directory before launching a process.
+   */
+  private async ensureCurrentWorkingDirectory(session: Session): Promise<string> {
+    const service = this.ctx.get('workingDirectory') as
+      | {
+          get(session: Session): string
+          ensure(agent: Agent, signal?: AbortSignal): Promise<string>
+        }
+      | undefined
+    const agent = this.ctx.agents.get(session.id)
+    const cwd =
+      agent && service ? await service.ensure(agent) : this.currentWorkingDirectory(session)
+    if (!cwd) throw Error('请先选择项目目录')
+    return cwd
+  }
+
+  private conversationBinding(
+    session: Session,
+    definition: CombinationDefinition,
+    cwd = this.currentWorkingDirectory(session),
+  ) {
+    if (!cwd) throw Error('请先选择项目目录')
     const policy = this.ctx.agents.get(session.id)?.ctx.get('sandboxPolicy')?.resolve({ session })
     const preset = this.ctx.permissionPresets.current(session)
     const mode = policy?.mode ?? preset
@@ -760,7 +837,7 @@ export class HarnessService {
           ? 'full-access'
           : 'workspace'
     return {
-      cwd: session.header.cwd,
+      cwd,
       sandbox,
       taskId: `conversation:${definition.id}:${sandbox}`,
     } as const
@@ -1139,48 +1216,64 @@ export class HarnessService {
         : {}),
     })
   }
-  async executionCatalog(): Promise<ExecutionCatalog> {
+  async executionCatalog(options: { fast?: boolean } = {}): Promise<ExecutionCatalog> {
     if (this.disposed) throw Error('组合服务已关闭')
     const minimaxCodeEnabled = this.isMinimaxCodeEnabled()
-    if (this.executionCatalogPending?.minimaxCodeEnabled === minimaxCodeEnabled)
-      return this.executionCatalogAfter(this.executionCatalogPending.promise, minimaxCodeEnabled)
-    const pending = this.modelResolver.resolve().then((catalog) => ({
-      ...catalog,
-      supportedPairings: catalog.models.map((model) => {
-        const supported = catalog.harnesses.flatMap((harness) => {
-          const adapter = adapterFor(harness.id, model.ref, this.modelSources)
-          return adapter
-            ? [
-                {
-                  harness: harness.id,
-                  permissions:
-                    harness.id === 'codex' && harness.codexRuntime
-                      ? ['full-access' as const]
-                      : adapter.capabilities.permissions,
-                },
-              ]
-            : []
-        })
-        return {
-          modelRef: model.ref,
-          harnessRefs: supported.map((item) => item.harness),
-          permissionPolicies: Object.fromEntries(
-            supported.map((item) => [item.harness, [...item.permissions]]),
-          ),
-        }
-      }),
-    }))
-    this.executionCatalogPending = { minimaxCodeEnabled, promise: pending }
-    void pending.then(
-      () => {
-        if (this.executionCatalogPending?.promise === pending)
-          this.executionCatalogPending = undefined
-      },
-      () => {
-        if (this.executionCatalogPending?.promise === pending)
-          this.executionCatalogPending = undefined
-      },
-    )
+    let pending =
+      this.executionCatalogPending?.minimaxCodeEnabled === minimaxCodeEnabled
+        ? this.executionCatalogPending.promise
+        : undefined
+    if (!pending) {
+      pending = this.modelResolver.resolve().then((catalog) => ({
+        ...catalog,
+        supportedPairings: catalog.models.map((model) => {
+          const supported = catalog.harnesses.flatMap((harness) => {
+            const adapter = adapterFor(harness.id, model.ref, this.modelSources)
+            return adapter
+              ? [
+                  {
+                    harness: harness.id,
+                    permissions:
+                      harness.id === 'codex' && harness.codexRuntime
+                        ? ['full-access' as const]
+                        : adapter.capabilities.permissions,
+                  },
+                ]
+              : []
+          })
+          return {
+            modelRef: model.ref,
+            harnessRefs: supported.map((item) => item.harness),
+            permissionPolicies: Object.fromEntries(
+              supported.map((item) => [item.harness, [...item.permissions]]),
+            ),
+          }
+        }),
+      }))
+      this.executionCatalogPending = { minimaxCodeEnabled, promise: pending }
+      void pending.then(
+        (catalog) => {
+          if (
+            this.executionCatalogPending?.promise === pending &&
+            this.isMinimaxCodeEnabled() === minimaxCodeEnabled
+          )
+            this.executionCatalogSnapshot = { minimaxCodeEnabled, catalog }
+          if (this.executionCatalogPending?.promise === pending)
+            this.executionCatalogPending = undefined
+        },
+        () => {
+          if (this.executionCatalogPending?.promise === pending)
+            this.executionCatalogPending = undefined
+        },
+      )
+    }
+    if (options.fast) {
+      const snapshot = this.executionCatalogSnapshot
+      if (snapshot?.minimaxCodeEnabled === minimaxCodeEnabled)
+        return structuredClone(snapshot.catalog)
+      const persisted = await this.catalogStore.get()
+      return { ...persisted, minimaxCodeEnabled }
+    }
     return this.executionCatalogAfter(pending, minimaxCodeEnabled)
   }
   private async executionCatalogAfter(
@@ -1192,6 +1285,25 @@ export class HarnessService {
     // Never publish a projection accepted before an opt-out/opt-in completed.
     return this.isMinimaxCodeEnabled() === minimaxCodeEnabled ? catalog : this.executionCatalog()
   }
+  /** Recheck just the selected model with its owner before reusing this request's catalog. */
+  private async checkFirstSendModel(ref: ModelRef, signal?: AbortSignal): Promise<boolean> {
+    if (ref.provider === 'opl-gateway') {
+      // The logical Gateway adapter resolves exactly one group's credentials and model list.
+      await this.ctx.llm.resolveModelInfo(ref.provider, ref.model, signal)
+    } else if (ref.provider === MINIMAX_CODE_PROVIDER) {
+      this.assertMinimaxCodeEnabled()
+      const state = await this.probeExternalModel(ref)
+      if (!state.available)
+        throw new LlmError(state.reason ?? 'MiniMax Code 尚未就绪。', 'MODEL_UNAVAILABLE')
+    } else if (OFM_PROVIDERS.includes(ref.provider)) {
+      await assertOfmModelAvailable(this.ctx, ref, this.options.readOfm, true)
+    } else {
+      return false
+    }
+    signal?.throwIfAborted()
+    return true
+  }
+
   /**
    * Availability of a model owned by an external official CLI rather than by the OPL
    * Gateway. It reads the persisted catalog directly so the model projection cannot
@@ -1458,10 +1570,11 @@ export class HarnessService {
     input: HarnessStartRequest,
     deferConnection = false,
     followConversationPermission = false,
+    conversationCatalog?: () => Promise<ExecutionCatalog>,
   ): Promise<HarnessSnapshot> {
     await this.ready
     if (this.disposed) throw Error('组合服务已关闭')
-    const catalog = await this.executionCatalog()
+    const catalog = await (conversationCatalog ? conversationCatalog() : this.executionCatalog())
     const frozen = input.existingSessionId ? this.records.get(input.existingSessionId) : undefined
     const definition = frozen
       ? { ...frozen, enabled: true, permissionPolicy: frozen.sandbox, name: frozen.title }
@@ -1499,6 +1612,8 @@ export class HarnessService {
       input.existingSessionId ??
       `harness-${hash([origin, input.taskId ?? randomUUID(), cwd, input.combination]).slice(0, 24)}`
     const prior = this.records.get(id)
+    if (prior?.assignment && origin.kind === 'dsh' && prior.nativeSessionId === origin.sessionId)
+      throw Error('旧委派任务与发起会话共用记录，请新建委派任务')
     if (input.existingSessionId && !prior) throw Error('指定会话不存在，不会自动创建替代会话')
     // Creating a combination session is a dispatch: it needs an addressable
     // reviewer. Resuming an existing record stays allowed, so a historical
@@ -1556,6 +1671,10 @@ export class HarnessService {
         ? { externalAutoReview: autoReview }
         : {}),
       ...(definition.harnessRef === 'zcode' ? { zcodeMode: this.zcodeModeForOrigin(origin) } : {}),
+      // A delegated turn needs an independent native driver while its caller awaits the tool.
+      ...(origin.kind === 'dsh' && definition.harnessRef !== 'dsh' && !followConversationPermission
+        ? { nativeSessionId: `session-${id}` }
+        : {}),
       acpSessionId: '',
       title: definition.name,
       createdAt: now(),
@@ -3062,14 +3181,16 @@ export class HarnessService {
   ): Promise<LlmCallConfig> {
     await this.ready
     await this.waitForSelectionChange(sessionId)
-    const catalog = await this.executionCatalog()
-    const definition = this.combinationFor(sessionId, catalog, request)
-    await assertOfmModelAvailable(
-      this.ctx,
-      request,
-      this.options.readOfm,
-      (definition?.harnessRef ?? defaultHarness(request)) !== 'dsh',
-    )
+    if (OFM_PROVIDERS.includes(request.provider)) {
+      const catalog = await this.executionCatalog()
+      const definition = this.combinationFor(sessionId, catalog, request)
+      await assertOfmModelAvailable(
+        this.ctx,
+        request,
+        this.options.readOfm,
+        (definition?.harnessRef ?? defaultHarness(request)) !== 'dsh',
+      )
+    }
     const session = this.ctx.sessions.get(asSessionId<SessionId>(sessionId))
     const selection = session
       ? this.ctx.sessionProjections.snapshot(session, ['modelSelection']).values.modelSelection
@@ -3107,10 +3228,17 @@ export class HarnessService {
       get disposed() {
         return self.disposed
       },
-      executionCatalog: () => this.executionCatalog(),
+      officialModelCatalog: () => this.officialModelCatalog(),
+      currentWorkingDirectory: (session) => this.currentWorkingDirectory(session),
+      ensureCurrentWorkingDirectory: (session) => this.ensureCurrentWorkingDirectory(session),
+      get catalogEpoch() {
+        return self.catalogEpoch
+      },
+      executionCatalog: (options) => this.executionCatalog(options),
       adapterOptions: (command, prefix, codexRuntime) =>
         this.adapterOptions(command, prefix, codexRuntime),
-      conversationBinding: (session, definition) => this.conversationBinding(session, definition),
+      conversationBinding: (session, definition, cwd) =>
+        this.conversationBinding(session, definition, cwd),
       bindSelection: (sessionId, combination) => this.bindSelection(sessionId, combination),
       runSelectionChange: (sessionId, operation) => this.runSelectionChange(sessionId, operation),
       native: (method, request) => this.native(method, request),
@@ -3157,6 +3285,7 @@ export class HarnessService {
       view: (record, turns) => this.view(record, turns),
       save: (record) => this.save(record),
       changed: (record) => this.changed(record),
+      ensureCurrentWorkingDirectory: (session) => this.ensureCurrentWorkingDirectory(session),
       executionCatalog: () => this.executionCatalog(),
       combinations: () => this.combinations(),
       assertStopEditIdle: (record) => this.assertStopEditIdle(record),
@@ -3182,6 +3311,8 @@ export class HarnessService {
     const self = this
     return {
       ctx: this.ctx,
+      currentWorkingDirectory: (session) => this.currentWorkingDirectory(session),
+      ensureCurrentWorkingDirectory: (session) => this.ensureCurrentWorkingDirectory(session),
       directory: this.directory,
       records: this.records,
       active: this.active,
@@ -3486,6 +3617,29 @@ export class HarnessService {
     return flushDeliveries(this.delegationHost())
   }
 
+  private officialModelCatalog(): Promise<ModelCatalog> {
+    if (this.officialModelCatalogSnapshot)
+      return Promise.resolve(structuredClone(this.officialModelCatalogSnapshot))
+    if (this.officialModelCatalogPending) return this.officialModelCatalogPending
+    const pending = (
+      invokeHostRemote(this.ctx, {
+        namespace: 'session',
+        method: 'modelCatalog',
+        args: {},
+      }) as Promise<ModelCatalog>
+    ).then((catalog) => {
+      if (this.officialModelCatalogPending === pending) {
+        this.officialModelCatalogSnapshot = structuredClone(catalog)
+        this.officialModelCatalogPending = undefined
+      }
+      return catalog
+    })
+    this.officialModelCatalogPending = pending
+    void pending.catch(() => {
+      if (this.officialModelCatalogPending === pending) this.officialModelCatalogPending = undefined
+    })
+    return pending
+  }
   async modelSelection(sessionId: string) {
     return modelSelection(this.selectionHost(), sessionId)
   }
@@ -3571,6 +3725,8 @@ export class HarnessService {
           throw new LlmError('模型选择已改变，请重新发送；本轮未使用旧模型。', 'HARNESS_BINDING')
       }
     }
+    const epoch = this.catalogEpoch
+    const revision = this.catalogStore.revision
     const catalog = options.sessionId ? await this.executionCatalog() : undefined
     if (options.sessionId && !options.purpose)
       // The first admission may have waited through opt-out. Re-read the saved
@@ -3616,13 +3772,20 @@ export class HarnessService {
         '此 Harness 尚无已验证的官方 Auto Review 接口，请选择其他权限模式。',
         'HARNESS_PERMISSION',
       )
-    const binding = this.conversationBinding(session, definition)
     const bound =
       this.replacementFor(session.id, catalog!, definition.modelRef)?.record ??
       [...this.records.values()].find(
         (record) =>
           record.nativeSessionId === options.sessionId && record.combination === definition.id,
       )
+    const cwd = await this.ensureCurrentWorkingDirectory(session)
+    if (bound && !sameWorkingDirectory(bound.cwd, cwd)) {
+      throw new LlmError(
+        '当前会话的工作目录已改变，外部 Harness 仍绑定原目录；请新建会话或重新选择执行组合后再发送。',
+        'HARNESS_BINDING',
+      )
+    }
+    const binding = this.conversationBinding(session, definition, cwd)
     const user = options.messages.findLast(
       (message) =>
         message.role === 'user' &&
@@ -3724,6 +3887,37 @@ export class HarnessService {
             },
             true,
             true,
+            async () => {
+              const checked = await this.checkFirstSendModel(definition.modelRef, options.signal)
+              const reuse =
+                checked && this.catalogEpoch === epoch && this.catalogStore.revision === revision
+              const current = reuse ? catalog! : await this.executionCatalog()
+              await this.waitForSelectionChange(session.id)
+              const projection = this.ctx.sessionProjections.snapshot(session, ['modelSelection'])
+                .values.modelSelection
+              const ref = projection?.next ?? projection?.lastUsed
+              if (ref && executionModelRefKey(ref) !== executionModelRefKey(options))
+                throw new LlmError(
+                  '模型选择已改变，请重新发送；本轮未使用旧模型。',
+                  'HARNESS_BINDING',
+                )
+              if (reuse && (this.catalogEpoch !== epoch || this.catalogStore.revision !== revision))
+                throw new LlmError('执行组合已改变，请重新发送。', 'HARNESS_BINDING')
+              const selected = this.combinationFor(session.id, current, options)
+              if (
+                !selected?.enabled ||
+                selected.id !== definition.id ||
+                selected.harnessRef !== definition.harnessRef ||
+                modelRefKey(selected.modelRef) !== modelRefKey(definition.modelRef)
+              )
+                throw new LlmError(
+                  '模型选择已改变，请重新发送；本轮未使用旧模型。',
+                  'HARNESS_BINDING',
+                )
+              if (this.conversationBinding(session, selected, cwd).sandbox !== binding.sandbox)
+                throw new LlmError('官方会话权限已改变，请重新发送。', 'HARNESS_PERMISSION')
+              return current
+            },
           ),
         )
     const record = this.records.get(started.id)!

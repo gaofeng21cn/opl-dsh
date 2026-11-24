@@ -15,6 +15,30 @@ export interface ModelDefinition {
 export const modelRefKey = (ref: ModelRef) => JSON.stringify([ref.provider, ref.model])
 
 /**
+ * Convert a native OPL Gateway provider reference to the execution catalog's
+ * route reference. The official model selector exposes each credential group
+ * as its own provider, while execution combinations use one provider with a
+ * group-qualified model id.
+ */
+export function executionModelRef(ref: ModelRef): ModelRef {
+  const groups: Record<string, string> = {
+    'opl-gateway-openai': 'codex',
+    'opl-gateway-gemini': 'gemini',
+    'opl-gateway-grok': 'grok',
+    'opl-gateway-kiro': 'kiro',
+    'opl-gateway-aws': 'aws',
+    'opl-gateway-claude': 'claude',
+  }
+  const group = groups[ref.provider]
+  return group === undefined || ref.model.includes('::')
+    ? ref
+    : { provider: 'opl-gateway', model: `${group}::${ref.model}` }
+}
+
+/** Compare native model selections with execution-catalog model references. */
+export const executionModelRefKey = (ref: ModelRef) => modelRefKey(executionModelRef(ref))
+
+/**
  * Models advertised by an older provider catalog but no longer part of the
  * OPL product surface. Keep this decision shared by projection and persistence.
  */

@@ -1,6 +1,7 @@
 import { invokeHostRemote } from '../../compat/host/remote-invocation.ts'
 /** Real official conversations for delegated Harness tasks; importing history never executes it. */
 import { createHash } from 'node:crypto'
+import { normalize } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import {
   createAssistantMessage,
@@ -121,7 +122,12 @@ export class NativeHarnessConversations {
 
   /** Create/adopt the exact project Session and import its settled historical operations once. */
   ensure(record: HarnessSession, persist: () => Promise<void>): Promise<void> {
-    if (record.harnessRef === 'dsh' || record.origin.kind === 'dsh') return Promise.resolve()
+    if (
+      record.harnessRef === 'dsh' ||
+      (record.origin.kind === 'dsh' &&
+        (!record.nativeSessionId || record.nativeSessionId === record.origin.sessionId))
+    )
+      return Promise.resolve()
     const pending = this.jobs.get(record.id)
     if (pending) return pending
     const job = this.prepare(record, persist).finally(() => this.jobs.delete(record.id))
@@ -180,7 +186,22 @@ export class NativeHarnessConversations {
     const workspace = await this.ctx.workspaceRegistry.create(record.cwd)
     await workspace.attachSession(SessionId(id))
     const session = this.ctx.sessions.get(SessionId(id))
-    if (!session || session.header.cwd !== record.cwd) throw Error('外部任务的官方会话项目不一致')
+    if (!session) throw Error('外部任务的官方会话项目不一致')
+    let currentCwd = session.header.cwd
+    try {
+      currentCwd =
+        this.ctx.sessionProjections.snapshot(session, ['workingDirectory']).values
+          .workingDirectory ?? currentCwd
+    } catch {
+      // Older hosts without the official projection use the immutable header.
+    }
+    const normalizedCurrent = normalize(currentCwd ?? '')
+    const normalizedRecord = normalize(record.cwd)
+    const sameDirectory =
+      process.platform === 'win32'
+        ? normalizedCurrent.toLowerCase() === normalizedRecord.toLowerCase()
+        : normalizedCurrent === normalizedRecord
+    if (!sameDirectory) throw Error('外部任务的官方会话当前工作目录已改变，请重新绑定执行组合')
     if (this.ctx.agents.get(session.id)?.status === 'running')
       throw Error('官方会话仍在运行，不能迁移历史')
     if (!record.nativeSessionId) {

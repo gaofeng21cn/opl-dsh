@@ -76,6 +76,28 @@ describe('read-only DSH cleanup snapshot', () => {
     }
   })
 
+  it('blocks the official SQLite store before selecting JSONL sessions', async () => {
+    const home = homeFixture()
+    try {
+      mkdirSync(join(home, '.segments'), { recursive: true })
+      writeFileSync(join(home, '.segments', 'sessions.sqlite'), 'SQLite format 3\0')
+      const snapshot = await loadDshSnapshot({
+        home,
+        selector: { kind: 'archived' },
+      })
+      expect(snapshot.blockers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'unsupported-session-storage',
+            path: join(home, '.segments', 'sessions.sqlite'),
+          }),
+        ]),
+      )
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('closes an external selection over its native session and reports structured references', async () => {
     const home = homeFixture()
     try {

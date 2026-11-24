@@ -290,6 +290,14 @@ for (const entry of [
 await cp(join(output, name), join(installer, name))
 for (const plugin of plugins) await cp(join(output, plugin.name), join(installer, plugin.name))
 await cp(join(output, superagent.name), join(installer, superagent.name))
+// Git may materialize text files with CRLF on Windows. Normalize the POSIX
+// bootstrap files before hashing the installer payload so a Mac build made on
+// Windows remains executable and its manifest still matches the shipped bytes.
+for (const file of ['install.command', 'official-feed.awk']) {
+  const path = join(installer, file)
+  const text = (await readFile(path, 'utf8')).replaceAll('\r\n', '\n')
+  await writeFile(path, text)
+}
 const macProcess = 'skill/coordinator/macos-process'
 if (process.platform === 'darwin')
   execFileSync(
@@ -361,6 +369,8 @@ for (const file of [
   'cleanup-skill/SKILL.md',
   'cleanup-skill/cleanup.mjs',
   'cleanup-skill/snapshot.mjs',
+  'cleanup-skill/sqlite-store.mjs',
+  'cleanup-skill/restore-files.mjs',
   'cleanup-skill/windows-io.mjs',
   'cleanup-skill/macos-io.mjs',
   'cleanup-skill/quit-windows.ps1',

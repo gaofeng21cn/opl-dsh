@@ -16,16 +16,22 @@ export interface GatewayModelRoute {
 export const gatewayModelId = (group: GatewayGroupId, id: string) =>
   group === 'deepseek' ? id : `${group}::${id}`
 
-function withReasoning(model: LlmResolvedModelInfo): LlmResolvedModelInfo {
-  const efforts = ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna'].includes(model.id)
-    ? ['low', 'medium', 'high', 'xhigh', 'max']
-    : model.id === 'claude-opus-5-5'
+function withReasoning(model: LlmResolvedModelInfo, cli?: readonly string[]): LlmResolvedModelInfo {
+  const efforts =
+    cli ??
+    (['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna'].includes(model.id)
       ? ['low', 'medium', 'high', 'xhigh', 'max']
-      : model.id === 'claude-fable-5-2'
+      : model.id === 'claude-opus-5-5'
         ? ['low', 'medium', 'high', 'xhigh', 'max']
-        : model.id === 'grok-4.7'
-          ? ['low', 'medium', 'high', 'xhigh']
-          : undefined
+        : model.id === 'claude-fable-5-2'
+          ? ['low', 'medium', 'high', 'xhigh', 'max']
+          : model.id === 'grok-4.7'
+            ? ['low', 'medium', 'high', 'xhigh']
+            : undefined)
+  if (efforts?.length === 0) {
+    const { reasoning: _reasoning, ...plain } = model
+    return plain
+  }
   if (!efforts) {
     const effort = modelDefaultEffort(model.id, model.reasoning)
     return effort === undefined || !model.reasoning
@@ -38,7 +44,9 @@ function withReasoning(model: LlmResolvedModelInfo): LlmResolvedModelInfo {
     ...model,
     reasoning: {
       efforts: efforts.map((id) => ({ id: ReasoningEffortId(id), name: id })),
-      defaultEffort: ReasoningEffortId(defaultEffort),
+      defaultEffort: ReasoningEffortId(
+        efforts.includes(defaultEffort) ? defaultEffort : efforts[0]!,
+      ),
     },
   }
 }
@@ -47,6 +55,7 @@ export class GatewayModelAdapter extends LlmAdapter {
     private readonly routes: readonly GatewayModelRoute[],
     private readonly onGroup: (group: GatewayGroupId) => void,
     private readonly reviewerRoute?: GatewayModelRoute,
+    private readonly codexEfforts?: () => Promise<Map<string, string[]> | undefined>,
   ) {
     super()
   }
@@ -69,8 +78,9 @@ export class GatewayModelAdapter extends LlmAdapter {
     const lists = await Promise.all(
       this.routes.map(async (route) => {
         if (!(await route.available())) return []
+        const levels = route.group === 'codex' ? await this.codexEfforts?.() : undefined
         return (await route.adapter.listModels(route.provider)).map((model) => ({
-          ...withReasoning(model),
+          ...withReasoning(model, levels?.get(model.id)),
           provider,
           id: gatewayModelId(route.group, model.id),
         }))
@@ -111,7 +121,10 @@ export class GatewayModelAdapter extends LlmAdapter {
   ): Promise<LlmResolvedModelInfo> {
     const { route, wireModel } = await this.selection(model)
     return {
-      ...withReasoning(await route.adapter.resolveModel(route.provider, wireModel, signal)),
+      ...withReasoning(
+        await route.adapter.resolveModel(route.provider, wireModel, signal),
+        route.group === 'codex' ? (await this.codexEfforts?.())?.get(wireModel) : undefined,
+      ),
       provider,
       id: model,
     }
@@ -120,7 +133,14 @@ export class GatewayModelAdapter extends LlmAdapter {
     const { route, wireModel } = await this.selection(model)
     const call = await route.adapter.prepareCall(route.provider, wireModel, signal)
     return {
-      model: { ...withReasoning(call.model), provider, id: model },
+      model: {
+        ...withReasoning(
+          call.model,
+          route.group === 'codex' ? (await this.codexEfforts?.())?.get(wireModel) : undefined,
+        ),
+        provider,
+        id: model,
+      },
       stream: (options: GenerateOptions) => this.dispatch(route, wireModel, call.stream, options),
     }
   }

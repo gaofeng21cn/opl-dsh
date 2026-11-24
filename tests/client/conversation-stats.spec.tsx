@@ -10,7 +10,16 @@ import {
   StatisticsPreferenceRow,
   type StatisticsSettings,
 } from '../../src/conversation-stats/client/PreferenceRow.tsx'
-import { zh } from '../../src/conversation-stats/client/locales.ts'
+import { labels as suiteLabels } from '../../src/shared/client/FeaturePreferences.tsx'
+
+const zh = {
+  title: suiteLabels.zh.countsScopeTitle,
+  description: suiteLabels.zh.countsScopeDescription,
+  current: suiteLabels.zh.countsScopeCurrent,
+  history: suiteLabels.zh.countsScopeHistory,
+  help: suiteLabels.zh.countsScopeHelp,
+  saveFailed: suiteLabels.zh.saveFailed,
+}
 
 // The official runtime supplies primitive peer dependencies; the isolated Desktop test exercises its real Menu.
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
@@ -74,7 +83,7 @@ function observable<T>(initial: T) {
 function settings(mode: 'current' | 'history' = 'current') {
   const store = observable<ConfigFormSnapshot<StatisticsSettings>>({
     status: 'ready',
-    value: { conversationStats: mode, enhancedConversationStats: true },
+    value: { conversationStats: mode },
     base: {},
     user: {},
     revision: 4,
@@ -83,7 +92,7 @@ function settings(mode: 'current' | 'history' = 'current') {
   const set = vi.fn(async (_field: string, value: unknown) => {
     store.publish({
       ...store.getSnapshot(),
-      value: { conversationStats: value as 'current' | 'history', enhancedConversationStats: true },
+      value: { conversationStats: value as 'current' | 'history' },
       revision: 5,
     })
     return true
@@ -98,18 +107,9 @@ function settings(mode: 'current' | 'history' = 'current') {
     },
     set,
     unset: vi.fn(),
-    mutate: vi.fn(),
+    mutate: vi.fn().mockResolvedValue(true),
   }
   return { form, store, set }
-}
-
-function disabledSettings() {
-  const value = settings()
-  value.store.publish({
-    ...value.store.getSnapshot(),
-    value: { conversationStats: 'current', enhancedConversationStats: false },
-  })
-  return value
 }
 
 function render(element: Parameters<Root['render']>[0]) {
@@ -206,7 +206,7 @@ describe('activity count scope', () => {
     act(() =>
       f.preference.store.publish({
         ...f.preference.store.getSnapshot(),
-        value: { conversationStats: 'history', enhancedConversationStats: true },
+        value: { conversationStats: 'history' },
       }),
     )
     expect(f.container.textContent).toBe('4/9')
@@ -214,7 +214,7 @@ describe('activity count scope', () => {
     act(() =>
       f.preference.store.publish({
         ...f.preference.store.getSnapshot(),
-        value: { conversationStats: 'current', enhancedConversationStats: true },
+        value: { conversationStats: 'current' },
       }),
     )
     act(() =>
@@ -226,17 +226,22 @@ describe('activity count scope', () => {
     expect(f.container.textContent).toBe('2/4')
   })
 
-  it('preserves official counts until enhanced statistics is explicitly enabled', () => {
+  it('uses official counts for history and replaces only current counts', () => {
     const f = fixture()
-    for (const enhancedConversationStats of [false, true, false]) {
-      act(() =>
-        f.preference.store.publish({
-          ...f.preference.store.getSnapshot(),
-          value: { conversationStats: 'current', enhancedConversationStats },
-        }),
-      )
-      expect(f.container.textContent).toBe(enhancedConversationStats ? '2/3' : '4/9')
-    }
+    act(() =>
+      f.preference.store.publish({
+        ...f.preference.store.getSnapshot(),
+        value: { conversationStats: 'history' },
+      }),
+    )
+    expect(f.container.textContent).toBe('4/9')
+    act(() =>
+      f.preference.store.publish({
+        ...f.preference.store.getSnapshot(),
+        value: { conversationStats: 'current' },
+      }),
+    )
+    expect(f.container.textContent).toBe('2/3')
   })
 
   it('uses native statistics while the current-history projection is absent', () => {
@@ -280,7 +285,7 @@ describe('Host-backed count preference', () => {
     const view = render(
       createElement(StatisticsPreferenceRow, {
         form: value.form,
-        t: (key: keyof typeof zh) => zh[key],
+        labels: zh,
       }),
     )
     const button = () => view.container.querySelector<HTMLButtonElement>('button')!
@@ -295,24 +300,54 @@ describe('Host-backed count preference', () => {
     return { ...value, ...view, button, choose }
   }
 
-  it('hides the scope selector while enhanced statistics is disabled', () => {
-    const value = disabledSettings()
+  it('always renders the scope selector and defaults to the official history count', () => {
+    const value = settings('history')
     const view = render(
       createElement(StatisticsPreferenceRow, {
         form: value.form,
-        t: (key: keyof typeof zh) => zh[key],
-      }),
-    )
-    expect(view.container.querySelector('[data-opl-preference="conversation-counts"]')).toBeNull()
-    act(() =>
-      value.store.publish({
-        ...value.store.getSnapshot(),
-        value: { conversationStats: 'current', enhancedConversationStats: true },
+        labels: zh,
       }),
     )
     expect(
       view.container.querySelector('[data-opl-preference="conversation-counts"]'),
     ).not.toBeNull()
+    expect(view.container.textContent).toContain('历史累计')
+  })
+
+  it('migrates the former disabled current-count setting to official history counts', async () => {
+    const value = settings('current')
+    value.store.publish({
+      ...value.store.getSnapshot(),
+      value: { conversationStats: 'current', enhancedConversationStats: false },
+      user: { enhancedConversationStats: false },
+    })
+    render(
+      createElement(StatisticsPreferenceRow, {
+        form: value.form,
+        labels: zh,
+      }),
+    )
+    await act(async () => {})
+    expect(value.form.mutate).toHaveBeenCalledExactlyOnceWith(
+      [
+        { op: 'set', path: ['conversationStats'], value: 'history' },
+        { op: 'unset', path: ['enhancedConversationStats'] },
+      ],
+      4,
+    )
+  })
+
+  it('retains the selected scope when the old switch only has a schema default', () => {
+    const value = settings('current')
+    value.store.publish({
+      ...value.store.getSnapshot(),
+      value: { conversationStats: 'current', enhancedConversationStats: false },
+      user: { conversationStats: 'current' },
+    })
+    const view = render(createElement(StatisticsPreferenceRow, { form: value.form, labels: zh }))
+    expect(view.container.textContent).toContain('当前对话')
+    expect(value.set).not.toHaveBeenCalled()
+    expect(value.form.mutate).not.toHaveBeenCalled()
   })
 
   it('saves a choice through the existing settings form and reflects accepted Host state', async () => {
@@ -345,7 +380,7 @@ describe('Host-backed count preference', () => {
       })
       await f.choose('历史累计')
       expect(f.button().textContent).toContain('当前对话')
-      expect(f.container.querySelector('[role=alert]')?.textContent).toBe('未能保存，请重试。')
+      expect(f.container.querySelector('[role=alert]')?.textContent).toBe(suiteLabels.zh.saveFailed)
       expect(f.set).toHaveBeenCalledTimes(1)
       await f.choose('历史累计')
       expect(f.set).toHaveBeenCalledTimes(2)

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
-import { resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek-api-key'
+import { resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
 import {
   Config,
   DEFAULT_API_KEY_REF,

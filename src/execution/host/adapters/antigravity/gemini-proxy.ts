@@ -96,6 +96,9 @@ export function normalizeGeminiSse(onPayload?: (value: unknown) => void): Transf
             finished.add(index)
         }
       }
+      // The Go SDK decodes HTTP headers as string arrays. Gateways may serialize
+      // their own HTTP client metadata with scalar headers in the model response.
+      delete value.sdkHttpResponse
       onPayload?.(payload)
       push('data: ' + JSON.stringify(payload) + '\n\n')
     },

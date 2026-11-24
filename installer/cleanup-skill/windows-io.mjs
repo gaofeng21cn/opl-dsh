@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { execFile, execFileSync } from 'node:child_process'
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, unlinkSync } from 'node:fs'
 import { promisify } from 'node:util'
 import { dirname, isAbsolute, join, parse, relative, resolve, sep, win32 } from 'node:path'
 
@@ -496,7 +496,7 @@ function parseMetadata(path) {
   return { originalPath, deletionTimeMs }
 }
 
-function validateReceipt(receipt) {
+function validateReceipt(receipt, moved = false) {
   if (receipt === null || typeof receipt !== 'object') fail('回收凭据无效')
   for (const key of ['originalPath', 'recyclePath', 'metadataPath']) {
     if (typeof receipt[key] !== 'string' || !receipt[key]) fail('回收凭据无效')
@@ -529,7 +529,7 @@ function validateReceipt(receipt) {
   }
   assertNoReparseAncestors(recyclePath)
   checkEntry(metadataPath)
-  checkEntry(recyclePath)
+  checkEntry(recyclePath, { allowMissing: moved })
   return { originalPath, recyclePath, metadataPath }
 }
 
@@ -552,6 +552,20 @@ export function verifyRecycledTarget(target, receipt) {
   const actualTree = readSafeTree(checked.recyclePath, [checked.metadataPath])
   if (!treeEqual(expectedTree, actualTree)) fail('回收内容哈希不匹配')
   return true
+}
+
+/** Remove only the verified Windows metadata after the original tree is back in place. */
+export function finishWindowsRestore(target, receipt) {
+  const checked = validateReceipt(receipt, true)
+  const metadata = parseMetadata(checked.metadataPath)
+  if (
+    comparisonPath(target.path) !== comparisonPath(metadata.originalPath) ||
+    comparisonPath(target.path) !== comparisonPath(checked.originalPath) ||
+    lstatSync(checked.recyclePath, { throwIfNoEntry: false }) ||
+    !treeEqual(orderedTree(target.tree), safeTree(target.path))
+  ) fail('恢复后的文件或回收站回执不匹配')
+  assertNativePathSafety([checked.metadataPath])
+  unlinkSync(checked.metadataPath)
 }
 
 function targetForIO(target) {

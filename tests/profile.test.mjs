@@ -73,7 +73,6 @@ async function runtime(
   for (const [name, resolved] of [
     ['@deepseek-ai/cordis-plugin-include', include],
     ['yaml', require.resolve('yaml')],
-    ['js-yaml', createRequire(include).resolve('js-yaml')],
   ])
     await module(
       name,

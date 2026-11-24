@@ -86,7 +86,9 @@ Issue 在实现前记录这些判断，PR 在合并前核对实现与用户目�
 
 官方升级同时承担能力迁回。先以用户任务判断新版官方 DSH、官方插件和公开接口是否已覆盖 [复用审计](dsh-reuse-audit.md) 中仍由 OPL 保留的差异。已覆盖时，在同次升级中验证最小真实链路，切换唯一调用者，再移除重复实现；只保留无法由官方表达的业务语义。官方 Team、Subagent、preset/persona 与原生权限不建立第二套 OPL 状态。新增 OPL 能力须写明官方缺口、接入位置与迁回条件；不以永久双写或静默回退维持旧路径。
 
-开发使用 Node.js 24.9.0 或更新版本。SuperAgent 原型以固定源码快照保存在 `vendor/dsh-superagent`，通过同一 npm workspace 和锁文件安装开发依赖。根类型检查覆盖它，测试可通过 `npm run test:superagent` 按需运行；构建生成独立 bundle 并把摘要写入套件清单。官方服务仍为运行时 peer，原版面板与存储保持自身 owner；适配范围见其 `UPSTREAM.md` 和[使用说明](superagent.md)。
+开发使用官方 DSH 支持的 Node.js `^24.22.3` 或 `>=26.13.1`。
+
+SuperAgent 原型以固定源码快照保存在 `vendor/dsh-superagent`，通过同一 npm workspace 和锁文件安装开发依赖。根类型检查覆盖它，测试可通过 `npm run test:superagent` 按需运行；构建生成独立 bundle 并把摘要写入套件清单。官方服务仍为运行时 peer，原版面板与存储保持自身 owner；适配范围见其 `UPSTREAM.md` 和[使用说明](superagent.md)。
 
 ```sh
 npm ci --ignore-scripts

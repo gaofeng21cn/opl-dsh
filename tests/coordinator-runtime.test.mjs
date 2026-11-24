@@ -1,5 +1,9 @@
 /** Runtime tests join real persistent state, metadata parsing and feedback projection. */
 import test from 'node:test'
+import { execFile, spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import assert from 'node:assert/strict'
 import {
   appendFile,
@@ -488,7 +492,7 @@ test('initial watcher failure disposes file handles and its process waiter', asy
   await appendFile(f.transcript, row('task_complete'))
 })
 
-async function liveReview(t) {
+async function liveReview(t, backend) {
   let consumed = false
   const f = await fixture(t, {
     task: true,
@@ -509,6 +513,7 @@ async function liveReview(t) {
       return projectFeedback(project, snapshot)
     },
   })
+  if (backend) f.runtime.owner = async () => backend
   await f.start()
   await f.runtime.syncFeedback('project-a')
   await f.runtime.event('project-a', 'review.started', {
@@ -747,8 +752,22 @@ test('concurrent registrations in the same chief reserve one project identity', 
   assert.equal((await runtime.status()).length, 1)
 })
 
-test('a crashed reviewer hands the same rollout and receipt to the acknowledged recovery turn', async (t) => {
-  const f = await liveReview(t)
+test('restarted watcher recovers a compacted review from its checkpoint after the reviewer exits', async (t) => {
+  const backend = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60000)'], {
+    stdio: 'ignore',
+  })
+  t.after(() => backend.kill())
+  await once(backend, 'spawn')
+  const f = await liveReview(t, { ...owner, pid: backend.pid })
+  const watcher = fileURLToPath(new URL('./fixtures/coordinator-watch-once.mjs', import.meta.url))
+  const audit = async () => {
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      [watcher, f.root, String(backend.pid)],
+      { timeout: 20000 },
+    )
+    return JSON.parse(stdout)
+  }
   const checkpoint = {
     artifactRevision: 'marker',
     checks: [{ id: 'bytes', result: 'passed', evidence: 'identical' }],
@@ -760,8 +779,18 @@ test('a crashed reviewer hands the same rollout and receipt to the acknowledged 
     workId: 'work-a',
     checkpoint,
   })
-  f.runtime.inspect = async () => ({ status: 'exited' })
-  assert.equal((await f.runtime.reconcile('project-a')).status, 'accepted')
+  await appendFile(f.transcript, record({ message: 'fixture summary' }, 'compacted'))
+  await f.append('context_compacted')
+  assert.deepEqual(await audit(), [])
+  const closed = once(backend, 'close')
+  backend.kill()
+  await closed
+  f.runtime.inspect = async () => ({
+    status: backend.exitCode !== null || backend.signalCode !== null ? 'exited' : 'alive',
+  })
+  f.sent.push(...(await audit()))
+  assert.equal(f.sent.length, 1)
+  assert.deepEqual(await audit(), [])
   const replacement = {
     ...owner,
     runId: 'daemon-b',

@@ -47,9 +47,10 @@ vi.mock('../../src/compat/host/model-providers.ts', () => ({
   inject: [],
   Config: undefined,
   async apply(ctx: Context) {
-    // The Windows keyring migration persists through ConfigEditor.edit. The
-    // official editor reconciles the profile and waits for this same Loader.
-    await ctx.root.loader.await()
+    // The alpha2 Loader starts this child after the parent entry's startup
+    // barrier. A microtask yields the same post-start observation without
+    // re-entering the Loader wait from inside its own child.
+    await Promise.resolve()
     migration.finished = true
   },
 }))

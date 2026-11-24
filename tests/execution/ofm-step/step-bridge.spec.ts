@@ -523,7 +523,7 @@ describe('StepCode bridge: session load', () => {
     }
 
     // A brand new bridge process resumes the same suite-owned session.
-    const second = await launch({ cwd: first.cwd })
+    const resumeTmp = stepTempDir('opl-step-resume-')
     const storage = stepStorage(first.home)
     for (const dir of [storage.agentDir, storage.configRoot, storage.sessionDir])
       mkdirSync(dir, { recursive: true })
@@ -550,8 +550,8 @@ describe('StepCode bridge: session load', () => {
         [STEP_AGENT_DIR_ENV]: storage.agentDir,
         [STEP_SESSION_DIR_ENV]: storage.sessionDir,
         [STEP_STORAGE_ROOT_ENV]: storage.storageRoot,
-        TEMP: second.home,
-        TMP: second.home,
+        TEMP: resumeTmp,
+        TMP: resumeTmp,
       },
       stubEnv: { STUB_SESSION_ID: sessionId },
     })

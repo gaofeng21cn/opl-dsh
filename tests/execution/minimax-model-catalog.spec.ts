@@ -246,6 +246,7 @@ describe('MiniMax Code native model adapter', () => {
     const ctx = await llmSurface()
     for (const model of FIXED_MODELS) {
       const resolved = await ctx.llm.resolveModelInfo(PROVIDER, model)
+      expect(resolved.context?.contextWindow).toBe(1_000_000)
       expect(resolved.provider).toBe(PROVIDER)
       expect(resolved.id).toBe(model)
       expect(resolved.name.trim()).not.toBe('')

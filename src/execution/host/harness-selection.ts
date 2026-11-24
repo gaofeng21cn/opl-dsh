@@ -9,10 +9,21 @@ import { invokeHostRemote } from '../../compat/host/remote-invocation.ts'
 import { withoutRememberingPermission } from '../../compat/host/permission-memory.ts'
 import { modelDefaultEffort } from '../../shared/model-reasoning.ts'
 import type { HarnessReasoningPreflight } from '../../contracts/types.ts'
-import { modelRefKey, type CombinationDefinition, type ModelRef } from '../contracts/catalog.ts'
+import {
+  executionModelRefKey,
+  modelRefKey,
+  type CombinationDefinition,
+  type ModelRef,
+} from '../contracts/catalog.ts'
 import type { CodexGitBashRuntime } from '../contracts/codex-runtime.ts'
 import type { HarnessSession } from '../contracts/sessions.ts'
 import { adapterFor } from './adapters/index.ts'
+import {
+  antigravityWireModel,
+  antigravityThinkingLevelsFor,
+  ANTIGRAVITY_DEFAULT_THINKING,
+} from './adapters/antigravity/models.ts'
+import { stepLaneReasoning } from './adapters/step/step-models.ts'
 import { MINIMAX_CODE_PROVIDER } from './adapters/minimax.ts'
 import type { AdapterOptions } from './adapters/types.ts'
 import type { ExecutionCatalog, ExecutionCatalogStore } from './catalog.ts'
@@ -25,7 +36,7 @@ import {
   readHarnessReasoning,
 } from './reasoning-preflight.ts'
 import type { RuntimeMaintenance } from './runtime-maintenance.ts'
-import { asSessionId, now, required, type Active } from './harness-types.ts'
+import { sameWorkingDirectory, asSessionId, now, required, type Active } from './harness-types.ts'
 
 export interface HarnessSelectionHost {
   readonly ctx: Context
@@ -42,7 +53,11 @@ export interface HarnessSelectionHost {
   readonly selectionsReady: Promise<void>
   readonly recordsReady: Promise<void>
   readonly disposed: boolean
-  executionCatalog(): Promise<ExecutionCatalog>
+  currentWorkingDirectory(session: Session): string
+  ensureCurrentWorkingDirectory(session: Session): Promise<string>
+  officialModelCatalog(): Promise<ModelCatalog>
+  readonly catalogEpoch: number
+  executionCatalog(options?: { fast?: boolean }): Promise<ExecutionCatalog>
   adapterOptions(
     command?: string,
     prefix?: string[],
@@ -51,6 +66,7 @@ export interface HarnessSelectionHost {
   conversationBinding(
     session: Session,
     definition: CombinationDefinition,
+    cwd?: string,
   ): { cwd: string; sandbox: 'read-only' | 'workspace' | 'full-access'; taskId: string }
   bindSelection(sessionId: string, combination: string): Promise<void>
   runSelectionChange<T>(sessionId: string, operation: () => Promise<T>): Promise<T>
@@ -130,15 +146,15 @@ export async function normalizeConversationSelection(
 }
 
 export async function modelSelection(host: HarnessSelectionHost, sessionId: string) {
-  await Promise.all([host.selectionsReady, host.recordsReady])
+  // Session history can contain many external records and is loaded from disk
+  // independently. The picker only needs the selection file, the official
+  // projection and the persisted catalog, so do not hold its first paint on
+  // history recovery. A loaded historical record remains an optional fallback.
+  await host.selectionsReady
   const session = host.ctx.sessions.get(asSessionId<SessionId>(required(sessionId, 'sessionId')))
   const [catalog, executionCatalog] = await Promise.all([
-    invokeHostRemote(host.ctx, {
-      namespace: 'session',
-      method: 'modelCatalog',
-      args: {},
-    }) as Promise<ModelCatalog>,
-    host.executionCatalog(),
+    host.officialModelCatalog(),
+    host.executionCatalog({ fast: true }),
   ])
   const cold = session
     ? null
@@ -184,13 +200,37 @@ export async function modelSelection(host: HarnessSelectionHost, sessionId: stri
     selected && host.cliOwnsEffort(selected)
       ? host.conversationEffort(sessionId, selected, executionCatalog)
       : undefined
+  const nativeReasoning = catalog.groups
+    .find((group) => group.id === current.provider)
+    ?.models.find((model) => model.id === current.model)?.reasoning
   const { reasoningEffort: _providerEffort, ...ref } = current as ModelSelection
   const harnessOwnsEffort =
     !!selected && (host.cliOwnsEffort(selected) || adapter?.capabilities.reasoning === 'none')
+  const explicitEffort =
+    current.reasoningEffort === 'default' &&
+    !nativeReasoning?.efforts.some((effort) => effort.id === 'default')
+      ? undefined
+      : current.reasoningEffort
+  const inferredEffort = explicitEffort ?? modelDefaultEffort(current.model, nativeReasoning)
+  const normalizedCurrent =
+    inferredEffort === undefined
+      ? ref
+      : { ...ref, reasoningEffort: ReasoningEffortId(inferredEffort) }
   const displayed = harnessOwnsEffort
     ? { ...ref, ...(choice ? { reasoningEffort: choice } : {}) }
-    : current
+    : normalizedCurrent
+  const gatewayGemini =
+    selected?.harnessRef === 'antigravity' && antigravityWireModel(selected.modelRef)
   return {
+    ...(gatewayGemini
+      ? {
+          registeredEfforts: {
+            levels: [...antigravityThinkingLevelsFor(gatewayGemini)],
+            defaultEffort: ANTIGRAVITY_DEFAULT_THINKING,
+            revision: host.catalogEpoch,
+          },
+        }
+      : {}),
     current: displayed,
     groups,
     ...(selected ? { combination: selected.id } : {}),
@@ -205,6 +245,12 @@ export async function selectEffort(
   await host.ready
   const session = host.ctx.sessions.get(asSessionId<SessionId>(input.sessionId))
   if (!session) throw Error('对话不存在')
+  const rawSelection = () => {
+    const projection = host.ctx.sessionProjections.snapshot(session, ['modelSelection']).values
+      .modelSelection
+    return projection?.next ?? projection?.lastUsed
+  }
+  const initial = rawSelection()
   const selectionBinding = host.selections[input.sessionId]
   const selected = await host.modelSelection(input.sessionId)
   if (modelRefKey(selected.current) !== modelRefKey(input))
@@ -222,15 +268,12 @@ export async function selectEffort(
   if (!definition || !host.cliOwnsEffort(definition)) {
     const { sessionId, ...request } = input
     const normalized = await host.normalizeConversationSelection(request, definition)
-    const projection = host.ctx.sessionProjections.snapshot(session, ['modelSelection']).values
-      .modelSelection
-    const current = projection?.next ?? projection?.lastUsed
+    const current = rawSelection()
     if (
       host.disposed ||
       host.selections[input.sessionId] !== selectionBinding ||
-      (current &&
-        (modelRefKey(current) !== modelRefKey(input) ||
-          current.reasoningEffort !== selected.current.reasoningEffort))
+      current?.reasoningEffort !== initial?.reasoningEffort ||
+      (current && modelRefKey(current) !== modelRefKey(input))
     )
       throw Error('模型选择已改变，请重新选择推理档位')
     return host.native('selectModel', { sessionId, ...normalized })
@@ -317,7 +360,12 @@ export async function reasoningPreflightAdmitted(
   const adapter = adapterFor(definition.harnessRef, definition.modelRef, host.modelSources)
   if (!adapter || adapter.capabilities.reasoning === 'none')
     return { status: 'not-applicable', efforts: [] }
-  if (['codex', 'claude'].includes(definition.harnessRef)) {
+  if (definition.harnessRef === 'step-code' && stepLaneReasoning(definition.modelRef) === false)
+    return { status: 'known', efforts: [] }
+  if (
+    ['codex', 'claude'].includes(definition.harnessRef) ||
+    definition.modelRef.provider === MINIMAX_CODE_PROVIDER
+  ) {
     const nativeCatalog = (await invokeHostRemote(host.ctx, {
       namespace: 'session',
       method: 'modelCatalog',
@@ -330,7 +378,7 @@ export async function reasoningPreflightAdmitted(
     const currentEffort =
       selection.current.provider === definition.modelRef.provider &&
       selection.current.model === definition.modelRef.model
-        ? (selection.current.reasoningEffort ??
+        ? ((selection.current as ModelSelection).reasoningEffort ??
           modelDefaultEffort(definition.modelRef.model, reasoning))
         : undefined
     return {
@@ -350,7 +398,8 @@ export async function reasoningPreflightAdmitted(
   const requestedEffort =
     (host.cliOwnsEffort(definition)
       ? host.conversationEffort(session.id, definition, catalog)
-      : (await host.modelSelection(session.id)).current.reasoningEffort) ?? undefined
+      : ((await host.modelSelection(session.id)).current as ModelSelection).reasoningEffort) ??
+    undefined
   const boundActive = bound ? host.active.get(bound.id) : undefined
   if (
     boundActive?.acp &&
@@ -366,7 +415,9 @@ export async function reasoningPreflightAdmitted(
   }
   if (host.ctx.agents.get(session.id)?.status === 'running')
     return { status: 'unavailable', efforts: [] }
-  const binding = host.conversationBinding(session, definition)
+  const cwd = await host.ensureCurrentWorkingDirectory(session)
+  if (bound && !sameWorkingDirectory(bound.cwd, cwd)) return { status: 'unavailable', efforts: [] }
+  const binding = host.conversationBinding(session, definition, cwd)
   const harness = catalog.harnesses.find((item) => item.id === definition.harnessRef)
   const record: HarnessSession = {
     id: 'reasoning-preflight-' + randomUUID(),
@@ -394,7 +445,12 @@ export async function reasoningPreflightAdmitted(
       ...launch,
       env: harnessProxyEnvironment(launch.env, harness?.proxy),
     })
-    if (host.disposed || host.conversationBinding(session, definition).sandbox !== binding.sandbox)
+    const afterCwd = host.currentWorkingDirectory(session)
+    if (
+      host.disposed ||
+      !sameWorkingDirectory(afterCwd, cwd) ||
+      host.conversationBinding(session, definition, afterCwd).sandbox !== binding.sandbox
+    )
       return { status: 'unavailable', efforts: [] }
     return result
   } catch {
@@ -415,7 +471,7 @@ export function replacementFor(
     (record) =>
       record.nativeSessionId === sessionId &&
       record.combination === selectedId &&
-      modelRefKey(record.modelRef) === modelRefKey(ref),
+      executionModelRefKey(record.modelRef) === executionModelRefKey(ref),
   )
   if (records.length !== 1) return undefined
   const record = records[0]!
@@ -423,7 +479,7 @@ export function replacementFor(
     (item) =>
       item.enabled &&
       item.harnessRef === record.harnessRef &&
-      modelRefKey(item.modelRef) === modelRefKey(record.modelRef),
+      executionModelRefKey(item.modelRef) === executionModelRefKey(record.modelRef),
   )
   return candidates.length === 1 ? { record, definition: candidates[0]! } : undefined
 }
@@ -453,14 +509,14 @@ export function combinationFor(
     (item) =>
       item.enabled &&
       item.id === host.selections[sessionId] &&
-      modelRefKey(item.modelRef) === modelRefKey(ref),
+      executionModelRefKey(item.modelRef) === executionModelRefKey(ref),
   )
   if (exact) return exact
   const replacement = host.replacementFor(sessionId, catalog, ref)
   if (replacement) return replacement.definition
   if (host.unavailableConversationSelection(sessionId, catalog, ref)) return undefined
   const candidates = catalog.combinations.filter(
-    (item) => item.enabled && modelRefKey(item.modelRef) === modelRefKey(ref),
+    (item) => item.enabled && executionModelRefKey(item.modelRef) === executionModelRefKey(ref),
   )
   const defaults = candidates.filter((item) => item.isDefault)
   if (defaults.length === 1) return defaults[0]
@@ -476,12 +532,17 @@ export function unavailableConversationSelection(
   const selectedId = host.selections[sessionId]
   if (!selectedId) return false
   const selected = catalog.combinations.find((item) => item.id === selectedId)
-  const model = modelRefKey(ref)
-  if (selected) return !selected.enabled && modelRefKey(selected.modelRef) === model
+  const model = executionModelRefKey(ref)
+  if (selected) return !selected.enabled && executionModelRefKey(selected.modelRef) === model
   const history = [...host.records.values()].filter(
     (record) => record.nativeSessionId === sessionId && record.combination === selectedId,
   )
-  return history.length === 0 || history.some((record) => modelRefKey(record.modelRef) === model)
+  // A selected combination has an ID before its first send creates any Harness record.
+  // With no record of its model, an explicit reselection is required before routing.
+  return (
+    history.length === 0 ||
+    history.some((record) => executionModelRefKey(record.modelRef) === model)
+  )
 }
 
 export async function selectionForModel(
@@ -504,7 +565,8 @@ export async function selectionForModel(
   const projection = host.ctx.sessionProjections.snapshot(session, ['modelSelection']).values
     .modelSelection
   const current = projection?.next ?? projection?.lastUsed
-  const matches = (selection: ModelSelection) => modelRefKey(selection) === modelRefKey(ref)
+  const matches = (selection: ModelSelection) =>
+    executionModelRefKey(selection) === executionModelRefKey(ref)
   const sameCurrentModel = current !== undefined && current !== null && matches(current)
   const event = sameCurrentModel
     ? undefined
@@ -520,6 +582,10 @@ export async function selectionForModel(
         : undefined
   const effort = previous?.reasoningEffort
   const supported = effort !== undefined && reasoning?.efforts.some((item) => item.id === effort)
+  // External ACP CLIs advertise their own effort vocabulary at session setup.
+  // Do not invent a suite default before that advertisement exists: Poolside
+  // may expose no thought_level at all, and a model such as Kimi K3 may omit
+  // `high`. The adapter will still reject an explicitly selected stale value.
   const reasoningEffort =
     supported || adapter?.capabilities.reasoning !== 'cli-advertised'
       ? supported

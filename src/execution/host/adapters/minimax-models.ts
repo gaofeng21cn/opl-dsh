@@ -94,7 +94,14 @@ export class MiniMaxCodeModelAdapter extends LlmAdapter {
   override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
     const spec = fixedModels().find((item) => item.model === model)
     if (!spec) throw new LlmError('该模型不属于 MiniMax Code 的支持范围', 'UNKNOWN_MODEL')
-    return { provider, id: model, name: spec.name, reasoning: reasoningOf(spec) }
+    return {
+      provider,
+      id: model,
+      name: spec.name,
+      // Both regional MiniMax account catalogs advertise a million-token context.
+      context: { contextWindow: 1_000_000 },
+      reasoning: reasoningOf(spec),
+    }
   }
 
   override async prepareCall(provider: string, model: string) {

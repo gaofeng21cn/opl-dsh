@@ -9,6 +9,7 @@ import * as nativeModelProviders from '../compat/host/model-providers.ts'
 import * as conversationStats from '../conversation-stats/host/index.ts'
 import * as mcpApps from '../mcp-apps/host/index.ts'
 import * as suiteControl from '../shared/host/suite-control.ts'
+import { installGatewayModelCatalogProjection } from '../gateway/host/model-catalog.ts'
 import { Config } from './config.ts'
 export { Config } from './config.ts'
 
@@ -35,6 +36,9 @@ export const inject = [
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   await ctx.plugin(gateway, structuredClone(config.gateway.get()) as gateway.OplGatewayConfig)
+  ctx.inject(['sessionController'], (child) => {
+    child.effect(() => installGatewayModelCatalogProjection(child.sessionController))
+  })
   await ctx.plugin(conversationStats)
   await ctx.plugin(mcpApps)
   // Its Windows keyring migration writes through the official profile editor,

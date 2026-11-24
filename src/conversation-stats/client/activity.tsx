@@ -37,21 +37,16 @@ export function installActivityCounts(options: ActivityCountOptions): () => void
     // Slot inspection erases the standard injected props of the native activity entry.
     const component = original as ComponentType<ActivityProps>
     const resident = (props: ActivityProps) => {
-      const preference = useSyncExternalStore(subscribePreference, preferenceSnapshot)
-      const mode = preference.value?.conversationStats
       const counts = props.useProjection('oplConversationCounts')
       // sessionStats is supplied by the pinned official runtime, not by the OPL type graph.
       const read = props.useProjection as (key: string, ...args: unknown[]) => unknown
       const historical = read('sessionStats') as { turns: number; steps: number } | undefined
       const projected = useMemo(
         () =>
-          preference.value?.enhancedConversationStats === true &&
-          mode === 'current' &&
-          counts &&
-          historical
+          counts && historical
             ? { ...historical, turns: counts.turns, steps: counts.steps }
             : historical,
-        [preference.value?.enhancedConversationStats, mode, counts, historical],
+        [counts, historical],
       )
       const useProjection = useMemo(
         () =>
@@ -68,10 +63,13 @@ export function installActivityCounts(options: ActivityCountOptions): () => void
       )
       return createElement(component, { ...props, useProjection })
     }
-    const decorated = (props: ActivityProps) =>
-      typeof props.useProjection === 'function'
+    const decorated = (props: ActivityProps) => {
+      const preference = useSyncExternalStore(subscribePreference, preferenceSnapshot)
+      return preference.value?.conversationStats === 'current' &&
+        typeof props.useProjection === 'function'
         ? createElement(resident, props)
         : createElement(component, props)
+    }
     entry.component = decorated
     restore = () => {
       if (entry.component === decorated) entry.component = original

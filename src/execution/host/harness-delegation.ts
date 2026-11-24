@@ -31,6 +31,7 @@ import {
 } from './harness-types.ts'
 
 export interface HarnessDelegationHost {
+  ensureCurrentWorkingDirectory(session: Session): Promise<string>
   readonly ctx: Context
   readonly records: Map<string, HarnessSession>
   readonly active: Map<string, Active>
@@ -196,8 +197,8 @@ export async function delegateFrom(
     sandbox = parent?.sandbox
   if (!parent && origin.kind === 'dsh') {
     const session = host.ctx.sessions.get(asSessionId<SessionId>(origin.sessionId))
-    if (!session?.header.cwd) throw Error('请先选择项目目录')
-    cwd = session.header.cwd
+    if (!session) throw Error('来源对话不存在')
+    cwd = await host.ensureCurrentWorkingDirectory(session)
     const mode = host.ctx.agents
       .get(session.id)
       ?.ctx.get('sandboxPolicy')

@@ -39,7 +39,7 @@ brew install --cask gaofeng21cn/opl-dsh/opl-dsh
 
 **Linux x64 安装（官方 DSH CLI/Web）**
 
-Linux x64 使用官方 `dsh` CLI/Web，目标 profile 默认为 `opl-linux`，不会改写现有 `web` profile。先准备 Node.js 24.9 或更新版本、pnpm，以及与 `dist/artifact.json` 中 `officialVersion` 相同的官方 DSH，然后执行：
+Linux x64 使用官方 `dsh` CLI/Web，目标 profile 默认为 `opl-linux`，不会改写现有 `web` profile。当前官方 DSH 要求 Node.js `^24.22.3` 或 `>=26.13.1`，并准备 pnpm 以及与 `dist/artifact.json` 中 `officialVersion` 相同的官方 DSH，然后执行：
 
 ```sh
 git clone https://github.com/gaofeng21cn/opl-dsh.git

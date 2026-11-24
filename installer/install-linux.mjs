@@ -12,9 +12,19 @@ import {
 } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
-import { installSkill, verifySkill } from './skill-install.mjs'
 
 if (process.platform !== 'linux') throw new Error('此安装入口仅支持 Linux')
+const [major, minor, patch] = process.versions.node.split('.').map(Number)
+if (
+  !/^\d+\.\d+\.\d+$/u.test(process.versions.node) ||
+  !(
+    (major === 24 && (minor > 22 || (minor === 22 && patch >= 3))) ||
+    major > 26 ||
+    (major === 26 && (minor > 13 || (minor === 13 && patch >= 1)))
+  )
+)
+  throw new Error(`Linux 安装需要 Node.js ^24.22.3 或 >=26.13.1，当前为 ${process.versions.node}`)
+const { installSkill, verifySkill } = await import('./skill-install.mjs')
 
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex')
 const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'"

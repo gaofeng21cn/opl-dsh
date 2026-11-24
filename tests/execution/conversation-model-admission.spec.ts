@@ -190,6 +190,19 @@ async function fixture(
   }
 }
 
+it('validates a non-OFM frozen selection without opening the execution catalog', async () => {
+  const f = await fixture()
+  const catalog = vi.spyOn(f.service, 'executionCatalog')
+  const selected = { provider: 'other-channel', model: 'gemini' }
+  f.selection.current = selected
+  await expect(f.service.prepareConversationRequest(f.session.id, selected)).resolves.toBe(selected)
+  await expect(
+    f.service.prepareConversationRequest(f.session.id, { ...selected, model: 'old' }),
+  ).rejects.toThrow('模型选择已改变')
+  expect(catalog).not.toHaveBeenCalled()
+  expect(f.read).not.toHaveBeenCalled()
+})
+
 function nativeSelection(f: Awaited<ReturnType<typeof fixture>>) {
   const select = vi.fn(async (request: ModelSelection & { sessionId: string }) => {
     const { sessionId: _, ...selected } = request

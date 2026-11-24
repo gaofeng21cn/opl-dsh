@@ -17,6 +17,7 @@ import type { ReactNode } from 'react'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { ExecutionCall } from '../../src/shared/client/remote-call.ts'
+import { executionModelRefKey } from '../../src/shared/models.ts'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   // The published primitives package is not loadable from this offline workspace
@@ -90,6 +91,12 @@ const selection = {
   groups,
   combination: combination.id,
 }
+
+it('matches an official Gateway provider to its execution-catalog route', () => {
+  expect(executionModelRefKey({ provider: 'opl-gateway-openai', model: 'gpt-6-astra' })).toBe(
+    executionModelRefKey({ provider: 'opl-gateway', model: 'codex::gpt-6-astra' }),
+  )
+})
 
 /** Official per-Session projection face: holds the pushed value and its subscribers. */
 function createFace(initial: ModelSelectionProjection) {
@@ -222,6 +229,30 @@ async function mount(props: {
 }
 
 describe('OPL model button selection projection', () => {
+  it('recognizes the official model-menu extension declarations', () => {
+    expect(
+      execution.hasOfficialModelMenuExtensions({
+        entries: () => [
+          {
+            children: {
+              'conversation.input.model.options': { kind: 'list', scope: 'session' },
+              'conversation.input.model.pane': { kind: 'keyed', scope: 'session' },
+            },
+          },
+        ],
+        inject: () => () => {},
+        register: () => () => {},
+      }),
+    ).toBe(true)
+    expect(
+      execution.hasOfficialModelMenuExtensions({
+        entries: () => [{ children: { 'conversation.input.model.options': {} } }],
+        inject: () => () => {},
+        register: () => () => {},
+      }),
+    ).toBe(false)
+  })
+
   it.each([undefined, 'retired-id'])(
     'does not guess a Harness when the Host returns no matching combination: %s',
     async (id) => {

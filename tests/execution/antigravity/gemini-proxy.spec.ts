@@ -68,6 +68,11 @@ describe('Antigravity native Gemini SSE compatibility', () => {
     expect(output).toBe(frame(payload))
   })
 
+  it('strips gateway HTTP metadata while preserving the generated candidate and usage', async () => {
+    const input = { ...complete, sdkHttpResponse: { headers: { 'alt-svc': 'h3' } } }
+    expect(await transform([Buffer.from(frame(input))])).toBe(frame(complete))
+  })
+
   it('forwards an early candidate before response completion and then accepts its terminal event', async () => {
     const stream = normalizeGeminiSse()
     let output = ''
