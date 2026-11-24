@@ -66,11 +66,9 @@ jobs:
         shell: bash
         run: |
           fixture="$(mktemp -d)"
-          printf '{"private":true}
-' > "$fixture/package.json"
+          echo '{"private":true}' > "$fixture/package.json"
           npm install --prefix "$fixture" --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh-session-persistence-sqlite@0.2.3-alpha.2 @deepseek-ai/dsh-session-persistence-jsonl@0.2.3-alpha.2
           if [[ "$RUNNER_OS" == "macOS" ]]; then
-            export HOME="$fixture/home"
             mkdir -m 700 -p "$HOME/.Trash"
           fi
           node tests/setup/sqlite-official-smoke.mjs "$fixture"
