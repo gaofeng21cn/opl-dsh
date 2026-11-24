@@ -31,10 +31,10 @@
  * shared-build entry the packager has to keep in step.
  */
 import { spawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { readFile, writeFile, rename } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { v7 as uuidV7 } from 'uuid'
+import writeFileAtomic from 'write-file-atomic'
 import { AcpJsonRpcChannel, attachLfLineReader } from '../../acp-stdio.ts'
 import { startMuseEndpoint } from './muse-endpoint.mjs'
 
@@ -273,10 +273,8 @@ async function connect() {
   const endpoint = await startMuseEndpoint({ baseURL: CFG.baseUrl, apiKey: CFG.apiKey })
   state.endpoint = endpoint
   if (state.closing) throw Error('Muse 连接已关闭')
-  const temporary = `${settingsFile}.${randomUUID()}.tmp`
   settings.endpoint_transport = { base_url: endpoint.baseURL, auth: 'bearer' }
-  await writeFile(temporary, JSON.stringify(settings) + '\n', { flag: 'wx', mode: 0o600 })
-  await rename(temporary, settingsFile)
+  await writeFileAtomic(settingsFile, JSON.stringify(settings) + '\n', { mode: 0o600 })
   if (state.closing) throw Error('Muse 连接已关闭')
   const child = spawn(CFG.command, CFG.prefix, {
     stdio: ['pipe', 'pipe', 'pipe'],

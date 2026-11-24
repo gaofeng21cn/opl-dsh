@@ -41,14 +41,8 @@
  */
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import writeFileAtomic from 'write-file-atomic'
 import { join, resolve, sep } from 'node:path'
 import { commandLaunch } from '../../harness-registry.ts'
 import {
@@ -123,7 +117,7 @@ let acpChannel!: ReturnType<typeof startRpcModeAcpServer>
 const send = (value: Record<string, unknown>) => acpChannel.send(value)
 
 // ── Official CLI child ─────────────────────────────────────────────────────────────
-let permissionSeq = 0
+let seq = 0
 const rpcProcess = new RpcModeProcess({
   label: '官方 StepCode ',
   onLine: (line) => handleOfficialLine(line),
@@ -364,10 +358,17 @@ function handleDialog(request: any): void {
     method === 'select' &&
     grantIndex >= 0
 
+  const writeDialogResponse = (frame: Record<string, unknown>) => {
+    if (typeof rpcProcess !== 'undefined') rpcProcess.writeFrame(frame)
+    else
+      (globalThis as { child?: { stdin?: { write(line: string): void } } }).child?.stdin?.write(
+        JSON.stringify(frame) + '\n',
+      )
+  }
   if (isFullAccessAck) {
     if (typeof fullAccessAcknowledged !== 'undefined') fullAccessAcknowledged = true
     if (typeof startupPhase !== 'undefined') startupPhase = false
-    rpcProcess.writeFrame({
+    writeDialogResponse({
       type: 'extension_ui_response',
       id,
       value: options[grantIndex],
@@ -379,10 +380,10 @@ function handleDialog(request: any): void {
   if (typeof startupPhase !== 'undefined') startupPhase = false
 
   // A real approval decision: the host asks, the user answers, this bridge only relays.
-  const rpcId = `step-permission-${++permissionSeq}`
+  const rpcId = `step-permission-${++seq}`
   const respond = (optionId: string | undefined) => {
     asks.delete(rpcId)
-    rpcProcess.writeFrame({
+    writeDialogResponse({
       type: 'extension_ui_response',
       id,
       ...(optionId === 'allow' ? { value: options[0] ?? 'allow' } : { cancelled: true }),
@@ -879,9 +880,7 @@ function saveInputReceipt(receipt: StepInputReceipt, entry: StepEntry): void {
   if (prior) return
   mkdirSync(sessionIndexDir, { recursive: true })
   const file = receiptFile()
-  const temp = file + '.tmp'
-  writeFileSync(temp, JSON.stringify([...values, next]), { mode: 0o600 })
-  renameSync(temp, file)
+  writeFileAtomic.sync(file, JSON.stringify([...values, next]), { mode: 0o600 })
 }
 
 /** Stable ids and parent links select the active branch; append order also contains abandoned branches. */

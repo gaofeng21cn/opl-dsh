@@ -1,7 +1,7 @@
 /** Public coordination settings use the shipped helper and its ordinary authenticated Host RPC. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, cp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, cp, writeFile, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
@@ -45,6 +45,7 @@ test('real helper requests only the public wake configuration and never prints o
       token: PRIVATE,
     }),
   )
+  await symlink(new URL('../node_modules', import.meta.url), join(root, 'node_modules'), 'junction')
   await cp(new URL('../installer/skill/control.mjs', import.meta.url), join(root, 'control.mjs'))
   await cp(
     new URL('../installer/windows-lifecycle.mjs', import.meta.url),

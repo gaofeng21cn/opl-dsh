@@ -5,6 +5,8 @@
  * 替换；导入失败留下的半成品会被改名成 `<版本>.failed-<时间戳>` 保留，不会被选择。
  */
 import { randomUUID } from 'node:crypto'
+import semver from 'semver'
+import writeFileAtomic from 'write-file-atomic'
 import {
   copyFileSync,
   cpSync,
@@ -260,14 +262,11 @@ export function listImportedVersions(storeRoot: string): string[] {
 
 /** `0.6.3-opl-bash.20261010.2` 之类的候选版本号比较：官方段、日期、序号依次比较。 */
 export function compareVersions(left: unknown, right: unknown): number {
-  const a = VERSION_PATTERN.exec(String(left ?? ''))
-  const b = VERSION_PATTERN.exec(String(right ?? ''))
-  if (!a || !b) throw new Error(`无法比较候选版本号：${String(left)} 与 ${String(right)}。`)
-  for (let index = 1; index <= 5; index += 1) {
-    const diff = Number(a[index]) - Number(b[index])
-    if (diff !== 0) return diff > 0 ? 1 : -1
-  }
-  return 0
+  const a = String(left ?? '')
+  const b = String(right ?? '')
+  if (!VERSION_PATTERN.test(a) || !VERSION_PATTERN.test(b))
+    throw new Error(`无法比较候选版本号：${String(left)} 与 ${String(right)}。`)
+  return semver.compare(a, b)
 }
 
 // ---------------------------------------------------------------- 选择回执
@@ -312,31 +311,12 @@ function writeJsonAtomically(
   value: unknown,
   { env, extraRoots }: { env: NodeJS.ProcessEnv; extraRoots: string[] },
 ): string {
-  const temporary = `${target}.${randomUUID()}.tmp`
-  assertDerivedTargets(
-    storeRoot,
-    [
-      { path: temporary, label: '回执临时文件' },
-      { path: target, label: '选择回执' },
-    ],
-    { env, extraRoots },
-  )
-  mkdirp(dirname(temporary))
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, {
+  assertDerivedTargets(storeRoot, [{ path: target, label: '选择回执' }], { env, extraRoots })
+  mkdirp(dirname(target))
+  writeFileAtomic.sync(target, `${JSON.stringify(value, null, 2)}\n`, {
     encoding: 'utf8',
     mode: 0o600,
-    flag: 'wx',
   })
-  try {
-    renameSync(temporary, target)
-  } catch (error) {
-    try {
-      unlinkSync(temporary)
-    } catch {
-      /* 保留原错误 */
-    }
-    throw error
-  }
   return target
 }
 

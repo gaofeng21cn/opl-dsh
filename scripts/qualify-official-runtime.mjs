@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { parse as parseYaml } from 'yaml'
 import { setTimeout as delay } from 'node:timers/promises'
+import { parseArgs } from 'node:util'
 import {
   assertIsolatedRoot,
   verifyPayload,
@@ -25,30 +26,43 @@ import {
 } from './qualification-transcript.mjs'
 
 const repo = resolve(import.meta.dirname, '..')
-const args = process.argv.slice(2)
-function option(name, fallback) {
-  const index = args.indexOf(name)
-  if (index < 0) return fallback
-  if (!args[index + 1] || args[index + 1].startsWith('--')) throw new Error(name + ' 缺少参数')
-  return args[index + 1]
+const { values: cli } = parseArgs({
+  args: process.argv.slice(2),
+  options: {
+    help: { type: 'boolean', default: false },
+    download: { type: 'boolean', default: false },
+    'keep-profile': { type: 'boolean', default: false },
+    'live-transcript': { type: 'boolean', default: false },
+    app: { type: 'string' },
+    payload: { type: 'string' },
+    evidence: { type: 'string' },
+  },
+  strict: true,
+  allowPositionals: false,
+})
+for (const [name, value] of [
+  ['--app', cli.app],
+  ['--payload', cli.payload],
+  ['--evidence', cli.evidence],
+]) {
+  if (value !== undefined && (!value || value.startsWith('--'))) throw new Error(name + ' 缺少参数')
 }
-if (args.includes('--help')) {
+if (cli.help) {
   console.log(
     'node scripts/qualify-official-runtime.mjs (--app <官方应用目录> | --download) [--payload <构建安装目录>] [--evidence <JSON 文件>] [--keep-profile]',
   )
   process.exit(0)
 }
-const payload = resolve(option('--payload', join(repo, 'dist/OPL DSH 一键安装')))
+const payload = resolve(cli.payload ?? join(repo, 'dist/OPL DSH 一键安装'))
 const evidenceFile = resolve(
-  option('--evidence', join(repo, 'dist/qualification-' + process.platform + '.json')),
+  cli.evidence ?? join(repo, 'dist/qualification-' + process.platform + '.json'),
 )
-const suppliedApp = option('--app')
-if (Boolean(suppliedApp) === args.includes('--download'))
-  throw new Error('必须且只能指定 --app 或 --download')
+const suppliedApp = cli.app
+if (Boolean(suppliedApp) === cli.download) throw new Error('必须且只能指定 --app 或 --download')
 if (!['darwin', 'win32'].includes(process.platform))
   throw new Error('官方桌面资格验证仅支持 macOS / Windows；本平台未验证')
 if (
-  args.includes('--download') &&
+  cli.download &&
   process.platform === 'win32' &&
   (process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted')
 )
@@ -516,7 +530,7 @@ try {
   await writeFile(environment.OPL_DESKTOP_LAUNCHER, 'Qualification owns launch and cleanup.\n', {
     mode: 0o600,
   })
-  if (args.includes('--download')) {
+  if (cli.download) {
     if (process.platform === 'darwin') {
       await run('/bin/bash', [join(payload, 'install.command')], { timeout: 1200000 })
       app = join(environment.OPL_APPLICATIONS_DIR, 'DeepSeek Harness.app')
@@ -662,7 +676,7 @@ try {
       desktopPipe,
       evidenceFile.replace(/\.json$/, '') + '-transcript.png',
     )
-  if (args.includes('--live-transcript'))
+  if (cli['live-transcript'])
     evidence.checks.liveTranscriptClient = await verifyHarnessLiveTranscriptClient(
       desktopPipe,
       root,
@@ -746,7 +760,7 @@ try {
     process.exitCode = 1
   }
   evidence.finishedAt = new Date().toISOString()
-  if (args.includes('--keep-profile')) evidence.isolatedProfile = root
+  if (cli['keep-profile']) evidence.isolatedProfile = root
   else if (!desktop) {
     // Windows can hold a handle on the disposable Electron profile (leveldb) briefly
     // after the process exits. Scratch cleanup must never discard the evidence file,

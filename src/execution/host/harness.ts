@@ -1,3 +1,4 @@
+import writeFileAtomic from 'write-file-atomic'
 import { EngineUpdates } from './engine-updates.ts'
 import {
   checkEngineUpdate,
@@ -670,9 +671,7 @@ export class HarnessService {
     const filename = oplProfilePath(this.directory, 'combination-selection.json')
     const write = this.writeQueue.then(async () => {
       await mkdir(dirname(filename), { recursive: true, mode: 0o700 })
-      const temp = filename + '.' + randomUUID()
-      await writeFile(temp, bytes, { mode: 0o600 })
-      await rename(temp, filename)
+      await writeFileAtomic(filename, bytes, { mode: 0o600 })
     })
     this.writeQueue = write.catch(() => {})
     await write

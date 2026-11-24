@@ -1,7 +1,8 @@
 /** Temporary backport of Ebony-Vinyl/dsh-our-free-model#911 for the official Desktop. */
-const { createHash, randomUUID } = require('node:crypto')
-const { lstat, readFile, writeFile, rename, rm, realpath } = require('node:fs/promises')
+const { createHash } = require('node:crypto')
+const { lstat, readFile, realpath } = require('node:fs/promises')
 const { join } = require('node:path')
+const writeFileAtomic = require('write-file-atomic')
 
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex')
 const versions = {
@@ -63,13 +64,7 @@ const edits = {
 }
 
 async function replace(path, bytes, mode) {
-  const stage = path + '.opl-' + randomUUID()
-  try {
-    await writeFile(stage, bytes, { flag: 'wx', mode })
-    await rename(stage, path)
-  } finally {
-    await rm(stage, { force: true })
-  }
+  await writeFileAtomic(path, bytes, { mode })
 }
 
 /** Caller holds the stopped profile's OFM lock and has verified its self-managed link. */

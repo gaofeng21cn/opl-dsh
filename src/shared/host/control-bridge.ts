@@ -1,7 +1,8 @@
 /** Authenticated loopback control of the existing Desktop Host Remote services. */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs'
+import { mkdirSync, readFileSync, unlinkSync } from 'node:fs'
+import writeFileAtomic from 'write-file-atomic'
 import { dirname } from 'node:path'
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
@@ -278,13 +279,12 @@ export async function startControlBridge(
     throw new Error('Control bridge did not bind')
   mkdirSync(dirname(filename), { recursive: true, mode: 0o700 })
   try {
-    const temp = `${filename}.${String(process.pid)}.tmp`
     const endpoint = `http://127.0.0.1:${String(address.port)}/rpc`
-    writeFileSync(temp, JSON.stringify({ version: 1, pid: process.pid, endpoint, token }), {
-      mode: 0o600,
-      flag: 'wx',
-    })
-    renameSync(temp, filename)
+    writeFileAtomic.sync(
+      filename,
+      JSON.stringify({ version: 1, pid: process.pid, endpoint, token }),
+      { mode: 0o600 },
+    )
   } catch (error) {
     server.close()
     throw error

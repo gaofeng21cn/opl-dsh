@@ -1,6 +1,7 @@
 /** OPL-owned per-session persistence. The legacy journal is never changed or removed. */
-import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, readFile, readdir, rm } from 'node:fs/promises'
+import writeFileAtomic from 'write-file-atomic'
 import { isAbsolute, join } from 'node:path'
 import { oplProfilePath } from '../../shared/host/profile-paths.ts'
 import type { HarnessSession } from '../contracts/sessions.ts'
@@ -254,9 +255,7 @@ export class HarnessSessionStore {
   }
   private async atomic(filename: string, bytes: string): Promise<void> {
     await mkdir(this.directory, { recursive: true, mode: 0o700 })
-    const temp = filename + '.' + randomUUID() + '.tmp'
-    await writeFile(temp, bytes, { mode: 0o600 })
-    await rename(temp, filename)
+    await writeFileAtomic(filename, bytes, { mode: 0o600 })
   }
   async load(): Promise<HarnessSession[]> {
     const records = new Map<string, HarnessSession>()

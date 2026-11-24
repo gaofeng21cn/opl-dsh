@@ -1,8 +1,9 @@
 /** Private control of only the Desktop spawned by the Suite launcher. */
 import { createServer, connect } from 'node:net'
 import { randomUUID } from 'node:crypto'
-import { readFile, writeFile, rename, unlink, mkdir } from 'node:fs/promises'
+import { readFile, unlink, mkdir } from 'node:fs/promises'
 import { join, posix, resolve } from 'node:path'
+import writeFileAtomic from 'write-file-atomic'
 
 /** Keep Unix socket paths below macOS's AF_UNIX limit even with a long TMPDIR. */
 export function desktopUpdateEndpoint({
@@ -15,15 +16,7 @@ export function desktopUpdateEndpoint({
 }
 
 export async function atomicUpdateJson(path, value) {
-  const temporary = path + '.' + randomUUID() + '.tmp'
-  try {
-    await writeFile(temporary, JSON.stringify(value) + '\n', { mode: 0o600, flag: 'wx' })
-    await rename(temporary, path)
-  } finally {
-    await unlink(temporary).catch((error) => {
-      if (error.code !== 'ENOENT') throw error
-    })
-  }
+  await writeFileAtomic(path, JSON.stringify(value) + '\n', { mode: 0o600 })
 }
 
 /** Call the owned launcher without publishing its authentication fields. */

@@ -1,7 +1,7 @@
 /** Metadata projection and queue acceptance tests use synthetic feedback and an injected transport. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -307,6 +307,7 @@ test('public helper reads only tasks/outbox/receipts with no-autostart and hides
 test('missing DSH returns unavailable using the real shipped helper without launching it', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'opl-coordinator-feedback-'))
   t.after(() => rm(root, { recursive: true, force: true }))
+  await symlink(new URL('../node_modules', import.meta.url), join(root, 'node_modules'), 'junction')
   await cp(new URL('../installer/skill/control.mjs', import.meta.url), join(root, 'control.mjs'))
   await cp(
     new URL('../installer/windows-lifecycle.mjs', import.meta.url),

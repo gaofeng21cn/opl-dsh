@@ -7,6 +7,7 @@ import { basename, dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import semver from 'semver'
 import { z } from 'zod'
 
 const LooseToolsListResultSchema = z.looseObject({
@@ -33,24 +34,21 @@ export const KIMI_CU_REQUIRED_TOOLS = [
 ]
 const MAX_MANIFEST_BYTES = 64 * 1024
 const MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
-const VERSION = /^(\d+)\.(\d+)\.(\d+)$/u
 const SHA256 = /^[a-f0-9]{64}$/u
 
 /** Return a comparable stable semantic version, or undefined for a prerelease/malformed one. */
 export function parseStableVersion(value) {
-  const match = VERSION.exec(value)
-  return match === null ? undefined : match.slice(1).map(Number)
+  if (typeof value !== 'string' || !/^\d+\.\d+\.\d+$/u.test(value)) return undefined
+  const parsed = semver.parse(value)
+  if (!parsed || parsed.prerelease.length > 0 || parsed.build.length > 0) return undefined
+  return [parsed.major, parsed.minor, parsed.patch]
 }
 
 /** Compare two stable semantic versions without accepting prerelease downgrades. */
 export function compareStableVersions(left, right) {
-  const a = parseStableVersion(left)
-  const b = parseStableVersion(right)
-  if (a === undefined || b === undefined) throw Error('KimiCU 版本必须为稳定语义版本')
-  for (let index = 0; index < 3; index++) {
-    if (a[index] !== b[index]) return a[index] - b[index]
-  }
-  return 0
+  if (parseStableVersion(left) === undefined || parseStableVersion(right) === undefined)
+    throw Error('KimiCU 版本必须为稳定语义版本')
+  return semver.compare(left, right)
 }
 
 /** Pick the exact official archive for this Mac from the version manifest. */

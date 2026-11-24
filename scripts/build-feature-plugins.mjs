@@ -65,7 +65,7 @@ export async function buildFeaturePlugins({ root, output, project, tar, official
       target: 'node24',
       external: ['@deepseek-ai/*', 'zod'],
       banner: {
-        js: "import { createRequire as oplCreateRequire } from 'node:module'; const require = oplCreateRequire(import.meta.url);",
+        js: "import { createRequire as oplCreateRequire } from 'node:module'; import { fileURLToPath as oplFileURLToPath } from 'node:url'; import { dirname as oplDirname } from 'node:path'; const require = oplCreateRequire(import.meta.url); const __filename = oplFileURLToPath(import.meta.url); const __dirname = oplDirname(__filename);",
       },
       define: { __OPL_SUITE_VERSION__: JSON.stringify(project.version) },
       tsconfig: join(root, 'tsconfig.host.json'),

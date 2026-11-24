@@ -45,6 +45,9 @@ export async function stepBridgePath(): Promise<string> {
     platform: 'node',
     format: 'esm',
     target: 'node22',
+    banner: {
+      js: "import { createRequire as oplCreateRequire } from 'node:module'; import { fileURLToPath as oplFileURLToPath } from 'node:url'; import { dirname as oplDirname } from 'node:path'; const require = oplCreateRequire(import.meta.url); const __filename = oplFileURLToPath(import.meta.url); const __dirname = oplDirname(__filename);",
+    },
     logLevel: 'silent',
     write: false,
   })

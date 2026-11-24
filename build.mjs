@@ -30,7 +30,7 @@ await generateRpc({ root, ifStale: true })
 await rm(join(output, 'package'), { recursive: true, force: true })
 await mkdir(join(output, 'package/lib'), { recursive: true })
 const esmRequireBanner = {
-  js: "import { createRequire as oplCreateRequire } from 'node:module'; const require = oplCreateRequire(import.meta.url);",
+  js: "import { createRequire as oplCreateRequire } from 'node:module'; import { fileURLToPath as oplFileURLToPath } from 'node:url'; import { dirname as oplDirname } from 'node:path'; const require = oplCreateRequire(import.meta.url); const __filename = oplFileURLToPath(import.meta.url); const __dirname = oplDirname(__filename);",
 }
 const hostBuild = await bundle({
   metafile: true,
@@ -66,6 +66,7 @@ for (const [entry, name] of [
     platform: 'node',
     format: 'esm',
     target: 'node24',
+    banner: esmRequireBanner,
     outfile: join(output, `package/lib/${name}.mjs`),
   })
 }
@@ -82,6 +83,7 @@ for (const [directory, name] of [
     platform: 'node',
     format: 'esm',
     target: 'node24',
+    banner: esmRequireBanner,
     outfile: join(output, `package/lib/${name}.mjs`),
   })
 }
@@ -248,7 +250,17 @@ const externalLocalInstallerImports = {
   },
 }
 await cp(join(root, 'installer'), installer, { recursive: true })
-for (const entry of ['skill/harness-mcp.mjs', 'kimi-cu.mjs']) {
+for (const entry of [
+  'skill/harness-mcp.mjs',
+  'skill/control.mjs',
+  'skill/coordinator/cli.mjs',
+  'cleanup-skill/cleanup.mjs',
+  'kimi-cu.mjs',
+  'desktop-update.mjs',
+  'superagent.mjs',
+  'update.mjs',
+  'update-transaction.mjs',
+]) {
   await bundle({
     entryPoints: [join(root, 'installer', entry)],
     bundle: true,
@@ -257,6 +269,22 @@ for (const entry of ['skill/harness-mcp.mjs', 'kimi-cu.mjs']) {
     target: 'node24',
     plugins: [externalLocalInstallerImports],
     banner: esmRequireBanner,
+    outfile: join(installer, entry),
+  })
+}
+for (const entry of [
+  'compare.cjs',
+  'ofm-desktop-admission.cjs',
+  'model-plugins.cjs',
+  'ofm-upgrade.cjs',
+]) {
+  await bundle({
+    entryPoints: [join(root, 'installer', entry)],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    target: 'node24',
+    plugins: [externalLocalInstallerImports],
     outfile: join(installer, entry),
   })
 }

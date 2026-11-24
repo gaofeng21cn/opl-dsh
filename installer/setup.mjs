@@ -20,13 +20,31 @@ import { join } from 'node:path'
 import { openSync, closeSync, readFileSync } from 'node:fs'
 import { readdir, readFile, unlink } from 'node:fs/promises'
 import { resolve } from 'node:path'
-const [home, root, application] = process.argv.slice(2)
+import { parseArgs } from 'node:util'
+const parsedArgs = parseArgs({
+  args: process.argv.slice(2),
+  options: {
+    'suite-root': { type: 'string' },
+    'update-transaction': { type: 'string' },
+    'update-nonce': { type: 'string' },
+    'no-update': { type: 'boolean', default: false },
+  },
+  allowPositionals: true,
+  strict: false,
+})
+const [home, root, application] = parsedArgs.positionals
 if (!home || !root || !application) throw new Error('缺少桌面启动路径')
-const flag = (name) =>
-  process.argv.find((arg) => arg.startsWith(name + '='))?.slice(name.length + 1)
-const suiteRoot = resolve(flag('--suite-root') ?? root)
-const transactionId = flag('--update-transaction')
-const transactionNonce = flag('--update-nonce')
+const suiteRoot = resolve(
+  typeof parsedArgs.values['suite-root'] === 'string' ? parsedArgs.values['suite-root'] : root,
+)
+const transactionId =
+  typeof parsedArgs.values['update-transaction'] === 'string'
+    ? parsedArgs.values['update-transaction']
+    : undefined
+const transactionNonce =
+  typeof parsedArgs.values['update-nonce'] === 'string'
+    ? parsedArgs.values['update-nonce']
+    : undefined
 if (suiteRoot !== resolve(root) && resolve(root) !== resolve(join(suiteRoot, 'superagent')))
   throw new Error('桌面套件目录不匹配')
 const isProcessAlive = (pid) => {
@@ -76,7 +94,7 @@ const launchLease = await acquireSuiteLaunch(
   suiteRoot,
   transactionId ? { transactionId, nonce: transactionNonce } : {},
 )
-if (!process.argv.includes('--no-update')) await refreshEnhancements(root, application)
+if (!parsedArgs.values['no-update']) await refreshEnhancements(root, application)
 const executable =
   process.platform === 'win32'
     ? join(application, 'DeepSeek Harness.exe')

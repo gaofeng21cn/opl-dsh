@@ -1,6 +1,7 @@
 /** Durable vendor-edit journal, separate from the official Session event format. */
-import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, readdir, readFile, rename } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, readdir, readFile } from 'node:fs/promises'
+import writeFileAtomic from 'write-file-atomic'
 import { join } from 'node:path'
 import { oplProfilePath } from '../../shared/host/profile-paths.ts'
 import { z } from 'zod'
@@ -136,15 +137,7 @@ export class FileExternalEditJournal implements ExternalEditJournal {
       if (this.failed) throw Error('外部编辑记录未能保存，请重新启动后核对')
       await mkdir(this.directory, { recursive: true, mode: 0o700 })
       const filename = this.filename(item.sessionId)
-      const temporary = filename + '.' + randomUUID() + '.tmp'
-      const file = await open(temporary, 'wx', 0o600)
-      try {
-        await file.writeFile(JSON.stringify(item))
-        await file.sync()
-      } finally {
-        await file.close()
-      }
-      await rename(temporary, filename)
+      await writeFileAtomic(filename, JSON.stringify(item), { mode: 0o600 })
     })
     this.queue = write.catch(() => {
       this.failed = true

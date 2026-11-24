@@ -1,7 +1,8 @@
 import { featureSettings } from '../../shared/host/feature-settings.ts'
 import { coordinatorHooks } from './hook-settings.ts'
 /** Manage the installed collaboration Skill without changing the desktop profile. */
-import { readFile, writeFile, rename } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
+import writeFileAtomic from 'write-file-atomic'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
@@ -135,8 +136,7 @@ export async function coordinationAction(
     if (manifest.owner !== 'opl-dsh-suite' || manifest.files['config.json'] !== digest(original))
       throw new Error('Skill 已被手动修改，已保留')
     const next = JSON.stringify({ ...JSON.parse(original), autoStart: payload }, null, 2) + '\n'
-    await writeFile(file + '.tmp', next, { mode: 0o600 })
-    await rename(file + '.tmp', file)
+    await writeFileAtomic(file, next, { mode: 0o600 })
     manifest.files['config.json'] = digest(next)
     await writeFile(marker, JSON.stringify(manifest) + '\n', { mode: 0o600 })
     return null

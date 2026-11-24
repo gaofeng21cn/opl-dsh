@@ -1,18 +1,9 @@
 /** Prepare an explicit enhancement update, then consume it before Desktop starts. */
-import {
-  readFile,
-  writeFile,
-  mkdir,
-  mkdtemp,
-  open,
-  unlink,
-  rm,
-  rename,
-  lstat,
-  readdir,
-} from 'node:fs/promises'
+import { readFile, writeFile, mkdir, mkdtemp, unlink, rm, lstat, readdir } from 'node:fs/promises'
 import { basename, join, dirname, resolve, isAbsolute } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
+import lockfile from 'proper-lockfile'
+import writeFileAtomic from 'write-file-atomic'
 import childProcess from 'node:child_process'
 import { inflateRawSync, crc32 } from 'node:zlib'
 import { installationPaths } from './installation-paths.mjs'
@@ -93,13 +84,7 @@ async function readOptional(path, limit) {
 }
 
 async function atomicJson(path, value) {
-  const temporary = `${path}.${randomUUID()}.tmp`
-  try {
-    await writeFile(temporary, JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' })
-    await rename(temporary, path)
-  } finally {
-    await rm(temporary, { force: true })
-  }
+  await writeFileAtomic(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 })
 }
 
 function alive(pid) {
@@ -133,38 +118,23 @@ async function lockUpdate(root, options) {
 async function lockEnhancementUpdate(root) {
   await directory(root)
   const path = join(root, 'enhancement-update.lock')
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const handle = await open(path, 'wx', 0o600)
-      await handle.writeFile(JSON.stringify({ pid: process.pid }))
-      return async () => {
-        await handle.close()
-        await unlink(path)
-      }
-    } catch (error) {
-      if (error.code !== 'EEXIST') throw error
-      const bytes = await regularFile(path, 1024)
-      const record = JSON.parse(bytes.toString('utf8'))
-      const pid = typeof record === 'number' ? record : record.pid
-      if (alive(pid)) throw updateFailureError(Error('另一项增强更新正在进行'), 'acquire', 'busy')
-      // Serialize stale-lock removal and reread the owner after acquiring it.
-      const recoveryPath = `${path}.recovery`
-      const recovery = await open(recoveryPath, 'wx', 0o600)
-      try {
-        const latest = await readOptional(path, 1024)
-        if (latest !== null) {
-          const owner = JSON.parse(latest.toString('utf8'))
-          if (alive(typeof owner === 'number' ? owner : owner.pid))
-            throw updateFailureError(Error('另一项增强更新正在进行'), 'acquire', 'busy')
-          await unlink(path)
-        }
-      } finally {
-        await recovery.close()
-        await unlink(recoveryPath)
-      }
+  try {
+    const release = await lockfile.lock(join(root, 'enhancement-update'), {
+      lockfilePath: path,
+      realpath: false,
+      stale: 30_000,
+    })
+    let released = false
+    return async () => {
+      if (released) return
+      released = true
+      await release()
     }
+  } catch (error) {
+    if (error?.code === 'ELOCKED')
+      throw updateFailureError(Error('另一项增强更新正在进行'), 'acquire', 'busy')
+    throw error
   }
-  throw updateFailureError(Error('无法取得增强更新锁'), 'acquire', 'busy')
 }
 
 async function installed(root, application) {

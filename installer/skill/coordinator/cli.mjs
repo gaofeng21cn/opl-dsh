@@ -1,12 +1,14 @@
 /** Explicit coordinator commands and owned Hook configuration; importing this module performs no work. */
-import { mkdir, open, readFile, rename, unlink, lstat } from 'node:fs/promises'
+import { mkdir, readFile, rename, unlink, lstat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
+import { parseArgs as parseNodeArgs } from 'node:util'
 import { watch as watchFile } from 'node:fs'
 import { execFile } from 'node:child_process'
+import writeFileAtomic from 'write-file-atomic'
 import {
   createOwnedHooks,
   mergeOwnedHooks,
@@ -64,19 +66,33 @@ function parseArgs(argv, env) {
     'remove-hooks': [],
   }
   if (!Object.hasOwn(allowed, command)) fail()
+  const optionSpec = Object.fromEntries(
+    [...allowed[command], 'root', 'codex-home'].map((name) => [name, { type: 'string' }]),
+  )
+  let parsed
+  try {
+    parsed = parseNodeArgs({
+      args: rest,
+      options: optionSpec,
+      strict: true,
+      allowPositionals: false,
+      tokens: true,
+    })
+  } catch {
+    fail()
+  }
   const flags = {}
-  for (let i = 0; i < rest.length; i += 2) {
-    const key = rest[i]?.slice(2),
-      value = rest[i + 1]
+  for (const token of parsed.tokens ?? []) {
     if (
-      !rest[i]?.startsWith('--') ||
-      ![...allowed[command], 'root', 'codex-home'].includes(key) ||
-      Object.hasOwn(flags, key) ||
-      !text(value) ||
-      value.startsWith('--')
+      token.kind !== 'option' ||
+      !token.rawName.startsWith('--') ||
+      token.inlineValue ||
+      Object.hasOwn(flags, token.name) ||
+      !text(token.value) ||
+      token.value.startsWith('--')
     )
       fail()
-    flags[key] = value
+    flags[token.name] = token.value
   }
   const requestedHome = flags['codex-home'] ?? env.CODEX_HOME ?? join(homedir(), '.codex')
   const requestedRoot = flags.root ?? join(requestedHome, 'opl-dsh-coordinator')
@@ -129,33 +145,7 @@ async function readText(filename, optional = false) {
 
 async function atomicWrite(filename, contents) {
   await mkdir(dirname(filename), { recursive: true, mode: 0o700 })
-  const temporary = filename + '.' + randomUUID() + '.tmp'
-  const handle = await open(temporary, 'wx', 0o600)
-  try {
-    await handle.writeFile(contents)
-    await handle.sync()
-    await handle.close()
-    // Windows readers can briefly retain a handle while the replacement is published.
-    for (let attempt = 0; ; attempt++) {
-      try {
-        await rename(temporary, filename)
-        break
-      } catch (error) {
-        if (
-          process.platform !== 'win32' ||
-          !['EPERM', 'EACCES', 'EBUSY'].includes(error.code) ||
-          attempt >= 49
-        )
-          throw error
-        await delay(5)
-      }
-    }
-  } finally {
-    await handle.close()
-    await unlink(temporary).catch((error) => {
-      if (error.code !== 'ENOENT') throw error
-    })
-  }
+  await writeFileAtomic(filename, contents, { mode: 0o600 })
 }
 
 const jsonText = (value) => JSON.stringify(value, null, 2) + '\n'

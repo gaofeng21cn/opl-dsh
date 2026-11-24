@@ -2,15 +2,22 @@
 const { join, resolve, delimiter } = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { createRequire } = require('node:module')
+const { parseArgs } = require('node:util')
 const { mkdirSync, writeFileSync, readFileSync, existsSync } = require('node:fs')
 const { installModelPlugins, preserveModelPlugins } = require('./model-plugins.cjs')
 const { officialPnpm } = require('./official-pnpm.cjs')
-const [application, home, archive, ...options] = process.argv.slice(2)
-const companion = options.find((option) => !option.startsWith('--'))
-const flags = options.filter((option) => option.startsWith('--'))
-const plugins = flags
-  .filter((flag) => flag.startsWith('--plugin='))
-  .map((flag) => resolve(flag.slice(9)))
+const parsedArgs = parseArgs({
+  args: process.argv.slice(2),
+  options: {
+    plugin: { type: 'string', multiple: true, default: [] },
+    'ofm-upgrade': { type: 'boolean', default: false },
+  },
+  allowPositionals: true,
+  strict: false,
+})
+const [application, home, archive, companion] = parsedArgs.positionals
+const plugins = (parsedArgs.values.plugin ?? []).map((item) => resolve(String(item)))
+const ofmUpgradeMode = Boolean(parsedArgs.values['ofm-upgrade'])
 const teamBundle = '@deepseek-ai/dsh-experimental-agent-team-profile'
 const cliProfile = process.env.OPL_DSH_CLI_PROFILE
 if (
@@ -96,7 +103,7 @@ async function main() {
       { waitMs: 1000 },
     )
   }
-  if ([archive, companion, ...flags].includes('--ofm-upgrade')) {
+  if (ofmUpgradeMode) {
     // Register the independent OFM directory through the official profile operations.
     const { MODEL_PLUGINS } = require('./model-plugins.cjs')
     const { migrateOfmLink } = require('./ofm-upgrade.cjs')

@@ -1,6 +1,7 @@
 /** Owned edit admission records; official Session logs remain append-only. */
-import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readdir, readFile, writeFile, rename } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, readdir, readFile } from 'node:fs/promises'
+import writeFileAtomic from 'write-file-atomic'
 import { join } from 'node:path'
 import { oplProfilePath } from '../../shared/host/profile-paths.ts'
 import type { MessageEditSend } from '../contracts/message-edit.ts'
@@ -74,9 +75,7 @@ export class MessageEditStore {
     const write = this.queue.then(async () => {
       await mkdir(this.directory, { recursive: true, mode: 0o700 })
       const filename = this.filename(item.input.prompt.sessionId)
-      const temp = filename + '.' + randomUUID() + '.tmp'
-      await writeFile(temp, JSON.stringify(item), { flag: 'wx', mode: 0o600 })
-      await rename(temp, filename)
+      await writeFileAtomic(filename, JSON.stringify(item), { mode: 0o600 })
     })
     this.queue = write.catch(() => {
       /* The caller receives the failure; preserve in-memory refusal. */
