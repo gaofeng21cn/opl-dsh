@@ -18,6 +18,7 @@ export interface OplUpdateRestart {
 
 /** Public update status contains release metadata, never local installer paths. */
 export interface OplUpdateRelease {
+  summary?: string
   version: string
   officialVersion: string
   url: string

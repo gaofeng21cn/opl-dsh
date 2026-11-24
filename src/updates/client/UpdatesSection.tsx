@@ -266,6 +266,7 @@ export function UpdatesSection({ controller, navigation: navigationProp, t }: Up
       {release && (
         <div className={css.card} data-opl-update-release={release.version}>
           <h3 className={css.name}>{t('release', { version: release.version })}</h3>
+          {release.summary && <p className={updatesCss.summary}>{release.summary}</p>}
           <p className={css.muted}>
             {t('releaseOfficialVersion')}: {release.officialVersion}
           </p>

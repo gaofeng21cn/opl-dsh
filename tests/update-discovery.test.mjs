@@ -97,6 +97,24 @@ test('checks download only stable metadata and its digest-bound manifest, includ
   assert.deepEqual(calls, [api, value.release.assets[1].browser_download_url])
 })
 
+test('displays only the release overview and ignores notes without one', async (t) => {
+  const value = fixture()
+  const calls = remote(t, value)
+  const banner = '官方 DeepSeek Harness：`0.2.3-alpha.2` · OPL 增强：`0.2.56`'
+  for (const [body, expected] of [
+    [banner + '\r\n\r\n本版改进了\r\n`KimiCU` 更新。\r\n\r\n### 变更', '本版改进了 KimiCU 更新。'],
+    [banner + '\n\n### 变更\n\n- 条目', undefined],
+    [banner + '\n\n本版更新内容见以下提交记录及对应功能文档。', undefined],
+    [undefined, undefined],
+  ]) {
+    value.release.body = body
+    const result = await checkRelease(current)
+    assert.equal(result.release.summary, expected)
+    assert.equal(result.metadata.summary, expected)
+  }
+  assert.equal(calls.length, 8)
+})
+
 test('same and older versions stop after the manifest and never download the ZIP', async (t) => {
   for (const version of ['0.2.55', '0.2.54']) {
     const value = fixture({ version }),
@@ -341,10 +359,14 @@ function publicRemote(
 test('rate-limited API falls back to tag-pinned public release digests without credentials or ZIP download', async (t) => {
   for (const status of [403, 429]) {
     const value = fixture()
-    const { calls } = publicRemote(t, value, { status })
+    const { calls } = publicRemote(t, value, {
+      status,
+      page: `<relative-time datetime="${value.release.published_at}"></relative-time><p>官方 DeepSeek Harness：<code>1</code></p><p>改进 <code>A</code> &amp; B。</p>`,
+    })
     const result = await checkRelease(current)
     assert.equal(result.release.version, '0.2.56')
     assert.equal(result.release.publishedAt, value.release.published_at)
+    assert.equal(result.release.summary, '改进 A & B。')
     assert.equal(result.metadata.manifestAsset.digest, hash(value.manifestBytes))
     assert.equal(result.metadata.manifestAsset.size, value.manifestBytes.length)
     assert.equal(result.metadata.asset.size, value.payload.length)

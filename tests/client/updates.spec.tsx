@@ -372,6 +372,16 @@ describe('unattended update preferences', () => {
     )
   })
 
+  it('shows the overview below the offered version and clears it with the next offer', async () => {
+    const summary = '本次更新改进了模型切换。'
+    const f = await mount({ initial: status({ release: release({ summary }) }) })
+    const heading = () => f.container.querySelector('[data-opl-update-release] h3')
+    expect(heading()?.nextElementSibling?.textContent).toBe(summary)
+    await act(async () => f.publish(status({ release: release({ version: '0.2.57' }) })))
+    expect(heading()?.textContent).toContain('0.2.57')
+    expect(f.container.textContent).not.toContain(summary)
+  })
+
   it('offers one preparation action when a compatible release includes KimiCU', async () => {
     const kimiCu = { installedVersion: '0.3.10', latestVersion: '0.3.13', available: true }
     const f = await mount({ initial: status({ release: release(), kimiCu }) })

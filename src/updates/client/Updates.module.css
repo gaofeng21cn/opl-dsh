@@ -9,6 +9,13 @@ dl.versions {
   gap: 8px;
 }
 
+.summary {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .link {
   align-self: flex-start;
   color: var(--dsw-alias-state-business-primary);
