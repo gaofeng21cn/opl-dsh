@@ -305,14 +305,6 @@ export async function verifyDesktopClient(
     `(() => { const labels=${JSON.stringify(labels)}; const root=${scope}; if(!root)return false; const node=Array.from(root.querySelectorAll('button,[role=menuitem]')).find(x=>x.getClientRects().length && !x.disabled && (labels.includes((x.getAttribute('aria-label')||x.textContent||'').trim()) || x.matches('[role=menuitem]') && labels.some(label => (x.textContent||'').trim().startsWith(label)))); if(!node)return false; node.click(); return true })()`
   const featureSwitch = (labels) =>
     `Array.from(document.querySelectorAll('[role=switch]')).find(node=>node.getClientRects().length && ${JSON.stringify(labels)}.includes(node.getAttribute('aria-label')))`
-  const statsSwitch = featureSwitch(['增强会话统计', 'Enhanced conversation statistics'])
-  async function setEnhancedStats(enabled) {
-    await pipe.evaluate(session, `${statsSwitch}.click()`)
-    await waitFor(
-      `Boolean(${statsSwitch}?.getAttribute('aria-checked') === '${enabled}' && !${statsSwitch}.disabled)`,
-      '增强会话统计开关未保存',
-    )
-  }
   async function chooseCountMode(labels) {
     const selector = 'document.querySelector("[data-opl-preference=conversation-counts] button")'
     const accepted = `!${selector}.disabled && ${JSON.stringify(labels)}.some(label=>${selector}.textContent.includes(label))`
@@ -537,46 +529,43 @@ export async function verifyDesktopClient(
         automaticSaved: true,
         automaticRestored: true,
       }
-      for (const [label, selector] of [
-        ['增强会话统计', statsSwitch],
-        ['记住权限预设', featureSwitch(['记住权限预设', 'Remember permission preset'])],
-      ]) {
-        await waitFor(`Boolean(${selector} && !${selector}.disabled)`, label + '设置未就绪')
-        if ((await pipe.evaluate(session, `${selector}.getAttribute('aria-checked')`)) !== 'false')
-          throw new Error(label + '必须默认关闭')
-      }
-      if (
-        await pipe.evaluate(
-          session,
-          `Boolean(${featureSwitch(['增强待办状态', 'Enhanced todo status'])})`,
-        )
+      const rememberPermission = featureSwitch(['记住权限预设', 'Remember permission preset'])
+      await waitFor(
+        `Boolean(${rememberPermission} && !${rememberPermission}.disabled)`,
+        '记住权限预设设置未就绪',
       )
-        throw new Error('待办面板应使用官方展示')
+      if (
+        (await pipe.evaluate(session, `${rememberPermission}.getAttribute('aria-checked')`)) !==
+        'false'
+      )
+        throw new Error('记住权限预设必须默认关闭')
+      for (const labels of [
+        ['增强待办状态', 'Enhanced todo status'],
+        ['增强会话统计', 'Enhanced conversation statistics'],
+      ]) {
+        if (await pipe.evaluate(session, `Boolean(${featureSwitch(labels)})`))
+          throw new Error('已退役的设置开关仍在显示：' + labels[0])
+      }
       const countSelector =
         'document.querySelector("[data-opl-preference=conversation-counts] button")'
-      if (await pipe.evaluate(session, `Boolean(${countSelector})`))
-        throw new Error('未启用增强会话统计时显示了计数选项')
-      await setEnhancedStats(true)
       await waitFor(
         `Boolean(${countSelector} && !${countSelector}.disabled)`,
         '轮次与步数设置未就绪',
       )
       await waitFor(
-        `${countSelector}.textContent.includes('当前对话') || ${countSelector}.textContent.includes('Current conversation')`,
-        '计数默认值不是当前对话',
-      )
-      await chooseCountMode(['历史累计', 'All history'])
-      await selectPanel()
-      await waitFor(
         `${countSelector}.textContent.includes('历史累计') || ${countSelector}.textContent.includes('All history')`,
-        '重进设置后计数偏好丢失',
+        '默认值应沿用官方历史累计计数',
       )
       await chooseCountMode(['当前对话', 'Current conversation'])
+      await selectPanel()
+      await waitFor(
+        `${countSelector}.textContent.includes('当前对话') || ${countSelector}.textContent.includes('Current conversation')`,
+        '重进设置后计数偏好丢失',
+      )
+      if (!conversationCountFixture) await chooseCountMode(['历史累计', 'All history'])
       result.generalPreferences.conversationCounts = {
-        enhancementDefaultOff: true,
-        currentDefault: true,
-        historySaved: true,
-        currentRestored: true,
+        historyDefault: true,
+        currentSaved: true,
       }
     }
     if (panel.marker === 'catalog') {
@@ -1168,20 +1157,14 @@ export async function verifyDesktopClient(
     await waitFor(showsCounts(conversationCountFixture.history), '原统计栏没有显示历史累计计数')
     await selectCountScope(['当前对话', 'Current conversation'])
     await waitFor(showsCounts(conversationCountFixture.current), '原统计栏没有恢复当前对话计数')
-    await openSettings()
-    await waitFor(clickLabel(['通用设置', 'General'], settingsNav), '通用设置未打开')
-    await setEnhancedStats(false)
-    await waitFor(
-      `!document.querySelector('[data-opl-preference=conversation-counts]')`,
-      '关闭增强会话统计后仍显示计数选项',
-    )
-    await closeSettings()
+    await selectCountScope(['历史累计', 'All history'])
+    await waitFor(showsCounts(conversationCountFixture.history), '未恢复官方历史累计计数')
     result.conversationCounts = {
       editedNativeConversation: true,
       currentPill: conversationCountFixture.current,
       historyPill: conversationCountFixture.history,
       restoredCurrent: true,
-      enhancementRestoredOff: true,
+      restoredOfficialHistory: true,
     }
   }
   result.runtimeExceptions = errors().length
