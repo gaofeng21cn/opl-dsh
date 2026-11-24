@@ -1,4 +1,3 @@
-import { installGoogleAccountChoices } from './google-account-choices.ts'
 import {
   AntigravityAccountCard,
   antigravityAccountZh,
@@ -20,6 +19,7 @@ import {
 } from '../../shared/client/FeaturePreferences.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
+import { installGoogleAccountChoices } from './google-account-choices.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import { watchStopEditSession } from './stop-edit-session-watch.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
