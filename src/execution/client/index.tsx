@@ -1,3 +1,4 @@
+import { installGoogleAccountChoices } from './google-account-choices.ts'
 import {
   AntigravityAccountCard,
   antigravityAccountZh,
@@ -251,6 +252,13 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
       en: antigravityAccountEn,
     }),
   )
+  ctx.inject(['modelDirectories'], (scope) => {
+    const directory = scope.get('modelDirectories') as unknown as Parameters<
+      typeof installGoogleAccountChoices
+    >[0]
+    if (directory && typeof directory.directoryFor === 'function')
+      scope.effect(() => installGoogleAccountChoices(directory))
+  })
   const accountT = ctx.locale.bind('settings.antigravityAccount')
   const readAccount = () => call('antigravity-account-status')
   const openAccount = () => call('antigravity-account-login')
