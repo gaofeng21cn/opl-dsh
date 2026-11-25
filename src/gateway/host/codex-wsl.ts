@@ -17,6 +17,7 @@ const messages: Record<number, string> = {
   20: 'WSL 钥匙串安装未完成。请检查发行版软件源和网络后重试。',
   21: 'WSL 用户会话总线未运行。请确认所选发行版已启用 systemd，保存工作并重启该发行版后重试。',
   22: '所选 WSL 用户的默认钥匙串未确认加密。请为默认 GNOME 钥匙串设置非空密码后重试。',
+  23: 'WSL Codex 登录结果未确认。请检查所选发行版的钥匙串后重试。',
 }
 
 export class CodexWslError extends Error {

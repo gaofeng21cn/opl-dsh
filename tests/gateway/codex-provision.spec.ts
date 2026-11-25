@@ -1,6 +1,9 @@
 import { expect, it, vi } from 'vitest'
 import { withCodexGatewayKey, codexGatewayKeyName } from '../../src/gateway/host/codex-provision.ts'
-import type { GatewayManagedKey } from '../../src/gateway/host/gateway-control.ts'
+import {
+  GatewayControlError,
+  type GatewayManagedKey,
+} from '../../src/gateway/host/gateway-control.ts'
 
 const name = codexGatewayKeyName('windows', '')
 const active = { id: '44', name, groupId: '9', key: 'sk-fixture-only', status: 'active', raw: {} }
@@ -12,7 +15,7 @@ function fixture(initial: GatewayManagedKey[] = []) {
       db.push(active)
       return active
     }),
-    setKeyStatus: vi.fn(async () => {}),
+    deactivateKey: vi.fn(async (_token: string, _id: string) => {}),
   }
 }
 it('issues only after preflight and reuses the dedicated key on a second run', async () => {
@@ -40,7 +43,8 @@ it('disables only a newly issued key after a local write failure', async () => {
         throw Error('local failed')
       }),
     ).rejects.toThrow('local failed')
-    expect(control.setKeyStatus).toHaveBeenCalledTimes(existing ? 0 : 1)
+    if (existing) expect(control.deactivateKey).not.toHaveBeenCalled()
+    else expect(control.deactivateKey).toHaveBeenCalledExactlyOnceWith('token', active.id)
   }
 })
 it('blocks malformed groups, masked keys, and ambiguous active keys', async () => {
@@ -57,16 +61,28 @@ it('blocks malformed groups, masked keys, and ambiguous active keys', async () =
       }),
     ).rejects.toThrow()
     expect(control.createKey).not.toHaveBeenCalled()
-    expect(control.setKeyStatus).not.toHaveBeenCalled()
+    expect(control.deactivateKey).not.toHaveBeenCalled()
   }
 })
 it('reports incomplete key cleanup separately', async () => {
   const control = fixture()
-  control.setKeyStatus.mockRejectedValueOnce(Error('sensitive upstream detail'))
+  control.deactivateKey.mockRejectedValueOnce(Error('sensitive upstream detail'))
   await expect(
     withCodexGatewayKey(control, 'token', '9', name, async (issue) => {
       await issue()
       throw Error('local failed')
     }),
   ).rejects.toThrow('未能确认已停用')
+})
+
+it('reconciles an uncertain create through the exact active key without retrying the write', async () => {
+  const control = fixture()
+  control.createKey.mockRejectedValueOnce(new GatewayControlError('network_timeout', 'timeout'))
+  control.keys.mockResolvedValueOnce([]).mockResolvedValueOnce([active])
+  await withCodexGatewayKey(control, 'token', '9', name, async (issue) => {
+    expect(await issue()).toBe(active.key)
+  })
+  expect(control.createKey).toHaveBeenCalledTimes(1)
+  expect(control.keys).toHaveBeenCalledTimes(2)
+  expect(control.deactivateKey).not.toHaveBeenCalled()
 })

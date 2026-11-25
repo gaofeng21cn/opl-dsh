@@ -242,6 +242,26 @@ describe('key lifecycle', () => {
       quota: 100,
     })
   })
+
+  it('confirms a dedicated deactivation by id after a lost write response', async () => {
+    const { control, calls } = client((_url, init) => {
+      if (init.method === 'PUT') throw new TypeError('response lost')
+      return jsonResponse({ code: 0, data: { id: 5, status: 'inactive' } })
+    })
+    await control.deactivateKey('access', '5')
+    expect(calls.map(({ url, init }) => [url, init.method])).toEqual([
+      ['https://gateway.test/api/v1/keys/5', 'PUT'],
+      ['https://gateway.test/api/v1/keys/5', 'GET'],
+    ])
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ status: 'inactive' })
+  })
+
+  it('reports a deactivation with no readback for the exact id', async () => {
+    const { control } = client(() => jsonResponse({ code: 0, data: { id: 8, status: 'inactive' } }))
+    await expect(control.deactivateKey('access', '5')).rejects.toMatchObject({
+      code: 'key_unavailable',
+    })
+  })
 })
 
 describe('transport failures', () => {

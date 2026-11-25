@@ -153,28 +153,39 @@ values = {
     'model_providers.opl_gateway':{'name':'OPL Gateway','base_url':base,
                                   'wire_api':'responses','requires_openai_auth':True}}
 written = None
-installed = False
+attempted_login = False
 try:
     check(no_auth_file() and read_config() == before, 17)
     with server() as rpc:
         args = {'edits':[{'keyPath':k,'value':v,'mergeStrategy':'replace'} for k,v in values.items()]}
         if user_version(snapshot): args['expectedVersion'] = user_version(snapshot)
         result = rpc('config/batchWrite', args)
-    written = read_config()
+    candidate = read_config()
     after = inspect()
-    check(result.get('status') == 'ok' and user_version(after) == result['version'] and configured(after)
+    check(user_version(after) == result['version'], 17)
+    written = candidate
+    check(result.get('status') == 'ok' and configured(after)
           and after['config'].get('model') == values['model'] and no_auth_file() and not state(), 18)
+    attempted_login = True
     check(login(['--with-api-key'],key+b'\n').returncode == 0, 16)
-    installed = True
     check(state() and matches() and no_auth_file(), 18)
 except BaseException:
-    if installed and matches():
-        check(run([codex,'-c','cli_auth_credentials_store="keyring"','logout']).returncode == 0, 18)
+    auth_uncertain = False
+    if attempted_login:
+        try:
+            if matches():
+                logged_out = run([codex,'-c','cli_auth_credentials_store="keyring"','logout'])
+                auth_uncertain = logged_out.returncode != 0 or state()
+            else:
+                auth_uncertain = state()
+        except (Exception, SystemExit):
+            auth_uncertain = True
     if written is not None:
         check(read_config() == written, 17)
         if before is None: path.unlink()
         else:
             with tempfile.NamedTemporaryFile(dir=dest, delete=False) as f: f.write(before)
             os.replace(f.name, path)
+    check(not auth_uncertain, 23)
     raise
 `
