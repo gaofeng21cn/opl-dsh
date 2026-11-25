@@ -3,11 +3,14 @@
  *
  * The gateway is an independent service, so this surface stands on its own: a
  * machine with no OPL installation can sign in, receive an inference key, and
- * see the account. Nothing here shells out to a command line.
+ * see the account. External Codex setup uses the selected platform's keyring.
  *
  */
 
 import { GatewayPasswordStore } from './remembered-login.ts'
+import { CodexNativeSetupError, configureNativeCodex } from './codex-native.ts'
+import { CodexWslError, listCodexWslDistros, prepareCodexWsl } from './codex-wsl.ts'
+import { CodexProvisionError, codexGatewayKeyName, withCodexGatewayKey } from './codex-provision.ts'
 import { gatewayGroupEnabled } from './group-settings.ts'
 import {
   clearGatewayCatalogStatus,
@@ -178,6 +181,98 @@ export class OplGatewayAccountService extends TypertRemoteService {
 
   private credentials(): CredentialProvider | undefined {
     return this.ctx.get('credentials')
+  }
+
+  private assertCodexOwner(): void {
+    if (this.ctx.invocation?.peer.principal.kind !== 'owner') {
+      throw new RemoteError('opl-gateway/attention', '仅桌面所有者可以配置本机 Codex。', {})
+    }
+  }
+
+  /** Enumerate native and installed WSL targets for the owner's account page. */
+  @Remote
+  async codexTargets(): Promise<{ platform: string; distros: string[] }> {
+    this.assertCodexOwner()
+    return {
+      platform: process.platform,
+      distros: process.platform === 'win32' ? await listCodexWslDistros() : [],
+    }
+  }
+
+  /** Configure the user's selected Codex environment. Only status text crosses RPC. */
+  @Remote
+  async configureCodex(
+    target: string,
+    distro: string,
+    install: boolean,
+  ): Promise<{ configured: boolean; needsInstall: boolean; message: string }> {
+    this.assertCodexOwner()
+    return this.serialize(async () => {
+      try {
+        const native =
+          (process.platform === 'win32' && target === 'windows') ||
+          (process.platform === 'darwin' && target === 'mac')
+        if (
+          !(native && distro === '' && !install) &&
+          !(process.platform === 'win32' && target === 'wsl' && distro)
+        ) {
+          throw new CodexProvisionError('请选择此设备支持的 Codex 运行环境。')
+        }
+        const control = this.control()
+        const renew = async () => {
+          const store = this.credentials()
+          const refresh = store && (await readSession(store))
+          if (!store || !refresh) throw new CodexProvisionError('请先登录 OPL 网关账户。')
+          const session = await control.refreshSession(refresh)
+          await writeSession(store, session.refreshToken)
+          this.session = session
+          return session
+        }
+        let session = this.session ?? (await renew())
+        const groups = await control.groups(session.accessToken).catch(async (error) => {
+          if (!(error instanceof GatewayControlError && error.status === 401)) throw error
+          session = await renew()
+          return control.groups(session.accessToken)
+        })
+        const groupId = preferredGroup(groups, 'OpenAI 协议')
+        const prepare = async (issue: () => Promise<string>) => {
+          if (native) return configureNativeCodex(issue)
+          const destination = await prepareCodexWsl(distro, install)
+          await destination.configure(await issue())
+        }
+        await withCodexGatewayKey(
+          control,
+          session.accessToken,
+          groupId,
+          codexGatewayKeyName(target, distro),
+          prepare,
+        )
+        return {
+          configured: true,
+          needsInstall: false,
+          message: '已配置 OPL 网关，Codex 已从系统钥匙串确认登录。重新打开 Codex 即可使用。',
+        }
+      } catch (error) {
+        const known =
+          error instanceof CodexNativeSetupError ||
+          error instanceof CodexWslError ||
+          error instanceof CodexProvisionError
+        const message = known
+          ? error.message
+          : error instanceof GatewayControlError &&
+              (error.code === 'group_selection_required' || error.code === 'ambiguous_group')
+            ? '此账户没有可唯一识别的 Codex 分组，请检查网关账户权限。'
+            : error instanceof GatewayControlError && (error.status === 401 || error.status === 403)
+              ? '网关未授权本次配置，请重新登录并检查 Codex 分组权限。'
+              : '未能完成配置，请检查网关连接后重试。'
+        return {
+          configured: false,
+          needsInstall:
+            error instanceof CodexWslError && error.code === 'WSL_KEYRING_INSTALL_REQUIRED',
+          message,
+        }
+      }
+    })
   }
 
   /**

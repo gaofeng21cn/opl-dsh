@@ -18,6 +18,7 @@ import { notifyAccountChanged } from './account-changes.ts'
 import { gatewayGroupNotGranted } from '../contracts/account.ts'
 import { splitProxyHint, summarizeDiscoveryErrors } from './discovery-errors.ts'
 import settingsCss from '../../shared/client/SettingsSection.module.css'
+import { CodexKeyringSetup, type CodexKeyringSetupProps } from './CodexKeyringSetup.tsx'
 import loginCss from './LoginForm.module.css'
 import setupCss from '../../setup/client/SetupScreen.module.css'
 const css = settingsCss
@@ -25,6 +26,8 @@ const css = settingsCss
 /** Registration-side face the section drives. */
 export interface OplGatewaySectionInjected {
   openModels?: () => void
+  codexTargets?: CodexKeyringSetupProps['targets']
+  configureCodex?: CodexKeyringSetupProps['configure']
   setGroupActive?: (id: string, enabled: boolean) => Promise<GatewayAccountStatus>
   /** Read the current account status. */
   status: () => Promise<GatewayAccountStatus>
@@ -491,6 +494,20 @@ export function OplGatewaySection(
                         </div>
                       ))}
                     </div>
+                    {state.source === 'session' &&
+                      visibleGroups.some(
+                        (g) =>
+                          g.id === 'codex' &&
+                          (g.authorized === true ||
+                            (g.authorized === undefined && g.state === 'ready')),
+                      ) &&
+                      props.codexTargets &&
+                      props.configureCodex && (
+                        <CodexKeyringSetup
+                          targets={props.codexTargets}
+                          configure={props.configureCodex}
+                        />
+                      )}
                     {groupHints.map((hint) => (
                       <p key={hint} className={css.muted}>
                         {hint}
