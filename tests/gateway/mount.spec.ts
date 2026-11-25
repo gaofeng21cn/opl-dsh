@@ -131,7 +131,17 @@ describe('OPL Gateway composition', () => {
     }
     for (const allDescriptors of [TYPERT.invocations, TYPERT_REMOTE.descriptors]) {
       const descriptors = allDescriptors.filter((item) => item.namespace === 'oplGatewayAccount')
-      expect(descriptors.map((item) => item.namespace)).toEqual(Array(7).fill('oplGatewayAccount'))
+      expect(descriptors.map((item) => item.method).sort()).toEqual([
+        'codexTargets',
+        'configureCodex',
+        'forgetPassword',
+        'refresh',
+        'rememberedLogin',
+        'signIn',
+        'signInRemembered',
+        'signOut',
+        'status',
+      ])
       const codec = descriptors.find((item) => item.method === 'status')!.result.create()
       expect(codec.parse(status)).toMatchObject(status)
     }
