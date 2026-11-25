@@ -29,6 +29,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/normalize-release-notes.mjs
+      - name: Backfill the published 0.2.79 overview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/normalize-release-notes.mjs opl-dsh-v0.2.79
       - uses: actions/upload-artifact@v7
         if: always()
         with:

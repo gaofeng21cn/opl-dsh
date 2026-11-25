@@ -1,13 +1,17 @@
 import { execFileSync } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { stripDuplicateReleaseHeading } from './release-notes.mjs'
+import { backfill079Overview, stripDuplicateReleaseHeading } from './release-notes.mjs'
 
 const repository = 'gaofeng21cn/opl-dsh'
 if (process.env.GITHUB_REPOSITORY !== repository)
   throw Error('This maintenance script only writes to gaofeng21cn/opl-dsh')
 const command = (args) => execFileSync('gh', args, { encoding: 'utf8' })
-const readRelease = () => JSON.parse(command(['api', `repos/${repository}/releases/latest`]))
+const backfill = process.argv[2] === 'opl-dsh-v0.2.79'
+if (process.argv.length > 2 && (!backfill || process.argv.length !== 3))
+  throw Error('Unknown release maintenance target')
+const endpoint = backfill ? 'tags/opl-dsh-v0.2.79' : 'latest'
+const readRelease = () => JSON.parse(command(['api', `repos/${repository}/releases/${endpoint}`]))
 const assetIdentity = (release) =>
   release.assets
     .map(({ id, name, size, digest, browser_download_url }) => ({
@@ -21,9 +25,11 @@ const assetIdentity = (release) =>
 const before = readRelease()
 if (before.draft || before.prerelease || !/^opl-dsh-v\d+\.\d+\.\d+$/.test(before.tag_name))
   throw Error('Expected a canonical published stable release')
-const notes = stripDuplicateReleaseHeading(before.body, before.name)
+const notes = backfill
+  ? backfill079Overview(before)
+  : stripDuplicateReleaseHeading(before.body, before.name)
 if (!notes.trim()) throw Error('Refusing to leave an empty release body')
-const audit = join(import.meta.dirname, '../dist/release-notes-audit')
+const audit = join(import.meta.dirname, '../dist/release-notes-audit', endpoint)
 await mkdir(audit, { recursive: true })
 await writeFile(join(audit, 'before.json'), JSON.stringify(before, null, 2) + '\n')
 if (notes !== before.body) {
