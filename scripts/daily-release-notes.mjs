@@ -12,7 +12,7 @@ export function dailyReleaseNotes({
 }) {
   return `官方 DeepSeek Harness：\`{{OFFICIAL_VERSION}}\` · OPL 增强：\`{{VERSION}}\`
 
-${overview ?? '本版更新内容见以下提交记录及对应功能文档。'}
+${overview ?? mechanicalReleaseOverview(changes)}
 
 ### 变更
 
@@ -40,6 +40,41 @@ ${limitations.map((value) => '- ' + value).join('\n')}
 
 <!-- OPL_DSH_RELEASE_NOTES:${mode}${mode === 'online-ai' ? ':' + model : ''} -->
 `
+}
+
+/** Summarize actual commit subjects when the online writers are unavailable. */
+export function mechanicalReleaseOverview(commitsMarkdown = '') {
+  const labels = {
+    feat: '新增',
+    fix: '修复',
+    refactor: '优化',
+    perf: '优化',
+    docs: '文档更新',
+    test: '测试完善',
+    build: '构建更新',
+    ci: '发布流程更新',
+    chore: '维护更新',
+  }
+  const subjects = commitsMarkdown
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(/^\s*[-*]\s+/, '')
+        .replace(/\s+\(\[查看提交\]\([^)]*\)\)\s*$/, '')
+        .trim(),
+    )
+    .filter(Boolean)
+    .map((subject) => {
+      const conventional = subject.match(/^([a-z]+)(?:\([^)]*\))?:\s*(.+)$/i)
+      if (!conventional) return subject
+      const label = labels[conventional[1].toLowerCase()]
+      return label ? `${label}：${conventional[2]}` : conventional[2]
+    })
+  const distinct = [...new Set(subjects)]
+  if (!distinct.length) return '本版没有可提取的提交标题，完整变更记录见下方列表。'
+  const visible = distinct.slice(0, 3)
+  const remaining = distinct.length - visible.length
+  return `本版主要更新：${visible.join('；')}${remaining ? `；另有 ${remaining} 项变更见下方列表` : ''}。`
 }
 
 function onlineResult(content, model, secrets) {
@@ -101,7 +136,10 @@ export function prepareWriterEvidence(evidence) {
 
 export async function writeDailyReleaseNotes(evidence, options = {}) {
   const fallback = (reason) => ({
-    notes: dailyReleaseNotes({ changes: evidence.commitsMarkdown }),
+    notes: dailyReleaseNotes({
+      changes: evidence.commitsMarkdown,
+      overview: mechanicalReleaseOverview(evidence.commitsMarkdown),
+    }),
     mode: 'mechanical',
     reason,
     attempts: [],
@@ -124,7 +162,12 @@ export async function writeDailyReleaseNotes(evidence, options = {}) {
         { role: 'user', content: JSON.stringify(prepared) },
       ],
       (content, model) => onlineResult(content, model, [options.apiKey, options.copilotToken]),
-      () => ({ notes: dailyReleaseNotes({ changes: evidence.commitsMarkdown }) }),
+      () => ({
+        notes: dailyReleaseNotes({
+          changes: evidence.commitsMarkdown,
+          overview: mechanicalReleaseOverview(evidence.commitsMarkdown),
+        }),
+      }),
       options,
     )
     return { ...value, ...writer }
