@@ -64,6 +64,12 @@ for (const [name, overrides] of [
   ],
 ]) {
   const result = await writeDailyReleaseNotes(evidence, { ...options, ...overrides })
+  if (
+    name === 'all-fail-to-mechanical' &&
+    (!result.notes.includes('本版主要更新：') ||
+      result.notes.includes('本版更新内容见以下提交记录及对应功能文档。'))
+  )
+    throw Error('Mechanical fallback did not summarize the actual commit evidence')
   renderReleaseNotes(result.notes, {
     version: '0.2.21',
     officialVersion: '0.2.0-rc.2',

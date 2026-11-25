@@ -273,7 +273,8 @@ test('automatic Chinese release notes retain original commit text and render all
   })
   assert.ok(notes.startsWith('官方 DeepSeek Harness：'))
   assert.ok(notes.includes(changes))
-  assert.ok(notes.includes('本版更新内容见以下提交记录及对应功能文档。'))
+  assert.ok(notes.includes('本版主要更新：修复：preserve draft。'))
+  assert.ok(!notes.includes('本版更新内容见以下提交记录及对应功能文档。'))
   assert.ok(!notes.includes('自动语言整理不可用'))
   assert.ok(notes.includes('a'.repeat(40)))
   assert.ok(!notes.includes('{{'))
@@ -284,6 +285,26 @@ const notesEvidence = {
     '- fix: preserve draft ([查看提交](https://github.com/gaofeng21cn/opl-dsh/commit/abc))',
   diff: '- overwrite draft\n+ preserve draft',
 }
+
+test('mechanical overview derives concise copy from distinct commit subjects without rewriting details', async () => {
+  const evidence = {
+    commitsMarkdown: [
+      '- feat(models): add Argon pairing ([查看提交](https://github.com/gaofeng21cn/opl-dsh/commit/a))',
+      '- fix: preserve projectless draft ([查看提交](https://github.com/gaofeng21cn/opl-dsh/commit/b))',
+      '- fix: preserve projectless draft ([查看提交](https://github.com/gaofeng21cn/opl-dsh/commit/c))',
+      '- docs: explain Google login ([查看提交](https://github.com/gaofeng21cn/opl-dsh/commit/d))',
+      '- chore: update generated metadata ([查看提交](https://github.com/gaofeng21cn/opl-dsh/commit/e))',
+    ].join('\n'),
+  }
+  const result = await writeDailyReleaseNotes(evidence)
+  assert.ok(
+    result.notes.includes(
+      '本版主要更新：新增：add Argon pairing；修复：preserve projectless draft；文档更新：explain Google login；另有 1 项变更见下方列表。',
+    ),
+  )
+  assert.ok(!result.notes.includes('本版更新内容见以下提交记录及对应功能文档。'))
+  assert.ok(result.notes.includes(evidence.commitsMarkdown))
+})
 
 test('shared source download or import failure never prevents mechanical publication', async (t) => {
   const old = process.env.OPL_RELEASE_NOTES_WRITER_MODULE
@@ -411,6 +432,8 @@ test('credential absence, provider failures and malformed or incomplete replies 
   for (const result of results) {
     assert.equal(result.mode, 'mechanical')
     assert.ok(result.notes.includes(notesEvidence.commitsMarkdown))
+    assert.ok(result.notes.includes('本版主要更新：修复：preserve draft。'))
+    assert.ok(!result.notes.includes('本版更新内容见以下提交记录及对应功能文档。'))
     assert.ok(result.notes.includes('OPL_DSH_RELEASE_NOTES:mechanical'))
     assert.ok(!JSON.stringify(result).includes('secret-fixture-key'))
     assert.doesNotThrow(() =>
