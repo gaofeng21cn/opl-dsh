@@ -60,6 +60,9 @@ export function apply(ctx: Context, navigation: { openModels?: () => void } = {}
                 remoteCall(models)('activate', { id, enabled }),
             }
           : {}),
+        codexTargets: () => call('codexTargets'),
+        configureCodex: (target, distro, install) =>
+          call('configureCodex', target, distro, install),
         status: () => call('status'),
         signIn: (email, password, remember) => call('signIn', email, password, remember),
         rememberedLogin: () => call('rememberedLogin'),

@@ -2,6 +2,8 @@
 
 你可以留在一个 Codex 聊天里，把项目中的一部分工作交给 DSH 用指定模型执行，再让 Codex 检查结果。例如，让 DeepSeek 查日志，让另一个模型审查修复，最后回到同一个聊天看结论。第一次建议从读取一个文件开始，这样你能亲自核对结果。
 
+如果只想在 Codex 聊天里直接使用 OPL 网关的模型，请看[配置外部 Codex](first-run.md#在-codex-中使用-opl-网关)。下面的步骤用于让 DSH 接收 Codex 派发的任务并回传结果。
+
 ## 第一次配置
 
 1. 在同一台电脑上装好并打开 Codex，再[安装 OPL DSH](../README.md#下载安装)。打开 **DeepSeek Harness**，连接你有权使用的模型来源，先在 DSH 里成功发一条消息。已有可用的 DeepSeek + DSH 组合就够了。其他组合见[模型与执行组合](model-harness-guide.md)。

@@ -71,6 +71,7 @@ One Person Lab 面向论文、基金申请、研究报告等需要多轮审阅�
 | 想做什么 | 从这里开始 |
 | --- | --- |
 | 换模型来源，或确认组合支持哪些权限和输入 | [OFM 免费模型](docs/model-harness-architecture.md#第三方模型插件) · [MiniMax 官方账号](docs/minimax-code.md) · [Google 账号与 Antigravity CLI](docs/model-harness-guide.md#换一种模型来源时哪些步骤会变) · [各渠道与执行引擎的适配范围](docs/harness-adaptation.md) |
+| 在 Codex 中使用 OPL Gateway 的模型 | 在 DSH 的「设置 → 网关账户 → 配置外部 Codex」中一键配置。Windows 可选原生或 WSL 环境，macOS 使用系统钥匙串。[配置步骤](docs/first-run.md#在-codex-中使用-opl-网关) |
 | 给团队成员分配不同引擎，或从仓库接收任务 | [DSH 团队与角色](docs/cross-harness-team.md) · [SuperAgent 仓库协作](docs/superagent.md) |
 | 管理长对话上下文 | DSH 引擎默认启用 [Billion Context](https://github.com/ranxianglei/billion-context)。在新会话输入 `/acp` 查看压缩状态。在「插件 → 已安装插件」停用或卸载后重启，可恢复 DSH 自带的压缩。 |
 | 在对话中搜索网页 | 登录 OPL Gateway 后，默认通过网关使用 GPT-6.1 Sol 搜索，无需另配搜索密钥。如果已配置 DeepSeek 官方 API Key，可在「设置 → 网页搜索与获取」的「搜索」中选择 **DeepSeek Search API**，直接使用 DeepSeek 官方搜索。 |

@@ -201,3 +201,46 @@ it('keeps group activation switches non-wrapping and deduplicates shared proxy h
   expect(text).toContain('无法连接目录服务，请检查网络和推理地址。')
   expect(text.split('HTTPS_PROXY/HTTP_PROXY')).toHaveLength(2)
 })
+
+it.each([
+  [true, 'unconfigured', true],
+  [false, 'ready', false],
+  [undefined, 'ready', true],
+  [undefined, 'unconfigured', false],
+] as const)(
+  'shows external Codex setup for group authorization %s and local credential state %s',
+  async (authorized, state, visible) => {
+    const container = createTestDom().container()
+    const root = createRoot(container as unknown as HTMLElement)
+    roots.push(root)
+    const status = {
+      phase: 'connected' as const,
+      source: 'session' as const,
+      endpoint: 'https://fixture.invalid',
+      keyReady: false,
+      groups: [
+        {
+          id: 'codex' as const,
+          name: 'OpenAI 协议',
+          enabled: false,
+          ...(authorized === undefined ? {} : { authorized }),
+          state,
+        },
+      ],
+    }
+    await act(async () =>
+      root.render(
+        <OplGatewaySection
+          status={async () => status}
+          refresh={async () => status}
+          signOut={async () => status}
+          signIn={async () => ({ status, createdKey: false })}
+          codexTargets={async () => ({ platform: 'win32', distros: [] })}
+          configureCodex={async () => ({ configured: true, needsInstall: false, message: 'OK' })}
+          t={((key: keyof typeof zh) => zh[key]) as never}
+        />,
+      ),
+    )
+    expect(container.textContent.includes('配置外部 Codex')).toBe(visible)
+  },
+)

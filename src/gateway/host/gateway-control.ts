@@ -446,6 +446,24 @@ export class GatewayControlClient {
       },
     })
   }
+
+  /** Deactivate a newly issued key and confirm the same key's resulting state. */
+  async deactivateKey(accessToken: string, id: string): Promise<void> {
+    const path = `/keys/${encodeURIComponent(id)}`
+    try {
+      await this.request(path, { method: 'PUT', accessToken, body: { status: 'inactive' } })
+    } catch {
+      // The request may have committed before its response was lost.
+    }
+    const value = record(await this.request(path, { accessToken }))
+    const key = isRecord(value.key) ? value.key : value
+    const status = text(key.status)
+    if (
+      identifier(key.id ?? key.key_id ?? key.keyId) !== id ||
+      (status !== 'inactive' && status !== 'disabled')
+    )
+      throw new GatewayControlError('key_unavailable', 'OPL Gateway did not confirm deactivation')
+  }
 }
 
 /** Normalize one key object, or nothing when it carries no usable key. */
