@@ -6,7 +6,7 @@
 
 | 文档 | 职责 |
 | --- | --- |
-| [首次启动与登录](first-run.md) | 桌面/Linux 首启、登录路径（含 Windows 记住密码）与官方欢迎窗口衔接 |
+| [首次启动与登录](first-run.md) | 桌面/Linux 首启、登录路径（含 Windows 记住密码）、官方欢迎窗口衔接，以及[在 Codex 中使用 OPL 网关](first-run.md#在-codex-中使用-opl-网关) |
 | [日常使用指南](everyday-guide.md) | 无项目聊天、会话清理、编辑与轮次统计、通用设置、文件交付、系统通知、更新、超时与用量 |
 | [模型与执行组合指南](model-harness-guide.md) | 用户侧模型来源、执行引擎检测/更新与执行组合上手指南 |
 | [官方 MiniMax 账号与 mcode](minimax-code.md) | MiniMax 官方账号与 `mcode` 集成、登录、代理、权限与 Skill 委派 |
