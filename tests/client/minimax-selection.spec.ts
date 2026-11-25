@@ -26,6 +26,8 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   IconCheckOutlineRegular: () => null,
   IconChevronDownOutlineRegular: () => null,
   IconChevronRightOutlineRegular: () => null,
+  MenuGroup: ({ label, children }: { label: string; children: ReactNode }) =>
+    React.createElement('section', { role: 'group', 'aria-label': label }, label, children),
   StateDot: () => null,
   MenuSurface: React.forwardRef(function MenuSurface(
     props: { children?: ReactNode; role?: string; 'aria-label'?: string },

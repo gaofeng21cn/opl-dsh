@@ -72,12 +72,7 @@
   overflow: hidden;
 }
 .pane {
-  min-width: min(260px, calc(100vw - 32px));
-  max-width: min(480px, calc(100vw - 32px));
-  color: var(--dsw-alias-label-primary);
-  display: flex;
-  flex-direction: column;
-  padding: 4px;
+  min-width: 0;
 }
 .cell {
   box-sizing: border-box;
@@ -128,9 +123,6 @@
   min-height: 0;
   overflow-y: auto;
 }
-.group + .group {
-  margin-top: 3px;
-}
 .groupTitle {
   position: sticky;
   top: 0;
@@ -176,7 +168,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 18px;
 }
 .unavailableReason {

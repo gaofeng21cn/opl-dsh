@@ -9,6 +9,7 @@ import {
   IconCheckOutlineRegular,
   IconChevronDownOutlineRegular,
   IconChevronRightOutlineRegular,
+  MenuGroup,
   MenuSurface,
   StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -724,10 +725,9 @@ export function CombinationSelect({
               {error}
             </div>
           )}
-          <div className={`${css.groups} scrollable`}>
+          <div className={inOfficialPane ? undefined : `${css.groups} scrollable`}>
             {[...grouped].map(([source, choices]) => (
-              <section key={source} className={css.group} role="group" aria-label={source}>
-                <div className={css.groupTitle}>{source}</div>
+              <MenuGroup key={source} label={source}>
                 {choices.map((choice) => {
                   const selectedChoice = selected?.combination.id === choice.combination.id
                   return (
@@ -757,7 +757,7 @@ export function CombinationSelect({
                     </button>
                   )
                 })}
-              </section>
+              </MenuGroup>
             ))}
             {paneChoices.length === 0 && (
               <div className={css.empty} role={loadingCatalog ? 'status' : undefined}>
