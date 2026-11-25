@@ -962,8 +962,25 @@ export async function main(
       case 'stop-watch':
         await coordinator.status(flags.project)
         result = await withSettings(root, codexHome, async (current) => {
-          current.watchMode = command === 'start-watch' ? 'auto' : 'manual'
-          await atomicWrite(join(root, 'settings.json'), jsonText(current))
+          const watchMode = command === 'start-watch' ? 'auto' : 'manual'
+          if (current.watchMode !== watchMode) {
+            current.watchMode = watchMode
+            const path = join(root, 'settings.json')
+            for (let attempt = 0; ; attempt++) {
+              try {
+                await atomicWrite(path, jsonText(current))
+                break
+              } catch (error) {
+                if (
+                  process.platform !== 'win32' ||
+                  error.syscall !== 'rename' ||
+                  !['EPERM', 'EACCES', 'EBUSY'].includes(error.code) ||
+                  attempt >= 8
+                ) throw error
+                await delay(5 * (attempt + 1))
+              }
+            }
+          }
           return command === 'start-watch'
             ? ensureWatcher({
                 root,

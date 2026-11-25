@@ -8,7 +8,7 @@ import { Readable } from 'node:stream'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
-import { watch as watchFile } from 'node:fs'
+import fs, { watch as watchFile } from 'node:fs'
 import { main, resolveNodeRuntime } from '../installer/skill/coordinator/cli.mjs'
 import { ProjectStore } from '../installer/skill/coordinator/state.mjs'
 
@@ -1053,6 +1053,37 @@ test('the shipped entrypoint registers, reads, pauses and resumes an isolated pr
   assert.equal(resumed.mode, 'active')
   assert.equal(resumed.authorityEpoch, 3)
   assert.equal((await run(['status'])).length, 1)
+})
+
+test('watch mode writes only on a change and survives a transient Windows rename refusal', async (t) => {
+  const f = await fixture(t)
+  await f.run(['init', '--file', f.planFile])
+  const path = join(f.root, 'settings.json')
+  const rename = fs.rename
+  let attempts = 0
+  t.mock.method(fs, 'rename', function (from, to, callback) {
+    if (to === path) {
+      attempts++
+      if (process.platform === 'win32' && attempts === 1) {
+        callback(
+          Object.assign(new Error('fixture sharing violation'), {
+            code: 'EPERM',
+            syscall: 'rename',
+          }),
+        )
+        return
+      }
+    }
+    return rename(from, to, callback)
+  })
+  assert.equal((await f.run(['start-watch', '--project', 'exact-project'])).code, 0)
+  assert.equal(attempts, 0)
+  assert.equal((await f.run(['stop-watch', '--project', 'exact-project'])).code, 0)
+  assert.equal(JSON.parse(await readFile(path, 'utf8')).watchMode, 'manual')
+  const expected = process.platform === 'win32' ? 2 : 1
+  assert.equal(attempts, expected)
+  assert.equal((await f.run(['stop-watch', '--project', 'exact-project'])).code, 0)
+  assert.equal(attempts, expected)
 })
 
 test('an isolated real independent watcher acknowledges startup and exits after its stop file', async (t) => {
