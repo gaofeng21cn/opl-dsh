@@ -157,7 +157,7 @@ function resolverContext(
   ]
   const names: Record<string, string> = {
     'opl-gateway': 'OPL Gateway',
-    [PROVIDER]: 'MiniMax 官方账号（mcode）',
+    [PROVIDER]: 'MiniMax',
   }
   const ctx = {
     llm: {
@@ -228,14 +228,14 @@ function combinationOf(catalog: ExecutionCatalog, model: string) {
 /* ------------------------------------------------------------------ the adapter surface */
 
 describe('MiniMax Code native model adapter', () => {
-  it('advertises exactly the two official account models, with no other entry', async () => {
+  it('advertises only MiniMax M3.1 Flash, with no other entry', async () => {
     const ctx = await llmSurface()
     expect(ctx.llm.listProviders()).toContainEqual({
       id: PROVIDER,
-      name: 'MiniMax 官方账号（mcode）',
+      name: 'MiniMax',
     })
     const models = await ctx.llm.listModels(PROVIDER)
-    expect(models.map((model) => model.id)).toEqual([M3_FLASH, M3])
+    expect(models.map((model) => model.id)).toEqual([M3_FLASH])
     for (const model of models) {
       expect(model.provider).toBe(PROVIDER)
       expect(model.name.trim()).not.toBe('')
@@ -298,8 +298,8 @@ describe('MiniMax Code native model adapter', () => {
     expect(catalog.failures).toEqual([])
     expect(catalog.routableProviders).toEqual([PROVIDER])
     const group = catalog.groups.find((item) => item.id === PROVIDER)
-    expect(group?.name).toBe('MiniMax 官方账号（mcode）')
-    expect(group?.models.map((item) => item.id)).toEqual([M3_FLASH, M3])
+    expect(group?.name).toBe('MiniMax')
+    expect(group?.models.map((item) => item.id)).toEqual([M3_FLASH])
     for (const model of group?.models ?? [])
       expect(model.reasoning?.defaultEffort).toBe(model.id === M3_FLASH ? 'max' : 'on')
   })
@@ -317,7 +317,7 @@ describe('MiniMax Code provider registration lifecycle', () => {
     sync()
     expect(ctx.llm.listProviders().map((item) => item.id)).toEqual([PROVIDER])
     sync()
-    expect(await ctx.llm.listModels(PROVIDER)).toHaveLength(2)
+    expect(await ctx.llm.listModels(PROVIDER)).toHaveLength(1)
 
     enabled = false
     sync()
@@ -328,14 +328,14 @@ describe('MiniMax Code provider registration lifecycle', () => {
     sync()
     sync()
     expect(ctx.llm.listProviders().map((item) => item.id)).toEqual([PROVIDER])
-    expect((await ctx.llm.listModels(PROVIDER)).map((item) => item.id)).toEqual(FIXED_MODELS)
+    expect((await ctx.llm.listModels(PROVIDER)).map((item) => item.id)).toEqual([M3_FLASH])
   })
 })
 
 /* ------------------------------------------------------------------ the execution catalog */
 
 describe('MiniMax Code execution catalog wiring', () => {
-  it('pairs each official model with the mcode harness and generates no second route', async () => {
+  it('pairs MiniMax M3.1 Flash with the mcode harness and generates no second route', async () => {
     const { resolver, probes, store, credentialLookups } = await resolverFixture({
       probe: async () => ({ available: true }),
     })
@@ -343,7 +343,7 @@ describe('MiniMax Code execution catalog wiring', () => {
 
     // One entry and one combination per model: no mirrored Gateway provider, no
     // `auto:` duplicate beside the fixed combination.
-    for (const model of FIXED_MODELS) {
+    for (const model of [M3_FLASH]) {
       const ref = { provider: PROVIDER, model }
       expect(entriesFor(catalog, ref), model).toHaveLength(1)
       expect(combinationsFor(catalog, ref), model).toHaveLength(1)
@@ -352,32 +352,26 @@ describe('MiniMax Code execution catalog wiring', () => {
       catalog.combinations
         .filter((item) => item.id.startsWith(MINIMAX_CODE_HARNESS + '/'))
         .map((item) => item.id),
-    ).toEqual([FLASH_COMBINATION, M3_COMBINATION])
+    ).toEqual([FLASH_COMBINATION])
     expect(catalog.combinations.some((item) => item.id.startsWith('auto:'))).toBe(false)
 
     const flash = combinationOf(catalog, M3_FLASH)
     expect(flash).toMatchObject({
       id: FLASH_COMBINATION,
-      name: M3_FLASH,
+      name: 'MiniMax M3.1 Flash + MiniMax Code',
       harnessRef: MINIMAX_CODE_HARNESS,
       permissionPolicy: 'full-access',
       isDefault: true,
       enabled: true,
     })
     expect(flash.modelRef).toEqual({ provider: PROVIDER, model: M3_FLASH })
-    const m3 = combinationOf(catalog, M3)
-    expect(m3).toMatchObject({
-      id: M3_COMBINATION,
-      name: M3,
-      harnessRef: MINIMAX_CODE_HARNESS,
-    })
-    expect(m3.modelRef).toEqual({ provider: PROVIDER, model: M3 })
+    expect(combinationsFor(catalog, { provider: PROVIDER, model: M3 })).toHaveLength(0)
 
     // A default route may not be attached to the DSH loop: DSH cannot serve an
     // account model that belongs to another CLI.
     expect(defaultHarness({ provider: PROVIDER, model: M3_FLASH })).toBe(MINIMAX_CODE_HARNESS)
     expect(defaultHarness({ provider: PROVIDER, model: M3 })).toBe(MINIMAX_CODE_HARNESS)
-    for (const model of FIXED_MODELS)
+    for (const model of [M3_FLASH])
       expect(adapterFor(MINIMAX_CODE_HARNESS, { provider: PROVIDER, model })?.id).toBe(
         MINIMAX_CODE_HARNESS,
       )
@@ -391,22 +385,22 @@ describe('MiniMax Code execution catalog wiring', () => {
         .filter((ref) => ref.provider === PROVIDER)
         .map((ref) => ref.model)
         .sort(),
-    ).toEqual([...FIXED_MODELS].sort())
-    for (const model of FIXED_MODELS)
+    ).toEqual([M3_FLASH])
+    for (const model of [M3_FLASH])
       expect(catalog.models.find((item) => item.ref.model === model)).toMatchObject({
         available: true,
-        source: 'MiniMax 官方账号（mcode）',
+        source: 'MiniMax',
       })
     // No credential is ever resolved for an account model: the CLI owns its own
     // login, so availability never comes from a Gateway credential reference.
     expect(credentialLookups.filter((name) => name.includes('minimax'))).toEqual([])
 
-    // A persisted catalog resolves to the same two routes: no duplicate appears
+    // A persisted catalog resolves to the same route: no duplicate appears
     // on a second pass, and the fixed pairs survive a reload.
     await store.set(catalog)
     const again = await resolver.resolve()
     expect(combinationsFor(again, { provider: PROVIDER, model: M3_FLASH })).toHaveLength(1)
-    expect(combinationsFor(again, { provider: PROVIDER, model: M3 })).toHaveLength(1)
+    expect(combinationsFor(again, { provider: PROVIDER, model: M3 })).toHaveLength(0)
   })
 
   it('hides the complete catalog projection while preserving official and custom mcode rows', async () => {
@@ -455,7 +449,7 @@ describe('MiniMax Code execution catalog wiring', () => {
 
     const persisted = await initial.store.get()
     expect(combinationsFor(persisted, { provider: PROVIDER, model: M3_FLASH })).toHaveLength(1)
-    expect(combinationsFor(persisted, { provider: PROVIDER, model: M3 })).toHaveLength(1)
+    expect(combinationsFor(persisted, { provider: PROVIDER, model: M3 })).toHaveLength(0)
     expect(persisted.combinations.find((item) => item.id === 'custom-mcode-route')).toMatchObject({
       harnessRef: MINIMAX_CODE_HARNESS,
       enabled: true,
@@ -467,14 +461,14 @@ describe('MiniMax Code execution catalog wiring', () => {
       probe: async () => ({ available: false, reason: 'mcode 未安装或未登录' }),
     })
     const catalog = await resolver.resolve()
-    for (const model of FIXED_MODELS) {
+    for (const model of [M3_FLASH]) {
       expect(
         catalog.models.find((item) => item.ref.model === model),
         model,
       ).toMatchObject({
         available: false,
         reason: 'mcode 未安装或未登录',
-        source: 'MiniMax 官方账号（mcode）',
+        source: 'MiniMax',
       })
       const combinations = combinationsFor(catalog, { provider: PROVIDER, model })
       expect(
@@ -497,9 +491,9 @@ describe('MiniMax Code execution catalog wiring', () => {
       probe: async () => ({ available: true }),
     })
     const catalog = await resolver.resolve()
-    for (const model of FIXED_MODELS) {
+    for (const model of [M3_FLASH]) {
       const entry = catalog.models.find((item) => item.ref.model === model)
-      expect(entry, model).toMatchObject({ available: true, source: 'MiniMax 官方账号（mcode）' })
+      expect(entry, model).toMatchObject({ available: true, source: 'MiniMax' })
       expect(entry?.reason, model).toBeUndefined()
     }
     expect(catalog.combinations.some((item) => item.id.startsWith('auto:'))).toBe(false)
@@ -508,7 +502,7 @@ describe('MiniMax Code execution catalog wiring', () => {
   it('keeps the official CLI verdict when the account provider is registered', async () => {
     // The product path: `src/suite/execution.ts` registers `minimax-official`
     // through `ctx.llm.registerAdapter`, so `listProviders()`/`listModels()` do
-    // return the two models. The default `configured` of a listed provider is
+    // return the current model. The default `configured` of a listed provider is
     // not a readiness verdict — the CLI probe owns availability, in both
     // directions.
     const registered = {
@@ -523,7 +517,7 @@ describe('MiniMax Code execution catalog wiring', () => {
       probe: async () => ({ available: false, reason: '官方 mcode 尚未登录' }),
     })
     const offlineCatalog = await offline.resolver.resolve()
-    for (const model of FIXED_MODELS) {
+    for (const model of [M3_FLASH]) {
       expect(
         offlineCatalog.models.find((item) => item.ref.model === model),
         model,
@@ -539,13 +533,13 @@ describe('MiniMax Code execution catalog wiring', () => {
       probe: async () => ({ available: true }),
     })
     const onlineCatalog = await online.resolver.resolve()
-    for (const model of FIXED_MODELS) {
+    for (const model of [M3_FLASH]) {
       expect(
         onlineCatalog.models.find((item) => item.ref.model === model),
         model,
       ).toMatchObject({
         available: true,
-        source: 'MiniMax 官方账号（mcode）',
+        source: 'MiniMax',
       })
       expect(
         onlineCatalog.models.find((item) => item.ref.model === model)?.reason,
@@ -556,7 +550,7 @@ describe('MiniMax Code execution catalog wiring', () => {
       onlineCatalog.combinations
         .filter((item) => item.modelRef.provider === PROVIDER)
         .map((item) => item.id),
-    ).toEqual([FLASH_COMBINATION, M3_COMBINATION])
+    ).toEqual([FLASH_COMBINATION])
     // No Gateway credential is consulted for an account model, even when the
     // provider is listed in the live registry.
     expect(online.credentialLookups.filter((name) => name.includes('minimax'))).toEqual([])
@@ -569,7 +563,7 @@ describe('MiniMax Code execution catalog wiring', () => {
     const { store } = await resolverFixture()
     const bare = new ExecutionModelResolver(resolverContext().ctx as unknown as Context, store)
     const catalog = await bare.resolve()
-    for (const model of FIXED_MODELS) {
+    for (const model of [M3_FLASH]) {
       expect(
         catalog.models.find((item) => item.ref.model === model),
         model,
@@ -604,7 +598,7 @@ describe('MiniMax Code execution catalog wiring', () => {
         ),
     })
     const catalog = await resolver.resolve()
-    for (const model of FIXED_MODELS) {
+    for (const model of [M3_FLASH]) {
       const entry = catalog.models.find((item) => item.ref.model === model)
       expect(entry, model).toMatchObject({ available: false })
       expect((entry?.reason ?? '').length, model).toBeGreaterThan(0)
@@ -644,7 +638,7 @@ describe('MiniMax Code execution catalog wiring', () => {
     )
     // full-access is the permission the official CLI needs to be verifiable at all,
     // so it must survive a normalizer round-trip...
-    for (const id of [FLASH_COMBINATION, M3_COMBINATION])
+    for (const id of [FLASH_COMBINATION])
       expect(persisted.combinations.find((item) => item.id === id)?.permissionPolicy, id).toBe(
         'full-access',
       )
@@ -685,7 +679,7 @@ describe('MiniMax Code execution catalog wiring', () => {
       catalog.combinations.map((item) => [item.id, item.permissionPolicy]),
     )
     expect(permissions.get(FLASH_COMBINATION)).toBe('full-access')
-    expect(permissions.get(M3_COMBINATION)).toBe('full-access')
+    expect(permissions.has(M3_COMBINATION)).toBe(false)
     // The native DSH route keeps its restricted policy: the mcode exception may
     // not leak into the loop this suite runs for every other model.
     expect(permissions.get(DSH_COMBINATION)).not.toBe('full-access')
@@ -702,7 +696,7 @@ describe('MiniMax Code execution catalog wiring', () => {
     const onDisk = JSON.parse(await readFile(join(store.filename), 'utf8')) as {
       combinations: { id: string; permissionPolicy: string }[]
     }
-    for (const id of [FLASH_COMBINATION, M3_COMBINATION])
+    for (const id of [FLASH_COMBINATION])
       expect(onDisk.combinations.find((item) => item.id === id)?.permissionPolicy, id).toBe(
         'full-access',
       )

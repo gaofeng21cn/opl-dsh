@@ -6,6 +6,8 @@ import { OPL_GATEWAY_INFERENCE_BASE_URL } from './opl-credentials.ts'
 
 /** Exact input declarations; they neither advertise models nor verify Gateway image acceptance. */
 export const GATEWAY_MODEL_INPUT_DEFAULTS = [
+  { group: 'codex', id: 'gpt-6.2-astra', input: ['text', 'image'] },
+  { group: 'codex', id: 'gpt-6.2-sol', input: ['text', 'image'] },
   { group: 'codex', id: 'gpt-6-astra', input: ['text', 'image'] },
   { group: 'codex', id: 'gpt-6.1-sol', input: ['text', 'image'] },
   { group: 'codex', id: 'gpt-6-sol', input: ['text', 'image'] },

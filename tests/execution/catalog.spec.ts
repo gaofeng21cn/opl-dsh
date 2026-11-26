@@ -394,7 +394,9 @@ describe('user model choices', () => {
 
   it('does not replace official pairings or external recommendations with the native fallback', async () => {
     const { ExecutionModelResolver } = await import('../../src/execution/host/execution-models.ts')
-    const officialRef = { provider: 'opl-gateway', model: 'codex::gpt-6' }
+    const officialRef = { provider: 'opl-gateway', model: 'codex::gpt-6.2-astra' }
+    const googleProvider = 'antigravity-google'
+    const retiredDefaults = ['gemini-4-argon-medium', 'gemini-3.8-flash-high']
     const recommendedRef = {
       provider: 'our-free-model',
       model: 'nvidia/nemotron-3.5-super-vl:free',
@@ -405,6 +407,7 @@ describe('user model choices', () => {
         listProviders: () => [
           { id: officialRef.provider, name: 'Gateway' },
           { id: recommendedRef.provider, name: 'OFM' },
+          { id: googleProvider, name: 'Antigravity' },
         ],
         listConfigurableProviders: () =>
           [officialRef, recommendedRef].map((item) => ({
@@ -413,10 +416,13 @@ describe('user model choices', () => {
             settingsNs: 'test-models',
             settingsPath: [item.provider],
           })),
-        listModels: async (provider: string) =>
-          provider === officialRef.provider
-            ? [{ id: officialRef.model, name: 'GPT 6' }]
-            : [{ id: recommendedRef.model, name: 'Nemotron' }],
+        listModels: async (provider: string) => {
+          if (provider === officialRef.provider)
+            return [{ id: officialRef.model, name: 'GPT-6.2 Astra' }]
+          if (provider === googleProvider)
+            return [...retiredDefaults, 'gemini-4-carbon-high'].map((id) => ({ id, name: id }))
+          return [{ id: recommendedRef.model, name: 'Nemotron' }]
+        },
       },
     }
     const projected = await new ExecutionModelResolver(
@@ -440,6 +446,20 @@ describe('user model choices', () => {
     expect(projected.recommendations).toContainEqual(
       expect.objectContaining({ modelRef: recommendedRef, harnessRef: 'opencode' }),
     )
+    expect(
+      projected.combinations.filter((item) => item.modelRef.provider === googleProvider),
+    ).toEqual([
+      expect.objectContaining({
+        modelRef: { provider: googleProvider, model: 'gemini-4-carbon-high' },
+        harnessRef: 'antigravity',
+        isDefault: true,
+      }),
+    ])
+    expect(
+      projected.models
+        .filter((item) => item.ref.provider === googleProvider)
+        .map((item) => item.ref.model),
+    ).toEqual([...retiredDefaults, 'gemini-4-carbon-high'])
   })
 
   it.each([
@@ -457,7 +477,7 @@ describe('user model choices', () => {
     },
     {
       modelRef: { provider: 'minimax-official', model: 'external-cli-only-model' },
-      advertised: true,
+      advertised: false,
     },
   ])(
     'does not treat owned source $modelRef.provider as a native custom fallback',

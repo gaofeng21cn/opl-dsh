@@ -402,23 +402,23 @@ export async function verifyDesktopClient(
       '通用设置',
       '网关账户',
       '模型供应商',
-      'OFM 模型服务',
       '执行与组合',
       'Agent 预设',
       '协作与自动化',
       '插件管理',
-      ...(billionContextEnabled ? ['bili设置'] : []),
+      'Our Free Model',
+      ...(billionContextEnabled ? ['Billion Context'] : []),
     ],
     [
       'General',
       'Gateway',
       'Model providers',
-      'OFM services',
       'Execution',
       'Agent presets',
       'Collaboration',
       'Plugins',
-      ...(billionContextEnabled ? ['bili'] : []),
+      'Our Free Model',
+      ...(billionContextEnabled ? ['Billion Context'] : []),
     ],
   ]
   await waitFor(
@@ -1116,10 +1116,7 @@ export async function verifyDesktopClient(
     else result.screenshotFailures.push(panel.marker)
     result.settingsSlots.push(panel.marker)
   }
-  await waitFor(
-    clickLabel(['OFM 模型服务', 'OFM services'], settingsNav),
-    '原版模型插件设置入口未注册',
-  )
+  await waitFor(clickLabel(['Our Free Model'], settingsNav), '原版模型插件设置入口未注册')
   await waitFor(
     "Boolean(document.querySelector('.ofm_root')?.getClientRects().length)",
     '原版模型插件设置页未加载',

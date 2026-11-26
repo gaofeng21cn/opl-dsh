@@ -6,7 +6,7 @@
  * Nothing here consults the OPL Gateway, so a MiniMax combination never depends on a
  * Gateway key and a missing `mcode login` is never reported as a Gateway problem.
  *
- * The product exposes exactly two models. What each one can be told to do is taken from
+ * The adapter keeps the current and legacy models addressable. What each one can be told to do is taken from
  * the installed CLI itself rather than assumed, and the two models differ in kind:
  *
  *  - `MiniMax-M3.1-Flash` declares
@@ -49,7 +49,7 @@ const ACP_PROVIDER = 'minimax'
 const SET_CONFIG_OPTION = 'session/set_config_option'
 const MODEL_OPTION = 'model'
 const THINKING_EFFORT_OPTION = 'thinkingEffort'
-const M3_FLASH = 'MiniMax-M3.1-Flash'
+export const MINIMAX_DEFAULT_MODEL = 'MiniMax-M3.1-Flash'
 const M3 = 'MiniMax-M3'
 /**
  * `iKn` in the official Runtime publishes a catalog's `none-thinking` variant as the
@@ -104,9 +104,9 @@ export interface MinimaxCombination {
  */
 export const minimaxCodeCombinations = (): readonly MinimaxCombination[] => [
   {
-    model: M3_FLASH,
-    combination: `${MINIMAX_CODE_HARNESS}/${M3_FLASH}`,
-    name: M3_FLASH,
+    model: MINIMAX_DEFAULT_MODEL,
+    combination: `${MINIMAX_CODE_HARNESS}/${MINIMAX_DEFAULT_MODEL}`,
+    name: 'MiniMax M3.1 Flash',
     // The effort control only appears after the model is selected, so a chosen effort
     // cannot be validated from the initial `session/new` advertisement.
     control: {

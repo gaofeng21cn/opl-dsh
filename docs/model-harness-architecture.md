@@ -63,7 +63,7 @@ OPL 从官方 LLM 注册表读取插件公开的 Provider 和模型，以原始 
 
 ## 设置与使用
 
-- **Computer Use**：原生 DSH Agent 通过单一 `computer_use` 工具调用 KimiCU 原始 MCP 动作，桌面变更要求会话显式“完全访问”；详情见[桌面观察与操作](computer-use.md)。
+- **Computer Use** 由桌面随附的官方插件管理权限与原生工具。KimiCU 继续提供已有的 `computer_use` 工具，桌面变更要求会话显式选择“完全访问”。详见[桌面观察与操作](computer-use.md)。
 - **推理档位默认值**：DeepSeek 4.1 Flash 的 DeepSeek 与 OpenAI 协议渠道默认推理档位为 `high`；GPT 模型默认 `medium`。MiniMax M3.1 默认 `max`，M3 默认开启思考。默认值仅在未选择档位时使用，同一对话按模型和渠道保存的选择优先，切换模型不沿用其他模型的档位。外部 Harness 在切换组合后自动读取官方能力并显示已确认档位（Antigravity 与 Grok 默认 `high`，不支持档位的组合不显示选项），能力读取不发送模型提示词。
 - **OPL Gateway / 模型**：账号页管登录、用量、分组权限与凭据；模型页沿用官方页面并置顶 OPL Gateway，默认平铺模型（高级字段在编辑区展开）。
 - **Harness**：检测安装、版本与路径，区分文件存在与版本验证成功，Windows npm 入口选择 `.cmd` 等可执行启动器；ZCode 桌面入口不在检测时启动。内置 DSH 随官方桌面更新，不可删除。执行引擎页常显 DSH、Codex CLI、Claude Code、Grok Build、Antigravity CLI 与 OpenCode，其余已适配引擎收在“更多执行引擎”中；未提供一键安装的引擎保留官方说明与路径登记入口。
@@ -79,7 +79,7 @@ MiniMax 官方账号与 mcode ACP 专用集成的开关归唯一偏好 `opl-exec
 
 每个原生对话选中的组合 ID 保存在 OPL 自有的 `combination-selection.json`，用于重启后区分同一模型的多个自定义组合，冷会话通过公开 `session.projections` 读取。
 
-执行器使用官方 DSH、Grok Build、本机 Codex CLI 的 app-server，以及官方 Claude Agent SDK 驱动的本机 Claude Code，Codex 与 Claude 的配置及会话保存在套件自有目录。OpenCode 也可承载 OPL Gateway Gemini 的四项 `GATEWAY_ANTIGRAVITY_GEMINI_MODELS`（Gemini 4 Carbon、Gemini 4 Hydrogen、Gemini 4 Argon 与 Gemini 3.8 Flash），Pi 可承载 Carbon 与 Hydrogen，具体协议与推理边界见[外部 Harness 适配](harness-adaptation.md)。Antigravity 暂仅支持本机管理；Claude Code 的官方 SDK 思考增量独立显示，不显示签名。
+执行器使用官方 DSH、Grok Build、本机 Codex CLI 的 app-server，以及官方 Claude Agent SDK 驱动的本机 Claude Code，Codex 与 Claude 的配置及会话保存在套件自有目录。OPL Gateway Gemini 默认组合使用 Gemini 4 Carbon 或 Gemini 4 Hydrogen 搭配 Antigravity。两者也可配合 Pi，OpenCode 可手动配对。具体协议和推理边界见[外部 Harness 适配](harness-adaptation.md)。Antigravity 暂仅支持本机管理；Claude Code 的官方 SDK 思考增量独立显示，不显示签名。
 
 图片经官方附件服务接收与读取；外部轮次只持久化附件引用，发送时编码，要求模型来源与 CLI 均声明支持图片（Grok Build `1.0.46` 除外，按已验证版本识别）。各 Harness 协作工具与 Codex Skill 可先查询可用组合再按组合 ID 派发。官方具名 Subagent provider 与 `preset/persona` 适合固定配置的一次性任务，不替代需要连续会话、流式工具或交付验收的组合目录。
 

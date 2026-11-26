@@ -329,7 +329,10 @@ function CombinationRow({
     item.modelRef.provider === 'opl-gateway' && routeSeparator >= 0
       ? item.modelRef.model.slice(routeSeparator + 2)
       : item.modelRef.model
-  const description = `${source} · ${modelName} · ${harness?.name ?? item.harnessRef}`
+  const harnessName = harness?.name ?? item.harnessRef
+  const hasHarnessLabel =
+    item.name.includes(` + ${harnessName}`) || item.name.endsWith(` · ${harnessName}`)
+  const description = `${source} · ${modelName} · ${harnessName}`
   return (
     <details
       className={listCss.item}
@@ -343,6 +346,7 @@ function CombinationRow({
       <summary className={listCss.summary}>
         <span className={listCss.name} title={`${item.name} · ${description}`}>
           {item.name}
+          {hasHarnessLabel ? null : ` · ${harnessName}`}
         </span>
         <span className={listCss.metadata}>
           <ModelAvailabilityStatus {...availabilityState} />

@@ -2206,7 +2206,7 @@ describe('native conversation combinations', () => {
       'OPL Gateway',
     ])
   })
-  it('keeps Antigravity as the Gateway Gemini default and offers compatible alternatives', async () => {
+  it('defaults to the current Antigravity routes and keeps OpenCode available for manual pairings', async () => {
     vi.stubEnv('USERPROFILE', join(tmpdir(), 'opl-gemini-opencode-absent-cli'))
     vi.stubEnv('HOME', join(tmpdir(), 'opl-gemini-opencode-absent-cli'))
     vi.stubEnv('PATH', '')
@@ -2232,28 +2232,14 @@ describe('native conversation combinations', () => {
         harnessRef: 'antigravity',
         isDefault: true,
       },
-      {
-        modelRef: { model: 'gemini::gemini-4-argon' },
-        harnessRef: 'antigravity',
-        isDefault: true,
-      },
-      {
-        modelRef: { model: 'gemini::gemini-3.8-flash' },
-        harnessRef: 'antigravity',
-        isDefault: true,
-      },
     ])
     expect(
       catalog.recommendations
         ?.filter((item) => item.modelRef.model.startsWith('gemini::'))
         .map((item) => [item.modelRef.model, item.harnessRef]),
     ).toEqual([
-      ['gemini::gemini-4-carbon', 'opencode'],
       ['gemini::gemini-4-carbon', 'pi'],
-      ['gemini::gemini-4-hydrogen', 'opencode'],
       ['gemini::gemini-4-hydrogen', 'pi'],
-      ['gemini::gemini-4-argon', 'opencode'],
-      ['gemini::gemini-3.8-flash', 'opencode'],
     ])
     for (const model of [
       'gemini-4-carbon',

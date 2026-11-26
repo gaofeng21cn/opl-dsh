@@ -49,26 +49,31 @@ function label(value: StoredEntry): string | undefined {
 }
 
 describe('settings navigation presentation bridge', () => {
-  it('changes only known navigation metadata and restores it on unload', () => {
+  it('moves standalone plugins below built-in settings and restores metadata on unload', () => {
     const source = entry('our-free-model')
     const unknown = entry('another-plugin')
     const original = { ...source, options: { ...source.options } }
     const unknownOptions = { ...unknown.options }
-    const entries = [source, unknown]
+    const official = entry('official-extra')
+    official.registrant = '@deepseek-ai/dsh-example'
+    const plugins = entry('plugins', 1)
+    const entries = [source, unknown, official, plugins]
     const f = fixture(entries)
     expect(entries[0]).toBe(source)
-    expect(label(source)).toBe('OFM 模型服务')
-    expect(source.options.order).toBe(30)
+    expect(label(source)).toBe('Our Free Model')
+    expect(source.options.order).toBe(1000)
     expect(source.component).toBe(original.component)
     expect(source.inject).toBe(original.inject)
     expect(source.children).toBe(original.children)
     expect(source.locale).toBe(original.locale)
-    expect(unknown.options).toEqual(unknownOptions)
+    expect(unknown.options.order).toBeGreaterThan(plugins.options.order!)
+    expect(official.options.order).toBe(35)
     f.language('en')
-    expect(label(source)).toBe('OFM services')
+    expect(label(source)).toBe('Our Free Model')
     f.dispose()
     expect(source).toEqual(original)
-    expect(entries).toHaveLength(2)
+    expect(unknown.options).toEqual(unknownOptions)
+    expect(entries).toHaveLength(4)
   })
 
   it('adapts late registration and upstream hot reload without adding duplicate sections', () => {
@@ -77,12 +82,12 @@ describe('settings navigation presentation bridge', () => {
     const first = entry('our-free-model')
     entries.push(first)
     f.change()
-    expect(label(first)).toBe('OFM 模型服务')
+    expect(label(first)).toBe('Our Free Model')
     const reloaded = entry('our-free-model', 42)
     entries.splice(0, 1, reloaded)
     f.change()
-    expect(label(reloaded)).toBe('OFM 模型服务')
-    expect(reloaded.options.order).toBe(30)
+    expect(label(reloaded)).toBe('Our Free Model')
+    expect(reloaded.options.order).toBe(1000)
     expect(entries).toHaveLength(1)
     f.dispose()
     expect(reloaded.options.order).toBe(42)

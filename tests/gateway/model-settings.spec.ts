@@ -105,7 +105,7 @@ function fixture({ officialRedaction = false } = {}) {
   return { ctx, state, users, revisions, settings, discover, credentials, keys }
 }
 
-it('ships every supported Gemini route in the desktop profile', async () => {
+it('ships only the current Gemini defaults in the desktop profile', async () => {
   const patch = parse(await readFile(new URL('../../cordis.patch.yml', import.meta.url), 'utf8'))
   const models = patch.find((entry: { id: string }) => entry.id === 'llm-pi-ai').config.providers[
     'opl-gateway-gemini'
@@ -113,8 +113,6 @@ it('ships every supported Gemini route in the desktop profile', async () => {
   expect(models.map((model: { id: string }) => model.id)).toEqual([
     'gemini-4-carbon',
     'gemini-4-hydrogen',
-    'gemini-4-argon',
-    'gemini-3.8-flash',
   ])
 })
 
@@ -551,7 +549,7 @@ describe('protocol prefixes and bundle-owned migration', () => {
       { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro' },
     ],
   ])(
-    'upgrades an untouched legacy Gemini catalog to all four routes: %j',
+    'upgrades an untouched legacy Gemini catalog to Carbon and Hydrogen: %j',
     async (...legacyModels) => {
       const f = fixture()
       const profile = {
@@ -569,11 +567,11 @@ describe('protocol prefixes and bundle-owned migration', () => {
       expect(f.state['llm-pi-ai'].providers['opl-gateway-gemini'].models).toEqual([
         { id: 'gemini-4-carbon', name: 'Gemini 4 Carbon', input: ['text', 'image'] },
         { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', input: ['text', 'image'] },
-        { id: 'gemini-4-argon', name: 'Gemini 4 Argon', input: ['text', 'image'] },
-        { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', input: ['text', 'image'] },
       ])
       await migrateGatewayProtocolDefaults(f.ctx)
-      expect(f.settings.mutate).toHaveBeenCalledTimes(1)
+      expect(f.settings.mutate).toHaveBeenCalledTimes(
+        legacyModels[0]?.id === 'gemini-4-carbon' ? 0 : 1,
+      )
     },
   )
 
@@ -850,9 +848,9 @@ describe('per-group catalog observations', () => {
 
   it('keeps exact default inputs across discovery and repeated automatic imports', async () => {
     const f = fixture()
-    f.discover.mockResolvedValue([{ id: 'gpt-6-astra' }, { id: 'gpt-6.1-terra' }])
+    f.discover.mockResolvedValue([{ id: 'gpt-6.2-astra' }, { id: 'gpt-6.1-terra' }])
     const expected = [
-      { id: 'gpt-6-astra', input: ['text', 'image'] },
+      { id: 'gpt-6.2-astra', input: ['text', 'image'] },
       { id: 'gpt-6.1-terra', input: ['text', 'image'] },
     ]
     expect(await discoverGatewayModels(f.ctx, { group: 'codex' })).toEqual(expected)
@@ -866,11 +864,13 @@ describe('per-group catalog observations', () => {
   it('does not add catalog image inputs during custom-endpoint discovery or to an explicit text-only choice', async () => {
     const f = fixture(),
       profile = f.state['llm-pi-ai'].providers['opl-gateway-openai']
-    f.discover.mockResolvedValue([{ id: 'gpt-6-astra' }])
+    f.discover.mockResolvedValue([{ id: 'gpt-6.2-astra' }])
     profile.baseURL = 'https://tenant.invalid/v1'
-    expect(await discoverGatewayModels(f.ctx, { group: 'codex' })).toEqual([{ id: 'gpt-6-astra' }])
+    expect(await discoverGatewayModels(f.ctx, { group: 'codex' })).toEqual([
+      { id: 'gpt-6.2-astra' },
+    ])
     profile.baseURL = 'https://gateway.medopl.com/v1'
-    profile.models = [{ id: 'gpt-6-astra', input: ['text'], custom: { policy: 'manual' } }]
+    profile.models = [{ id: 'gpt-6.2-astra', input: ['text'], custom: { policy: 'manual' } }]
     expect(await discoverGatewayModels(f.ctx, { group: 'codex' })).toEqual(profile.models)
     await migrateGatewayProtocolDefaults(f.ctx)
     expect(f.settings.mutate).not.toHaveBeenCalled()
@@ -882,9 +882,9 @@ describe('per-group catalog observations', () => {
       .mockRejectedValueOnce(
         new LlmError('socket reset', 'DISCOVERY_FAILED', { cause: new TypeError('fetch failed') }),
       )
-      .mockResolvedValueOnce([{ id: 'gpt-6-astra' }])
+      .mockResolvedValueOnce([{ id: 'gpt-6.2-astra' }])
     expect(await discoverGatewayModels(f.ctx, { group: 'codex' })).toEqual([
-      { id: 'gpt-6-astra', input: ['text', 'image'] },
+      { id: 'gpt-6.2-astra', input: ['text', 'image'] },
     ])
     expect(f.discover).toHaveBeenCalledTimes(2)
 
@@ -902,7 +902,7 @@ describe('per-group catalog observations', () => {
       group: 'codex',
       revision: f.revisions['llm-pi-ai']!,
       api: 'openai-responses',
-      models: [{ id: 'gpt-6-astra' }],
+      models: [{ id: 'gpt-6.2-astra' }],
     })
     expect(
       (await gatewayModelSettings(f.ctx)).groups.find((g) => g.id === 'codex')?.catalog,

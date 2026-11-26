@@ -2,6 +2,8 @@
 
 2026-11-23 复核官方 `0.2.3-alpha.2`。macOS 和 Windows 安装 feed 均已指向 alpha.2，开发依赖和 SuperAgent 的 DSH peer 与官方 alpha.2 cohort 对齐。模型菜单、工作目录投影和可选 SQLite 会话存储都出现了新的公开接口或持久化路径，不能继续沿用 rc.5 的复用结论。用户安装的实际版本和双平台资格以各自回执为准。
 
+2026-11-26 复核 GitHub release、npm 和两个桌面安装清单。最新源码和 npm 开发依赖仍为 `0.2.3-alpha.2`，macOS 与 Windows 安装清单均返回 `0.2.2-rc.5`。安装器采用随实际发行版出货且支持当前平台的官方 Computer Use 插件，首次见到时写入桌面 profile 的官方 bundle 选择。之后由官方插件管理器负责启停。rc.5 的官方 Computer Use 支持 macOS。alpha.2 的 bundle 另声明 Windows 支持。现行 rc.5 的官方默认工具在 PTC 预设中提供，KimiCU 继续覆盖其余已有组合与 Windows 用途。
+
 OPL 先定义用户需要完成的任务，再选择能力负责人。官方已有的能力使用官方插件、公开 API 与持久状态；OPL 只补官方尚未覆盖的部分。官方后续补齐时，在同一升级任务中验证真实调用链、切换调用者并退役重复实现，避免把过渡适配变成永久分叉。
 
 ## 官方能力与保留边界

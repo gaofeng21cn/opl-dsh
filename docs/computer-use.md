@@ -1,8 +1,14 @@
-# 用 KimiCU 观察和操作桌面
+# 用 DSH 观察和操作桌面
 
 在 OPL DSH 中，你可以让原生 DSH 会话读取窗口、查看截图，也可以让它点击按钮或输入文字。第一次使用时，先选执行引擎为 **DSH** 的模型组合。其他 Harness 的桌面能力由各自的集成提供。
 
-官方 DSH 另有可选的实验性 CUA 插件。如果你同时启用了两者，想使用本页的功能，可以在请求里写“使用 KimiCU”，并在工具记录中核对 `computer_use`。使用官方 CUA 时，标准等非 PTC 预设通过 `cua_run_code` 操作桌面，PTC 预设则在 `run_code` 中使用 `cua`。通用设置里的「KimiCU 版本」只显示 KimiCU 的版本。
+## DSH 原生 Computer Use
+
+安装或升级 OPL DSH 时，如果官方桌面为当前系统随附 Computer Use，安装器会首次启用该插件。后续可在 **设置 → 插件管理 → Computer Use** 管理插件和权限。在 macOS，打开插件详情检查辅助功能和屏幕录制权限，按官方界面提示授权。使用官方 `0.2.2-rc.5` 时，在 DSH 会话切换到 **PTC 模式**，通过 `run_code` 调用 `cua`。Windows 的原生支持取决于桌面发行版随附的插件。
+
+## KimiCU
+
+已有 KimiCU 工作流继续通过 `computer_use` 调用。通用设置中的「KimiCU 版本」对应 KimiCU 组件。
 
 ## 首次使用前
 

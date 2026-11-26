@@ -54,6 +54,10 @@ function catalogModel(entry: (typeof GATEWAY_MODEL_INPUT_DEFAULTS)[number]) {
       : providers[entry.group]
   const found = provider.getModels().find((model) => model.id === entry.id)
   if (found) return found
+  if (entry.group === 'codex' && ['gpt-6.2-astra', 'gpt-6.2-sol'].includes(entry.id)) {
+    const template = provider.getModels().find((model) => model.id === 'gpt-6-astra')!
+    return { ...template, id: entry.id, name: entry.id }
+  }
   // gemini-4-carbon and gemini-4-hydrogen post-date the pinned 0.2.2-rc.3 pi-ai snapshot;
   // derive only the OpenAI Completions transport template from the family catalog entry.
   if (entry.group === 'gemini' && ANTIGRAVITY_GEMINI_IDS.has(entry.id)) {
@@ -76,9 +80,15 @@ describe('exact Gateway input defaults', () => {
       )
       if (seed) expect(seed.input).toEqual(model!.input)
       else
-        expect(['gpt-6.1-terra', 'gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.1-pro']).toContain(
-          entry.id,
-        )
+        expect([
+          'gpt-6.1-terra',
+          'gpt-6-astra',
+          'gpt-6.1-sol',
+          'gpt-6-sol',
+          'gemini-4-argon',
+          'gemini-3.8-flash',
+          'gemini-3.1-pro',
+        ]).toContain(entry.id)
       const draft = {
         id: entry.id,
         name: 'Manual label',
@@ -97,7 +107,7 @@ describe('exact Gateway input defaults', () => {
   )
 
   it('only fills the approved route/model pairs, preserving unknown and other-family IDs', () => {
-    expect(GATEWAY_MODEL_INPUT_DEFAULTS).toHaveLength(15)
+    expect(GATEWAY_MODEL_INPUT_DEFAULTS).toHaveLength(17)
     const models = [
       { id: 'gpt-6.1-terra-unlisted' },
       { id: 'gpt-future' },

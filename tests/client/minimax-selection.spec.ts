@@ -48,6 +48,7 @@ const PROVIDER = 'minimax-official'
 const HARNESS = 'minimax-code'
 const HARNESS_NAME = 'MiniMax Code'
 const M3_FLASH = 'MiniMax-M3.1-Flash'
+const M3_FLASH_LABEL = 'MiniMax M3.1 Flash'
 const M3 = 'MiniMax-M3'
 
 const flashCombination = {
@@ -348,14 +349,14 @@ describe('MiniMax Code model menu labels', () => {
     const view = await mount({ call, source: () => Object.assign(face.face, { push: face.push }) })
 
     // The trigger reads model + Harness exactly once.
-    expect(view.trigger.textContent).toContain(`${M3_FLASH} · ${HARNESS_NAME}`)
+    expect(view.trigger.textContent).toContain(`${M3_FLASH_LABEL} · ${HARNESS_NAME}`)
     expect(occurrences(view.trigger.textContent ?? '', HARNESS_NAME)).toBe(1)
 
     await view.open()
     await view.click('模型')
     const open = view.menuText()
     for (const model of [M3_FLASH, M3]) {
-      const row = `${model} · ${HARNESS_NAME}`
+      const row = `${model === M3_FLASH ? M3_FLASH_LABEL : model} · ${HARNESS_NAME}`
       expect(open, `缺少模型行 ${row}`).toContain(row)
       expect(occurrences(open, row), `模型行 ${row} 重复`).toBe(1)
     }
@@ -461,7 +462,7 @@ describe('MiniMax Code model menu labels', () => {
     expect(view.buttons().some((button) => button.getAttribute('role') === 'menuitemradio')).toBe(
       false,
     )
-    expect(view.trigger.textContent).toContain(`${M3_FLASH} · ${HARNESS_NAME}`)
+    expect(view.trigger.textContent).toContain(`${M3_FLASH_LABEL} · ${HARNESS_NAME}`)
     expect(original.calls.some((call) => call.method.startsWith('select-'))).toBe(false)
   })
 
@@ -486,14 +487,15 @@ describe('MiniMax Code model menu labels', () => {
       .buttons()
       .filter(
         (button) =>
-          button.getAttribute('role') === 'menuitemradio' && button.textContent?.includes(M3_FLASH),
+          button.getAttribute('role') === 'menuitemradio' &&
+          button.textContent?.includes(M3_FLASH_LABEL),
       )
     expect(rows).toHaveLength(1)
     expect(rows[0]?.getAttribute('disabled')).toBeNull()
   })
 
   it('keeps the shared model name free of Harness and thinking text', () => {
-    expect(displayModelName({ provider: PROVIDER, model: M3_FLASH })).toBe(M3_FLASH)
+    expect(displayModelName({ provider: PROVIDER, model: M3_FLASH })).toBe(M3_FLASH_LABEL)
     expect(displayModelName({ provider: PROVIDER, model: M3 })).toBe(M3)
     for (const ref of [
       { provider: PROVIDER, model: M3_FLASH },

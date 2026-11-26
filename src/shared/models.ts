@@ -59,6 +59,15 @@ export function isRetiredModel(ref: ModelRef): boolean {
   return false
 }
 
+/** Older routes remain resolvable for explicit selections and saved sessions. */
+export function isSupersededModelDefault(group: string, id: string): boolean {
+  return (
+    (group === 'gemini' &&
+      /^(gemini-4-argon|gemini-3\.8-flash)(?:-(low|medium|high|xhigh|max|minimal))?$/.test(id)) ||
+    (group === 'codex' && ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol'].includes(id))
+  )
+}
+
 /** Gateway Gemini models natively paired with the official Antigravity CLI (and OpenCode fallback). */
 export const GATEWAY_ANTIGRAVITY_GEMINI_MODELS = [
   'gemini-4-carbon',
@@ -168,7 +177,7 @@ export function displayModelName(ref: ModelRef, name?: string): string {
   // menu, and the thinking setting lives in the reasoning menu, so neither may be
   // baked into this label.
   if (ref.provider === 'minimax-official') {
-    if (id === 'MiniMax-M3.1-Flash') return 'MiniMax-M3.1-Flash'
+    if (id === 'MiniMax-M3.1-Flash') return 'MiniMax M3.1 Flash'
     if (id === 'MiniMax-M3') return 'MiniMax-M3'
   }
   const route = ref.provider === 'opl-gateway' ? ref.model.split('::')[0] : ''
@@ -186,7 +195,7 @@ export function displayModelName(ref: ModelRef, name?: string): string {
 export function displayModelSource(ref: ModelRef, source?: string): string {
   if (ref.provider === ANTIGRAVITY_GOOGLE_PROVIDER) return 'Antigravity（Google 账号）'
   if (ref.provider === 'opl-gateway') return 'OPL Gateway'
-  if (ref.provider === 'minimax-official') return 'MiniMax 官方账号（mcode）'
+  if (ref.provider === 'minimax-official') return 'MiniMax'
   if (ref.provider === 'our-free-model')
     return source === 'OpenCode 官方免费通道' ? source : 'Our Free Model'
   if (ref.provider === 'our-free-model-region') return 'Our Free Model · region-limited'

@@ -13,6 +13,7 @@ import type { ModelDraft, GatewayModelSettings } from '../contracts/models.ts'
 import {
   displayModelName,
   GATEWAY_ANTIGRAVITY_GEMINI_MODELS,
+  isSupersededModelDefault,
   isRetiredModel,
 } from '../../shared/models.ts'
 import { withGatewayModelInputDefaults } from './model-capabilities.ts'
@@ -174,6 +175,7 @@ function providerSettings(
 
 const LEGACY_CANONICAL_GEMINI_SETS: readonly (readonly string[])[] = [
   ['gemini-4-carbon', 'gemini-4-hydrogen'],
+  ['gemini-4-carbon', 'gemini-4-hydrogen', 'gemini-4-argon', 'gemini-3.8-flash'],
   ['gemini-3.1-pro', 'gemini-3.8-flash'],
   ['gemini-4-argon', 'gemini-3.8-flash'],
   ['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.1-pro'],
@@ -207,9 +209,9 @@ function addGeminiBundleModels(
       }),
   )
   if (!matchesLegacy) return [...models]
-  return GATEWAY_ANTIGRAVITY_GEMINI_MODELS.map(
-    (id) => models.find((model) => model.id === id) ?? geminiBundleModel(id),
-  )
+  return GATEWAY_ANTIGRAVITY_GEMINI_MODELS.filter(
+    (id) => !isSupersededModelDefault('gemini', id),
+  ).map((id) => models.find((model) => model.id === id) ?? geminiBundleModel(id))
 }
 
 /** Add the OPL-owned reviewer without replacing any existing chat provider. */
@@ -605,7 +607,9 @@ export async function syncGatewayModels(ctx: Context): Promise<void> {
           clearGatewayCatalogStatus(ctx, group.id)
         continue
       }
-      let candidates = await discoverGatewayModels(ctx, { group: group.id })
+      let candidates = (await discoverGatewayModels(ctx, { group: group.id })).filter(
+        (model) => !isSupersededModelDefault(group.id, model.id),
+      )
       // Do not make the default DeepSeek Flash route depend on the optional
       // OpenAI-protocol group. A user can still explicitly add this channel
       // from the model page, which is the durable opt-in boundary.

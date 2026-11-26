@@ -417,7 +417,7 @@ describe('每个外部 Harness 独立的代理设置', () => {
     })
     await press(walk(manual).find((node) => node.nodeName === 'BUTTON')!)
     expect(stored().combinations.at(-1)).toMatchObject({
-      name: 'MiniMax-M3.1-Flash + MiniMax Code',
+      name: 'MiniMax M3.1 Flash + MiniMax Code',
       enabled: true,
       isDefault: false,
       permissionPolicy: 'workspace',
@@ -970,7 +970,7 @@ describe('每个外部 Harness 独立的代理设置', () => {
     )!
     const summary = walk(active).find((node) => node.nodeName === 'SUMMARY')!
     expect(text(summary)).toContain('Codex 组合')
-    expect(text(summary)).toContain('MiniMax 官方账号')
+    expect(text(summary)).toContain('MiniMax')
     expect(text(summary)).not.toContain('默认')
     expect(text(summary)).not.toContain('可执行')
     expect(text(summary)).not.toContain('自定义')

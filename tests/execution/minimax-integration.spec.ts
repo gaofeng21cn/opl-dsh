@@ -109,7 +109,7 @@ it('retains hidden rows through an unrelated catalog save and restores them on r
   const persisted = await store.get()
   expect(
     persisted.combinations.filter((item) => item.harnessRef === MINIMAX_CODE_HARNESS),
-  ).toHaveLength(3)
+  ).toHaveLength(2)
   expect(persisted.combinations.find((item) => item.id === 'saved-custom-mcode')).toMatchObject({
     enabled: true,
     name: 'Saved custom mcode',
@@ -119,10 +119,10 @@ it('retains hidden rows through an unrelated catalog save and restores them on r
   const restored = await service.executionCatalog()
   expect(
     restored.combinations.filter((item) => item.harnessRef === MINIMAX_CODE_HARNESS),
-  ).toHaveLength(3)
+  ).toHaveLength(2)
   expect(
     restored.models.filter((item) => item.ref.provider === MINIMAX_CODE_PROVIDER),
-  ).toHaveLength(2)
+  ).toHaveLength(1)
 })
 
 it('rejects old combinations and native-source requests after opt-out without rerouting', async () => {

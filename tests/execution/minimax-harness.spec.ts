@@ -136,6 +136,17 @@ async function setup(
   catalog.harnesses = catalog.harnesses.map((item) =>
     item.id === MINIMAX_CODE_HARNESS ? { ...item, command: process.execPath } : item,
   )
+  // A manual M3 pairing still exercises legacy routing without offering it as a default preset.
+  if (!catalog.combinations.some((item) => item.id === `${MINIMAX_CODE_HARNESS}/MiniMax-M3`))
+    catalog.combinations.push({
+      id: `${MINIMAX_CODE_HARNESS}/MiniMax-M3`,
+      name: 'Saved MiniMax M3 pairing',
+      modelRef: { provider: 'minimax-official', model: 'MiniMax-M3' },
+      harnessRef: MINIMAX_CODE_HARNESS,
+      permissionPolicy: 'full-access',
+      enabled: true,
+      isDefault: true,
+    })
   await service.saveExecutionCatalog(catalog)
 
   const journal = async (): Promise<Journal[]> =>
@@ -483,7 +494,7 @@ describe('official MiniMax Code ACP combination', () => {
   }, 30_000)
 
   it.each(['MiniMax-M3.1-Flash', 'MiniMax-M3'])(
-    'routes native model selection to the official CLI without a saved combination (%s)',
+    'routes native model selection to the official CLI using its available combination (%s)',
     async (model) => {
       const { service, prompts, current, journal } = await setup({ nativeModel: model })
       const selection = await service.modelSelection('native-session')

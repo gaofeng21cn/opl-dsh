@@ -79,9 +79,7 @@ describe('Gateway route metadata for external engines', () => {
 
     profile.baseURL = 'https://gateway.medopl.com/v1/'
     const bundle = await resolver.resolve()
-    expect(bundle.combinations).toContainEqual(
-      expect.objectContaining({ modelRef: argon, harnessRef: 'antigravity', isDefault: true }),
-    )
+    expect(bundle.combinations.filter((item) => item.modelRef.model === argon.model)).toEqual([])
     expect(bundle.combinations.find((item) => item.id === saved.id)).toEqual(saved)
   })
 

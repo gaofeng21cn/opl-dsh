@@ -14,6 +14,7 @@ const require = createRequire(import.meta.url)
 const bundles = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
 const teamBundle = '@deepseek-ai/dsh-experimental-agent-team-profile'
 const autoReviewBundle = '@deepseek-ai/dsh-experimental-auto-review'
+const computerUseBundle = '@deepseek-ai/dsh-cua-bundle'
 const officialBundles = [teamBundle, autoReviewBundle]
 const autoEnabledBundles = [teamBundle]
 const officialVersion = '0.2.2-rc.1'
@@ -24,6 +25,7 @@ async function runtime(
   existing,
   {
     disableAndReinstall = false,
+    computerUsePlatforms,
     teamVersion,
     promotedTeam = false,
     migrationReceipt,
@@ -159,24 +161,31 @@ export async function runPluginCommand(profile, args) {
     '@deepseek-ai/dsh-atomic-write',
     './index.mjs',
     `import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
+export const writeFileAtomic = writeFile;
 export async function withFileLock(file, operation, options) {
   assert(file.endsWith('package.json'));
   assert.equal(options.waitMs, 1000);
   return operation();
 }`,
   )
+  const runtimeBundles = [
+    ...officialBundles,
+    ...(computerUsePlatforms ? [computerUseBundle] : []),
+  ].filter((name) => !promotedTeam || name !== teamBundle)
   await module('@deepseek-ai/dsh', { './package.json': './package.json' }, '', {
     version: runtimeVersion,
-    dependencies: Object.fromEntries(
-      officialBundles
-        .filter((name) => !promotedTeam || name !== teamBundle)
-        .map((name) => [name, runtimeVersion]),
-    ),
+    dependencies: Object.fromEntries(runtimeBundles.map((name) => [name, runtimeVersion])),
   })
-  for (const bundle of officialBundles.filter((name) => !promotedTeam || name !== teamBundle))
+  for (const bundle of runtimeBundles)
     await module(bundle, { './package.json': './package.json' }, '', {
       version: bundle === teamBundle ? (teamVersion ?? runtimeVersion) : runtimeVersion,
-      dsh: { bundle: { patch: './cordis.patch.yml' } },
+      dsh: {
+        bundle: {
+          patch: './cordis.patch.yml',
+          ...(bundle === computerUseBundle ? { platforms: computerUsePlatforms } : {}),
+        },
+      },
     })
   if (existing) {
     await mkdir(profile, { recursive: true })
@@ -217,7 +226,7 @@ export async function withFileLock(file, operation, options) {
   if (disableAndReinstall) {
     const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
     manifest.dsh.profile.bundles = manifest.dsh.profile.bundles.filter(
-      (name) => !officialBundles.includes(name),
+      (name) => !runtimeBundles.includes(name),
     )
     await writeFile(join(profile, 'package.json'), JSON.stringify(manifest))
     await install()
@@ -415,4 +424,26 @@ test('installation preserves an explicitly enabled Auto Review without enabling 
   }
   const result = await runtime(t, 'official-bundles', existing, { promotedTeam: true })
   assert.deepEqual(result.manifest, existing)
+})
+
+test('desktop upgrade enables supported Computer Use once and preserves later opt-out', async (t) => {
+  const existing = { dsh: { profile: { bundles: [...bundles, '@one-person-lab/dsh-opl'] } } }
+  const migrationReceipt = { schemaVersion: 1, bundles: [teamBundle], preservedDisabled: [] }
+  const options = { computerUsePlatforms: [process.platform], migrationReceipt }
+  const enabled = await runtime(t, 'official-bundles', existing, options)
+  assert.deepEqual(enabled.manifest.dsh.profile.bundles, [
+    ...bundles,
+    computerUseBundle,
+    '@one-person-lab/dsh-opl',
+  ])
+  const optedOut = await runtime(t, 'official-bundles', existing, {
+    ...options,
+    disableAndReinstall: true,
+  })
+  assert.deepEqual(optedOut.manifest, existing)
+  const unsupported = await runtime(t, 'official-bundles', existing, {
+    ...options,
+    computerUsePlatforms: [],
+  })
+  assert.deepEqual(unsupported.manifest, existing)
 })

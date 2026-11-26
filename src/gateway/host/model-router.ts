@@ -19,7 +19,14 @@ export const gatewayModelId = (group: GatewayGroupId, id: string) =>
 function withReasoning(model: LlmResolvedModelInfo, cli?: readonly string[]): LlmResolvedModelInfo {
   const efforts =
     cli ??
-    (['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna'].includes(model.id)
+    ([
+      'gpt-6.2-astra',
+      'gpt-6.2-sol',
+      'gpt-6-astra',
+      'gpt-6.1-sol',
+      'gpt-6-sol',
+      'gpt-6-luna',
+    ].includes(model.id)
       ? ['low', 'medium', 'high', 'xhigh', 'max']
       : model.id === 'claude-opus-5-5'
         ? ['low', 'medium', 'high', 'xhigh', 'max']

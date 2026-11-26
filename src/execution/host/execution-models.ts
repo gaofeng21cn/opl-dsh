@@ -1,4 +1,8 @@
-import { ANTIGRAVITY_GOOGLE_PROVIDER, EAC_SPECIALIST_LABELS } from '../../shared/models.ts'
+import {
+  ANTIGRAVITY_GOOGLE_PROVIDER,
+  EAC_SPECIALIST_LABELS,
+  isSupersededModelDefault,
+} from '../../shared/models.ts'
 import { invokeHostRemote } from '../../compat/host/remote-invocation.ts'
 /** Owns live model/combination projection; persisted catalog stores references only. */
 import type { Context } from '@deepseek-ai/cordis'
@@ -23,9 +27,9 @@ import { officialHarnessFor } from '../contracts/official-harnesses.ts'
 import {
   isMiniMaxCodeRoute,
   minimaxCodeCombinations,
-  minimaxCodeModels,
   MINIMAX_CODE_HARNESS,
   MINIMAX_CODE_PROVIDER,
+  MINIMAX_DEFAULT_MODEL,
 } from './adapters/minimax.ts'
 import {
   isHiddenOfmSelection,
@@ -77,7 +81,16 @@ export class ExecutionModelResolver {
     // DSH when no vendor-owned or recommended external Harness exists. Suite-owned
     // Gateway/OFM routes and CLI-account providers are not native custom fallbacks.
     // Generation and cleanup share this decision so a saved row is not removed first.
+    const supersededDefault = (ref: ModelRef) => {
+      if (ref.provider === MINIMAX_CODE_PROVIDER) return ref.model !== MINIMAX_DEFAULT_MODEL
+      if (ref.provider === ANTIGRAVITY_GOOGLE_PROVIDER)
+        return isSupersededModelDefault('gemini', ref.model)
+      if (ref.provider !== 'opl-gateway') return false
+      const [group, id] = ref.model.split('::')
+      return group !== undefined && id !== undefined && isSupersededModelDefault(group, id)
+    }
     const automaticCombinationHarness = (ref: ModelRef) => {
+      if (supersededDefault(ref)) return undefined
       const official = officialHarnessFor(ref)
       const automatic = automaticHarness(ref)
       if (automatic !== official) return undefined
@@ -107,7 +120,14 @@ export class ExecutionModelResolver {
       item.harnessRef === 'opencode'
     const staleAutomatic = (item: CombinationDefinition) =>
       unmodifiedAutomatic(item) && automaticCombinationHarness(item.modelRef) !== item.harnessRef
-    const stalePersisted = staleAutomatic
+    const stalePersisted = (item: CombinationDefinition) =>
+      staleAutomatic(item) ||
+      (item.id === 'minimax-code/MiniMax-M3' &&
+        item.name === 'MiniMax-M3' &&
+        (item.enabled || item.autoEnabled === true) &&
+        item.autoEnabled !== false &&
+        item.autoEnabledDisabled !== true &&
+        item.defaultDisabled !== true)
     if (retired.length || legacyDefault || catalog.combinations.some(stalePersisted)) {
       catalog = await this.store.cleanLegacyCombinations(stalePersisted)
     }
@@ -211,7 +231,11 @@ export class ExecutionModelResolver {
                 return []
               if (isHiddenOfmSelection({ provider: provider.id, model: model.id })) return []
               const ref = { provider: provider.id, model: model.id }
-              if (isRetiredModel(ref)) return []
+              if (
+                isRetiredModel(ref) ||
+                (provider.id === MINIMAX_CODE_PROVIDER && model.id !== MINIMAX_DEFAULT_MODEL)
+              )
+                return []
               const external =
                 provider.id === MINIMAX_CODE_PROVIDER ? probeExternal(ref) : undefined
               const ofm = OFM_PROVIDERS.includes(provider.id) ? probeOfm(ref) : undefined
@@ -386,28 +410,26 @@ export class ExecutionModelResolver {
             })
         }
     }
-    // The official MiniMax Code CLI owns its own account and model list, so these two
-    // models are never projected from the OPL Gateway provider registry. They are only
-    // marked available once the CLI itself is installed and signed in, so a missing
-    // Gateway key never hides them and an absent CLI never advertises them.
+    // Advertise the current model through the CLI account. Keep the adapter able to resolve historical models.
     if (miniMaxEnabled) {
-      for (const model of minimaxCodeModels())
-        if (!catalog.models.some((item) => modelRefKey(item.ref) === modelRefKey(model))) {
-          const probe = this.probeExternal
-            ? await probeExternal(model)
-            : { available: false, reason: '尚未安装官方 MiniMax Code CLI' }
-          catalog.models.push({
-            ref: model,
-            name: displayModelName(model),
-            source: displayModelSource(model),
-            available: probe.available,
-            ...(probe.available ? {} : { reason: probe.reason ?? '官方 MiniMax Code 未就绪' }),
-          })
-        }
       for (const fixed of minimaxCodeCombinations()) {
         const modelRef = { provider: MINIMAX_CODE_PROVIDER, model: fixed.model }
+        if (supersededDefault(modelRef)) continue
         const available = await probeExternal(modelRef)
+        if (!catalog.models.some((item) => modelRefKey(item.ref) === modelRefKey(modelRef))) {
+          catalog.models.push({
+            ref: modelRef,
+            name: displayModelName(modelRef),
+            source: displayModelSource(modelRef),
+            available: available.available,
+            ...(available.available
+              ? {}
+              : { reason: available.reason ?? '官方 MiniMax Code 未就绪' }),
+          })
+        }
         const existing = catalog.combinations.find((item) => item.id === fixed.combination)
+        const name = fixed.name + ' + MiniMax Code'
+        if (existing?.name === fixed.model) existing.name = name
         const hasOtherDefault = catalog.combinations.some(
           (item) =>
             item !== existing &&
@@ -419,7 +441,7 @@ export class ExecutionModelResolver {
         if (!existing)
           catalog.combinations.push({
             id: fixed.combination,
-            name: fixed.name,
+            name,
             modelRef,
             harnessRef: MINIMAX_CODE_HARNESS,
             permissionPolicy: 'full-access',
@@ -454,16 +476,26 @@ export class ExecutionModelResolver {
         const ofm = OFM_PROVIDERS.includes(combination.modelRef.provider)
           ? await probeOfm(combination.modelRef)
           : undefined
+        const external =
+          miniMaxEnabled && combination.modelRef.provider === MINIMAX_CODE_PROVIDER
+            ? await probeExternal(combination.modelRef)
+            : undefined
         catalog.models.push({
           ref: combination.modelRef,
           name: displayModelName(combination.modelRef),
           source: displayModelSource(combination.modelRef),
-          available: false,
-          reason: ofm
-            ? ofm.available
-              ? 'OFM 目录包含此模型，但模型服务尚未加载'
-              : (ofm.reason ?? 'OFM 模型状态尚未确认')
-            : '模型未配置或分组未授权',
+          available: external?.available ?? false,
+          ...(external?.available
+            ? {}
+            : {
+                reason:
+                  external?.reason ??
+                  (ofm
+                    ? ofm.available
+                      ? 'OFM 目录包含此模型，但模型服务尚未加载'
+                      : (ofm.reason ?? 'OFM 模型状态尚未确认')
+                    : '模型未配置或分组未授权'),
+              }),
           ...(ofm?.available
             ? { unavailableKind: 'unconfirmed' as const }
             : ofm?.unavailableKind
@@ -527,7 +559,12 @@ export class ExecutionModelResolver {
       // Older releases saved an exact official pairing as a user-created row with
       // isDefault=false. Promote that row only when the model has no other default.
       // Once the user explicitly selects another default, defaultDisabled preserves it.
-      if (!hasDefault && existingOfficial && existingOfficial.defaultDisabled !== true) {
+      if (
+        harnessRef &&
+        !hasDefault &&
+        existingOfficial &&
+        existingOfficial.defaultDisabled !== true
+      ) {
         existingOfficial.isDefault = true
         existingOfficial.defaultDisabled = false
         defaultMigrationChanged = true
@@ -595,6 +632,7 @@ export class ExecutionModelResolver {
     catalog.recommendations = catalog.models.flatMap((model) => {
       const harnessRef = automaticHarness(model.ref)
       const official = officialHarnessFor(model.ref)
+      if (supersededDefault(model.ref)) return []
       const recommendations: Array<{ modelRef: ModelRef; harnessRef: string; name: string }> = []
       if (
         model.available &&
@@ -611,12 +649,7 @@ export class ExecutionModelResolver {
       }
       // These alternate engines stay opt-in. In particular Qwen Code requires
       // full access, so discovering it must not change an existing AMD route.
-      const alternative =
-        official === 'antigravity' && adapterFor('opencode', model.ref)
-          ? 'opencode'
-          : isQwenModel(model.ref)
-            ? QWEN_CODE_HARNESS
-            : undefined
+      const alternative = isQwenModel(model.ref) ? QWEN_CODE_HARNESS : undefined
       const alternativeHarness = catalog.harnesses.find((h) => h.id === alternative)
       if (model.available && alternativeHarness) {
         recommendations.push({

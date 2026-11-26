@@ -1,6 +1,6 @@
 /** Account status describes the official CLI's saved sign-in, never API-key configuration. */
 export const minimaxAccountZh = {
-  title: 'MiniMax 官方账号（mcode）',
+  title: 'MiniMax 账号',
   integration: '启用 MiniMax Code',
   enabled: '已启用',
   disabled: '未启用',

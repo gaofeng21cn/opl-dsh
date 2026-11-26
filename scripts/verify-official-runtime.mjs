@@ -446,9 +446,8 @@ async function verifyRemainingRuntime() {
     api: 'openai-completions',
     models: [
       { id: 'gpt-5.4', name: 'GPT-5.4' },
-      { id: 'gpt-6-astra', name: 'GPT-6 Astra' },
-      { id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol' },
-      { id: 'gpt-6-sol', name: 'GPT-6 Sol' },
+      { id: 'gpt-6.2-astra', name: 'GPT-6.2 Astra' },
+      { id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol' },
       { id: 'gpt-6-luna', name: 'GPT-6 Luna' },
       { id: 'deepseek-flash', name: 'DeepSeek-V4.1-Flash' },
     ],
@@ -459,7 +458,7 @@ async function verifyRemainingRuntime() {
   assert(models.some((m) => m.id === 'codex::gpt-5.4'))
   assert(models.some((m) => m.id === 'codex::deepseek-flash'))
   assert.equal(models.find((m) => m.id === 'deepseek-flash').reasoning.defaultEffort, 'high')
-  for (const id of ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna'])
+  for (const id of ['gpt-6.2-astra', 'gpt-6.2-sol', 'gpt-6-luna'])
     assert.equal(models.find((m) => m.id === 'codex::' + id).reasoning.defaultEffort, 'medium')
   teamProbe = true
   const officialCapabilities = await verifyOfficialCapabilities({
@@ -470,6 +469,23 @@ async function verifyRemainingRuntime() {
     readTools: () => requests.flatMap((request) => request.teamTools ?? []),
   })
   teamProbe = false
+  const nativeComputerUse = officialCapabilities.bundles.find(
+    (bundle) =>
+      bundle.name === '@deepseek-ai/dsh-cua-bundle' && bundle.availability === 'installation',
+  )
+  if (process.platform === 'darwin' || nativeComputerUse) {
+    assert.equal(nativeComputerUse?.enabled, true, 'Official Computer Use bundle is disabled')
+    const status = await wire('cuaAccess/systemStatus')
+    assert.equal(status.platform, process.platform)
+    const { platform, accessibility, screenRecording, captureAvailable } = status
+    officialCapabilities.computerUse = {
+      bundle: nativeComputerUse.name,
+      platform,
+      accessibility,
+      screenRecording,
+      captureAvailable,
+    }
+  }
   const catalog = await harness('catalog')
   assert(
     !catalog.combinations.some(

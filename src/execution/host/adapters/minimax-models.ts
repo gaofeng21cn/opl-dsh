@@ -29,6 +29,7 @@ import {
   minimaxCodeCombinations,
   MINIMAX_CODE_HARNESS,
   MINIMAX_CODE_PROVIDER,
+  MINIMAX_DEFAULT_MODEL,
   type MinimaxCombination,
 } from './minimax.ts'
 
@@ -77,18 +78,20 @@ export function createMiniMaxCodeModelRegistration(
 
 export class MiniMaxCodeModelAdapter extends LlmAdapter {
   override providerInfo(provider: string) {
-    return { id: provider, name: 'MiniMax 官方账号（mcode）' }
+    return { id: provider, name: 'MiniMax' }
   }
 
   override async listModels(provider: string) {
-    return fixedModels().map((item) => ({
-      provider,
-      id: item.model,
-      // The compact model name only. A reasoning tier belongs in the reasoning block,
-      // never in a model's name, and the harness is added by the combination view.
-      name: item.name,
-      description: '由官方 MiniMax Code CLI 提供；登录与额度由官方账号决定。',
-    }))
+    return fixedModels()
+      .filter((item) => item.model === MINIMAX_DEFAULT_MODEL)
+      .map((item) => ({
+        provider,
+        id: item.model,
+        // The compact model name only. A reasoning tier belongs in the reasoning block,
+        // never in a model's name, and the harness is added by the combination view.
+        name: item.name,
+        description: '由官方 MiniMax Code CLI 提供；登录与额度由官方账号决定。',
+      }))
   }
 
   override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
@@ -121,6 +124,7 @@ export class MiniMaxCodeModelAdapter extends LlmAdapter {
   async *stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
     throw new LlmError(
       `MiniMax 模型由官方 mcode 账号提供，请先选择固定组合「${fixedModels()
+        .filter((item) => item.model === MINIMAX_DEFAULT_MODEL)
         .map((item) => item.name)
         .join('」或「')}」；本套件不会改用其他渠道执行。`,
       `${MINIMAX_CODE_HARNESS.toUpperCase().replace(/-/g, '_')}_COMBINATION_REQUIRED`,

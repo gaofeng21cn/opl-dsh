@@ -19,6 +19,7 @@ const [application, home, archive, companion] = parsedArgs.positionals
 const plugins = (parsedArgs.values.plugin ?? []).map((item) => resolve(String(item)))
 const ofmUpgradeMode = Boolean(parsedArgs.values['ofm-upgrade'])
 const teamBundle = '@deepseek-ai/dsh-experimental-agent-team-profile'
+const computerUseBundle = '@deepseek-ai/dsh-cua-bundle'
 const cliProfile = process.env.OPL_DSH_CLI_PROFILE
 if (
   cliProfile !== undefined &&
@@ -46,6 +47,13 @@ async function main() {
   )
     throw new Error('官方桌面缺少 Team 插件且未声明迁移，未改动插件选择')
   const officialBundles = retiredTeam ? [] : [teamBundle]
+  if (!cliProfile && official.dependencies?.[computerUseBundle]) {
+    const metadata = JSON.parse(
+      readFileSync(requireRuntime.resolve(computerUseBundle + '/package.json'), 'utf8'),
+    )
+    if (metadata.dsh?.bundle?.platforms?.includes(process.platform))
+      officialBundles.push(computerUseBundle)
+  }
   process.env.DSH_HOME = home
   const boot = await load('@deepseek-ai/dsh-app-boot')
   const { initProfile } = boot
@@ -164,10 +172,10 @@ async function main() {
   await withFileLock(
     join(dir, 'package.json'),
     async () => {
+      await require('./ofm-owner.cjs').stopped(dir)
       // The official profile loader removes its retired bundle references before
       // the previous suite receipt can skip the optional-bundle migration.
       if (retiredTeam) {
-        await require('./ofm-owner.cjs').stopped(dir)
         boot.loadProfileDirectory(
           'dsh',
           dir,
@@ -175,20 +183,15 @@ async function main() {
           { userLayer: false },
         )
       }
-      if (existsSync(receipt)) {
-        const saved = JSON.parse(readFileSync(receipt, 'utf8'))
-        if (
-          saved.schemaVersion !== 1 ||
-          !officialBundles.every((bundle) => saved.bundles?.includes(bundle))
-        )
-          throw new Error('官方插件迁移回执无效，已保留现有配置')
-        return
-      }
+      const saved = existsSync(receipt) ? JSON.parse(readFileSync(receipt, 'utf8')) : undefined
+      if (saved && (saved.schemaVersion !== 1 || !Array.isArray(saved.bundles)))
+        throw new Error('官方插件迁移回执无效，已保留现有配置')
+      const additions = officialBundles.filter((bundle) => !saved?.bundles.includes(bundle))
+      if (saved && !additions.length) return
       const manifest = boot.readProfileManifest('dsh', dir)
       const bundles = manifest.dsh?.profile?.bundles ?? []
-      // A custom profile without the official base cannot host Agent Teams.
       if (!bundles.includes('@deepseek-ai/dsh-base')) return
-      for (const bundle of officialBundles) {
+      for (const bundle of additions) {
         const metadata = JSON.parse(
           readFileSync(requireRuntime.resolve(bundle + '/package.json'), 'utf8'),
         )
@@ -200,31 +203,44 @@ async function main() {
         if (!metadata.dsh?.bundle?.patch)
           throw new Error('官方插件缺少 bundle 声明，未改动插件选择：' + bundle)
       }
-      const next = bundles.filter((bundle) => !officialBundles.includes(bundle))
+      const next = bundles.filter((bundle) => !additions.includes(bundle))
       const suite = next.indexOf('@one-person-lab/dsh-opl')
-      const preservedDisabled = officialBundles.filter(
+      const preservedDisabled = additions.filter(
         (bundle) => Object.hasOwn(manifest.dependencies ?? {}, bundle) && !bundles.includes(bundle),
       )
       next.splice(
         suite < 0 ? next.length : suite,
         0,
-        ...officialBundles.filter((bundle) => !preservedDisabled.includes(bundle)),
+        ...additions.filter((bundle) => !preservedDisabled.includes(bundle)),
       )
       if (JSON.stringify(next) !== JSON.stringify(bundles))
         boot.writeProfileBundles(dir, manifest, next)
-      writeFileSync(
+      const { writeFileAtomic } = await load('@deepseek-ai/dsh-atomic-write')
+      await writeFileAtomic(
         receipt,
         JSON.stringify(
           {
             schemaVersion: 1,
-            bundles: officialBundles,
-            preservedDisabled,
+            bundles: [
+              ...new Set([
+                ...(saved?.bundles ?? []).filter(
+                  (bundle) => !(retiredTeam && bundle === teamBundle),
+                ),
+                ...additions,
+              ]),
+            ],
+            preservedDisabled: [
+              ...(saved?.preservedDisabled ?? []).filter(
+                (bundle) => !(retiredTeam && bundle === teamBundle),
+              ),
+              ...preservedDisabled,
+            ],
             officialVersion: official.version,
           },
           null,
           2,
         ) + '\n',
-        { mode: 0o600, flag: 'wx' },
+        { mode: 0o600 },
       )
     },
     { waitMs: 1000 },

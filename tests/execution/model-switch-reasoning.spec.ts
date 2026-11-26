@@ -143,6 +143,17 @@ async function setup() {
           enabled: true,
           isDefault: false,
         })
+  // A manual M3 pairing still exercises legacy routing without offering it as a default preset.
+  if (!catalog.combinations.some((item) => item.id === `${'minimax-code'}/MiniMax-M3`))
+    catalog.combinations.push({
+      id: `${'minimax-code'}/MiniMax-M3`,
+      name: 'Saved MiniMax M3 pairing',
+      modelRef: { provider: 'minimax-official', model: 'MiniMax-M3' },
+      harnessRef: 'minimax-code',
+      permissionPolicy: 'full-access',
+      enabled: true,
+      isDefault: true,
+    })
   await service.saveExecutionCatalog(catalog)
   const choose = (model: string, svc = service, channel = provider, external = true) =>
     svc.selectCombination({
