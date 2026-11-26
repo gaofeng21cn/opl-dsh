@@ -1,7 +1,6 @@
 import { executionLimitsSchema } from '../execution/contracts/limits.ts'
 import { installNativeProgressGuard } from '../execution/host/native-progress-guard.ts'
 import type { ProgressWatchdogLimits } from '../execution/host/progress-watchdog.ts'
-import { installLegacyHarnessChannel } from '../compat/host/legacy-channel.ts'
 import { ExecutionService } from '../execution/host/service.ts'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-settings'
@@ -15,10 +14,7 @@ import { installConversationRequest } from '../execution/host/conversation-reque
 import { ANTIGRAVITY_GOOGLE_PROVIDER } from '../shared/models.ts'
 import { AntigravityGoogleModels } from '../execution/host/adapters/antigravity/google-model-provider.ts'
 import { installPermissionMemory } from '../compat/host/permission-memory.ts'
-import { installComputerUse } from '../computer-use/host/index.ts'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
-import type { AutoReviewMaintenance } from '../auto-review/contracts/maintenance.ts'
-import { EXTERNAL_REVIEW_BINDING_SERVICE } from '../auto-review/host/index.ts'
 import { createOfmOwnerApiReader } from '../execution/host/ofm-owner-api.ts'
 import {
   applyOfmModelSource,
@@ -98,18 +94,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       return { status: 200, body: await ofmOwner.read(path) }
     }, ''),
   })
-  const reviewerMaintenance: AutoReviewMaintenance = {
-    change: (operation) => harness.changeReviewerSettings(operation),
-  }
-  ctx.provide('oplAutoReviewMaintenance', reviewerMaintenance)
-  // Bind an external-Harness permission ask to the live ACP connection record.
-  // The binding is all-or-nothing: without the exact action, turn, connection
-  // generation and authorization the port returns null, and the Auto Review
-  // bridge then leaves the ask to the ordinary human approval chain.
-  ctx.provide(EXTERNAL_REVIEW_BINDING_SERVICE, {
-    bind: (agent: { session: { id: string } }, request: { callId?: string }) =>
-      harness.externalApprovalBinding(agent.session.id, request.callId),
-  })
   const firstSteps = new WeakMap<object, number>()
   ctx.on('session/event', (session, event) => {
     if (event.type === 'turn/start') firstSteps.set(session, performance.now())
@@ -143,6 +127,4 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     await harness.dispose()
     updateRuntime?.drained('harness')
   })
-  installComputerUse(ctx)
-  installLegacyHarnessChannel(ctx)
 }

@@ -52,8 +52,7 @@ export function UpdateNotice({
     }
   }, [engineCount])
   const hasRelease = !!(status?.release || status?.pendingVersion)
-  const cuVersion = status?.kimiCu?.available ? status.kimiCu.latestVersion : null
-  if (!hasRelease && !cuVersion)
+  if (!hasRelease)
     return count && openSettings ? (
       <Button
         className={css.notice}
@@ -67,32 +66,27 @@ export function UpdateNotice({
       </Button>
     ) : null
   if (!status) return null
-  const version = status.pendingVersion ?? status.release?.version ?? cuVersion!
-  const suiteLabel = hasRelease
-    ? t(
-        status.localCandidate
-          ? status.pendingVersion
-            ? 'candidatePending'
-            : status.release?.compatibility === 'full-suite'
-              ? 'noticeFullSuite'
-              : 'noticeAvailable'
-          : status.pendingVersion
-            ? restart?.phase === 'handoff'
-              ? 'noticeHandoff'
-              : countdown !== null
-                ? 'noticeCountdown'
-                : restart?.phase === 'waiting'
-                  ? 'noticeWaiting'
-                  : 'noticePending'
-            : status.release!.compatibility === 'full-suite'
-              ? 'noticeFullSuite'
-              : 'noticeAvailable',
-        { version, seconds: countdown ?? 0 },
-      )
-    : null
-  const label = [suiteLabel, cuVersion && t('cuAvailable', { version: cuVersion })]
-    .filter(Boolean)
-    .join(' · ')
+  const version = status.pendingVersion ?? status.release!.version
+  const label = t(
+    status.localCandidate
+      ? status.pendingVersion
+        ? 'candidatePending'
+        : status.release?.compatibility === 'full-suite'
+          ? 'noticeFullSuite'
+          : 'noticeAvailable'
+      : status.pendingVersion
+        ? restart?.phase === 'handoff'
+          ? 'noticeHandoff'
+          : countdown !== null
+            ? 'noticeCountdown'
+            : restart?.phase === 'waiting'
+              ? 'noticeWaiting'
+              : 'noticePending'
+        : status.release!.compatibility === 'full-suite'
+          ? 'noticeFullSuite'
+          : 'noticeAvailable',
+    { version, seconds: countdown ?? 0 },
+  )
   const releaseTitle =
     view.failure || status.error || !view.connected || !view.confirmed || view.uncertain
       ? `${label} ${t('noticeStale')}`
@@ -158,11 +152,7 @@ export function UpdateNotice({
           items={[
             {
               id: 'suite',
-              label: cuVersion
-                ? hasRelease
-                  ? t('componentsMenu')
-                  : t('cuUpdate')
-                : t('suiteMenu'),
+              label: t('suiteMenu'),
             },
             { id: 'engines', label: t('engineMenu', { count }) },
           ]}

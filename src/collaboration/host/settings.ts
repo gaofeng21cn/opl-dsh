@@ -27,7 +27,7 @@ export async function coordinationAction(
     action === 'coordinator-hooks' &&
     (payload === 'status' || payload === 'install' || payload === 'remove')
   ) {
-    const settings = featureSettings(ctx, 'opl-collaboration')?.value as
+    const settings = featureSettings(ctx, 'opl-suite')?.value as
       { wakeExecution?: string; wakeExecutable?: string } | undefined
     const configured = settings?.wakeExecution === 'native' ? settings.wakeExecutable?.trim() : ''
     const candidates = configured ? [configured] : []
@@ -49,7 +49,7 @@ export async function coordinationAction(
       join(installed.suiteRoot, 'enhancement-update.json'),
       'utf8',
     ).catch(() => '{}')
-    const settings = featureSettings(ctx, 'opl-collaboration')?.value as {
+    const settings = featureSettings(ctx, 'opl-suite')?.value as {
       wakeTransport?: string
       wakeExecutable?: string
       wakeExecution?: string
@@ -60,8 +60,6 @@ export async function coordinationAction(
       autoStart: config.autoStart !== false,
       version: process.env.OPL_OFFICIAL_VERSION ?? installed.officialVersion ?? 'unknown',
       enhancementVersion: installed.suiteVersion ?? 'unknown',
-      sessionRecycleSupported: ['win32', 'darwin'].includes(process.platform),
-      superagentSupported: process.platform === 'darwin' || process.platform === 'linux',
       update: { ...JSON.parse(state), checkTrigger: 'maintenance-launcher' },
       paths: {
         suiteRoot: installed.suiteRoot,
@@ -74,14 +72,8 @@ export async function coordinationAction(
       wakeDistro: settings?.wakeDistro ?? '',
     }
   }
-  if (action === 'superagent-open') {
-    const module = (await import(
-      pathToFileURL(join(installed.release, 'superagent.mjs')).href
-    )) as { openSuperagent: (installation: object) => Promise<{ state: string }> }
-    return module.openSuperagent(installed)
-  }
   if (action === 'delegation-setup') {
-    const descriptor = featureSettings(ctx, 'opl-collaboration')
+    const descriptor = featureSettings(ctx, 'opl-suite')
     if (!descriptor) throw Error('无法读取协作设置。')
     const status = (await coordinationAction(ctx, 'coordination-status', undefined)) as {
       autoStart: boolean
@@ -150,15 +142,12 @@ export async function coordinationAction(
       typeof p.wakeDistro !== 'string'
     )
       throw new Error('无效的回调配置')
-    await ctx.settings.update(
-      featureSettings(ctx, 'opl-collaboration')?.ns ?? 'opl-collaboration',
-      {
-        wakeTransport: p.wakeTransport,
-        wakeExecution: p.wakeExecution,
-        wakeExecutable: p.wakeExecutable,
-        wakeDistro: p.wakeDistro,
-      },
-    )
+    await ctx.settings.update(featureSettings(ctx, 'opl-suite')?.ns ?? 'opl-suite', {
+      wakeTransport: p.wakeTransport,
+      wakeExecution: p.wakeExecution,
+      wakeExecutable: p.wakeExecutable,
+      wakeDistro: p.wakeDistro,
+    })
     return null
   }
   throw new Error('未知协作设置操作')

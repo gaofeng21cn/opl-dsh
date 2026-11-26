@@ -1,21 +1,28 @@
-/** Enforce runtime ownership, rather than freezing source text or file sizes. */
-import { readdir } from 'node:fs/promises'
+/** Enforce runtime ownership and Phase 0 v2 architectural redlines. */
+import { readdir, readFile } from 'node:fs/promises'
 import { dirname, extname, relative, resolve } from 'node:path'
 import * as ts from 'typescript/unstable/ast'
 import { withTypeScriptSources } from './lib/typescript-source.mjs'
-const root = resolve(import.meta.dirname, '../src')
-async function files(directory) {
+const repoRoot = resolve(import.meta.dirname, '..')
+const root = resolve(repoRoot, 'src')
+async function collectFiles(directory, extensions, skipGenerated = false) {
   const found = []
-  for (const item of await readdir(directory, { withFileTypes: true })) {
-    if (item.name === 'generated') continue
+  let entries = []
+  try {
+    entries = await readdir(directory, { withFileTypes: true })
+  } catch {
+    return found
+  }
+  for (const item of entries) {
+    if (skipGenerated && item.name === 'generated') continue
     const path = resolve(directory, item.name)
-    if (item.isDirectory()) found.push(...(await files(path)))
-    else if (['.ts', '.tsx'].includes(extname(path))) found.push(path)
+    if (item.isDirectory()) found.push(...(await collectFiles(path, extensions, skipGenerated)))
+    else if (extensions.includes(extname(path))) found.push(path)
   }
   return found
 }
 const errors = []
-const sourcePaths = await files(root)
+const sourcePaths = await collectFiles(root, ['.ts', '.tsx'], true)
 withTypeScriptSources(sourcePaths, (sourceFile) => {
   for (const path of sourcePaths) {
     const name = relative(root, path).replaceAll('\\', '/')
@@ -40,5 +47,46 @@ withTypeScriptSources(sourcePaths, (sourceFile) => {
     }
   }
 })
+
+const runtimeAntipatterns = [
+  'fiber.runtime.Config',
+  'fiber.restart',
+  'Object.defineProperty(credentials',
+]
+const retiredModuleTokens = [
+  'kimi-cu',
+  'src/auto-review',
+  'auto-review/host',
+  'auto-review/client',
+  'dsh-superagent',
+  'build-feature-plugins',
+  'split-plugins',
+  'legacy-channel',
+  'cleanup-skill',
+]
+for (const path of sourcePaths) {
+  const name = relative(repoRoot, path).replaceAll('\\', '/')
+  const content = await readFile(path, 'utf8')
+  for (const token of runtimeAntipatterns) {
+    if (content.includes(token)) errors.push(`${name}: forbidden runtime anti-pattern ${token}`)
+  }
+  for (const token of retiredModuleTokens) {
+    if (content.includes(token)) errors.push(`${name}: forbidden retired module reference ${token}`)
+  }
+}
+const infraPaths = [
+  ...(await collectFiles(resolve(repoRoot, 'installer'), ['.js', '.mjs', '.cjs', '.ts'])),
+  ...(await collectFiles(resolve(repoRoot, 'scripts'), ['.js', '.mjs', '.cjs', '.ts'])),
+].filter(
+  (path) =>
+    relative(repoRoot, path).replaceAll('\\', '/') !== 'scripts/check-module-boundaries.mjs',
+)
+for (const path of infraPaths) {
+  const name = relative(repoRoot, path).replaceAll('\\', '/')
+  const content = await readFile(path, 'utf8')
+  for (const token of retiredModuleTokens) {
+    if (content.includes(token)) errors.push(`${name}: forbidden retired module reference ${token}`)
+  }
+}
 if (errors.length) throw Error(errors.join('\n'))
 console.log('Module ownership boundaries verified')

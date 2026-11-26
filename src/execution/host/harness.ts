@@ -22,15 +22,7 @@ import { inspectHarness, inspectInstalledHarness } from './harness-registry.ts'
 import { maintainHarness } from './harness-maintenance.ts'
 import type { HarnessInstallation } from '../contracts/installations.ts'
 import { executionModelRefKey, isRemovableCombination, modelRefKey } from '../contracts/catalog.ts'
-import type { MiniMaxCandidateRequest, MiniMaxCandidateResult } from '../contracts/candidate.ts'
 import { RuntimeMaintenance } from './runtime-maintenance.ts'
-import { prepareMiniMaxCandidate } from './minimax-candidate.ts'
-import { prepareCodexRuntime } from './codex-runtime.ts'
-import type {
-  CodexRuntimeRequest,
-  CodexRuntimeResult,
-  CodexGitBashRuntime,
-} from '../contracts/codex-runtime.ts'
 import { ExternalModelSources } from './model-sources.ts'
 import { harnessAdapters } from './adapters/index.ts'
 import { acceptVisibleCliResult } from './adapters/visible-result.ts'
@@ -140,7 +132,6 @@ import { HarnessSessionStore } from './session-store.ts'
 import { NativeHarnessConversations, harnessRequestId } from './native-conversations.ts'
 import { StopEditService, type StopEditHost } from './stop-edit.ts'
 import { StopEditIntentStore } from './stop-edit-intent.ts'
-import { HISTORY_BOUNDARY } from './stop-edit-minimax.ts'
 import { harnessAllowsFullAccess } from './permissions.ts'
 import { resolveWriteScope } from './write-scope.ts'
 import { harnessProxyEnvironment } from './proxy.ts'
@@ -219,6 +210,7 @@ import {
   externalDriver,
   externalHistory,
   externalRecoveryHistory,
+  HISTORY_BOUNDARY,
   messageEditSend,
   messageEditState,
   rebindNativeBranch,
@@ -437,7 +429,7 @@ export class HarnessService {
   /** Persist validated limits and apply them to subsequent turns. */
   async saveExecutionLimits(value: unknown): Promise<ProgressWatchdogLimits> {
     const limits = executionLimitsSchema(value as never) as ProgressWatchdogLimits
-    const descriptor = featureSettings(this.ctx, 'opl-execution')
+    const descriptor = featureSettings(this.ctx, 'opl-suite')
     if (!descriptor) throw Error('执行设置不可用')
     await this.ctx.settings.mutate(
       descriptor.ns,
@@ -958,16 +950,11 @@ export class HarnessService {
   private command() {
     return this.options.command ?? (process.env.OPL_GROK_COMMAND?.trim() || 'grok')
   }
-  private adapterOptions(
-    command?: string,
-    prefix?: string[],
-    codexRuntime?: CodexGitBashRuntime,
-  ): AdapterOptions {
+  private adapterOptions(command?: string, prefix?: string[]): AdapterOptions {
     const launchPrefix = prefix ?? this.options.prefix
     return {
       home: this.directory,
       modelSources: this.modelSources,
-      ...(codexRuntime ? { codexRuntime } : {}),
       grokCommand: this.command(),
       nativeBridgePath: fileURLToPath(new URL('./native-harness-bridge.mjs', import.meta.url)),
       ...(command ? { command } : {}),
@@ -987,22 +974,9 @@ export class HarnessService {
         const result: HarnessInstallation = {
           ...item,
           definition: harness,
-          ...(capabilities
-            ? {
-                capabilities: harness.codexRuntime
-                  ? { ...capabilities, permissions: ['full-access'] as ['full-access'] }
-                  : capabilities,
-              }
-            : {}),
-          ...(harness.codexRuntime
-            ? {
-                installable: false,
-                instructions: 'OPL Git Bash 固定候选；升级与回切使用 Codex 运行时选择入口。',
-              }
-            : {}),
+          ...(capabilities ? { capabilities } : {}),
           ...(maintenance ? { maintenance } : {}),
         }
-        if (harness.codexRuntime) delete result.maintenanceAction
         return result
       }),
     )
@@ -1019,8 +993,6 @@ export class HarnessService {
     const catalog = await this.catalogStore.get(),
       definition = catalog.harnesses.find((item) => item.id === id)
     if (!definition) throw Error('Harness 不存在')
-    if (definition.codexRuntime)
-      throw Error('Codex Git Bash 候选不使用官方更新器；请先回切官方或导入已验收新候选')
     const item = await inspectHarness(definition, this.directory, this.command())
     if (!item.maintenanceAction) throw Error('请使用此 Harness 的官方安装与更新入口')
     // Recheck after discovery so concurrent clicks cannot launch two updaters.
@@ -1133,10 +1105,7 @@ export class HarnessService {
           probes.set(
             adapter,
             Promise.resolve().then(() =>
-              adapter.available(
-                this.ctx,
-                this.adapterOptions(harness.command, harness.prefix, harness?.codexRuntime),
-              ),
+              adapter.available(this.ctx, this.adapterOptions(harness.command, harness.prefix)),
             ),
           )
         pending.set(combination.id, probes.get(adapter)!)
@@ -1263,10 +1232,7 @@ export class HarnessService {
               ? [
                   {
                     harness: harness.id,
-                    permissions:
-                      harness.id === 'codex' && harness.codexRuntime
-                        ? ['full-access' as const]
-                        : adapter.capabilities.permissions,
+                    permissions: adapter.capabilities.permissions,
                   },
                 ]
               : []
@@ -1351,7 +1317,7 @@ export class HarnessService {
       )
       return await adapter.available(
         this.ctx,
-        this.adapterOptions(harness?.command, harness?.prefix, harness?.codexRuntime),
+        this.adapterOptions(harness?.command, harness?.prefix),
       )
     } catch {
       return { available: false, reason: '官方 CLI 状态检测未完成，请重新打开此页' }
@@ -1443,21 +1409,6 @@ export class HarnessService {
     await this.externalEditJournal.drain()
     if (this.updateBusy()) throw Error('更新排空期间出现活动任务')
   }
-  /**
-   * Exclude reviewer settings changes from CLI admission and native model requests.
-   * @param operation - Validation and durable settings publication owned by Auto Review.
-   * @returns The publication result after all visible projects were checked for activity.
-   */
-  async changeReviewerSettings<T>(operation: () => Promise<T>): Promise<T> {
-    await this.ready
-    return this.runtimeMaintenance.change(
-      () => this.runtimeBusy(),
-      async () => {
-        await this.assertNoGlobalActivity()
-        return await operation()
-      },
-    )
-  }
   private runtimeBusy(): boolean {
     return (
       this.disposed ||
@@ -1487,49 +1438,6 @@ export class HarnessService {
       if (activity.length) throw Error('仍有活动任务，不能切换 Harness 运行时')
     }
     if (this.runtimeBusy()) throw Error('仍有活动任务，不能切换 Harness 运行时')
-  }
-  /** Publish the verified candidate into the actual catalog; receipts do not select it. */
-  async selectMiniMaxCandidate(request: MiniMaxCandidateRequest): Promise<MiniMaxCandidateResult> {
-    this.assertMinimaxCodeEnabled()
-    await this.ready
-    return this.runtimeMaintenance.change(
-      () => this.runtimeBusy(),
-      async () => {
-        await this.assertNoGlobalActivity()
-        const verified = prepareMiniMaxCandidate(request)
-        await this.assertNoGlobalActivity()
-        const previous = await this.catalogStore.setHarnessLaunch(
-          MINIMAX_CODE_HARNESS,
-          verified.command,
-          [],
-        )
-        this.events.emit('catalog')
-        return { ...verified, ...previous, version: request.version, validation: 'static' }
-      },
-    )
-  }
-  /** Select a pinned build or restore the previous official command while all projects are idle. */
-  async selectCodexRuntime(request: CodexRuntimeRequest): Promise<CodexRuntimeResult> {
-    await this.ready
-    return this.runtimeMaintenance.change(
-      () => this.runtimeBusy(),
-      async () => {
-        await this.assertNoGlobalActivity()
-        if (request.mode !== 'official' && request.mode !== 'git-bash')
-          throw Error('Codex 运行时选择无效')
-        const verified =
-          request.mode === 'git-bash' ? prepareCodexRuntime(this.directory, request) : null
-        await this.assertNoGlobalActivity()
-        const previous = await this.catalogStore.setCodexRuntime(verified)
-        this.events.emit('catalog')
-        return {
-          ...(verified ?? {}),
-          ...previous,
-          mode: request.mode,
-          validation: verified ? 'static' : 'launch-settings',
-        }
-      },
-    )
   }
   async saveHarnessProxy(harnessId: string, proxy: unknown): Promise<ExecutionCatalog> {
     await this.ready
@@ -1759,7 +1667,6 @@ export class HarnessService {
     const launchSettings = hash([
       chosenHarness?.command,
       chosenHarness?.prefix,
-      chosenHarness?.codexRuntime,
       ...(record.harnessRef === 'minimax-code'
         ? [
             await minimaxExecutionRegion(
@@ -1801,11 +1708,7 @@ export class HarnessService {
     const launch = await adapter.prepare!(
       this.ctx,
       record,
-      this.adapterOptions(
-        chosenHarness?.command,
-        chosenHarness?.prefix,
-        chosenHarness?.codexRuntime,
-      ),
+      this.adapterOptions(chosenHarness?.command, chosenHarness?.prefix),
     )
     const home = launch.home
     const active: Active = {
@@ -2316,72 +2219,6 @@ export class HarnessService {
     }
     return this.view(record)
   }
-  /**
-   * Bind the one pending external-Harness permission ask of a native Session.
-   *
-   * The approval waterfall only carries the ask's tool reference and display
-   * text, so the exact facts are read here, from the live connection record:
-   * the ACP session and its connection generation, the owning Harness turn, the
-   * structured action the ask declared, and the authorization the task runs
-   * under. Nothing is derived from the ask's prose.
-   *
-   * This is deliberately all-or-nothing. Zero pending external asks means there
-   * is nothing to bind; more than one means the pending approval request cannot
-   * be attributed to an exact ask; a missing turn, an unknown record, an
-   * unreadable preset or an ask without a structured action all return `null`.
-   * Every `null` leaves the ask to the ordinary human approval chain.
-   * @param sessionId - the native Session that owns the Harness conversation.
-   * @param callId - the exact native approval request identity.
-   * @returns the exact binding, or null when it cannot be proven.
-   */
-  externalApprovalBinding(
-    sessionId: string,
-    callId?: string,
-  ): HarnessExternalApprovalBinding | null {
-    const session = this.ctx.sessions?.get(asSessionId<SessionId>(sessionId))
-    if (!session || !callId) return null
-    const matches: {
-      record: HarnessSession
-      active: Active
-      external: HarnessExternalAsk
-    }[] = []
-    for (const [recordId, active] of this.active) {
-      if (this.conversationOwners.get(recordId)?.sessionId !== sessionId) continue
-      const record = this.records.get(recordId)
-      if (!record) continue
-      for (const ask of active.approvals.values())
-        if (ask.external !== undefined && ask.reviewCallId === callId)
-          matches.push({ record, active, external: ask.external })
-    }
-    if (matches.length !== 1) return null
-    const { record, active, external } = matches[0]!
-    const turn = active.turn
-    if (!turn) return null
-    const index = record.turns.findIndex((item) => item.operationId === turn.operationId)
-    if (index < 0) return null
-    let preset: string
-    try {
-      preset = this.ctx.permissionPresets.current(session)
-    } catch {
-      return null
-    }
-    return {
-      harness: record.harnessRef,
-      callId,
-      acpSessionId: record.acpSessionId,
-      generation: active.generation,
-      turn: index + 1,
-      turnId: turn.operationId,
-      action: { name: external.name, parameters: external.parameters },
-      authorization: {
-        sessionId,
-        preset,
-        sandbox: record.sandbox,
-        combination: record.combination,
-      },
-    }
-  }
-
   async prompt(input: HarnessPromptRequest, reasoningEffort?: string): Promise<HarnessSnapshot> {
     return this.runtimeMaintenance.admit(() => {
       requireHarnessInputText(input?.text, 'request')
@@ -3269,8 +3106,7 @@ export class HarnessService {
         return self.catalogEpoch
       },
       executionCatalog: (options) => this.executionCatalog(options),
-      adapterOptions: (command, prefix, codexRuntime) =>
-        this.adapterOptions(command, prefix, codexRuntime),
+      adapterOptions: (command, prefix) => this.adapterOptions(command, prefix),
       conversationBinding: (session, definition, cwd) =>
         this.conversationBinding(session, definition, cwd),
       bindSelection: (sessionId, combination) => this.bindSelection(sessionId, combination),
@@ -4144,10 +3980,6 @@ export class HarnessService {
         return this.saveExecutionCatalog(p.catalog)
       case 'save-harness-proxy':
         return this.saveHarnessProxy(p.harnessId, p.proxy)
-      case 'select-codex-runtime':
-        return this.selectCodexRuntime(p as CodexRuntimeRequest)
-      case 'select-minimax-candidate':
-        return this.selectMiniMaxCandidate(p as MiniMaxCandidateRequest)
       case 'start':
         return this.start(p as HarnessStartRequest)
       case 'prompt':

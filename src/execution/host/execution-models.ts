@@ -43,8 +43,6 @@ import {
   isOfmVirtualModelId,
 } from './ofm-source/provider.ts'
 import { ofmModelReadiness, type OfmModelReadiness } from './ofm-source/readiness.ts'
-import { BAMBOO_STARTLUX_MODEL } from './adapters/bamboo.ts'
-import { JEV_DECISION_MODEL, JEV_TYPESAFE_MODEL } from './adapters/jev.ts'
 import { adapterFor } from './adapters/index.ts'
 import { isQwenModel, QWEN_CODE_HARNESS } from './adapters/qwen/models.ts'
 export class ExecutionModelResolver {
@@ -222,12 +220,6 @@ export class ExecutionModelResolver {
           return await Promise.all(
             models.flatMap((model) => {
               if (provider.id === 'opl-gateway' && model.id === 'codex::codex-auto-review')
-                return []
-              if (
-                provider.id === BAMBOO_STARTLUX_MODEL.provider ||
-                provider.id === JEV_DECISION_MODEL.provider ||
-                provider.id === JEV_TYPESAFE_MODEL.provider
-              )
                 return []
               if (isHiddenOfmSelection({ provider: provider.id, model: model.id })) return []
               const ref = { provider: provider.id, model: model.id }

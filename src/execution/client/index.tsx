@@ -60,19 +60,8 @@ import {
 } from './ProjectlessOfficialComposer.tsx'
 import { HARNESS_TRANSCRIPT_TOOL } from '../contracts/tool-display.ts'
 import { remoteCall } from '../../shared/client/remote-call.ts'
-import type {
-  AutoReviewClientApi,
-  AutoReviewConnectionSource,
-} from '../../auto-review/contracts/settings.ts'
-import type { AutoReviewSectionProps } from '../../auto-review/client/AutoReviewSection.tsx'
 
-export interface ClientConfig {
-  autoReview?: {
-    api: AutoReviewClientApi
-    connection?: AutoReviewConnectionSource
-    t: AutoReviewSectionProps['t']
-  }
-}
+export interface ClientConfig {}
 
 export const inject = [
   'slots',
@@ -182,7 +171,7 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
   ctx.inject(['configForms'], (settings) => {
     const executionForm = settings.configForms.get<
       PermissionMemorySettings & MiniMaxIntegrationSettings
-    >('opl-execution')
+    >('opl-suite')
     const minimaxT = ctx.locale.bind(MINIMAX_ACCOUNT_NAMESPACE)
     ctx.slots.inject('settings.models.footer', () =>
       ctx.slots.register({ name: 'settings.models.footer', id: 'opl-minimax-account' }, () => (
@@ -211,7 +200,6 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
           inject: () => ({
             call,
             minimax: { form: executionForm, t: minimaxT },
-            ...(config.autoReview ? { autoReview: config.autoReview } : {}),
           }),
         },
         ExecutionSettings,

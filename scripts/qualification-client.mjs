@@ -129,14 +129,6 @@ export async function verifyPluginPresentation(pipe, screenshotPrefix) {
       presentation.metadataError
     )
       throw new Error('官方插件列表未正确读取 OPL 品牌信息')
-    const featureCards = await pipe.evaluate(
-      sessionId,
-      `['execution','collaboration'].map(id=>{const card=document.querySelector('[data-plugin-package="@one-person-lab/dsh-'+id+'"]');const title=card?.querySelector('button[aria-describedby]');const description=title && document.getElementById(title.getAttribute('aria-describedby'));const icon=card?.querySelector('img');return {id,title:title?.textContent.trim(),description:description?.textContent.trim(),iconDecoded:Boolean(icon?.complete&&icon.naturalWidth)}})`,
-    )
-    for (const card of featureCards) {
-      if (!card.title?.startsWith('OPL ') || !card.description || !card.iconDecoded)
-        throw Error('功能插件品牌信息未完整展示：' + card.id)
-    }
     const screenshots = []
     const screenshotFailures = []
     async function capture(name, clip) {
@@ -170,7 +162,7 @@ export async function verifyPluginPresentation(pipe, screenshotPrefix) {
       'OPL 插件离线详情文档未显示',
     )
     await capture('detail')
-    return { ...presentation, featureCards, detailDocument: true, screenshots, screenshotFailures }
+    return { ...presentation, detailDocument: true, screenshots, screenshotFailures }
   } finally {
     await pipe.command('Target.detachFromTarget', { sessionId })
   }
@@ -196,14 +188,9 @@ export async function verifyDesktopClient(
   }
   progress(result)
   await Promise.all(
-    [
-      'execution-settings',
-      'catalog',
-      'collaboration',
-      'gateway-models',
-      'auto-review',
-      'failure',
-    ].map((name) => rm(screenshotPrefix + '-' + name + '.png', { force: true })),
+    ['execution-settings', 'catalog', 'collaboration', 'gateway-models', 'failure'].map((name) =>
+      rm(screenshotPrefix + '-' + name + '.png', { force: true }),
+    ),
   )
   let session
   // The actual desktop content is a WebContentsView, separate from the native shell.
@@ -796,94 +783,8 @@ export async function verifyDesktopClient(
       const executionScreenshot = await captureScreenshot('execution-settings')
       if (executionScreenshot) screenshots.push(executionScreenshot)
       else result.screenshotFailures.push('execution-settings')
-      await pipe.evaluate(
-        session,
-        `document.querySelector('[data-opl-panel="execution-settings"]').open=false; document.querySelector('[data-opl-panel="auto-review"]').open=true`,
-      )
-      await waitFor(
-        `(() => {const panel=document.querySelector('[data-opl-panel="auto-review"]'); return Boolean(panel && panel.getClientRects().length && panel.querySelector('[data-opl-auto-review-state]') && panel.getAttribute('aria-busy') !== 'true')})()`,
-        '工具审批未挂载到执行页面',
-        undefined,
-        process.platform === 'win32' ? 280 : 80,
-      )
-      result.settingsSlots.push('auto-review')
-      if (
-        (await pipe.evaluate(
-          session,
-          `document.querySelector('[data-opl-auto-review-effective-enabled]')?.dataset.oplAutoReviewEffectiveEnabled`,
-        )) !== 'false'
-      )
-        throw new Error('OPL 审查路线适配必须默认关闭')
-      // First-run setup can advance opl-suite settings after this panel mounts.
-      // Read the current Host revision before editing; keep the CAS guard
-      // rejecting stale writes instead of bypassing it in the qualification.
-      await pipe.evaluate(
-        session,
-        `new Promise((resolve,reject) => { const refresh=document.querySelector('[data-opl-auto-review-refresh]'); if (!refresh || refresh.disabled) {reject(new Error('Auto Review read is unavailable'));return}; refresh.click(); requestAnimationFrame(()=>requestAnimationFrame(resolve)) })`,
-      )
-      await waitFor(
-        `(() => {const panel=document.querySelector('[data-opl-panel="auto-review"]');const refresh=document.querySelector('[data-opl-auto-review-refresh]');return Boolean(panel && panel.getAttribute('aria-busy')!=='true' && refresh && !refresh.disabled && document.querySelector('[data-opl-auto-review-revision]')?.dataset.oplAutoReviewRevision && !document.querySelector('[data-opl-auto-review-stale],[data-opl-auto-review-uncertain]'))})()`,
-        '工具审批 Host 状态未重新读取',
-      )
-      result.autoReviewBaselineRevision = await pipe.evaluate(
-        session,
-        `document.querySelector('[data-opl-auto-review-revision]').dataset.oplAutoReviewRevision`,
-      )
-      await waitFor(
-        `(() => { const radio=document.querySelector('input[name="opl-auto-review-route"][value="decision"]'); if (!radio || radio.disabled) return false; radio.click(); return true })()`,
-        '决策模型选项未就绪',
-      )
-      await waitFor(
-        `(() => { const select=document.querySelector('[data-opl-auto-review-select="decision-model"]'); const option=Array.from(select?.options??[]).find(item=>item.value.includes('opencode-jev')&&item.value.includes('jev-1.13-free')); if (!select || !option) return false; select.value=option.value; select.dispatchEvent(new Event('change',{bubbles:true})); return true })()`,
-        'Jev 未进入决策模型下拉列表',
-      )
-      await waitFor(
-        `(() => { const save=document.querySelector('[data-opl-auto-review-save]'); if (!save || save.disabled) return false; save.click(); return true })()`,
-        'Jev 审查路线无法保存',
-      )
-      await waitFor(
-        `Boolean(document.querySelector('[data-opl-auto-review-saved]'))`,
-        'Jev 审查路线未保存',
-      )
-      await pipe.evaluate(
-        session,
-        `document.querySelector('[data-opl-auto-review-refresh]').click()`,
-      )
-      await waitFor(
-        `Boolean(document.querySelector('[data-opl-auto-review-select="decision-model"]')?.value.includes('opencode-jev')) && document.querySelector('[data-opl-auto-review-dirty]')?.dataset.oplAutoReviewDirty==='false' && !document.querySelector('[data-opl-auto-review-refresh]')?.disabled`,
-        'Jev 审查路线回读不一致',
-      )
-      result.jevDecisionRoute = 'native-ui-save-and-readback'
-      await pipe.evaluate(
-        session,
-        `document.querySelector('input[name="opl-auto-review-route"][value="current"]').click()`,
-      )
-      await waitFor(
-        `(() => { const save=document.querySelector('[data-opl-auto-review-save]'); if (!save || save.disabled) return false; save.click(); return true })()`,
-        '默认审查路线无法恢复',
-      )
-      await waitFor(
-        `Boolean(document.querySelector('[data-opl-auto-review-saved]'))`,
-        '默认审查路线未恢复',
-      )
-      await pipe.evaluate(
-        session,
-        `document.querySelector('[data-opl-panel="auto-review"]').scrollIntoView({block:'start'})`,
-      )
-      const autoReviewScreenshot = await captureScreenshot('auto-review')
-      if (autoReviewScreenshot) screenshots.push(autoReviewScreenshot)
-      else result.screenshotFailures.push('auto-review')
-      await pipe.evaluate(
-        session,
-        `document.querySelector('[data-opl-panel="auto-review"]').open=false`,
-      )
     }
     if (panel.marker === 'gateway-models') {
-      const dialog = "document.querySelector('[role=dialog]')"
-      const editLabels = [
-        '编辑 BambooNode · StartLux (bamboo-startlux)',
-        'Edit BambooNode · StartLux (bamboo-startlux)',
-      ]
       await waitFor(
         `Boolean(document.querySelector('[data-opl-minimax-edit][aria-expanded="false"]'))`,
         'MiniMax 供应商编辑入口未显示',
@@ -926,190 +827,6 @@ export async function verifyDesktopClient(
         '切回国际版后未恢复已登录账号',
       )
       await pipe.evaluate(session, `document.querySelector('[data-opl-minimax-edit]').click()`)
-
-      async function enterNativeCredential(value) {
-        await waitFor(
-          `Boolean(${dialog}.querySelector('input[type=password]'))`,
-          '原生凭据编辑器未显示',
-          undefined,
-          process.platform === 'win32' ? 280 : 80,
-        )
-        await waitFor(
-          `(() => {const input=${dialog}.querySelector('input[type=password]');return Boolean(input && !input.disabled)})()`,
-          '原生凭据输入框未就绪',
-          undefined,
-          process.platform === 'win32' ? 520 : 80,
-        )
-        await pipe.evaluate(
-          session,
-          `(() => {const input=${dialog}.querySelector('input[type=password]');input.focus();input.select()})()`,
-        )
-        // Use Chromium's native input path so React commits its controlled draft
-        // before Apply. A synthetic DOM value/event can leave that draft stale.
-        await pipe.command('Input.insertText', { text: value }, session)
-        await waitFor(
-          `new Promise(resolve => requestAnimationFrame(() => {const input=${dialog}.querySelector('input[type=password]');resolve(Boolean(input && input.value===${JSON.stringify(value)}))}))`,
-          '原生凭据输入未保留测试值',
-        )
-      }
-      await waitFor(
-        clickLabel(['添加模型提供商', 'Add model provider'], dialog),
-        '原生添加模型提供商入口未就绪',
-        undefined,
-        process.platform === 'win32' ? 280 : 80,
-      )
-      await waitFor(
-        `Array.from(${dialog}.querySelectorAll('select')).some(node=>Array.from(node.options).some(option=>option.value==='bamboo-startlux'))`,
-        'Bamboo未进入原生提供商目录',
-        undefined,
-        process.platform === 'win32' ? 280 : 80,
-      )
-      await pipe.evaluate(
-        session,
-        `(() => {const select=Array.from(${dialog}.querySelectorAll('select')).find(node=>Array.from(node.options).some(option=>option.value==='bamboo-startlux'));select.value='bamboo-startlux';select.dispatchEvent(new Event('change',{bubbles:true}))})()`,
-      )
-      await waitFor(
-        `Boolean(${dialog}.querySelector('input[type=password]'))`,
-        '原生 API Key 表单未显示',
-      )
-      await waitFor(
-        `${dialog}.querySelector('input[type=password]')?.disabled === false`,
-        '原生凭据服务未开放可写密钥输入框',
-      )
-      result.bambooProvider = await pipe.evaluate(
-        session,
-        `(() => {const input=${dialog}.querySelector('input[type=password]');return {nativeAdd:true,keyInputType:input.type,keyInputEmpty:input.value==='',keyInputDisabled:input.disabled,independentCard:document.querySelector('[data-opl-provider="bamboo-startlux"]')!==null,independentPage:document.querySelector('[data-opl-panel="bamboo-startlux"]')!==null}})()`,
-      )
-      const source = result.bambooProvider
-      if (
-        !source.keyInputEmpty ||
-        source.independentCard ||
-        source.independentPage ||
-        source.keyInputDisabled
-      )
-        throw new Error('Bamboo未完整复用原生提供商表单或凭据边界错误')
-      // Never write a synthetic key to the operator's real Windows Credential
-      // Manager. The production target is fixed; the keyring transport is
-      // covered by owned unit tests with isolated targets.
-      const skipProviderSecretWrite =
-        process.env.OPL_QUALIFICATION_SKIP_PROVIDER_SECRET_WRITE === '1'
-      await enterNativeCredential('synthetic-native-provider-qualification')
-      const providerScreenshot = await captureScreenshot('bamboo-provider-add')
-      if (providerScreenshot) screenshots.push(providerScreenshot)
-      else result.screenshotFailures.push('bamboo-provider-add')
-      if (skipProviderSecretWrite) {
-        source.providerSecretWrite = 'skipped-real-keyring-target'
-        await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
-        source.nativeEdited = true
-        source.nativeRestorable = true
-      } else {
-        await waitFor(clickLabel(['保存', 'Apply'], dialog), '原生提供商保存按钮未就绪')
-        source.nativeSaveClicked = true
-        await waitFor(`!${dialog}.querySelector('input[type=password]')`, '原生提供商保存尚未完成')
-        await credentialReadback('synthetic-native-provider-qualification')
-        await waitFor(
-          clickLabel(editLabels, dialog),
-          'Bamboo原生提供商未保存或未显示普通编辑入口',
-          undefined,
-          process.platform === 'win32' ? 520 : 80,
-        )
-        source.nativeAdded = true
-        await waitFor(
-          `(() => {const input=${dialog}.querySelector('input[type=password]');return Boolean(input && !input.disabled)})()`,
-          'Bamboo原生编辑器未就绪',
-        )
-        source.nativeEdited = await pipe.evaluate(
-          session,
-          `${dialog}.querySelector('input[type=password]').value===''`,
-        )
-        source.keyMutation = 'native-ui-save-replace-delete'
-        const editScreenshot = await captureScreenshot('bamboo-provider-edit')
-        if (editScreenshot) screenshots.push(editScreenshot)
-        else result.screenshotFailures.push('bamboo-provider-edit')
-        await enterNativeCredential('synthetic-native-provider-replacement')
-        await waitFor(clickLabel(['保存', 'Apply'], dialog), '原生更换密钥保存按钮未就绪')
-        await waitFor(
-          `!${dialog}.querySelector('input[type=password]')`,
-          '原生更换密钥保存尚未完成',
-        )
-        await credentialReadback('synthetic-native-provider-replacement')
-        await waitFor(clickLabel(editLabels, dialog), '更换密钥后提供商未显示')
-        await waitFor(
-          `${dialog}.querySelector('input[type=password]')?.value === ''`,
-          '更换密钥后密码框泄露已保存值',
-        )
-        await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
-        await waitFor(
-          clickLabel(
-            [
-              '删除 BambooNode · StartLux (bamboo-startlux)',
-              'Delete BambooNode · StartLux (bamboo-startlux)',
-            ],
-            dialog,
-          ),
-          'Bamboo原生删除入口未显示',
-        )
-        await waitFor(
-          clickLabel(
-            [
-              '删除 BambooNode · StartLux (bamboo-startlux)',
-              'Delete BambooNode · StartLux (bamboo-startlux)',
-            ],
-            "Array.from(document.querySelectorAll('[role=dialog]')).find(node=>/删除 BambooNode · StartLux .*？|Delete BambooNode · StartLux .*\\?/.test(node.textContent))",
-          ),
-          '原生删除确认未显示',
-        )
-        await waitFor(
-          `!Array.from(${dialog}.querySelectorAll('button')).some(node=>${JSON.stringify(editLabels)}.includes(node.getAttribute('aria-label')))`,
-          '原生删除后提供商仍存在',
-          undefined,
-          process.platform === 'win32' ? 520 : 80,
-        )
-        source.nativeRemoved = true
-        await credentialReadback(undefined)
-        source.credentialReadback = 'saved-replaced-deleted'
-        await waitFor(
-          clickLabel(['添加模型提供商', 'Add model provider'], dialog),
-          '删除后的原生添加入口未恢复',
-        )
-        source.nativeRestorable = await pipe.evaluate(
-          session,
-          `Array.from(${dialog}.querySelectorAll('select option')).some(node=>node.value==='bamboo-startlux')`,
-        )
-        await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
-      }
-      if (!source.nativeEdited || !source.nativeRestorable)
-        throw new Error('Bamboo编辑或删除后的目录恢复未通过')
-      await waitFor(
-        clickLabel(['添加模型提供商', 'Add model provider'], dialog),
-        'Jev 添加入口未就绪',
-      )
-      await waitFor(
-        `(() => {const select=Array.from(${dialog}.querySelectorAll('select')).find(node=>Array.from(node.options).some(option=>option.value==='typesafe-jev'));if(!select)return false;select.value='typesafe-jev';select.dispatchEvent(new Event('change',{bubbles:true}));return true})()`,
-        'TypeSafe Jev 未进入提供商目录',
-      )
-      await enterNativeCredential('synthetic-jev-qualification')
-      if (process.env.OPL_QUALIFICATION_SKIP_PROVIDER_KEYRING !== '1') {
-        await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
-        result.jevPersonalProvider = 'native-form-only'
-      } else {
-        await waitFor(clickLabel(['保存', 'Apply'], dialog), 'Jev 保存按钮未就绪')
-        await waitFor(`!${dialog}.querySelector('input[type=password]')`, 'Jev 保存未完成')
-        await credentialReadback('synthetic-jev-qualification', 'TYPESAFE_JEV_API_KEY')
-        await waitFor(
-          clickLabel(
-            ['编辑 TypeSafe · Jev (typesafe-jev)', 'Edit TypeSafe · Jev (typesafe-jev)'],
-            dialog,
-          ),
-          'Jev 编辑入口未显示',
-        )
-        await waitFor(
-          `${dialog}.querySelector('input[type=password]')?.value === ''`,
-          'Jev 密钥不应回显',
-        )
-        await pipe.evaluate(session, clickLabel(['取消', 'Cancel'], dialog))
-        result.jevPersonalProvider = 'native-form-save-and-masked-readback'
-      }
     }
     const file = await captureScreenshot(panel.marker)
     if (file) screenshots.push(file)

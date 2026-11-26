@@ -26,12 +26,6 @@ vi.mock('../../src/setup/client/index.tsx', () => ({
   Config: undefined,
   apply: () => {},
 }))
-vi.mock('../../src/compat/client/settings-navigation.ts', () => ({
-  name: undefined,
-  inject: [],
-  Config: undefined,
-  apply: () => {},
-}))
 vi.mock('../../src/conversation-stats/client/index.tsx', () => ({
   name: undefined,
   inject: [],
@@ -39,6 +33,18 @@ vi.mock('../../src/conversation-stats/client/index.tsx', () => ({
   apply: () => {},
 }))
 vi.mock('../../src/window-title/client/index.tsx', () => ({
+  name: undefined,
+  inject: [],
+  Config: undefined,
+  apply: () => {},
+}))
+vi.mock('../../src/execution/client/index.tsx', () => ({
+  name: undefined,
+  inject: [],
+  Config: undefined,
+  apply: () => {},
+}))
+vi.mock('../../src/collaboration/client/index.tsx', () => ({
   name: undefined,
   inject: [],
   Config: undefined,
@@ -87,6 +93,9 @@ it('starts account and notification features before optional settings arrive and
       apply(provider: Context) {
         new StubService(provider, 'remote')
         new StubService(provider, 'locale', { register: () => () => {} })
+        new StubService(provider, 'sessions')
+        new StubService(provider, 'uiConversation')
+        new StubService(provider, 'uiWorkspace')
         new StubService(provider, 'slots', {
           inject: (_name: string, install: () => unknown) => install(),
           register: (row: { id?: string }) => {

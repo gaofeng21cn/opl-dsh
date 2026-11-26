@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { Config, minimaxCodeConfigChanged } from '../../src/execution/host/plugin-config.ts'
+import { Config, minimaxCodeConfigChanged } from '../../src/suite/config.ts'
 import { executionLimitsSchema } from '../../src/execution/contracts/limits.ts'
 import { ProgressWatchdog } from '../../src/execution/host/progress-watchdog.ts'
 

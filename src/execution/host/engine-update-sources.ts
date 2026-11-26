@@ -63,12 +63,7 @@ async function run(
   }
 }
 function source(item: HarnessInstallation) {
-  if (
-    !item.path ||
-    !item.version ||
-    item.definition?.codexRuntime ||
-    /opl[-.]?(git)?bash/i.test(item.version + ' ' + item.path)
-  )
+  if (!item.path || !item.version || /opl[-.]?(git)?bash/i.test(item.version + ' ' + item.path))
     return
   if (item.id === 'antigravity')
     return (

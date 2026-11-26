@@ -80,7 +80,6 @@ async function artifact(
     'profile.cjs',
     'model-plugins.cjs',
     'ofm-upgrade.cjs',
-    'kimi-cu.mjs',
     'setup.mjs',
     'update.mjs',
     'update-errors.mjs',
@@ -546,8 +545,8 @@ test('an unlisted staged payload file fails before transaction acquisition', asy
 test('a secondary profile appearing during shutdown refuses installation', async (t) => {
   const value = await offered(t)
   await drain(value, value.lease)
-  await mkdir(join(value.root, 'superagent/home/profiles/desktop'), { recursive: true })
-  await writeJson(join(value.root, 'superagent/home/profiles/desktop/control.json'), {
+  await mkdir(join(value.profileHome, 'profiles/research'), { recursive: true })
+  await writeJson(join(value.profileHome, 'profiles/research/control.json'), {
     pid: 817210,
   })
   const result = await runUpdateTransaction(value.root, value.lease, {

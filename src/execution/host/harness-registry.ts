@@ -590,7 +590,7 @@ export async function inspectHarness(
     command =
       harness.command ?? (harness.kind === 'grok-build' ? grokCommand : undefined) ?? entry?.command
   const native: NativeCodexEntries =
-    harness.id === 'codex' && !harness.codexRuntime ? await nativeCodexEntries() : { entries: [] }
+    harness.id === 'codex' ? await nativeCodexEntries() : { entries: [] }
   const found = command
     ? await resolveExecutable(command, harness.id, options.installRoots, native)
     : undefined
@@ -599,7 +599,6 @@ export async function inspectHarness(
   if (
     process.platform === 'win32' &&
     harness.id === 'codex' &&
-    !harness.codexRuntime &&
     command &&
     command !== entry?.command
   ) {
@@ -699,7 +698,7 @@ export async function inspectInstalledHarness(
   }
   const selected = await inspectHarness(harness, home, grokCommand, options)
   const entry = info[harness.id]
-  if (!entry || harness.codexRuntime) return selected
+  if (!entry) return selected
   let target: DetectedCommand | undefined
   if (installation.installRoots) {
     for (const root of installation.installRoots) {

@@ -54,7 +54,6 @@ import {
   externalUnsentEmptyChoice,
   externalUnsentNativeRecovery,
 } from './message-edit-mapping.ts'
-import { minimaxMessageEditDriver, MinimaxEditError } from './message-edit-minimax.ts'
 import { createOpenCodeMessageEditDriver } from './message-edit-opencode.ts'
 import { ExternalMessageEditError } from './message-edit-opencode-common.ts'
 import { piMessageEditDriver } from './message-edit-pi.ts'
@@ -74,19 +73,13 @@ import {
 } from './stop-edit.ts'
 import type { StopEditIntentStore } from './stop-edit-intent.ts'
 import {
-  HISTORY_LIST,
-  HISTORY_REWIND,
-  minimaxStopEditRuntime,
-  readMinimaxCapability,
-  type MinimaxHistorySource,
-  type MinimaxReview,
-} from './stop-edit-minimax.ts'
-import {
   nativeStopEditRuntime,
   readNativeUserMessages,
   type NativeReviewFacts,
   type NativeSessionSource,
 } from './stop-edit-native.ts'
+
+export type StopEditReview = NativeReviewFacts
 import { parseMiniMaxTurnUsage } from './usage-account.ts'
 import { asSessionId, hash, now, required, type Active } from './harness-types.ts'
 
@@ -133,7 +126,7 @@ export interface HarnessStopEditContext {
   stopEditTarget(sessionId: string): StopEditTarget | undefined
   stopEditBlocked(sessionId: string): string | undefined
   stopEditRuntime(target: StopEditTarget): StopEditRuntime | undefined
-  stopEditReviewBySession(sessionId: string): MinimaxReview
+  stopEditReviewBySession(sessionId: string): StopEditReview
   stopEditBusy(target: StopEditTarget): boolean
   stopEditSettle(target: StopEditTarget): Promise<void>
   commitStopEdit(input: {
@@ -159,8 +152,6 @@ export function externalDriver(record: HarnessSession): ExternalMessageEditDrive
       return claudeMessageEditDriver
     case 'grok-build':
       return grokMessageEditDriver
-    case 'minimax-code':
-      return minimaxMessageEditDriver
     case 'zcode':
       return zcodeMessageEditDriver
     case 'opencode':
@@ -575,7 +566,7 @@ export async function messageEditState(
       }
     } catch (error) {
       const code =
-        error instanceof MinimaxEditError || error instanceof ExternalMessageEditError
+        error instanceof ExternalMessageEditError
           ? error.code
           : error instanceof HarnessConfigurationError
             ? 'configuration'
@@ -1036,42 +1027,9 @@ export function stopEditRuntime(
   target: StopEditTarget,
 ): StopEditRuntime | undefined {
   const record = target.record
-  if (record && record.harnessRef !== 'dsh' && record.harnessRef !== MINIMAX_CODE_HARNESS)
-    return undefined
+  if (record && record.harnessRef !== 'dsh') return undefined
   if (target.harness === 'dsh') return nativeStopEditRuntime(nativeStopEditSource(host))
-  const acp = record ? host.active.get(record.id)?.acp : undefined
-  if (!record || !acp) return undefined
-  const source: MinimaxHistorySource = {
-    capability: () => readMinimaxCapability(host.active.get(record.id)?.agentInfo),
-    list: (sessionId) => minimaxHistory(host, record, HISTORY_LIST, { sessionId }),
-    rewind: (sessionId, userMessageId, clientRequestId) =>
-      minimaxHistory(host, record, HISTORY_REWIND, {
-        sessionId,
-        userMessageId,
-        clientRequestId,
-        rewindTurnDiff: false,
-      }),
-    deletedMessageIds: (value) =>
-      Array.isArray((value as any)?.deletedMessageIds)
-        ? ((value as any).deletedMessageIds as unknown[]).filter(
-            (item): item is string => typeof item === 'string',
-          )
-        : [],
-    review: () => host.stopEditReviewBySession(record.nativeSessionId ?? record.acpSessionId),
-  }
-  return minimaxStopEditRuntime(source, nativeStopEditSource(host))
-}
-
-async function minimaxHistory(
-  host: HarnessStopEditContext,
-  record: HarnessSession,
-  method: string,
-  params: object,
-): Promise<unknown> {
-  const acp = host.active.get(record.id)?.acp
-  if (!acp || acp.closed)
-    throw new StopEditError('capability-missing', 'Harness 连接未就绪，无法读取或回退会话历史')
-  return acp.request(method, params, 60_000)
+  return undefined
 }
 
 function nativeStopEditSource(host: HarnessStopEditContext): NativeSessionSource {
@@ -1116,7 +1074,7 @@ function nativeStopEditSource(host: HarnessStopEditContext): NativeSessionSource
 export function stopEditReviewBySession(
   host: HarnessStopEditContext,
   sessionId: string,
-): MinimaxReview {
+): StopEditReview {
   const session = host.ctx.sessions.get(asSessionId<SessionId>(sessionId))
   const record = [...host.records.values()].find(
     (item) => item.acpSessionId === sessionId || item.nativeSessionId === sessionId,
@@ -1305,6 +1263,8 @@ export async function recordMiniMaxUsage(
   await host.save(record)
 }
 
+export const HISTORY_BOUNDARY = 'opl/session/history/boundary'
+
 export async function recordNativeBoundary(
   host: HarnessStopEditContext,
   record: HarnessSession,
@@ -1316,7 +1276,7 @@ export async function recordNativeBoundary(
   const userMessageId = typeof data.userMessageId === 'string' ? data.userMessageId : ''
   if (!clientRequestId || !userMessageId) return
   const turn = record.turns.find((item) => item.operationId === clientRequestId)
-  if (!turn || turn.native?.userMessageId === userMessageId) return
+  if (!turn || turn.native?.turnId) return
   turn.native = {
     ...turn.native,
     userMessageId,

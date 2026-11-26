@@ -42,10 +42,6 @@ export class CoordinationService extends TypertRemoteService {
       action,
     )) as CoordinatorHooksStatus
   }
-  @Remote('superagent-open')
-  async openSuperagent(): Promise<{ state: string }> {
-    return (await coordinationAction(this.ctx, 'superagent-open', undefined)) as { state: string }
-  }
   @Remote('auto-start')
   async autoStart(enabled: boolean): Promise<null> {
     await coordinationAction(this.ctx, 'auto-start', enabled)

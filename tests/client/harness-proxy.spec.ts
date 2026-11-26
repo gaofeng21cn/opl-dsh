@@ -652,7 +652,6 @@ describe('每个外部 Harness 独立的代理设置', () => {
     expect(panels).toContain('execution')
     expect(panels).toContain('catalog')
     expect(panels).toContain('execution-settings')
-    expect(panels).toContain('auto-review')
   })
 
   it('代理配置归执行引擎，组合页面不再重复提供且检测不读取模型目录', async () => {

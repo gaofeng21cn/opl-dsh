@@ -1,11 +1,3 @@
-import type {
-  AutoReviewClientApi,
-  AutoReviewConnectionSource,
-} from '../../auto-review/contracts/settings.ts'
-import {
-  AutoReviewSection,
-  type AutoReviewSectionProps,
-} from '../../auto-review/client/AutoReviewSection.tsx'
 import { ExecutionCatalogSection } from './ExecutionCatalogSection.tsx'
 import { HarnessSettings } from './HarnessSettings.tsx'
 import { ExecutionLimitsSection } from './ExecutionLimitsSection.tsx'
@@ -17,24 +9,16 @@ import {
 import css from '../../shared/client/SettingsSection.module.css'
 import type { ExecutionCall as Call } from '../../shared/client/remote-call.ts'
 
-export interface AutoReviewSettingsSeat {
-  api: AutoReviewClientApi
-  connection?: AutoReviewConnectionSource
-  t: AutoReviewSectionProps['t']
-}
-
 /**
  * One user-facing execution page. The common task is choosing a combination;
- * low-frequency program, proxy and approval controls stay in existing rows
+ * low-frequency program, proxy and limits controls stay in existing rows
  * inside this page instead of consuming separate settings navigation entries.
  */
 export function ExecutionSettings({
   call,
-  autoReview,
   minimax,
 }: {
   call: Call
-  autoReview?: AutoReviewSettingsSeat
   minimax: MiniMaxIntegrationSeat
 }) {
   const minimaxSnapshot = useMiniMaxIntegrationSnapshot(minimax.form)
@@ -57,23 +41,6 @@ export function ExecutionSettings({
           <HarnessSettings call={call} embedded />
         </div>
       </details>
-      {autoReview ? (
-        <details className={css.details} data-opl-panel="auto-review">
-          <summary>工具审批（Auto Review）</summary>
-          <div className={css.detailsBody}>
-            <AutoReviewSection
-              api={autoReview.api}
-              {...(autoReview.connection ? { connection: autoReview.connection } : {})}
-              embedded
-              t={autoReview.t}
-            />
-          </div>
-        </details>
-      ) : (
-        <p className={css.muted} data-opl-panel="auto-review">
-          工具审批服务未就绪。
-        </p>
-      )}
     </div>
   )
 }

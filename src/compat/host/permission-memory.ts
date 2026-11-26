@@ -40,7 +40,9 @@ function presetFrom(event: SessionEvent): RememberedPreset | undefined {
  */
 export function installPermissionMemory(ctx: Context, enabled = false): () => void {
   const active = () => {
-    const owner = ctx.settings.describe().find((item) => item.ns === 'opl-execution')
+    const owner = ctx.settings
+      .describe()
+      .find((item) => item.ns === 'opl-suite' || item.ns === 'opl-execution')
     if (!owner) return enabled
     return (owner.value as { rememberPermissionPreset?: boolean }).rememberPermissionPreset === true
   }

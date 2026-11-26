@@ -95,18 +95,6 @@ for (const [file, expected] of Object.entries(artifact.payloadFiles)) {
   )
     throw new Error(`套件文件校验失败：${file}`)
 }
-const featurePlugins = artifact.plugins ?? []
-if (
-  featurePlugins.length !== 2 ||
-  featurePlugins.some(
-    (plugin, index) =>
-      plugin.package !==
-        ['@one-person-lab/dsh-execution', '@one-person-lab/dsh-collaboration'][index] ||
-      !/^opl-dsh-(execution|collaboration)-[a-zA-Z0-9.-]+\.tgz$/u.test(plugin.name) ||
-      artifact.payloadFiles[plugin.name] !== plugin.sha256,
-  )
-)
-  throw new Error('OPL 功能插件清单无效')
 
 const dshCommand = process.env.OPL_DSH_CLI?.trim() || 'dsh'
 const dshExecutable = executablePath(dshCommand)
@@ -160,13 +148,7 @@ delete env.DSH_PROFILE_DIR
 delete env.ELECTRON_RUN_AS_NODE
 run(
   process.execPath,
-  [
-    join(release, 'profile.cjs'),
-    cliRoot,
-    home,
-    join(release, artifact.name),
-    ...featurePlugins.map((plugin) => '--plugin=' + join(release, plugin.name)),
-  ],
+  [join(release, 'profile.cjs'), cliRoot, home, join(release, artifact.name), '--default-context'],
   { env, stdio: 'inherit' },
 )
 
@@ -218,8 +200,6 @@ const installation = {
   launcher,
   compatibilityLauncher: launcher,
   skillDir,
-  computerUse: { state: 'unsupported', reason: 'linux' },
-  cleanupSkill: { state: 'unsupported', reason: 'windows-only' },
   platform: process.platform,
   arch: process.arch,
   installedAt: new Date().toISOString(),
@@ -237,7 +217,7 @@ console.log(
       suiteRoot: root,
       launcher,
       skillDir,
-      unsupported: ['KimiCU', 'session-cleanup', 'automatic-enhancement-updates'],
+      unsupported: ['automatic-enhancement-updates'],
     },
     null,
     2,

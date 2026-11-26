@@ -28,7 +28,7 @@ export class RoleExecutionService extends TypertRemoteService {
   }
 
   private bindings(): Record<string, string> {
-    const value = featureSettings(this.ctx, 'opl-collaboration')?.value as
+    const value = featureSettings(this.ctx, 'opl-suite')?.value as
       { roleExecutions?: Record<string, string> } | undefined
     return { ...value?.roleExecutions }
   }
@@ -86,7 +86,7 @@ export class RoleExecutionService extends TypertRemoteService {
       )
         throw Error('执行组合不存在、未就绪或尚不支持角色团队')
     }
-    const descriptor = featureSettings(this.ctx, 'opl-collaboration')
+    const descriptor = featureSettings(this.ctx, 'opl-suite')
     if (!descriptor) throw Error('角色设置未加载')
     await this.ctx.settings.mutate(
       descriptor.ns,

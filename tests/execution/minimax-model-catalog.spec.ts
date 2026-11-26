@@ -81,6 +81,9 @@ for (const name of [
   'DSH_HOME',
   'USERPROFILE',
   'HOME',
+  'npm_config_prefix',
+  'NPM_CONFIG_PREFIX',
+  'SHELL',
 ])
   previousEnv.set(name, process.env[name])
 
@@ -731,6 +734,9 @@ describe('MiniMax Code adapter routing seam', () => {
     process.env.PATH = join(root, 'empty-path')
     process.env.USERPROFILE = home
     process.env.HOME = home
+    process.env.npm_config_prefix = ''
+    process.env.NPM_CONFIG_PREFIX = ''
+    process.env.SHELL = join(root, 'no-login-shell')
     // The claim is only meaningful when the launcher really is unresolvable.
     expect(await executablePath('mcode', MINIMAX_CODE_HARNESS)).toBeUndefined()
     const status = await minimaxCodeAdapter.available(
@@ -857,6 +863,9 @@ describe('MiniMax Code adapter routing seam', () => {
     process.env.PATH = join(root, 'empty-path')
     process.env.USERPROFILE = home
     process.env.HOME = home
+    process.env.npm_config_prefix = ''
+    process.env.NPM_CONFIG_PREFIX = ''
+    process.env.SHELL = join(root, 'no-login-shell')
     expect(await executablePath('mcode', MINIMAX_CODE_HARNESS)).toBeUndefined()
     for (const sandbox of ['read-only', 'workspace']) {
       const error = await minimaxCodeAdapter.prepare!(

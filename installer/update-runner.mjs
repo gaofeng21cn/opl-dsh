@@ -232,8 +232,7 @@ async function updateInputs(root, application, profileHome, options = {}) {
 
 async function profiles(root, profileHome, isAlive) {
   const result = []
-  // SuperAgent has its own home but shares the Suite's release generation.
-  for (const home of [profileHome, join(root, 'superagent', 'home')]) {
+  for (const home of [profileHome]) {
     const path = join(home, 'profiles')
     let names
     try {

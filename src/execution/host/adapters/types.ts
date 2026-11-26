@@ -1,12 +1,10 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { HarnessSession } from '../../contracts/sessions.ts'
 import type { ModelRef } from '../../contracts/catalog.ts'
-import type { CodexGitBashRuntime } from '../../contracts/codex-runtime.ts'
 import type { HarnessCapabilities } from '../../contracts/capabilities.ts'
 import type { ExternalModelSources } from '../model-sources.ts'
 export interface AdapterOptions {
   home: string
-  codexRuntime?: CodexGitBashRuntime
   modelSources?: ExternalModelSources
   command?: string
   prefix?: string[]

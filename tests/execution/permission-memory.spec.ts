@@ -19,7 +19,7 @@ function fixture(initialDefault = 'workspace-write', initialEnabled = true) {
   const settings = {
     describe: vi.fn(() => [
       { ns: 'permission', value: { defaultPreset }, revision },
-      { ns: 'opl-execution', value: { rememberPermissionPreset: enabled }, revision: 1 },
+      { ns: 'opl-suite', value: { rememberPermissionPreset: enabled }, revision: 1 },
     ]),
     mutate: vi.fn(async (_ns: string, ops: { value: string }[], expectedRevision: number) => {
       if (expectedRevision !== revision) throw Error('settings revision changed')

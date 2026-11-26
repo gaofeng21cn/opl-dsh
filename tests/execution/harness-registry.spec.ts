@@ -23,6 +23,8 @@ describe('Harness executable discovery', () => {
     vi.stubEnv('HOME', root)
     vi.stubEnv('PATH', root)
     vi.stubEnv('SHELL', join(root, 'no-login-shell'))
+    vi.stubEnv('npm_config_prefix', '')
+    vi.stubEnv('NPM_CONFIG_PREFIX', '')
     const harness = { id: 'grok-build', name: 'Grok Build', kind: 'grok-build' } as const
     const missing = await inspectHarness(harness, root)
     expect(missing.installed).toBe(false)
@@ -245,6 +247,9 @@ describe('Harness executable discovery', () => {
     vi.stubEnv('USERPROFILE', root)
     vi.stubEnv('APPDATA', root)
     vi.stubEnv('MINIMAX_CODE_HOME', root)
+    vi.stubEnv('SHELL', join(root, 'no-login-shell'))
+    vi.stubEnv('npm_config_prefix', '')
+    vi.stubEnv('NPM_CONFIG_PREFIX', '')
     const path = join(root, process.platform === 'win32' ? 'mcode.cmd' : 'mcode')
     await writeFile(path, '', { mode: 0o700 })
     expect(await executablePath('mcode', 'minimax-code')).toBe(path)

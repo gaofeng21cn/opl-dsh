@@ -1,8 +1,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { afterEach, expect, it, vi } from 'vitest'
-import * as executionPlugin from '../../src/suite/execution-plugin.ts'
-import { Config } from '../../src/execution/host/plugin-config.ts'
+import { Config, minimaxCodeConfigChanged } from '../../src/suite/config.ts'
+import { createMiniMaxCodeModelRegistration } from '../../src/execution/host/adapters/minimax-models.ts'
 import { MINIMAX_CODE_PROVIDER } from '../../src/execution/host/adapters/minimax.ts'
 
 const cleanups: Array<() => Promise<unknown>> = []
@@ -26,23 +26,17 @@ it('reads back config and the real provider consistently only after the MiniMax 
     configureMiniMaxCodeIntegration: vi.fn(),
     synchronizeMiniMaxCodeIntegration: synchronize,
   }
-  const ctx = {
-    llm: registry.llm,
-    logger: { warn: vi.fn() },
-    settings: { configure: vi.fn() },
-    effect: vi.fn(),
-    on: vi.fn((event: string, listener: (paths: readonly (readonly string[])[]) => void) => {
-      if (event === 'loader/volatile-update') listeners.push(listener)
-    }),
-    plugin: vi.fn(async (_plugin: unknown, options?: { minimaxCodeEnabled?: boolean }) => {
-      if (options?.minimaxCodeEnabled === undefined) return
-      // The outer context intentionally has no oplHarness property. The package
-      // must consume the child runtime instead of bypassing Cordis injection.
-      return { ctx: { get: (name: string) => (name === 'oplHarness' ? harness : undefined) } }
-    }),
-  } as unknown as Context
-
-  await executionPlugin.apply(ctx, config)
+  const minimaxCodeEnabled = () => config.minimaxCodeEnabled.get()
+  const syncMiniMaxCodeModels = createMiniMaxCodeModelRegistration(registry, minimaxCodeEnabled)
+  harness.configureMiniMaxCodeIntegration(minimaxCodeEnabled)
+  const syncMiniMaxCodeIntegration = () => {
+    syncMiniMaxCodeModels()
+    void harness.synchronizeMiniMaxCodeIntegration()
+  }
+  listeners.push((paths) => {
+    if (minimaxCodeConfigChanged(paths)) syncMiniMaxCodeIntegration()
+  })
+  syncMiniMaxCodeIntegration()
   expect(config.minimaxCodeEnabled.get()).toBe(true)
   expect(registry.llm.listProviders().map((item) => item.id)).toEqual([MINIMAX_CODE_PROVIDER])
   expect(synchronize).toHaveBeenCalledTimes(1)

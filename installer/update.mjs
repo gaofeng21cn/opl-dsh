@@ -316,7 +316,6 @@ function artifactManifest(bytes, expected) {
     'install.mjs',
     'profile.cjs',
     'model-plugins.cjs',
-    'kimi-cu.mjs',
     'setup.mjs',
     'update.mjs',
     'skill-install.mjs',
@@ -324,24 +323,6 @@ function artifactManifest(bytes, expected) {
     artifact.name,
   ]) {
     if (!Object.hasOwn(artifact.payloadFiles, required)) throw Error('增强安装文件缺失')
-  }
-  if (artifact.plugins !== undefined) {
-    const names = ['@one-person-lab/dsh-execution', '@one-person-lab/dsh-collaboration']
-    if (
-      !Array.isArray(artifact.plugins) ||
-      artifact.plugins.length !== names.length ||
-      artifact.plugins.some(
-        (plugin, index) =>
-          !plugin ||
-          plugin.package !== names[index] ||
-          plugin.version !== version ||
-          !/^opl-dsh-(execution|collaboration)-[a-zA-Z0-9.-]+\.tgz$/u.test(plugin.name) ||
-          !hashPattern.test(plugin.sha256) ||
-          artifact.payloadFiles[plugin.name] !== plugin.sha256,
-      ) ||
-      !Object.hasOwn(artifact.payloadFiles, 'split-plugins.cjs')
-    )
-      throw Error('OPL 功能插件安装清单无效')
   }
   return artifact
 }
@@ -553,8 +534,7 @@ export async function cancelPreparedUpdate(root) {
 }
 
 async function profilesStopped(current) {
-  for (const home of [current.profileHome, join(current.suiteRoot, 'superagent', 'home')])
-    await homeProfilesStopped(home)
+  await homeProfilesStopped(current.profileHome)
 }
 
 async function homeProfilesStopped(home) {

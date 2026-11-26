@@ -30,7 +30,9 @@ async function runtime(
     promotedTeam = false,
     migrationReceipt,
     cliProfile,
-    featurePlugins = false,
+    defaultContext = false,
+    installSuiteBundle = false,
+    cordisPatch,
     removeContextAndReinstall = false,
   } = {},
 ) {
@@ -48,10 +50,6 @@ async function runtime(
   await mkdir(payload)
   await writeFile(join(runtime, 'package.json'), '{"type":"module"}\n')
   await copyFile(installer, join(payload, 'profile.cjs'))
-  await copyFile(
-    new URL('../installer/split-plugins.cjs', import.meta.url),
-    join(payload, 'split-plugins.cjs'),
-  )
   await copyFile(
     fileURLToPath(new URL('../installer/ofm-owner.cjs', import.meta.url)),
     join(payload, 'ofm-owner.cjs'),
@@ -133,15 +131,7 @@ export async function runPluginCommand(profile, args) {
     return { exitCode: 0 };
   }
   writeFileSync(join(profile.dir, 'install-observation.json'), JSON.stringify({ profile: profile.profile, args }));
-  const additions = ${JSON.stringify(
-    featurePlugins
-      ? [
-          '@one-person-lab/dsh-collaboration',
-          '@one-person-lab/dsh-execution',
-          '@one-person-lab/dsh-opl',
-        ]
-      : [],
-  )};
+  const additions = ${JSON.stringify(installSuiteBundle ? ['@one-person-lab/dsh-opl'] : [])};
   if (additions.length) {
     const manifest = JSON.parse(readFileSync(join(profile.dir, 'package.json'), 'utf8'));
     manifest.dependencies ??= {};
@@ -164,7 +154,7 @@ export async function runPluginCommand(profile, args) {
 import { writeFile } from 'node:fs/promises';
 export const writeFileAtomic = writeFile;
 export async function withFileLock(file, operation, options) {
-  assert(file.endsWith('package.json'));
+  assert(file.endsWith('package.json') || file.endsWith('cordis.patch.yml'));
   assert.equal(options.waitMs, 1000);
   return operation();
 }`,
@@ -191,6 +181,10 @@ export async function withFileLock(file, operation, options) {
     await mkdir(profile, { recursive: true })
     await writeFile(join(profile, 'package.json'), JSON.stringify(existing))
   }
+  if (cordisPatch !== undefined) {
+    await mkdir(profile, { recursive: true })
+    await writeFile(join(profile, 'cordis.patch.yml'), cordisPatch, 'utf8')
+  }
   if (migrationReceipt) {
     await mkdir(profile, { recursive: true })
     await writeFile(join(profile, 'opl-official-bundles.json'), JSON.stringify(migrationReceipt))
@@ -209,12 +203,7 @@ export async function withFileLock(file, operation, options) {
         app,
         home,
         archive,
-        ...(featurePlugins
-          ? [
-              '--plugin=' + join(root, 'execution.tgz'),
-              '--plugin=' + join(root, 'collaboration.tgz'),
-            ]
-          : []),
+        ...(defaultContext ? ['--default-context'] : []),
       ],
       {
         env,
@@ -245,6 +234,12 @@ export async function withFileLock(file, operation, options) {
     template: JSON.parse(await readFile(join(profile, 'template-observation.json'), 'utf8')),
     install: JSON.parse(await readFile(join(profile, 'install-observation.json'), 'utf8')),
     archive,
+    reinstall: install,
+    readProfileFile: (name) =>
+      readFile(join(profile, name), 'utf8').catch((error) => {
+        if (error.code === 'ENOENT') return undefined
+        throw error
+      }),
     retirement: await readFile(join(profile, 'retirement-observation.json'), 'utf8').then(
       JSON.parse,
       (error) => {
@@ -270,17 +265,66 @@ test('CLI installation uses the requested custom profile with the web template',
   assert.deepEqual(result.install, { profile: 'opl-linux', args: ['add', result.archive] })
 })
 
-test('feature installation restores suite execution collaboration dependency order', async (t) => {
-  const result = await runtime(t, 'app-boot', undefined, { featurePlugins: true })
+test('unified installation installs @one-person-lab/dsh-opl, billion-context, and migrates legacy split config idempotently', async (t) => {
+  const existing = {
+    dependencies: {
+      '@one-person-lab/dsh-opl': 'file:old.tgz',
+      '@one-person-lab/dsh-execution': 'file:exec.tgz',
+      '@one-person-lab/dsh-collaboration': 'file:collab.tgz',
+    },
+    dsh: {
+      profile: {
+        bundles: [
+          ...bundles,
+          '@one-person-lab/dsh-opl',
+          '@one-person-lab/dsh-execution',
+          '@one-person-lab/dsh-collaboration',
+        ],
+      },
+    },
+  }
+  const cordisPatch = [
+    '- id: opl-suite',
+    '  config:',
+    '    rememberPermissionPreset: true',
+    '- id: opl-execution',
+    '  config:',
+    '    rememberPermissionPreset: false',
+    '    minimaxCodeEnabled: false',
+    '    toolAutoReview:',
+    '      enabled: true',
+    '- id: opl-collaboration',
+    '  config:',
+    '    wakeTransport: codex-queue',
+    '    cooperation:',
+    '      maxRevisions: 4',
+    '',
+  ].join('\n')
+  const result = await runtime(t, 'app-boot', existing, {
+    defaultContext: true,
+    cordisPatch,
+  })
+  assert.equal(result.manifest.dependencies['@one-person-lab/dsh-execution'], undefined)
+  assert.equal(result.manifest.dependencies['@one-person-lab/dsh-collaboration'], undefined)
   assert.deepEqual(result.manifest.dsh.profile.bundles, [
     ...bundles,
     ...autoEnabledBundles,
     '@one-person-lab/dsh-opl',
-    '@one-person-lab/dsh-execution',
-    '@one-person-lab/dsh-collaboration',
     'billion-context',
   ])
   assert.equal(result.manifest.dependencies['billion-context'], '0.1.216')
+  const migrated = await result.readProfileFile('cordis.patch.yml')
+  const backup = await result.readProfileFile('cordis.patch.before-v2-merge.yml')
+  assert.equal(backup, cordisPatch)
+  assert.ok(!migrated.includes('id: opl-execution'))
+  assert.ok(!migrated.includes('id: opl-collaboration'))
+  assert.ok(!migrated.includes('toolAutoReview'))
+  assert.ok(migrated.includes('rememberPermissionPreset: true'))
+  assert.ok(migrated.includes('minimaxCodeEnabled: false'))
+  assert.ok(migrated.includes('wakeTransport: codex-queue'))
+  await result.reinstall()
+  assert.equal(await result.readProfileFile('cordis.patch.yml'), migrated)
+  assert.equal(await result.readProfileFile('cordis.patch.before-v2-merge.yml'), cordisPatch)
 })
 
 test('suite update preserves an already installed but disabled Billion Context', async (t) => {
@@ -288,14 +332,15 @@ test('suite update preserves an already installed but disabled Billion Context',
     dependencies: { 'billion-context': '0.1.216' },
     dsh: { profile: { bundles } },
   }
-  const result = await runtime(t, 'app-boot', existing, { featurePlugins: true })
+  const result = await runtime(t, 'app-boot', existing, { defaultContext: true })
   assert.equal(result.manifest.dependencies['billion-context'], '0.1.216')
   assert(!result.manifest.dsh.profile.bundles.includes('billion-context'))
 })
 
 test('suite repair preserves a user uninstalling Billion Context', async (t) => {
   const result = await runtime(t, 'app-boot', undefined, {
-    featurePlugins: true,
+    defaultContext: true,
+    installSuiteBundle: true,
     removeContextAndReinstall: true,
   })
   assert(!Object.hasOwn(result.manifest.dependencies, 'billion-context'))

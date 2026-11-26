@@ -1,8 +1,9 @@
-/** First-run account choice; authentication stays in its provider service. */
+/** First-run account choice and unified suite settings; auth and Harness stay in their owners. */
 import { Config as GatewayConfig } from '../gateway/host/config.ts'
 import z from '@deepseek-ai/schemastery'
 import type { Volatile } from '@deepseek-ai/cordis'
 import type { LoginChoice } from '../setup/contracts.ts'
+import { executionLimitsSchema, type ExecutionLimits } from '../execution/contracts/limits.ts'
 export type { LoginChoice } from '../setup/contracts.ts'
 export interface Config {
   /** Exact Loader disabled values saved by the explicit Windows Git Bash selection. */
@@ -23,6 +24,20 @@ export interface Config {
   gateway: Volatile<import('../gateway/host/config.ts').Config>
   loginChoice: Volatile<LoginChoice>
   setupCompleted: Volatile<boolean>
+  executionLimits: Volatile<ExecutionLimits>
+  /** Persist explicit native permission choices as the official future-session default. */
+  rememberPermissionPreset: Volatile<boolean>
+  /** Project the dedicated official mcode integration; saved routes survive opt-out. */
+  minimaxCodeEnabled: Volatile<boolean>
+  cooperation: Volatile<{ autoReview: boolean; maxRevisions: number; externalCodex: boolean }>
+  roleExecutions: Volatile<Record<string, string>>
+  wakeTransport: Volatile<'unconnected' | 'codex-queue'>
+  wakeExecutable: Volatile<string>
+  wakeExecution: Volatile<'native' | 'wsl'>
+  wakeDistro: Volatile<string>
+}
+export function minimaxCodeConfigChanged(paths: readonly (readonly string[])[]): boolean {
+  return paths.some((path) => path.length === 1 && path[0] === 'minimaxCodeEnabled')
 }
 export const Config = z.object({
   nativeShellReceipt: z.string().default('').volatile(),
@@ -47,4 +62,20 @@ export const Config = z.object({
     .union(['undecided', 'gateway', 'official', 'later'])
     .default('undecided')
     .volatile(),
+  executionLimits: executionLimitsSchema.volatile(),
+  rememberPermissionPreset: z.boolean().default(false).volatile(),
+  minimaxCodeEnabled: z.boolean().default(true).volatile(),
+  cooperation: z
+    .object({
+      autoReview: z.boolean().default(true),
+      maxRevisions: z.number().step(1).min(0).max(5).default(2),
+      externalCodex: z.boolean().default(true),
+    })
+    .default({})
+    .volatile(),
+  roleExecutions: z.dict(z.string().min(1)).default({}).volatile(),
+  wakeTransport: z.union(['unconnected', 'codex-queue']).default('unconnected').volatile(),
+  wakeExecutable: z.string().default('').volatile(),
+  wakeExecution: z.union(['native', 'wsl']).default('native').volatile(),
+  wakeDistro: z.string().default('').volatile(),
 })

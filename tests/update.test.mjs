@@ -33,7 +33,6 @@ function payload(version = '0.2.56', patch = {}) {
       'profile.cjs',
       'model-plugins.cjs',
       'ofm-upgrade.cjs',
-      'kimi-cu.mjs',
       'setup.mjs',
       'update.mjs',
       'update-errors.mjs',
@@ -660,7 +659,6 @@ test('stale identities, tampered plans and files, and every running profile defe
     'manifest',
     'running',
     'other-profile',
-    'superagent-profile',
   ]) {
     await t.test(scenario, async (t) => {
       const value = await fixture(t)
@@ -685,15 +683,12 @@ test('stale identities, tampered plans and files, and every running profile defe
         plan.metadata.manifestText += ' '
         await writeFile(pendingFile(value.root), JSON.stringify(plan))
       }
-      if (
-        scenario === 'running' ||
-        scenario === 'other-profile' ||
-        scenario === 'superagent-profile'
-      ) {
-        const profile =
-          scenario === 'superagent-profile'
-            ? join(value.root, 'superagent/home/profiles/desktop')
-            : join(value.home, 'profiles', scenario === 'running' ? 'desktop' : 'research')
+      if (scenario === 'running' || scenario === 'other-profile') {
+        const profile = join(
+          value.home,
+          'profiles',
+          scenario === 'running' ? 'desktop' : 'research',
+        )
         await mkdir(profile, { recursive: true })
         await writeFile(join(profile, 'control.json'), JSON.stringify({ pid: process.pid }))
       }
@@ -707,7 +702,7 @@ test('stale identities, tampered plans and files, and every running profile defe
       assert.equal(status.state, 'deferred')
       assert.equal(status.trigger, 'prepared-launcher')
       const expectedFailure =
-        scenario === 'running' || scenario === 'other-profile' || scenario === 'superagent-profile'
+        scenario === 'running' || scenario === 'other-profile'
           ? { stage: 'apply', reason: 'busy' }
           : scenario === 'old-payload'
             ? { stage: 'installation', reason: 'installation' }

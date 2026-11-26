@@ -2,7 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { describe, expect, it, vi } from 'vitest'
 
-const migration = vi.hoisted(() => ({ finished: false }))
+const ready = vi.hoisted(() => ({ registered: false }))
 
 vi.mock('../../src/gateway/host/index.ts', () => ({
   name: 'fixture',
@@ -22,13 +22,10 @@ vi.mock('../../src/conversation-stats/host/index.ts', () => ({
   Config: undefined,
   apply() {},
 }))
-vi.mock('../../src/mcp-apps/host/index.ts', () => ({
-  name: 'fixture',
-  inject: [],
-  Config: undefined,
-  apply() {},
-}))
 vi.mock('../../src/gateway/host/model-service.ts', () => ({ GatewayModelsService() {} }))
+vi.mock('../../src/gateway/host/model-catalog.ts', () => ({
+  installGatewayModelCatalogProjection: () => () => {},
+}))
 vi.mock('../../src/setup/host/index.ts', () => ({ SetupService() {} }))
 vi.mock('../../src/updates/host/index.ts', () => ({ UpdateService() {} }))
 vi.mock('../../src/updates/host/runtime-admission.ts', () => ({
@@ -42,25 +39,40 @@ vi.mock('../../src/shared/host/suite-control.ts', () => ({
     ctx.provide('qualificationControlReady', true)
   },
 }))
-vi.mock('../../src/compat/host/model-providers.ts', () => ({
-  name: 'migration-fixture',
+vi.mock('../../src/execution/host/adapters/minimax-models.ts', () => ({
+  createMiniMaxCodeModelRegistration: () => () => {},
+}))
+vi.mock('../../src/suite/execution.ts', () => ({
+  name: 'execution-fixture',
   inject: [],
   Config: undefined,
-  async apply(ctx: Context) {
-    // The alpha2 Loader starts this child after the parent entry's startup
-    // barrier. A microtask yields the same post-start observation without
-    // re-entering the Loader wait from inside its own child.
-    await Promise.resolve()
-    migration.finished = true
+  apply(ctx: Context) {
+    ctx.provide('oplHarness', {
+      configureMiniMaxCodeIntegration() {},
+      synchronizeMiniMaxCodeIntegration: async () => {},
+    })
+  },
+}))
+vi.mock('../../src/collaboration/host/settings-service.ts', () => ({ CoordinationService() {} }))
+vi.mock('../../src/collaboration/host/roles.ts', () => ({ RoleExecutionService() {} }))
+vi.mock('../../src/collaboration/host/feedback/index.ts', () => ({ default() {} }))
+vi.mock('../../src/collaboration/host/official-tools.ts', () => ({
+  OfficialCollaborationBridge: class {},
+}))
+vi.mock('../../src/collaboration/host/tools.ts', () => ({ installCollaborationTools() {} }))
+vi.mock('../../src/collaboration/host/external-codex.ts', () => ({ installExternalCodex() {} }))
+vi.mock('../../src/collaboration/host/domain-agent-presets.ts', () => ({
+  DomainAgentPresetService() {
+    ready.registered = true
   },
 }))
 
 import * as suite from '../../src/suite/host.ts'
 
-describe('Suite startup with a profile-writing provider migration', () => {
-  it('publishes control and lets the migration finish after the Loader settles', async () => {
+describe('Unified suite startup under Cordis Loader', () => {
+  it('publishes control and wires execution and collaboration without deadlocks', async () => {
     const ctx = new Context()
-    migration.finished = false
+    ready.registered = false
     await ctx.plugin(Loader)
     for (const name of suite.inject) {
       if (name === 'loader') continue
@@ -78,7 +90,7 @@ describe('Suite startup with a profile-writing provider migration', () => {
       })
       await starting
       await ctx.loader.await()
-      await vi.waitFor(() => expect(migration.finished).toBe(true))
+      await vi.waitFor(() => expect(ready.registered).toBe(true))
     } finally {
       await ctx.fiber.dispose()
     }

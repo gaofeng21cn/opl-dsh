@@ -18,9 +18,8 @@
     "pretypecheck": "node scripts/generate-rpc.mjs --if-stale",
     "prebuild": "node scripts/generate-rpc.mjs --if-stale",
     "pretest": "node scripts/generate-rpc.mjs --if-stale",
-    "typecheck": "tsc -p tsconfig.host.json && tsc -p tsconfig.client.json && npm run typecheck --workspace dsh-superagent",
+    "typecheck": "tsc -p tsconfig.host.json && tsc -p tsconfig.client.json",
     "test": "vitest run && node scripts/run-node-tests.mjs",
-    "test:superagent": "npm test --workspace dsh-superagent",
     "package": "npm run build && node package.mjs",
     "release:manifest": "node scripts/create-release-manifest.mjs",
     "format": "prettier --write src tests scripts installer/*.mjs build.mjs",
@@ -135,11 +134,6 @@
     "./git-bash": "./src/shell/host/git-bash.ts",
     "./types": "./src/contracts/types.ts",
     "./icon": "./src/setup/client/opl-app-logo.png",
-    "./locale/*.json": "./src/suite/locale/*.json",
-    "./execution": "./src/suite/execution-plugin.ts",
-    "./collaboration": "./src/suite/collaboration-plugin.ts"
-  },
-  "workspaces": [
-    "vendor/dsh-superagent"
-  ]
+    "./locale/*.json": "./src/suite/locale/*.json"
+  }
 }

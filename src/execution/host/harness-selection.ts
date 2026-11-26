@@ -15,7 +15,6 @@ import {
   type CombinationDefinition,
   type ModelRef,
 } from '../contracts/catalog.ts'
-import type { CodexGitBashRuntime } from '../contracts/codex-runtime.ts'
 import type { HarnessSession } from '../contracts/sessions.ts'
 import { adapterFor } from './adapters/index.ts'
 import {
@@ -58,11 +57,7 @@ export interface HarnessSelectionHost {
   officialModelCatalog(): Promise<ModelCatalog>
   readonly catalogEpoch: number
   executionCatalog(options?: { fast?: boolean }): Promise<ExecutionCatalog>
-  adapterOptions(
-    command?: string,
-    prefix?: string[],
-    codexRuntime?: CodexGitBashRuntime,
-  ): AdapterOptions
+  adapterOptions(command?: string, prefix?: string[]): AdapterOptions
   conversationBinding(
     session: Session,
     definition: CombinationDefinition,
@@ -441,7 +436,7 @@ export async function reasoningPreflightAdmitted(
     const launch = await adapter.prepare!(
       host.ctx,
       record,
-      host.adapterOptions(harness?.command, harness?.prefix, harness?.codexRuntime),
+      host.adapterOptions(harness?.command, harness?.prefix),
     )
     if (host.disposed) return { status: 'unavailable', efforts: [] }
     const result = await probeHarnessReasoning(adapter, record, {
@@ -623,7 +618,7 @@ export async function selectCombination(
     if (!harness || !adapter) throw Error('组合没有兼容适配器')
     const available = await adapter.available(
       host.ctx,
-      host.adapterOptions(harness.command, harness.prefix, harness?.codexRuntime),
+      host.adapterOptions(harness.command, harness.prefix),
     )
     if (!available.available) throw Error(available.reason ?? 'Harness 未就绪')
     const selection = await host.selectionForModel(session, definition)
