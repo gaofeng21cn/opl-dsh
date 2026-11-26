@@ -1,4 +1,4 @@
-/** First-run account choice and unified suite settings; auth and Harness stay in their owners. */
+import type { GatewayChannelProfile } from '../gateway/host/channel-defaults.ts'
 import { Config as GatewayConfig } from '../gateway/host/config.ts'
 import z from '@deepseek-ai/schemastery'
 import type { Volatile } from '@deepseek-ai/cordis'
@@ -21,6 +21,7 @@ export interface Config {
   fixedWindowTitle: Volatile<boolean>
   gatewayGroups: Volatile<Record<string, boolean>>
   gatewayCatalogHashes: Volatile<Record<string, string>>
+  gatewayChannels: Volatile<Record<string, GatewayChannelProfile>>
   gateway: Volatile<import('../gateway/host/config.ts').Config>
   loginChoice: Volatile<LoginChoice>
   setupCompleted: Volatile<boolean>
@@ -56,6 +57,7 @@ export const Config = z.object({
   fixedWindowTitle: z.boolean().default(true).volatile(),
   gatewayGroups: z.dict(z.boolean()).default({}).volatile(),
   gatewayCatalogHashes: z.dict(z.string()).default({}).volatile(),
+  gatewayChannels: z.dict(z.any()).default({}).volatile(),
   gateway: GatewayConfig.default({}).volatile(),
   setupCompleted: z.boolean().default(false).volatile(),
   loginChoice: z

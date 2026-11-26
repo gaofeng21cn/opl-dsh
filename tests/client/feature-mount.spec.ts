@@ -1,9 +1,15 @@
 /** Real Cordis fibers enforce required service access; only rendering/transport are stubs. */
+import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { CoordinationCall, ExecutionCall } from '../../src/shared/client/remote-call.ts'
 import type { SetupActions } from '../../src/setup/client/SetupScreen.tsx'
 import type { OplGatewaySectionInjected } from '../../src/gateway/client/OplGatewaySection.tsx'
+
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
+  Button: ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) =>
+    React.createElement('button', props, children),
+}))
 
 vi.mock('../../src/collaboration/client/CoordinationSection.tsx', () => ({
   CoordinationSection: () => null,
@@ -12,9 +18,6 @@ vi.mock('../../src/setup/client/SetupScreen.tsx', () => ({ SetupScreen: () => nu
 vi.mock('../../src/setup/client/AccountLauncher.tsx', () => ({ AccountLauncher: () => null }))
 vi.mock('../../src/gateway/client/OplGatewaySection.tsx', () => ({ OplGatewaySection: () => null }))
 vi.mock('../../src/gateway/client/GatewayModels.tsx', () => ({ GatewayModels: () => null }))
-vi.mock('../../src/compat/client/gateway-models.ts', () => ({
-  installGatewayModelPresentation: () => () => {},
-}))
 import * as collaboration from '../../src/collaboration/client/index.tsx'
 import * as setup from '../../src/setup/client/index.tsx'
 import * as gateway from '../../src/gateway/client/index.tsx'
@@ -142,9 +145,12 @@ describe('Client feature service boundaries', () => {
         finish,
       },
     })
-    await f.ctx.plugin(setup, { bindModelNavigation: () => {} })
+    await f.ctx.plugin(setup)
     const actions = f.props('opl-setup') as SetupActions & OplGatewaySectionInjected
     expect(f.slots.registrations.some((item) => item.id === 'opl-account')).toBe(true)
+    expect(f.slots.registrations.some((item) => item.id === 'opl-model-navigation')).toBe(false)
+    expect(f.slots.registrations.some((item) => item.id === 'opl-update-navigation')).toBe(false)
+    expect(f.slots.registrations.some((item) => item.id === 'opl-engine-navigation')).toBe(false)
     expect(await actions.readSetup()).toMatchObject({ completed: false })
     await actions.startOfficial()
     await actions.finish('official')
@@ -166,7 +172,7 @@ describe('Client feature service boundaries', () => {
       oplSetup: { status: async () => ok({ completed: true }) },
       oplGatewayAccount: { status },
     })
-    await f.ctx.plugin(setup, { bindModelNavigation: () => {} })
+    await f.ctx.plugin(setup)
     const actions = f.props('opl-setup') as SetupActions & OplGatewaySectionInjected
     expect(await actions.status()).toEqual({ phase: 'signed-out' })
     expect(status).toHaveBeenCalledOnce()
@@ -184,12 +190,22 @@ describe('Client feature service boundaries', () => {
       await vi.waitFor(() =>
         expect(f.slots.registrations.some((item) => item.id === 'opl-gateway')).toBe(true),
       )
+      expect(f.slots.registrations.some((item) => item.id === 'opl-gateway-models-entry')).toBe(
+        true,
+      )
+      expect(
+        f.slots.registrations.some((item) => item.name === 'settings.models.provider-card'),
+      ).toBe(false)
       const actions = f.props('opl-gateway') as OplGatewaySectionInjected
       expect(await actions.status()).toEqual(accountStatus)
       if (modelsAvailable) {
+        expect(actions.modelsCall).toBeTypeOf('function')
         expect(await actions.setGroupActive!('deepseek', true)).toEqual(accountStatus)
         expect(activate).toHaveBeenCalledWith({ id: 'deepseek', enabled: true })
-      } else expect(actions.setGroupActive).toBeUndefined()
+      } else {
+        expect(actions.modelsCall).toBeUndefined()
+        expect(actions.setGroupActive).toBeUndefined()
+      }
     }
   })
 })

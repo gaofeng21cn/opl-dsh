@@ -2283,12 +2283,12 @@ describe('native conversation combinations', () => {
     const { service, ctx } = await nativeSetup([])
     const settings = {
       describe: () => [
-        { ns: 'opl-suite', value: { gatewayGroups: { gemini: true } }, revision: 1 },
         {
-          ns: 'llm-pi-ai',
+          ns: 'opl-suite',
           value: {
-            providers: {
-              'opl-gateway-gemini': {
+            gatewayGroups: { gemini: true },
+            gatewayChannels: {
+              gemini: {
                 models: [
                   { id: 'gemini-4-carbon', name: 'Gemini 4 Carbon' },
                   { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen' },

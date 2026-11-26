@@ -8,6 +8,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import * as gateway from '../gateway/client/index.tsx'
 import * as setup from '../setup/client/index.tsx'
+import type { SettingsNavigationTarget } from '../setup/client/AccountLauncher.tsx'
 import * as notifications from '../notifications/client/index.tsx'
 import * as conversationStats from '../conversation-stats/client/index.tsx'
 import * as execution from '../execution/client/index.tsx'
@@ -56,9 +57,8 @@ export async function apply(ctx: Context): Promise<void> {
       ),
     )
   }
-  let openModels: (() => void) | undefined
-  let openSettings: ((section?: 'engines') => void) | undefined
-  ctx.plugin(gateway, { openModels: () => openModels?.() })
+  let openSettings: ((section?: SettingsNavigationTarget) => void) | undefined
+  ctx.plugin(gateway, { openGateway: () => openSettings?.('gateway') })
   if (optionalRemote(ctx, 'oplExecution')) ctx.plugin(execution)
   if (optionalRemote(ctx, 'oplCoordination')) ctx.plugin(collaboration)
   ctx.plugin(notifications)
@@ -115,10 +115,9 @@ export async function apply(ctx: Context): Promise<void> {
     })
   }
   ctx.plugin(setup, {
-    bindModelNavigation: (navigate: (() => void) | undefined) => {
-      openModels = navigate
-    },
-    bindSettingsNavigation: (navigate: ((section?: 'engines') => void) | undefined) => {
+    bindSettingsNavigation: (
+      navigate: ((section?: SettingsNavigationTarget) => void) | undefined,
+    ) => {
       openSettings = navigate
     },
   })

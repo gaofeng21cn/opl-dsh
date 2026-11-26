@@ -36,9 +36,16 @@ test('tarball checksum and contents bind the installer to an external plugin', a
   const web = overlay.find((entry) => entry.id === 'web')
   assert.equal(web?.config?.searchProvider, 'opl-gateway')
   assert.equal(web?.config?.fetchProvider, 'http')
+  assert.equal(
+    overlay.find((entry) => entry.id === 'llm-pi-ai'),
+    undefined,
+  )
+  const overlayText = await readFile(new URL('package/cordis.patch.yml', output), 'utf8')
+  assert.doesNotMatch(overlayText, /opl-gateway-(?:openai|auto-review|grok|gemini|kiro|aws|claude)/)
   const pkg = JSON.parse(await readFile(new URL('package/package.json', output), 'utf8'))
   assert.equal(pkg.name, '@one-person-lab/dsh-opl')
   assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-llm'], '*')
+  assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-llm-pi-ai'], '*')
   const project = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
   assert.equal(pkg.dependencies.zod, project.devDependencies.zod)
   assert.equal(pkg.peerDependencies.zod, undefined)
@@ -68,7 +75,7 @@ test('tarball checksum and contents bind the installer to an external plugin', a
   assert.match(code, /from "@deepseek-ai\/dsh-llm-deepseek"/)
   assert.doesNotMatch(
     code,
-    /class LlmRuntime|class AgentLoop|resolveProfiles|credentialStoreFrom|authContextFrom/,
+    /class LlmRuntime|class AgentLoop|resolveProfiles|credentialStoreFrom|authContextFrom|installGatewayModelCatalogProjection/,
   )
   const client = await readFile(new URL('package/lib/client.js', output), 'utf8')
   assert.doesNotMatch(

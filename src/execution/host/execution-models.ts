@@ -219,8 +219,6 @@ export class ExecutionModelResolver {
           const models = await this.ctx.llm.listModels(provider.id)
           return await Promise.all(
             models.flatMap((model) => {
-              if (provider.id === 'opl-gateway' && model.id === 'codex::codex-auto-review')
-                return []
               if (isHiddenOfmSelection({ provider: provider.id, model: model.id })) return []
               const ref = { provider: provider.id, model: model.id }
               if (

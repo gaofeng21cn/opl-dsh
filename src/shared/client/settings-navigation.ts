@@ -14,7 +14,7 @@ export const SETTINGS_ORDER = {
 export const SETTINGS_NAVIGATION_NS = 'settings.oplNavigation'
 export const settingsNavigationZh = {
   general: '通用设置',
-  'opl-gateway': '网关账户',
+  'opl-gateway': 'OPL Gateway',
   models: '模型供应商',
   'our-free-model': 'Our Free Model',
   bili: 'Billion Context',
@@ -25,7 +25,7 @@ export const settingsNavigationZh = {
 } satisfies Record<keyof typeof SETTINGS_ORDER, string>
 export const settingsNavigationEn: Record<keyof typeof SETTINGS_ORDER, string> = {
   general: 'General',
-  'opl-gateway': 'Gateway',
+  'opl-gateway': 'OPL Gateway',
   models: 'Model providers',
   'our-free-model': 'Our Free Model',
   bili: 'Billion Context',

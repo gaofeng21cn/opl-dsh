@@ -170,16 +170,65 @@ describe('OPL Gateway composition', () => {
     expect(ctx.llm.listProviders()).toContainEqual({ id: 'opl-gateway', name: 'OPL Gateway' })
   })
 
-  it('is declared in the native Models page directory', async () => {
+  it('registers opl-gateway cleanly without exposing internal channels or configurable cards', async () => {
     const ctx = await mount()
-    expect(ctx.llm.listConfigurableProviders()).toContainEqual(
-      expect.objectContaining({
-        provider: 'opl-gateway',
-        displayName: 'OPL Gateway',
-        settingsNs: 'opl-suite',
-        settingsPath: ['gateway'],
-      }),
-    )
+    const providers = ctx.llm.listProviders().map((item) => item.id)
+    expect(providers).toContain('opl-gateway')
+    expect(providers.some((id) => id.startsWith('opl-gateway-'))).toBe(false)
+    const configurable = ctx.llm.listConfigurableProviders().map((item) => item.provider)
+    expect(configurable).not.toContain('opl-gateway')
+    expect(configurable.some((id) => id.startsWith('opl-gateway-'))).toBe(false)
+  })
+
+  it('serves multi-group models through the isolated PiAiAdapter and reflects dynamic channel updates', async () => {
+    const ctx = new Context()
+    let revision = 0
+    const suiteValue: Record<string, any> = {
+      gatewayChannels: {
+        grok: { models: [] },
+      },
+    }
+    ctx.provide('settings', {
+      configure: () => () => {},
+      describe: () => [{ ns: 'opl-suite', value: suiteValue, user: suiteValue, revision }],
+    })
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LocalCredentialProvider, {
+      path: join(home, '.credentials.yaml'),
+      watch: false,
+    })
+    await ctx.plugin(OplGateway, {})
+    try {
+      await ctx.credentials.set(credentialRef('OPL_GATEWAY_CODEX_API_KEY'), 'codex-fixture-key')
+      await ctx.credentials.set(credentialRef('OPL_GATEWAY_CLAUDE_API_KEY'), 'claude-fixture-key')
+      await ctx.credentials.set(credentialRef('OPL_GATEWAY_GEMINI_API_KEY'), 'gemini-fixture-key')
+      await ctx.credentials.set(credentialRef('OPL_GATEWAY_GROK_API_KEY'), 'grok-fixture-key')
+
+      const models = await ctx.llm.listModels('opl-gateway')
+      const ids = models.map((item) => item.id)
+      expect(ids).toContain('codex::gpt-6.2-astra')
+      expect(ids).toContain('claude::claude-opus-5-5')
+      expect(ids).toContain('gemini::gemini-4-carbon')
+      expect(ids.some((id) => id.startsWith('grok::'))).toBe(false)
+
+      const geminiInfo = await ctx.llm.resolveModelInfo('opl-gateway', 'gemini::gemini-4-carbon')
+      expect(geminiInfo.name).toBe('Gemini 4 Carbon')
+      expect(geminiInfo.inputModalities).toEqual(['text', 'image'])
+      await expect(ctx.llm.resolveModelInfo('opl-gateway', 'grok::grok-4.7')).rejects.toThrow()
+
+      suiteValue.gatewayChannels = {
+        ...suiteValue.gatewayChannels,
+        codex: {
+          models: [{ id: 'gpt-dynamic', name: 'GPT Dynamic', input: ['text', 'image'] }],
+        },
+      }
+      revision++
+      const updatedIds = (await ctx.llm.listModels('opl-gateway')).map((item) => item.id)
+      expect(updatedIds).toContain('codex::gpt-dynamic')
+      expect(updatedIds).not.toContain('codex::gpt-6.2-astra')
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('provides the account surface the settings page drives', async () => {

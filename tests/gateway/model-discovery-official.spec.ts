@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context, type Fiber } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
-import * as PiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import SettingsForms from '@deepseek-ai/dsh-settings'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,11 +12,11 @@ import { GATEWAY_GROUPS } from '../../src/gateway/contracts/groups.ts'
 import {
   discoverGatewayModels,
   editGatewayModels,
-  ensureAutoReviewProvider,
   gatewayModelSettings,
-  migrateGatewayProtocolDefaults,
+  migrateLegacyGatewaySettings,
   syncGatewayModels,
 } from '../../src/gateway/host/model-settings.ts'
+import { mountGatewayPiAiBridge } from '../../src/gateway/host/pi-ai-bridge.ts'
 import { gatewayCatalogStatus } from '../../src/gateway/host/model-diagnostics.ts'
 import { gatewayInferenceBaseURL } from '../../src/gateway/host/protocol.ts'
 
@@ -46,9 +45,9 @@ async function fixture() {
   const document = join(home, 'profile-fixture.json')
   const root = new Context()
   cleanups.push(() => root.fiber.dispose())
-  const providers = Object.fromEntries(
+  const gatewayChannels = Object.fromEntries(
     GATEWAY_GROUPS.filter((group) => group.id !== 'deepseek').map((group) => [
-      group.provider,
+      group.id,
       {
         api: group.api,
         apiKeyEnv: group.credential,
@@ -60,6 +59,7 @@ async function fixture() {
   const suiteRaw = {
     gatewayGroups: { kiro: true },
     gatewayCatalogHashes: {} as Record<string, string>,
+    gatewayChannels,
     gateway: {
       baseURL: 'https://fixture.invalid/deepseek/v1',
       apiKeyEnv: 'FIXTURE_DEEPSEEK',
@@ -70,19 +70,12 @@ async function fixture() {
   root.provide('loader', { await: async () => {} })
   root.provide('profileContext', { home, name: 'fixture', patchPath: document })
   await root.plugin(LlmRuntime)
-  const native = root.plugin(PiAi, { providers })
-  await native
   const suite = root.plugin({ name: 'suite-fixture', Config: SuiteConfig, apply() {} }, suiteRaw)
   await suite
   const entries: FixtureEntry[] = [
-    {
-      id: 'fixture-pi-ai',
-      options: { id: 'llm-pi-ai', config: { providers } },
-      fiber: native.ctx.fiber,
-    },
     { id: 'fixture-suite', options: { id: 'opl-suite', config: suiteRaw }, fiber: suite.ctx.fiber },
   ]
-  const saved: Record<string, Values> = { 'llm-pi-ai': {}, 'opl-suite': {} }
+  const saved: Record<string, Values> = { 'opl-suite': {} }
   const inherited = new Map(entries.map((entry) => [entry, structuredClone(entry.options.config)]))
   // SettingsForms owns projection, path validation and revision checks. This
   // editor persists only the isolated profile and applies real Cordis updates.
@@ -111,6 +104,7 @@ async function fixture() {
     },
   })
   await credentials
+  await mountGatewayPiAiBridge(root)
   let caller!: Context
   await root.plugin({
     name: 'gateway/internal',
@@ -156,7 +150,7 @@ describe('automatic Gateway discovery through official services', { timeout: 15_
       const models =
         group.id === 'deepseek'
           ? persisted['opl-suite'].gateway.models
-          : persisted['llm-pi-ai'].providers[group.provider].models
+          : persisted['opl-suite'].gatewayChannels[group.id].models
       expect(models).toEqual([{ id: 'listed-' + group.id, name: 'listed-' + group.id }])
       expect(persisted['opl-suite'].gatewayCatalogHashes[group.id]).toBe(fingerprint(models))
     }
@@ -171,15 +165,13 @@ describe('automatic Gateway discovery through official services', { timeout: 15_
     for (const group of GATEWAY_GROUPS)
       expect(gatewayCatalogStatus(f.caller, group.id)).toEqual({ state: 'empty', count: 0 })
     expect(f.entries.map((entry) => entry.options.config)).toEqual(before)
-    expect(f.saved).toEqual({ 'llm-pi-ai': {}, 'opl-suite': {} })
+    expect(f.saved).toEqual({ 'opl-suite': {} })
   })
 
   it('keeps a saved manual text policy and custom connection when other groups synchronize', async () => {
     const f = await fixture()
-    const native = f.entries[0]!
-    const profile = (native.options.config.providers as Record<string, Values>)[
-      'opl-gateway-openai'
-    ]!
+    const suite = f.entries[0]!
+    const profile = (suite.options.config.gatewayChannels as Record<string, Values>).codex!
     Object.assign(profile, {
       api: 'openai-completions',
       apiKeyEnv: 'CUSTOM_CODEX',
@@ -187,35 +179,31 @@ describe('automatic Gateway discovery through official services', { timeout: 15_
       defaultInput: ['text'],
       models: [{ id: 'gpt-6.1-sol', input: ['text'], metadata: { policy: 'manual' } }],
     })
-    await native.fiber.update(native.options.config, true)
-    f.saved['llm-pi-ai'] = { providers: { 'opl-gateway-openai': structuredClone(profile) } }
+    await suite.fiber.update(suite.options.config, true)
+    f.saved['opl-suite'] = { gatewayChannels: { codex: structuredClone(profile) } }
     const before = structuredClone(profile)
     await syncGatewayModels(f.caller)
     expect(f.fetch).toHaveBeenCalledTimes(GATEWAY_GROUPS.length - 1)
-    expect(
-      (native.options.config.providers as Record<string, Values>)['opl-gateway-openai'],
-    ).toEqual(before)
-    expect((await f.persisted())['llm-pi-ai'].providers['opl-gateway-openai']).toEqual(before)
+    expect((suite.options.config.gatewayChannels as Record<string, Values>).codex).toEqual(before)
+    expect((await f.persisted())['opl-suite'].gatewayChannels.codex).toEqual(before)
     expect((await f.persisted())['opl-suite'].gatewayCatalogHashes.codex).toBeUndefined()
   })
 
   it('migrates and edits a bundled route through the same strict settings context', async () => {
     const f = await fixture()
-    const native = f.entries[0]!
-    const profile = (native.options.config.providers as Record<string, Values>)[
-      'opl-gateway-openai'
-    ]!
+    const suite = f.entries[0]!
+    const profile = (suite.options.config.gatewayChannels as Record<string, Values>).codex!
     Object.assign(profile, {
       baseURL: gatewayInferenceBaseURL('openai-responses'),
       models: [{ id: 'gpt-6.1-sol', input: [] }],
     })
-    await native.fiber.update(native.options.config, true)
-    await migrateGatewayProtocolDefaults(f.caller)
-    expect((await f.persisted())['llm-pi-ai'].providers['opl-gateway-openai'].models).toEqual([
+    await suite.fiber.update(suite.options.config, true)
+    f.saved['opl-suite'] = { gatewayChannels: { codex: structuredClone(profile) } }
+    await migrateLegacyGatewaySettings(f.caller)
+    expect((await f.persisted())['opl-suite'].gatewayChannels.codex.models).toEqual([
       {
         id: 'gpt-6.1-sol',
         input: ['text', 'image'],
-        compat: { chatTemplateArgs: {}, chatTemplateKwargs: {} },
       },
     ])
     const revision = (await gatewayModelSettings(f.caller)).groups.find(
@@ -227,41 +215,14 @@ describe('automatic Gateway discovery through official services', { timeout: 15_
       revision,
       models: [{ id: 'gpt-6.1-sol', input: ['text'] }],
     })
-    await migrateGatewayProtocolDefaults(f.caller)
-    expect((await f.persisted())['llm-pi-ai'].providers['opl-gateway-openai'].models).toEqual([
+    await migrateLegacyGatewaySettings(f.caller)
+    expect((await f.persisted())['opl-suite'].gatewayChannels.codex.models).toEqual([
       { id: 'gpt-6.1-sol', input: ['text'] },
     ])
     expect(f.fetch).not.toHaveBeenCalled()
   })
 
-  it('synchronizes sibling inherited catalogs materialized by the protocol migration', async () => {
-    const f = await fixture()
-    f.directoryURLs.set('codex', gatewayInferenceBaseURL('openai-responses') + '/models')
-    const native = f.entries[0]!
-    const profile = (native.options.config.providers as Record<string, Values>)[
-      'opl-gateway-openai'
-    ]!
-    Object.assign(profile, {
-      baseURL: gatewayInferenceBaseURL('openai-responses'),
-      models: [{ id: 'gpt-6.1-sol', input: [] }],
-    })
-    await native.fiber.update(native.options.config, true)
-    await migrateGatewayProtocolDefaults(f.caller)
-    await syncGatewayModels(f.caller)
-    expect(f.fetch).toHaveBeenCalledTimes(GATEWAY_GROUPS.length)
-    const persisted = await f.persisted()
-    for (const group of GATEWAY_GROUPS) {
-      expect(gatewayCatalogStatus(f.caller, group.id)).toEqual({ state: 'ready', count: 1 })
-      const models =
-        group.id === 'deepseek'
-          ? persisted['opl-suite'].gateway.models
-          : persisted['llm-pi-ai'].providers[group.provider].models
-      expect(models.map((model: Values) => model.id)).toEqual(['listed-' + group.id])
-      expect(persisted['opl-suite'].gatewayCatalogHashes[group.id]).toBe(fingerprint(models))
-    }
-  })
-
-  it('rejects a stale import and preserves user policies changed after sibling defaults were copied', async () => {
+  it('rejects a stale import and preserves user policies changed concurrently', async () => {
     const f = await fixture()
     const entered = Promise.withResolvers<void>()
     const release = Promise.withResolvers<void>()
@@ -285,7 +246,7 @@ describe('automatic Gateway discovery through official services', { timeout: 15_
         throw Error('Synchronization ended before the Grok request barrier')
       }),
     ])
-    const revision = f.root.settings.describe().find((item) => item.ns === 'llm-pi-ai')!.revision
+    const revision = f.root.settings.describe().find((item) => item.ns === 'opl-suite')!.revision
     const manual = {
       baseURL: 'https://fixture.invalid/user-gemini/v1',
       defaultInput: ['text'],
@@ -293,10 +254,10 @@ describe('automatic Gateway discovery through official services', { timeout: 15_
     }
     try {
       await f.root.settings.mutate(
-        'llm-pi-ai',
+        'opl-suite',
         Object.entries(manual).map(([key, value]) => ({
           op: 'set',
-          path: ['providers', 'opl-gateway-gemini', key],
+          path: ['gatewayChannels', 'gemini', key],
           value,
         })),
         revision,
@@ -305,14 +266,13 @@ describe('automatic Gateway discovery through official services', { timeout: 15_
       release.resolve()
     }
     await pending
-    expect(f.fetch).toHaveBeenCalledTimes(3)
     expect(gatewayCatalogStatus(f.caller, 'grok')).toMatchObject({
       state: 'error',
       diagnostic: { code: 'settings_conflict' },
     })
     const persisted = await f.persisted()
-    expect(persisted['llm-pi-ai'].providers['opl-gateway-gemini']).toMatchObject(manual)
-    expect(persisted['llm-pi-ai'].providers['opl-gateway-grok'].models).toEqual([
+    expect(persisted['opl-suite'].gatewayChannels.gemini).toMatchObject(manual)
+    expect(persisted['opl-suite'].gatewayChannels.grok.models).toEqual([
       { id: 'original-grok', input: ['text'] },
     ])
     expect(persisted['opl-suite'].gatewayCatalogHashes.grok).toBeUndefined()
@@ -321,11 +281,10 @@ describe('automatic Gateway discovery through official services', { timeout: 15_
 
   it('retains an owned catalog and hash when the official endpoint refuses it', async () => {
     const f = await fixture()
-    const native = f.entries[0]!
-    const profile = (native.options.config.providers as Record<string, Values>)['opl-gateway-aws']!
-    f.saved['llm-pi-ai'] = { providers: { 'opl-gateway-aws': structuredClone(profile) } }
+    const suite = f.entries[0]!
+    const profile = (suite.options.config.gatewayChannels as Record<string, Values>).aws!
+    f.saved['opl-suite'] = { gatewayChannels: { aws: structuredClone(profile) } }
     const previousHash = fingerprint(profile.models)
-    const suite = f.entries[1]!
     ;(suite.options.config.gatewayCatalogHashes as Record<string, string>).aws = previousHash
     await suite.fiber.update(suite.options.config, true)
     const ordinary = f.fetch.getMockImplementation()!
@@ -342,7 +301,7 @@ describe('automatic Gateway discovery through official services', { timeout: 15_
       diagnostic: { code: 'authentication', status: 403 },
     })
     const persisted = await f.persisted()
-    expect(persisted['llm-pi-ai'].providers['opl-gateway-aws']).toEqual(profile)
+    expect(persisted['opl-suite'].gatewayChannels.aws).toEqual(profile)
     expect(persisted['opl-suite'].gatewayCatalogHashes.aws).toBe(previousHash)
     expect(JSON.stringify(gatewayCatalogStatus(f.caller, 'aws'))).not.toContain(
       'private-response-body',
@@ -360,8 +319,7 @@ describe('automatic Gateway discovery through official services', { timeout: 15_
       diagnostic: { code: 'service_unavailable' },
     })
     for (const operation of [
-      () => migrateGatewayProtocolDefaults(f.caller),
-      () => ensureAutoReviewProvider(f.caller),
+      () => migrateLegacyGatewaySettings(f.caller),
       () => gatewayModelSettings(f.caller),
       () => syncGatewayModels(f.caller),
       () =>

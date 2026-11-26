@@ -1,19 +1,17 @@
-import { readFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { parse } from 'yaml'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
-import * as PiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+import {
+  DEFAULT_GATEWAY_CHANNELS,
+  type GatewayPiAiGroupId,
+} from '../../src/gateway/host/channel-defaults.ts'
+import * as OplGateway from '../../src/gateway/host/index.ts'
 import { gatewayDiscoveryBaseURL } from '../../src/gateway/host/protocol.ts'
 import { discoverGatewayModels } from '../../src/gateway/host/model-settings.ts'
 
 afterEach(() => vi.unstubAllGlobals())
 
-const patch = parse(await readFile(new URL('../../cordis.patch.yml', import.meta.url), 'utf8'), {
-  customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: (value: string) => value }],
-})
-const profiles = patch.find((item: { id?: string }) => item.id === 'llm-pi-ai').config.providers
 function response() {
   const events = [
     {
@@ -42,25 +40,43 @@ function response() {
     { headers: { 'content-type': 'text/event-stream' } },
   )
 }
-async function runtime(provider: string, override: Record<string, unknown> = {}) {
+
+async function runtime(
+  group: GatewayPiAiGroupId,
+  override: Record<string, unknown> = {},
+  credentialKey = 'fixture-key',
+) {
   const ctx = new Context()
-  const profile = { ...profiles[provider], ...override }
+  const profile = { ...DEFAULT_GATEWAY_CHANNELS[group], ...override }
+  const keyEnv = String(profile.apiKeyEnv ?? 'CUSTOM_KEY')
   ctx.provide(
     'launchEnvironment',
-    createLaunchEnvironmentSnapshot([
-      { source: 'process', values: { [profile.apiKeyEnv]: 'fixture-key' } },
-    ]),
+    createLaunchEnvironmentSnapshot([{ source: 'process', values: { [keyEnv]: credentialKey } }]),
   )
+  ctx.provide('credentials', {
+    resolve: async (ref: string) => (ref === keyEnv ? { value: credentialKey } : undefined),
+  })
+  ctx.provide('settings', {
+    configure: () => () => {},
+    describe: () => [
+      {
+        ns: 'opl-suite',
+        value: {
+          gatewayGroups: { [group]: true },
+          gatewayChannels: { [group]: profile },
+        },
+      },
+    ],
+  })
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(PiAi, { providers: { [provider]: profile } })
+  await ctx.plugin(OplGateway, {})
   return ctx
 }
 
 describe('official SDK protocol requests', () => {
-  it.each(['aws', 'kiro', 'claude'])(
+  it.each(['aws', 'kiro', 'claude'] as const)(
     'sends %s Opus requests once to /v1/messages with declared adaptive effort mappings',
     async (group) => {
-      const provider = `opl-gateway-${group}`
       const requests: { url: string; body: Record<string, any>; headers: Headers }[] = []
       vi.stubGlobal(
         'fetch',
@@ -74,17 +90,20 @@ describe('official SDK protocol requests', () => {
           return response()
         }),
       )
-      const ctx = await runtime(provider)
+      const ctx = await runtime(group)
       try {
-        const info = await ctx.llm.resolveModelInfo(provider, 'claude-opus-5-5')
-        const efforts = Object.keys(profiles[provider].models[0].reasoningEfforts)
+        const model = `${group}::claude-opus-5-5`
+        const info = await ctx.llm.resolveModelInfo('opl-gateway', model)
+        const efforts = Object.keys(
+          DEFAULT_GATEWAY_CHANNELS[group].models![0]!.reasoningEfforts as Record<string, string>,
+        )
         expect(info.reasoning?.efforts.map((effort) => effort.id)).toEqual(efforts)
         expect(info.inputModalities).toEqual(['text', 'image'])
         for (const effort of info.reasoning!.efforts) {
           const chunks = []
           for await (const chunk of ctx.llm.stream({
-            provider,
-            model: 'claude-opus-5-5',
+            provider: 'opl-gateway',
+            model,
             reasoningEffort: effort.id,
             messages: [{ role: 'user', content: [{ type: 'text', text: 'fixture' }] }],
           }))
@@ -97,7 +116,9 @@ describe('official SDK protocol requests', () => {
           expect(request.body.thinking).toMatchObject({ type: 'adaptive' })
           expect(request.body.thinking).not.toHaveProperty('budget_tokens')
           expect(request.body.output_config).toEqual({
-            effort: profiles[provider].models[0].reasoningEfforts[effort.id],
+            effort: (
+              DEFAULT_GATEWAY_CHANNELS[group].models![0]!.reasoningEfforts as Record<string, string>
+            )[effort.id],
           })
           expect(request.headers.get('x-api-key')).toBe('fixture-key')
         }
@@ -117,23 +138,15 @@ describe('official SDK protocol requests', () => {
         return Response.json({ data: [{ id: 'claude-opus-5-5' }] })
       }),
     )
-    const profile = {
-      ...profiles['opl-gateway-aws'],
-      baseURL: 'https://tenant.invalid/gateway',
-      apiKeyEnv: 'CUSTOM_KEY',
-      headers: { 'x-tenant': 'fixture-tenant' },
-    }
-    const ctx = await runtime('opl-gateway-aws', profile)
-    ctx.provide('settings', {
-      describe: () => [
-        { ns: 'opl-suite', value: { gatewayGroups: { aws: true } } },
-        { ns: 'llm-pi-ai', value: { providers: { 'opl-gateway-aws': profile } } },
-      ],
-    })
-    ctx.provide('credentials', {
-      resolve: async (ref: string) =>
-        ref === 'CUSTOM_KEY' ? { value: 'custom-fixture' } : undefined,
-    })
+    const ctx = await runtime(
+      'aws',
+      {
+        baseURL: 'https://tenant.invalid/gateway',
+        apiKeyEnv: 'CUSTOM_KEY',
+        headers: { 'x-tenant': 'fixture-tenant' },
+      },
+      'custom-fixture',
+    )
     try {
       const candidates = await discoverGatewayModels(ctx, { group: 'aws' })
       expect(candidates).toHaveLength(1)
@@ -155,17 +168,7 @@ describe('official SDK protocol requests', () => {
         'fetch',
         vi.fn(async () => new Response('private body fixture-private', { status })),
       )
-      const ctx = await runtime('opl-gateway-aws')
-      ctx.provide('settings', {
-        describe: () => [
-          { ns: 'opl-suite', value: {} },
-          {
-            ns: 'llm-pi-ai',
-            value: { providers: { 'opl-gateway-aws': profiles['opl-gateway-aws'] } },
-          },
-        ],
-      })
-      ctx.provide('credentials', { resolve: async () => ({ value: 'fixture-key' }) })
+      const ctx = await runtime('aws')
       try {
         const error = await discoverGatewayModels(ctx, { group: 'aws' }).catch(
           (error: unknown) => error,

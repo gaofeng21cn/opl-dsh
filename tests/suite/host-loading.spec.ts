@@ -23,9 +23,6 @@ vi.mock('../../src/conversation-stats/host/index.ts', () => ({
   apply() {},
 }))
 vi.mock('../../src/gateway/host/model-service.ts', () => ({ GatewayModelsService() {} }))
-vi.mock('../../src/gateway/host/model-catalog.ts', () => ({
-  installGatewayModelCatalogProjection: () => () => {},
-}))
 vi.mock('../../src/setup/host/index.ts', () => ({ SetupService() {} }))
 vi.mock('../../src/updates/host/index.ts', () => ({ UpdateService() {} }))
 vi.mock('../../src/updates/host/runtime-admission.ts', () => ({

@@ -52,6 +52,11 @@ const runtimeAntipatterns = [
   'fiber.runtime.Config',
   'fiber.restart',
   'Object.defineProperty(credentials',
+  'installGatewayModelPresentation',
+  'data-opl-internal-provider',
+  "Object.defineProperty(controller, 'modelCatalog'",
+  'opl-model-navigation',
+  'followEngineUpdates',
 ]
 const retiredModuleTokens = [
   'kimi-cu',

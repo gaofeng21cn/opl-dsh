@@ -412,18 +412,18 @@ try {
 
 async function verifyRemainingRuntime() {
   await wire('settings/mutate', {
-    ns: 'llm-pi-ai',
+    ns: 'opl-suite',
     ops: [
-      { op: 'set', path: ['providers', 'opl-gateway-openai', 'baseURL'], value: base },
-      { op: 'set', path: ['providers', 'opl-gateway-openai', 'api'], value: 'openai-completions' },
+      { op: 'set', path: ['gatewayChannels', 'codex', 'baseURL'], value: base },
+      { op: 'set', path: ['gatewayChannels', 'codex', 'api'], value: 'openai-completions' },
       {
         op: 'set',
-        path: ['providers', 'opl-gateway-openai', 'apiKeyEnv'],
+        path: ['gatewayChannels', 'codex', 'apiKeyEnv'],
         value: 'OPL_GATEWAY_CODEX_API_KEY',
       },
       {
         op: 'set',
-        path: ['providers', 'opl-gateway-openai', 'models'],
+        path: ['gatewayChannels', 'codex', 'models'],
         value: [{ id: 'gpt-5.4', name: 'GPT-5.4' }],
       },
     ],
@@ -453,6 +453,8 @@ async function verifyRemainingRuntime() {
     ],
   })
   const native = await wire('session/modelCatalog')
+  if (native.groups.some((g) => String(g.id).startsWith('opl-gateway-')))
+    throw Error('Global modelCatalog leaked legacy opl-gateway-* provider group')
   const models = native.groups.find((g) => g.id === 'opl-gateway').models
   assert.equal(models.find((m) => m.id === 'deepseek-flash').name, 'DeepSeek 设置回读')
   assert(models.some((m) => m.id === 'codex::gpt-5.4'))
