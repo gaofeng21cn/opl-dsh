@@ -382,6 +382,7 @@ for (const file of [
   'cleanup-skill/references/windows-recycling.md',
   'cleanup-skill/references/provider-contract.md',
   'windows-lifecycle.mjs',
+  'runtime-backups.mjs',
   name,
   superagent.name,
   ...plugins.map((plugin) => plugin.name),
