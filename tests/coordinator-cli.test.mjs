@@ -1,7 +1,7 @@
 /** CLI and Hook installation tests use temporary homes and an injected runtime, never a live backend. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, readdir, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -1059,10 +1059,11 @@ test('watch mode writes only on a change and survives a transient Windows rename
   const f = await fixture(t)
   await f.run(['init', '--file', f.planFile])
   const path = join(f.root, 'settings.json')
+  const settingsRealPath = await realpath(path)
   const rename = fs.rename
   let attempts = 0
   t.mock.method(fs, 'rename', function (from, to, callback) {
-    if (to === path) {
+    if (to === settingsRealPath) {
       attempts++
       if (process.platform === 'win32' && attempts === 1) {
         callback(
