@@ -1,12 +1,15 @@
 /** Qualify real, unmodified official Desktop with a fresh disposable profile. */
 import assert from 'node:assert/strict'
 import { spawn, execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { parse as parseYaml } from 'yaml'
 import { setTimeout as delay } from 'node:timers/promises'
 import { parseArgs } from 'node:util'
+import { officialPlatformKey, validateReleaseManifest } from '../installer/release-manifest.mjs'
 import {
   assertIsolatedRoot,
   verifyPayload,
@@ -555,6 +558,25 @@ try {
       app = JSON.parse(await readFile(join(suite, 'installation.json'), 'utf8')).app
     }
     evidence.checks.downloadIntegrity = { sha512: true, owner: 'official installer' }
+  }
+  const releaseManifest = process.env.OPL_QUALIFICATION_RELEASE_MANIFEST
+  if (releaseManifest) {
+    if (!cli.download) throw Error('Frozen official archive verification requires download mode')
+    const manifest = validateReleaseManifest(JSON.parse(await readFile(releaseManifest, 'utf8')), {
+      tagName: `opl-dsh-v${artifact.enhancementVersion}`,
+      requireMatchingOfficialFeeds: true,
+    })
+    const feed = manifest.official.feeds?.[officialPlatformKey()]
+    if (!feed || feed.version !== artifact.officialVersion)
+      throw Error('Official feed does not match the frozen release payload')
+    const suffix = process.platform === 'darwin' ? '.zip' : '-win-x64.exe'
+    const archive = join(suite, 'cache', `deepseek-harness-${feed.version}${suffix}`)
+    const hash = createHash('sha512')
+    for await (const chunk of createReadStream(archive)) hash.update(chunk)
+    const archiveSha512 = hash.digest('base64')
+    if (archiveSha512 !== feed.sha512)
+      throw Error('Official installer differs from the frozen feed')
+    evidence.checks.downloadIntegrity.archiveSha512 = archiveSha512
   }
   await verifyOfficial()
   environment.OPL_QUALIFICATION_OFFICIAL_VERSION = evidence.officialVersion

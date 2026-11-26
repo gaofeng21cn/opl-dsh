@@ -6,8 +6,18 @@ on:
   push:
     tags: ['opl-dsh-v*']
   workflow_dispatch:
+    inputs:
+      cask_only:
+        description: Sync Homebrew from the verified public Latest release
+        type: boolean
+        default: false
+      rebuild:
+        description: Rebuild and requalify a frozen candidate without reusing prior Actions artifacts
+        type: boolean
+        default: false
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -16,16 +26,28 @@ concurrency:
 
 jobs:
   prepare:
+    if: ${{ !inputs.cask_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
+      actions: read
       copilot-requests: write
     outputs:
       tag: ${{ steps.candidate.outputs.tag }}
       source_commit: ${{ steps.candidate.outputs.source_commit }}
       official_version: ${{ steps.candidate.outputs.official_version }}
       official_windows_version: ${{ steps.candidate.outputs.official_windows_version }}
+      official_feeds_sha256: ${{ steps.candidate.outputs.official_feeds_sha256 }}
+      package_key: ${{ steps.candidate.outputs.package_key }}
+      qualification_key: ${{ steps.candidate.outputs.qualification_key }}
+      package_artifact: ${{ steps.candidate.outputs.package_artifact }}
+      package_run: ${{ steps.candidate.outputs.package_run }}
+      mac_artifact: ${{ steps.candidate.outputs.mac_artifact }}
+      mac_run: ${{ steps.candidate.outputs.mac_run }}
+      windows_artifact: ${{ steps.candidate.outputs.windows_artifact }}
+      windows_run: ${{ steps.candidate.outputs.windows_run }}
+      pending_platforms: ${{ steps.candidate.outputs.pending_platforms }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -42,6 +64,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
+          OPL_RELEASE_REBUILD: ${{ inputs.rebuild }}
           OPL_RELEASE_NOTES_CODEX_API_KEY: ${{ secrets.OPL_RELEASE_NOTES_CODEX_API_KEY }}
         run: node scripts/prepare-daily-release.mjs
       - name: Upload prepared release-notes draft
@@ -51,12 +74,15 @@ jobs:
           name: release-notes
           path: dist/release-notes-draft-*.md
           if-no-files-found: error
+          overwrite: true
 
   package:
     needs: prepare
-    if: needs.prepare.outputs.tag != ''
+    if: needs.prepare.outputs.tag != '' && needs.prepare.outputs.package_artifact == ''
     runs-on: macos-15
     timeout-minutes: 30
+    outputs:
+      artifact_id: ${{ steps.candidate.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -98,15 +124,18 @@ jobs:
         env:
           OPL_PREPARED_OFFICIAL_VERSION: ${{ needs.prepare.outputs.official_version }}
           OPL_PREPARED_OFFICIAL_WINDOWS_VERSION: ${{ needs.prepare.outputs.official_windows_version }}
+          OPL_PREPARED_FEEDS_SHA256: ${{ needs.prepare.outputs.official_feeds_sha256 }}
         run: |
           node --input-type=module - <<'NODE'
           import { readOfficialDesktopFeeds } from './dist/release-runner/scripts/official-desktop-feeds.mjs'
+          import { officialFeedFingerprint } from './dist/release-runner/scripts/release-recovery.mjs'
           const feeds = await readOfficialDesktopFeeds()
           const version = feeds['mac-arm64'].version
           const windowsVersion = feeds['win-x64'].version
           if (version !== process.env.OPL_PREPARED_OFFICIAL_VERSION ||
               windowsVersion !== process.env.OPL_PREPARED_OFFICIAL_WINDOWS_VERSION ||
-              version !== windowsVersion)
+              version !== windowsVersion ||
+              officialFeedFingerprint(feeds) !== process.env.OPL_PREPARED_FEEDS_SHA256)
             throw Error('Official feeds changed after release preparation')
           await import('node:fs/promises').then(({ appendFile }) => appendFile(process.env.GITHUB_ENV, `OPL_OFFICIAL_VERSION=${version}\n`))
           console.log(`Using frozen official desktop feed version ${version} on macOS arm64 and Windows x64`)
@@ -115,9 +144,22 @@ jobs:
       - run: npm test
       - name: Pair both live official feeds with the built candidate
         run: npm run release:manifest
+      - name: Check the packaged manifest against the frozen feeds
+        env:
+          OPL_PREPARED_FEEDS_SHA256: ${{ needs.prepare.outputs.official_feeds_sha256 }}
+        run: |
+          node --input-type=module - <<'NODE'
+          import { readFileSync } from 'node:fs'
+          import { officialFeedFingerprint } from './dist/release-runner/scripts/release-recovery.mjs'
+          const manifest = JSON.parse(readFileSync('dist/release-manifest.json', 'utf8'))
+          if (officialFeedFingerprint(manifest.official.feeds) !== process.env.OPL_PREPARED_FEEDS_SHA256)
+            throw Error('Packaged manifest differs from the frozen official feeds')
+          NODE
       - uses: actions/upload-artifact@v7
+        id: candidate
         with:
-          name: release-candidate
+          name: release-candidate-${{ needs.prepare.outputs.package_key }}-${{ github.run_attempt }}
+          compression-level: 0
           path: |
             dist/OPL-DSH-Enhancements.zip
             dist/OPL-DSH-Installer-mac-arm64.dmg
@@ -127,10 +169,15 @@ jobs:
 
   qualify:
     needs: [prepare, package]
+    if: >-
+      !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.tag != '' &&
+      ((needs.package.result == 'success' && needs.package.outputs.artifact_id != '') ||
+      (needs.package.result == 'skipped' && needs.prepare.outputs.package_artifact != '')) &&
+      needs.prepare.outputs.pending_platforms != '[]'
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, windows-latest]
+        os: ${{ fromJSON(needs.prepare.outputs.pending_platforms) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -155,7 +202,9 @@ jobs:
           node --test tests/native-bridge.test.mjs tests/windows-acl.test.mjs
       - uses: actions/download-artifact@v8
         with:
-          name: release-candidate
+          artifact-ids: ${{ needs.prepare.outputs.package_artifact || needs.package.outputs.artifact_id }}
+          run-id: ${{ needs.prepare.outputs.package_run || github.run_id }}
+          github-token: ${{ github.token }}
           path: dist
       - name: Extract the exact shipped payload on macOS
         if: runner.os == 'macOS'
@@ -184,11 +233,16 @@ jobs:
           path: dist/qualification-runner
       - name: Qualify unmodified official Desktop against the shipped bytes
         id: qualification
+        env:
+          OPL_QUALIFICATION_RELEASE_MANIFEST: dist/release-manifest.json
         run: node dist/qualification-runner/scripts/qualify-official-runtime.mjs --download --payload "dist/OPL DSH 一键安装" --evidence dist/official-qualification.json
       - uses: actions/upload-artifact@v7
         if: ${{ always() && (steps.qualification.outcome == 'success' || steps.qualification.outcome == 'failure') }}
         with:
-          name: release-qualification-${{ matrix.os }}
+          name: ${{ steps.qualification.outcome == 'success'
+            && format('release-qualification-{0}-{1}-{2}', matrix.os, needs.prepare.outputs.package_artifact || needs.package.outputs.artifact_id, needs.prepare.outputs.qualification_key)
+            || format('release-qualification-diagnostics-{0}-{1}', matrix.os, github.run_attempt) }}
+          overwrite: true
           path: |
             dist/official-qualification.json
             dist/official-qualification-client-*.png
@@ -196,9 +250,19 @@ jobs:
 
   publish:
     needs: [prepare, package, qualify]
+    if: >-
+      !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.tag != '' &&
+      ((needs.package.result == 'success' && needs.package.outputs.artifact_id != '') ||
+      (needs.package.result == 'skipped' && needs.prepare.outputs.package_artifact != '')) &&
+      (needs.qualify.result == 'success' ||
+      (needs.qualify.result == 'skipped' && needs.prepare.outputs.mac_artifact != '' &&
+      needs.prepare.outputs.windows_artifact != ''))
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      tag: ${{ steps.publish.outputs.tag }}
     permissions:
+      actions: read
       contents: write
     steps:
       - uses: actions/checkout@v7
@@ -210,31 +274,85 @@ jobs:
           node-version: 24
       - uses: actions/download-artifact@v8
         with:
-          name: release-candidate
+          artifact-ids: ${{ needs.prepare.outputs.package_artifact || needs.package.outputs.artifact_id }}
+          run-id: ${{ needs.prepare.outputs.package_run || github.run_id }}
+          github-token: ${{ github.token }}
           path: dist
       - uses: actions/download-artifact@v8
         with:
           name: release-notes
           path: dist
-      - uses: actions/download-artifact@v8
+      - name: Download reused macOS qualification
+        if: needs.prepare.outputs.mac_artifact != ''
+        uses: actions/download-artifact@v8
         with:
-          name: release-qualification-macos-15
+          artifact-ids: ${{ needs.prepare.outputs.mac_artifact }}
+          run-id: ${{ needs.prepare.outputs.mac_run }}
+          github-token: ${{ github.token }}
           path: dist/evidence/macos-15
-      - uses: actions/download-artifact@v8
+      - name: Download current macOS qualification
+        if: needs.prepare.outputs.mac_artifact == ''
+        uses: actions/download-artifact@v8
         with:
-          name: release-qualification-windows-latest
+          name: release-qualification-macos-15-${{ needs.prepare.outputs.package_artifact || needs.package.outputs.artifact_id }}-${{ needs.prepare.outputs.qualification_key }}
+          path: dist/evidence/macos-15
+      - name: Download reused Windows qualification
+        if: needs.prepare.outputs.windows_artifact != ''
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.windows_artifact }}
+          run-id: ${{ needs.prepare.outputs.windows_run }}
+          github-token: ${{ github.token }}
           path: dist/evidence/windows-latest
+      - name: Download current Windows qualification
+        if: needs.prepare.outputs.windows_artifact == ''
+        uses: actions/download-artifact@v8
+        with:
+          name: release-qualification-windows-latest-${{ needs.prepare.outputs.package_artifact || needs.package.outputs.artifact_id }}-${{ needs.prepare.outputs.qualification_key }}
+          path: dist/evidence/windows-latest
+      - name: Check out the publisher from this workflow revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: dist/release-runner
+          persist-credentials: false
       - name: Verify provenance, publish, and read back all public assets
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           OPL_RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           OPL_PREPARED_OFFICIAL_VERSION: ${{ needs.prepare.outputs.official_version }}
           OPL_PREPARED_OFFICIAL_WINDOWS_VERSION: ${{ needs.prepare.outputs.official_windows_version }}
-        run: node scripts/publish-stable-release.mjs
+          OPL_PREPARED_FEEDS_SHA256: ${{ needs.prepare.outputs.official_feeds_sha256 }}
+        run: node dist/release-runner/scripts/publish-stable-release.mjs
       - name: Retain publication and previous-release audit records
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: release-audit
+          name: release-audit-${{ github.run_attempt }}
           path: dist/release-audit/
           if-no-files-found: warn
+
+  sync-cask:
+    needs: publish
+    if: >-
+      !cancelled() &&
+      (needs.publish.result == 'success' ||
+      (github.ref == 'refs/heads/main' && inputs.cask_only))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Sync Cask from verified public Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPL_RELEASE_TAG: ${{ needs.publish.outputs.tag }}
+        run: node scripts/sync-release-cask.mjs

@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -9,6 +9,8 @@ import {
 } from '../installer/release-manifest.mjs'
 import { verifyPayload } from './qualification-support.mjs'
 import { renderReleaseNotes } from './release-notes.mjs'
+import { readOfficialDesktopFeeds } from './official-desktop-feeds.mjs'
+import { officialFeedFingerprint } from './release-recovery.mjs'
 
 const repository = 'gaofeng21cn/opl-dsh'
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex')
@@ -97,6 +99,19 @@ export function assertQualification(evidence, artifact, manifest, platform, arch
   return evidence
 }
 
+export function assertFrozenOfficialArchive(evidence, manifest) {
+  const key = evidence.platform === 'darwin' ? 'mac-arm64' : 'win-x64'
+  if (
+    !manifest.official.feeds?.[key] ||
+    evidence.checks?.downloadIntegrity?.archiveSha512 !== manifest.official.feeds[key].sha512 ||
+    evidence.qualificationRunner?.sourceDirty !== false ||
+    !/^[a-f0-9]{40}$/.test(evidence.qualificationRunner?.sourceCommit ?? '')
+  )
+    throw Error(
+      'Qualification is missing the frozen official installer digest or runner provenance',
+    )
+}
+
 export async function publishStableRelease(root) {
   if (process.env.GITHUB_REPOSITORY !== repository)
     throw Error('This publisher only writes to gaofeng21cn/opl-dsh')
@@ -114,8 +129,7 @@ export async function publishStableRelease(root) {
     throw Error('Release tag does not match the frozen source')
   if (command('git', ['status', '--porcelain'])) throw Error('Candidate source is dirty')
   const manifestFile = join(dist, 'release-manifest.json')
-  let manifestBytes = await readFile(manifestFile)
-  let manifest = validateReleaseManifest(JSON.parse(manifestBytes), {
+  const manifest = validateReleaseManifest(JSON.parse(await readFile(manifestFile)), {
     tagName: tag,
     assetName: 'OPL-DSH-Enhancements.zip',
     requireMatchingOfficialFeeds: true,
@@ -131,7 +145,8 @@ export async function publishStableRelease(root) {
     frozenOfficialVersion !== frozenWindowsVersion ||
     frozenOfficialVersion !== manifest.official.version ||
     feeds['mac-arm64'].version !== frozenOfficialVersion ||
-    feeds['win-x64'].version !== frozenWindowsVersion
+    feeds['win-x64'].version !== frozenWindowsVersion ||
+    officialFeedFingerprint(feeds) !== process.env.OPL_PREPARED_FEEDS_SHA256
   )
     throw Error('Official desktop feeds do not match the frozen preparation version')
   const archive = await readFile(join(dist, manifest.enhancement.asset))
@@ -167,17 +182,10 @@ export async function publishStableRelease(root) {
   const windowsEvidence = await readQualification(root, 'windows-latest')
   // Re-read both official feeds immediately before publishing. Either platform
   // changing invalidates the frozen candidate and requires a new preparation run.
-  const frozenFeeds = manifest.official.feeds
-  await writeFile(join(dist, 'artifact.json'), JSON.stringify(artifact))
-  command(process.execPath, [join(root, 'scripts/create-release-manifest.mjs')])
-  manifestBytes = await readFile(manifestFile)
-  manifest = validateReleaseManifest(JSON.parse(manifestBytes), {
-    tagName: tag,
-    assetName: 'OPL-DSH-Enhancements.zip',
-    requireMatchingOfficialFeeds: true,
-  })
-  if (JSON.stringify(frozenFeeds) !== JSON.stringify(manifest.official.feeds))
-    throw Error('An official desktop feed or release manifest changed after qualification')
+  if (officialFeedFingerprint(await readOfficialDesktopFeeds()) !== officialFeedFingerprint(feeds))
+    throw Error('An official desktop feed changed after qualification')
+  assertFrozenOfficialArchive(macEvidence, manifest)
+  assertFrozenOfficialArchive(windowsEvidence, manifest)
   const platforms = {
     darwin: assertQualification(macEvidence, artifact, manifest, 'darwin', 'arm64'),
     win32: assertQualification(windowsEvidence, artifact, manifest, 'win32', 'x64'),
@@ -329,34 +337,11 @@ export async function publishStableRelease(root) {
       throw Error(`Public asset checksum mismatch: ${file}`)
   result.publicReadback = 'passed'
   await save()
-  // Cask metadata is excluded from the product source hash. Push normally and
-  // refuse to overwrite a main branch that moved during qualification.
-  command('git', ['fetch', 'origin', 'main'])
-  if (command('git', ['rev-parse', 'origin/main']) !== sourceCommit)
-    throw Error('main moved during qualification; update the Cask separately')
-  command('git', ['switch', '-c', `release-cask-${version}`, 'origin/main'])
-  const caskFile = join(root, 'Casks/opl-dsh.rb')
-  const cask = (await readFile(caskFile, 'utf8'))
-    .replace(/version "[^"]+"/, `version "${version}"`)
-    .replace(/sha256 "[^"]+"/, `sha256 "${sums[manifest.enhancement.asset]}"`)
-  await writeFile(caskFile, cask)
-  command('ruby', ['-c', caskFile])
-  command('git', ['config', 'user.name', 'github-actions[bot]'])
-  command('git', ['config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'])
-  command('git', ['add', 'Casks/opl-dsh.rb'])
-  command('git', ['commit', '-m', `chore: update Homebrew Cask to OPL DSH v${version}`])
-  command('git', ['push', 'origin', 'HEAD:main'])
-  command('git', ['fetch', 'origin', 'main'])
-  const publicCask = command('git', ['show', 'origin/main:Casks/opl-dsh.rb'])
-  if (!publicCask.includes(`version "${version}"`) || !publicCask.includes(sums[files[0]]))
-    throw Error('Public Cask metadata differs from the release ZIP checksum')
-  result.homebrew = 'passed'
-  await save()
   result.historyRetention = 'preserved'
-  result.status = 'complete'
   await save()
+  if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `tag=${tag}\n`)
   console.log(JSON.stringify(result, null, 2))
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
-  await publishStableRelease(resolve(import.meta.dirname, '..'))
+  await publishStableRelease(process.cwd())

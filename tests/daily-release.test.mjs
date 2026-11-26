@@ -533,8 +533,14 @@ for (const { prepared, upstreamOnly } of [
         'prepare-daily-release.mjs',
         'daily-release-notes.mjs',
         'official-desktop-feeds.mjs',
+        'release-recovery.mjs',
       ])
         await copyFile(new URL('../scripts/' + file, import.meta.url), join(root, 'scripts', file))
+      await mkdir(join(root, '.github/workflows'), { recursive: true })
+      await copyFile(
+        new URL('../.github/workflows/stable-release.yml', import.meta.url),
+        join(root, '.github/workflows/stable-release.yml'),
+      )
       await mkdir(join(root, 'installer'))
       await copyFile(
         new URL('../installer/release-manifest.mjs', import.meta.url),
@@ -567,9 +573,18 @@ for (const { prepared, upstreamOnly } of [
       await mkdir(bin)
       // Latest metadata/manifest are simulated; version writes, commits, tags, pushes,
       // remote readback and workflow outputs use the actual production entry point.
+      const published = publishedFixture(latest)
+      await writeFile(join(bin, 'latest.json'), JSON.stringify(published.latest))
+      await writeFile(join(bin, 'manifest.json'), published.bytes)
       await writeFile(
         join(bin, 'gh'),
-        `#!${process.execPath}\nprocess.stdout.write(process.argv.includes('repos/gaofeng21cn/opl-dsh/releases/latest') ? ${JSON.stringify(JSON.stringify(publishedFixture(latest).latest))} : ${JSON.stringify(publishedFixture(latest).bytes.toString())})\n`,
+        '#!/bin/sh\n' +
+          'fixture_dir=$(dirname "$0")\n' +
+          'case "$2" in\n' +
+          '  */releases/latest) cat "$fixture_dir/latest.json" ;;\n' +
+          '  */releases/assets/123) cat "$fixture_dir/manifest.json" ;;\n' +
+          '  *) exit 2 ;;\n' +
+          'esac\n',
         { mode: 0o700 },
       )
       // Keep the real preparation and Git mutation entry; only upstream HTTP is injected.
@@ -577,7 +592,7 @@ for (const { prepared, upstreamOnly } of [
       const officialVersion = upstreamOnly ? '0.2.2-rc.1' : '0.2.1-rc.5'
       await writeFile(
         runner,
-        `import { prepareDailyRelease } from ${JSON.stringify(pathToFileURL(join(root, 'scripts/prepare-daily-release.mjs')).href)}; await prepareDailyRelease(${JSON.stringify(root)}, {request: async () => new Response(${JSON.stringify(feed(officialVersion))})});`,
+        `import { prepareDailyRelease } from ${JSON.stringify(pathToFileURL(join(root, 'scripts/prepare-daily-release.mjs')).href)}; await prepareDailyRelease(${JSON.stringify(root)}, {request: async () => new Response(${JSON.stringify(feed(officialVersion))}), checkpointApi: async () => ({workflow_runs: []})});`,
       )
       const output = join(external, 'output')
       const env = {
@@ -585,6 +600,7 @@ for (const { prepared, upstreamOnly } of [
         PATH: bin + delimiter + process.env.PATH,
         GITHUB_REPOSITORY: 'gaofeng21cn/opl-dsh',
         GITHUB_REF: 'refs/heads/main',
+        GITHUB_SHA: preparedCommit,
         GITHUB_OUTPUT: output,
         GITHUB_STEP_SUMMARY: join(external, 'summary'),
       }

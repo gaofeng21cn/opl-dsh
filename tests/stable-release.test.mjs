@@ -2,7 +2,12 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import YAML from 'yaml'
-import { assertQualification } from '../scripts/publish-stable-release.mjs'
+import {
+  assertFrozenOfficialArchive,
+  assertQualification,
+} from '../scripts/publish-stable-release.mjs'
+import { findReleaseCheckpoints } from '../scripts/release-recovery.mjs'
+import { updateCaskMetadata } from '../scripts/sync-release-cask.mjs'
 
 const artifact = {
   sourceCommit: 'a'.repeat(40),
@@ -153,8 +158,8 @@ test('stable workflow makes Windows qualification and evidence mandatory', async
   assert.doesNotMatch(workflow, /continue-on-error/)
   const jobs = YAML.parse(workflow).jobs
   assert.deepEqual(jobs.publish.needs, ['prepare', 'package', 'qualify'])
-  const upload = jobs.qualify.steps.find(
-    (step) => step.with?.name === 'release-qualification-${{ matrix.os }}',
+  const upload = jobs.qualify.steps.find((step) =>
+    step.with?.name?.includes('release-qualification-diagnostics'),
   )
   assert.equal(
     jobs.qualify.steps.find((step) => step.id === 'qualification')?.['continue-on-error'],
@@ -173,10 +178,18 @@ test('stable workflow makes Windows qualification and evidence mandatory', async
       .run,
     /--maxWorkers=1/,
   )
-  assert.match(
-    workflow,
-    /name: release-qualification-windows-latest[\s\S]*?path: dist\/evidence\/windows-latest/,
+  assert.equal(
+    jobs.publish.steps.filter((step) => step.with?.path === 'dist/evidence/windows-latest').length,
+    2,
   )
+  assert.match(jobs.publish.if, /needs\.qualify\.result == 'success'/)
+  assert.match(
+    jobs.publish.if,
+    /needs\.qualify\.result == 'skipped'.*needs\.prepare\.outputs\.mac_artifact != '' .*needs\.prepare\.outputs\.windows_artifact != ''/,
+  )
+  assert.equal(jobs['sync-cask'].needs, 'publish')
+  assert.match(jobs['sync-cask'].if, /inputs\.cask_only/)
+
   const publisher = await readFile(
     new URL('../scripts/publish-stable-release.mjs', import.meta.url),
     'utf8',
@@ -205,4 +218,74 @@ test('compatibility retains qualification failures without secondary missing-art
     upload.with['if-no-files-found'],
     "${{ steps.qualification.outcome == 'success' && 'error' || 'warn' }}",
   )
+})
+
+test('recovery carries forward only successful evidence for the chosen candidate and verifier', async () => {
+  const run = {
+    path: '.github/workflows/stable-release.yml',
+    status: 'completed',
+    head_branch: 'main',
+    event: 'workflow_dispatch',
+    repository: { id: 100 },
+    head_repository: { id: 100 },
+  }
+  const runs = [
+    { ...run, id: 1 },
+    { ...run, id: 2 },
+    { ...run, id: 3, head_repository: { id: 200 } },
+  ]
+  const actionArtifact = (id, name, expired = false) => ({
+    id,
+    name,
+    expired,
+    digest: 'sha256:' + 'a'.repeat(64),
+  })
+  const api = async (path) => {
+    if (path.includes('/workflows/')) return { workflow_runs: runs }
+    if (path.includes('/runs/1/'))
+      return {
+        artifacts: [
+          actionArtifact(10, 'release-candidate-frozen-1'),
+          actionArtifact(11, 'release-qualification-macos-15-10-verifier'),
+          actionArtifact(12, 'release-qualification-diagnostics-windows-latest-1'),
+        ],
+      }
+    if (path.includes('/runs/2/'))
+      return {
+        artifacts: [
+          actionArtifact(20, 'release-candidate-frozen-2', true),
+          actionArtifact(21, 'release-qualification-windows-latest-20-verifier'),
+          actionArtifact(22, 'release-qualification-windows-latest-10-old-verifier'),
+        ],
+      }
+    assert.fail('must not query artifacts from a fork')
+  }
+  const discover = (packageKey, qualificationKey) =>
+    findReleaseCheckpoints({ packageKey, qualificationKey }, { api, repositoryId: 100 })
+  const matched = await discover('frozen', 'verifier')
+  assert.equal(matched.candidate.id, 10)
+  assert.equal(matched.evidence['macos-15'].id, 11)
+  assert.deepEqual(matched.pending, ['windows-latest'])
+  const changedVerifier = await discover('frozen', 'changed')
+  assert.equal(changedVerifier.candidate.id, 10)
+  assert.deepEqual(changedVerifier.pending, ['macos-15', 'windows-latest'])
+  assert.equal((await discover('different-package', 'verifier')).candidate, undefined)
+})
+
+test('release binds each desktop qualification to the actual frozen upstream installer', () => {
+  const candidate = evidence('win32')
+  candidate.qualificationRunner = { sourceCommit: 'a'.repeat(40), sourceDirty: false }
+  candidate.checks.downloadIntegrity.archiveSha512 = feed.sha512
+  assertFrozenOfficialArchive(candidate, manifest)
+  candidate.checks.downloadIntegrity.archiveSha512 = 'b'.repeat(86) + '=='
+  assert.throws(() => assertFrozenOfficialArchive(candidate, manifest), /frozen official installer/)
+})
+
+test('Cask sync is idempotent and cannot downgrade a newer Cask on main', () => {
+  const old = 'cask "opl-dsh" do\n  version "0.2.79"\n  sha256 "' + 'a'.repeat(64) + '"\nend\n'
+  const identity = { version: '0.2.81', sha256: 'b'.repeat(64) }
+  const expected = old.replace('0.2.79', identity.version).replace('a'.repeat(64), identity.sha256)
+  assert.equal(updateCaskMetadata(old, identity), expected)
+  assert.equal(updateCaskMetadata(expected, identity), expected)
+  assert.throws(() => updateCaskMetadata(expected, { ...identity, version: '0.2.80' }), /newer/)
 })

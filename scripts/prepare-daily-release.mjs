@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { writeDailyReleaseNotes } from './daily-release-notes.mjs'
 import { readOfficialDesktopFeeds } from './official-desktop-feeds.mjs'
+import { officialFeedFingerprint, planReleaseRecovery } from './release-recovery.mjs'
 import { validateReleaseManifest } from '../installer/release-manifest.mjs'
 
 const repository = 'gaofeng21cn/opl-dsh'
@@ -267,7 +268,7 @@ export async function planDailyRelease(
   return { action: 'prepare', version: project.version, baseline: latest?.tag_name }
 }
 
-export async function prepareDailyRelease(root, { request = fetch } = {}) {
+export async function prepareDailyRelease(root, { request = fetch, checkpointApi } = {}) {
   if (process.env.GITHUB_REPOSITORY !== repository) throw Error('Unexpected release repository')
   const ref = process.env.GITHUB_REF
   const feeds = await readOfficialDesktopFeeds(request)
@@ -354,11 +355,44 @@ export async function prepareDailyRelease(root, { request = fetch } = {}) {
   }
   candidate.officialVersion = officialVersion
   candidate.officialWindowsVersion = officialWindowsVersion
-  if (candidate.tag)
+  if (candidate.tag) {
+    const recovery = await planReleaseRecovery(
+      root,
+      candidate.sourceCommit,
+      feeds,
+      process.env.GITHUB_SHA,
+      {
+        reuse: candidate.action === 'resume' && process.env.OPL_RELEASE_REBUILD !== 'true',
+        api: checkpointApi,
+      },
+    )
+    const { candidate: reused, evidence, pending, packageKey, qualificationKey } = recovery
     await appendFile(
       process.env.GITHUB_OUTPUT,
-      `tag=${candidate.tag}\nsource_commit=${candidate.sourceCommit}\nofficial_version=${officialVersion}\nofficial_windows_version=${officialWindowsVersion}\n`,
+      Object.entries({
+        tag: candidate.tag,
+        source_commit: candidate.sourceCommit,
+        official_version: officialVersion,
+        official_windows_version: officialWindowsVersion,
+        official_feeds_sha256: officialFeedFingerprint(feeds),
+        package_key: packageKey,
+        qualification_key: qualificationKey,
+        package_artifact: reused?.id ?? '',
+        package_run: reused?.run ?? '',
+        mac_artifact: evidence['macos-15']?.id ?? '',
+        mac_run: evidence['macos-15']?.run ?? '',
+        windows_artifact: evidence['windows-latest']?.id ?? '',
+        windows_run: evidence['windows-latest']?.run ?? '',
+        pending_platforms: JSON.stringify(pending),
+      })
+        .map(([key, value]) => `${key}=${value}\n`)
+        .join(''),
     )
+    await appendFile(
+      process.env.GITHUB_STEP_SUMMARY,
+      `构建产物：${reused ? `复用 Actions run \`${reused.run}\` 的产物 \`${reused.id}\`` : '本轮构建'}。本轮验收：${pending.join('、') || '复用双端证据'}。\n`,
+    )
+  }
   await appendFile(
     process.env.GITHUB_STEP_SUMMARY,
     candidate.tag

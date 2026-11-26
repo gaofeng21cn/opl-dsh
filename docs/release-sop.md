@@ -6,12 +6,13 @@
 
 ## 1. 工作流流转与完成标准
 
-`.github/workflows/stable-release.yml` 每日自动检查主线，按 `prepare` → `package`（macOS arm64）→ `qualify`（macOS arm64 + Windows x64）→ `publish`（Ubuntu）四阶段串行执行：
+每日发布依次准备候选、打包、并行验收、公开回读和同步 Homebrew。
 
-1. **`prepare`**：运行 `scripts/prepare-shared-release-note-writer.mjs` 与 `scripts/prepare-daily-release.mjs`（仅此 job 与 `publish` 具 `contents: write`）。若主线产品路径或两平台官方 feed 有未发布更新，则递增版本提交 `package.json`/`package-lock.json` 并推送 `opl-dsh-v<版本>` annotated tag（记录冻结的官方版本）；已有未公开 canonical tag 且产品路径与官方 feed 未变时直接续作；仅文档、测试、发布流程或 Cask 变化则跳过。中文发布说明草稿写入 gitignored 的 `dist/release-notes-draft-<版本>.md`，不提交到 `docs/`，并通过工作流 artifact `release-notes` 传递给 `publish` job。
-2. **`package`**：固定检出 `source_commit`，执行源码门禁并运行 `npm run package` 与 `npm run release:manifest`，复核实时双平台官方 feed 与冻结版本一致后上传 `release-candidate` artifact。
-3. **`qualify`**：从工作流精确修订检出资格运行器到忽略目录，解压同一 `OPL-DSH-Enhancements.zip` 在 macOS arm64 与 Windows x64 独立运行未修改官方桌面验收并上传证据（含 `sourceCommit`、`qualificationRunner.sourceCommit`、`sourceDirty=false`）。若验收确认须改产品代码，保留失败 tag 与证据，递增版本新建 tag 重跑，不覆盖已有候选身份。
-4. **`publish`**：运行 `scripts/publish-stable-release.mjs`，下载 `release-candidate`、`release-notes` 与双平台资格证据，再次核对实时官方 feed 并生成 `official-qualification-<版本>.json` 与 `SHA256SUMS`，读取 `dist/release-notes-draft-<版本>.md` 渲染 `dist/release-notes.md`，创建/公开稳定 Release 并逐一下载校验资产与 `releases/latest` 指针；随后仅在 `origin/main` 未移动时更新 `Casks/opl-dsh.rb` 并回读。操作审计保留在 `release-audit` artifact。
+1. **`prepare`**（GitHub Ubuntu）检查产品和官方更新，固定源码提交与双平台官方清单。新增候选时提交版本号和 canonical tag。准备中文发布说明草稿并上传为 `release-notes`。
+2. **`package`**（GitHub macOS arm64）在冻结源码上执行门禁、打包与全量测试，核对实时官方清单，上传两个安装器、增强 ZIP 和联合清单。续作时，如果近期主线运行已保存同一源码、官方清单和打包步骤的产物，则直接采用其 Actions artifact ID。
+3. **`qualify`**（GitHub macOS arm64 与 Windows x64）对同一增强 ZIP 并行执行官方桌面隔离验收。复用证据须对应同一候选 artifact ID、平台和验收输入。通过的证据可跨运行复用，失败诊断单独保存。共用验收脚本或步骤发生变化时，两端重新验收。每份资格证据还记录实际安装的官方安装包 SHA-512。
+4. **`publish`**（GitHub Ubuntu）核对冻结源码、候选字节、双端证据与实时官方清单，公开稳定 Release 并逐一下载校验资产及 Latest。发布审计按运行尝试保存为 `release-audit-<attempt>`。
+5. **`sync-cask`**（GitHub Ubuntu）从公开 Latest 回下载验证资产，并基于最新 `origin/main` 更新 Cask、校验 Ruby 语法和回读远端。普通推送遇到主线并发时先回读再重试。此步骤可独立恢复。
 
 一次发布只有在以下事实全部成立时才算完成：
 
@@ -165,14 +166,13 @@ shasum -a 256 -c SHA256SUMS
 
 ### 7.2 Homebrew Cask 与双端安装入口
 
-公开回读通过后更新 `Casks/opl-dsh.rb` 的 `version` 与 `sha256`（仅指向已公开 `OPL-DSH-Enhancements.zip`），随后本地检查语法与公开摘要：
+公开回读通过后，`sync-cask` 基于当前 `origin/main` 更新 `Casks/opl-dsh.rb` 的版本与 ZIP 摘要。若只需恢复 Cask，在同一运行中重试失败 job，或从主线单独派发。后者会下载并校验公开 Latest 全部资产、联合清单和双端验收记录，只刷新 Cask。
 
 ```sh
-ruby -c Casks/opl-dsh.rb
-curl -fsSL "https://github.com/gaofeng21cn/opl-dsh/releases/download/$TAG/OPL-DSH-Enhancements.zip" | shasum -a 256
+gh workflow run stable-release.yml --ref main -f cask_only=true
 ```
 
-Cask 失败不回滚已公开 Release，单独修复 Cask 后重新回读即可。首次安装入口（`install.sh`/DMG/EXE）与已安装用户的自动更新（退出后 watcher 校验清单与协议版本 1）与官方桌面自身更新保持各自职责边界。
+首次安装入口（`install.sh`/DMG/EXE）与已安装用户的自动更新（退出后 watcher 校验清单与协议版本 1）与官方桌面自身更新保持各自职责边界。
 
 ## 8. 失败恢复与可选历史清理
 
@@ -181,9 +181,9 @@ Cask 失败不回滚已公开 Release，单独修复 Cask 后重新回读即可�
 | 断点 | 处理方式 |
 | --- | --- |
 | 任一官方 feed 失败、版本不一致或冻结版本变化 | 停止准备/打包/发布并记录断点；修复后从主线重新准备或沿同一冻结版本重跑 |
-| 源码门禁或测试失败 | 修复源代码/依赖后从源码门禁重跑；不复用旧 artifact |
+| 源码门禁或测试失败 | 修复后重新跑打包门禁。通过全部打包门禁后上传的候选才能续用。 |
 | package 后发现源代码或文档改变 | 重新构建、生成清单并重新验收；不能只替换 `artifact.json` |
-| 官方隔离验收失败 | 定位最深失败检查；macOS/Windows 分开记录，未通过平台不得写成通过 |
+| 官方隔离验收失败 | 修复后从 `main` 手动派发或等待下次定时运行。冻结候选相同时复用包，资格输入相同时复用对应平台的通过证据。若需重新生成整套证据，派发时传 `-f rebuild=true`。 |
 | 上传/发布结果未知 | 只读回查 Release、tag、资产和 `latest` 指针；明确已有对象前不重试变更 |
 | 资产摘要不一致 | 保留公开 Release，核对损坏/混用原因后按同 tag 修复流程处理 |
 | Homebrew 更新或本地用户更新失败 | Release 保持已公开状态并单独恢复 Cask；用户端保留原本地 release/profile 并检查 `enhancement-update.json` |
