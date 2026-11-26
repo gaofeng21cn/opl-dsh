@@ -160,6 +160,24 @@ describe('OPL domain Agent projection', () => {
     expect(JSON.stringify(persona)).toContain('Do not install, activate, update, repair')
     expect(JSON.stringify(persona)).not.toContain('{{')
   })
+
+  it('keeps tool parity with the official standard preset', () => {
+    const [agent] = parseDomainAgentProjection(projection())
+    const definition = domainAgentPresetDefinition(agent!)
+    const delegation = definition.plugins.find((row) => row.id === 'delegation')
+    expect(JSON.stringify(delegation)).toContain('subagent')
+    expect(JSON.stringify(delegation)).toContain('workflow-ptc')
+    expect(definition.plugins).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'tool-schedule' }),
+        expect.objectContaining({ id: 'command-goal' }),
+        expect.objectContaining({ id: 'tool-goal' }),
+        expect.objectContaining({ id: 'tool-plugin-manager' }),
+      ]),
+    )
+    const planning = definition.plugins.find((row) => row.id === 'planning')
+    expect(JSON.stringify(planning)).toContain('plan-mode')
+  })
 })
 
 describe('DomainAgentPresetService', () => {
