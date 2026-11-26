@@ -584,6 +584,9 @@ try {
       { env: { ...environment, ELECTRON_RUN_AS_NODE: '1' } },
     ),
   )
+  environment.OPL_QUALIFICATION_OFFICIAL_COMPUTER_USE = String(
+    evidence.checks.dependencyIsolation.computerUseSupported,
+  )
   modelPluginFixture = await startModelPluginFixture()
   Object.assign(environment, modelPluginFixture.environment)
   const historyProject = join(root, 'test-project')

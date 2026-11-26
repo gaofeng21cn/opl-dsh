@@ -473,7 +473,9 @@ async function verifyRemainingRuntime() {
     (bundle) =>
       bundle.name === '@deepseek-ai/dsh-cua-bundle' && bundle.availability === 'installation',
   )
-  if (process.platform === 'darwin' || nativeComputerUse) {
+  const computerUseSupported = process.env.OPL_QUALIFICATION_OFFICIAL_COMPUTER_USE
+  assert.match(computerUseSupported ?? '', /^(true|false)$/)
+  if (computerUseSupported === 'true') {
     assert.equal(nativeComputerUse?.enabled, true, 'Official Computer Use bundle is disabled')
     const status = await wire('cuaAccess/systemStatus')
     assert.equal(status.platform, process.platform)
@@ -485,6 +487,8 @@ async function verifyRemainingRuntime() {
       screenRecording,
       captureAvailable,
     }
+  } else {
+    assert.notEqual(nativeComputerUse?.enabled, true, 'Unsupported Computer Use bundle is enabled')
   }
   const catalog = await harness('catalog')
   assert(

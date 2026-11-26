@@ -31,9 +31,19 @@ for (const name of ['@deepseek-ai/dsh-session-projection', '@deepseek-ai/dsh-sto
     throw new Error('Official runtime validation dependency changed: ' + name)
   official[name] = { version: pkg.version, zod }
 }
+const bundleName = '@deepseek-ai/dsh-cua-bundle'
+const runtimePackage = JSON.parse(
+  readFileSync(runtime.resolve('@deepseek-ai/dsh/package.json'), 'utf8'),
+)
+const computerUse = runtimePackage.dependencies?.[bundleName]
+  ? JSON.parse(readFileSync(runtime.resolve(bundleName + '/package.json'), 'utf8'))
+  : undefined
+const computerUseSupported =
+  computerUse?.dsh?.bundle?.platforms?.includes(process.platform) === true
 console.log(
   JSON.stringify({
     plugin: { path: pluginPath, zod: ownZod },
     official,
+    computerUseSupported,
   }),
 )
