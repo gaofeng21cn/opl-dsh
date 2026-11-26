@@ -22,14 +22,14 @@ test('tarball checksum and contents bind the installer to an external plugin', a
   assert.doesNotMatch(files, /node_modules|app\.asar|credentials|\/\.env/)
   assert.doesNotMatch(files, /(?:^|\/)\._/m, 'macOS metadata must not become plugin resources')
   assert.ok(!files.includes('package/lib/zcode-harness-bridge.mjs'))
+  assert.ok(!files.includes('package/lib/step-bridge.mjs'))
+  assert.ok(!files.includes('package/lib/zcode-ofm-bridge.mjs'))
+  assert.ok(!files.includes('package/lib/muse-bridge.mjs'))
   for (const bridge of [
     'native-harness-bridge.mjs',
-    'step-bridge.mjs',
     'pi-bridge.mjs',
-    'zcode-ofm-bridge.mjs',
-    'muse-bridge.mjs',
-    'muse-bash-mcp.mjs',
-    'muse-endpoint.mjs',
+    'kimi-error-bridge.mjs',
+    'chat-tool-bridge.mjs',
   ])
     assert.ok(files.includes(`package/lib/${bridge}`), `missing packaged bridge ${bridge}`)
   const overlay = parse(await readFile(new URL('package/cordis.patch.yml', output), 'utf8'))

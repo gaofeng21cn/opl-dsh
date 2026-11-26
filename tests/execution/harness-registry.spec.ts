@@ -117,25 +117,6 @@ describe('Harness executable discovery', () => {
     })
   })
 
-  it('does not launch the ZCode desktop entry point during discovery', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'opl-zcode-discovery-'))
-    roots.push(root)
-    const command = join(root, process.platform === 'win32' ? 'zcode.cmd' : 'zcode')
-    const marker = join(root, 'launched')
-    await writeFile(
-      command,
-      process.platform === 'win32'
-        ? `@echo off\r\necho launched > "${marker}"\r\n`
-        : `#!/bin/sh\nprintf launched > "${marker}"\n`,
-    )
-    await chmod(command, 0o700)
-    const item = await inspectHarness({ id: 'zcode', name: 'ZCode', kind: 'acp', command }, root)
-    expect(item).toMatchObject({ installed: true, runnable: true, path: command })
-    expect(item).not.toHaveProperty('version')
-    expect(item.verification).toBe('not-probed')
-    await expect(access(marker)).rejects.toThrow()
-  })
-
   it.runIf(process.platform === 'win32')(
     'detects and executes npm cmd shims instead of their POSIX or PowerShell siblings',
     async () => {

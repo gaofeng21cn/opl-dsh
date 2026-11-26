@@ -28,7 +28,7 @@ describe('lease composition', () => {
   it('grants a lease for a pairing this source declares', () => {
     const ctx = context()
     applyOfmModelSource(ctx, { connection: async () => facts })
-    const lease = ctx.oplExternalModelSources.lease('mimo', ref)
+    const lease = ctx.oplExternalModelSources.lease('opencode', ref)
     expect(() => lease.assertCurrent()).not.toThrow()
   })
 
@@ -41,7 +41,7 @@ describe('lease composition', () => {
   it('fails the lease once the owner unloads mid-preflight', () => {
     const ctx = context()
     const remove = applyOfmModelSource(ctx, { connection: async () => facts })
-    const lease = ctx.oplExternalModelSources.lease('mimo', ref)
+    const lease = ctx.oplExternalModelSources.lease('opencode', ref)
     remove()
     expect(() => lease.assertCurrent()).toThrow('模型来源已变更')
   })
@@ -49,7 +49,7 @@ describe('lease composition', () => {
   it('fails the lease when the declared pairing is withdrawn', () => {
     const ctx = context()
     applyOfmModelSource(ctx, { connection: async () => facts })
-    const lease = ctx.oplExternalModelSources.lease('mimo', ref)
+    const lease = ctx.oplExternalModelSources.lease('opencode', ref)
     ctx.llm.listProviders = () => []
     expect(() => lease.assertCurrent()).toThrow('模型来源已变更')
   })
@@ -57,7 +57,7 @@ describe('lease composition', () => {
   it('resolves a live route end to end over the registered source', async () => {
     const ctx = context()
     applyOfmModelSource(ctx, { connection: async () => facts })
-    await expect(ctx.oplExternalModelSources.resolve('mimo', ref, 'chat')).resolves.toEqual({
+    await expect(ctx.oplExternalModelSources.resolve('opencode', ref, 'chat')).resolves.toEqual({
       ...facts,
       model: ref.model,
       protocol: 'chat',

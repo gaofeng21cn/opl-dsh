@@ -1,6 +1,11 @@
 /** Exact per-user-turn usage read from OpenCode/Kilo's persisted message graph. */
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
-import type { VendorMessage } from './message-edit-opencode-common.ts'
+
+/** One vendor message as returned by OpenCode/Kilo's public message list. */
+export interface VendorMessage {
+  readonly info: Record<string, any>
+  readonly parts: readonly Record<string, any>[]
+}
 
 /** Usage and context facts attached to the exact user message that owns them. */
 export interface ExternalUsageStatistics {

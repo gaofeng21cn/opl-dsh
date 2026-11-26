@@ -14,7 +14,7 @@ import {
 } from '../../src/execution/host/ofm-source/index.ts'
 
 const pairings = Object.entries(OFM_PINNED_HARNESS_MODELS).map(([id, models]) => ({
-  id: id === 'kimi' ? 'kimi-code' : id === 'mimo' ? 'mimo-code' : id,
+  id: id === 'kimi' ? 'kimi-code' : id,
   models,
 }))
 
@@ -62,15 +62,7 @@ describe('central OFM wiring', () => {
     it(`${pairing.id} binds every declared lane and refuses unrelated models`, async () => {
       const test = fixture()
       const catalog = defaultExecutionCatalog()
-      if (pairing.id === 'muse-code') {
-        expect(catalog.harnesses.some((h) => h.id === pairing.id)).toBe(false)
-        catalog.harnesses.push({
-          id: pairing.id,
-          name: pairing.id,
-          kind: 'acp',
-          command: pairing.id,
-        })
-      } else expect(catalog.harnesses.some((h) => h.id === pairing.id)).toBe(true)
+      expect(catalog.harnesses.some((h) => h.id === pairing.id)).toBe(true)
       expect(harnessAllowsFullAccess(pairing.id)).toBe(true)
       for (const model of pairing.models) {
         const ref = { provider: OFM_PROVIDER, model }
@@ -112,27 +104,12 @@ describe('central OFM wiring', () => {
       throw Error('unexpected call')
     }, '')
     expect(
-      await connection('zcode', { provider: OFM_REGION_PROVIDER, model: 'z-ai/glm-5.3' }, 'chat'),
+      await connection(
+        'kimi-code',
+        { provider: OFM_REGION_PROVIDER, model: 'moonshotai/kimi-k2.6' },
+        'chat',
+      ),
     ).toBeUndefined()
     expect(calls).toBe(0)
-  })
-
-  it('supports the Muse source endpoint and reports a missing selected CLI', async () => {
-    const test = fixture()
-    const adapter = adapterFor(
-      'muse-code',
-      { provider: OFM_PROVIDER, model: 'muse-spark-1.3-contributor-free' },
-      test.sources,
-    )!
-    expect(adapter.capabilities.customEndpoint).toBe(true)
-    expect(
-      await adapter.available(test.ctx, {
-        home: '',
-        grokCommand: '',
-        nativeBridgePath: '',
-        command: 'opl-owned-missing-muse-binary',
-      }),
-    ).toMatchObject({ available: false, reason: expect.stringContaining('Muse Code CLI') })
-    test.dispose()
   })
 })

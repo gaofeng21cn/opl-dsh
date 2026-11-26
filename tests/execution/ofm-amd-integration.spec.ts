@@ -12,8 +12,6 @@ const ref = (model: string) => ({ provider: 'our-free-model', model })
 const lanes = [
   ['amd/DeepSeek-V4.1-Flash', 'dsh', 'DeepSeek V4.1 Flash'],
   ['amd/DeepSeek-V4-Flash', 'dsh', 'DeepSeek V4 Flash'],
-  ['amd/MiMo-V2.6-Flash', 'mimo-code', 'MiMo V2.6 Flash'],
-  ['amd/GLM-5.3-Flash', 'zcode', 'GLM 5.3 Flash'],
   ['amd/Qwen3.8-27B', 'pi', 'Qwen3.8 27B'],
   ['amd/MiniCPM-V-4.7-35B-A3B', 'pi', 'MiniCPM-V 4.7 35B-A3B'],
   ['amd/MiniCPM5-2B', 'pi', 'MiniCPM5 2B'],
@@ -25,12 +23,12 @@ describe('EAC AMD route integration', () => {
   it('projects every AMD recommendation through a registered engine on fresh and upgraded catalogs', async () => {
     for (const upgraded of [false, true]) {
       const catalog = defaultExecutionCatalog()
-      // An older persisted catalog omitted the inactive MiMo engine. Loading it must
+      // An older persisted catalog omitted a newly supported engine. Loading it must
       // admit the newly supported engine while preserving user launch settings.
       const input = upgraded
         ? normalizeCatalog({
             ...catalog,
-            harnesses: catalog.harnesses.filter((harness) => harness.id !== 'mimo-code'),
+            harnesses: catalog.harnesses.filter((harness) => harness.id !== 'pi'),
           })
         : catalog
       const ctx = {
@@ -53,13 +51,6 @@ describe('EAC AMD route integration', () => {
           }),
         )
       }
-      expect(resolved.combinations).toContainEqual(
-        expect.objectContaining({
-          modelRef: ref('amd/MiMo-V2.6-Flash'),
-          harnessRef: 'mimo-code',
-          name: 'EAC MiMo V2.6 Flash（AMD） + MiMo Code',
-        }),
-      )
       const qwen = ref('amd/Qwen3.8-27B')
       expect(resolved.recommendations).toEqual(
         expect.arrayContaining([
@@ -118,7 +109,7 @@ describe('EAC AMD route integration', () => {
 
   it('keeps unknown AMD models manual', () => {
     expect(automaticHarness(ref('amd/future-model'))).toBeUndefined()
-    for (const harness of ['pi', 'mimo-code', 'zcode'])
+    for (const harness of ['pi', 'opencode', 'kilo'])
       expect(ofmHarnessPinsModel(harness, 'amd/future-model')).toBe(false)
   })
 })

@@ -56,7 +56,6 @@ const loaded: CatalogState = {
       'moonshotai/kimi-k3',
       'moonshotai/kimi-k3.1-pro',
       'mimo-v2.6-flash-free',
-      'poolside/laguna-s-2.1:free',
       'openai/gpt-oss-20b',
       'reflection/beam-free',
       'xingchen-agi/xing4.0-29b-a4b:free',
@@ -84,17 +83,12 @@ describe('OFM source pairing', () => {
     for (const [harness, model] of [
       ['kimi', 'moonshotai/kimi-k3'],
       ['kimi-code', 'moonshotai/kimi-k3.1-pro'],
-      ['mimo', 'mimo-v2.6-flash-free'],
-      ['pool', 'poolside/laguna-s-2.1:free'],
+      ['opencode', 'mimo-v2.6-flash-free'],
       ['codex', 'openai/gpt-oss-20b'],
       ['kilo', 'reflection/beam-free'],
       ['kilo', 'xingchen-agi/xing4.0-29b-a4b:free'],
     ] as const)
       expect(source.supports(harness, { provider: OFM_PROVIDER, model })).toBe(true)
-    // An alias for a CLI id reaches the same pinning decision.
-    expect(
-      source.supports('mimo-code', { provider: OFM_PROVIDER, model: 'mimo-v2.6-flash-free' }),
-    ).toBe(true)
   })
 
   it('refuses the explicitly excluded non-conversational models even when the live catalog lists them', async () => {
@@ -136,12 +130,12 @@ describe('OFM source pairing', () => {
 
   it('refuses a model this run did not assign to that harness', () => {
     const { source } = harness(loaded)
-    expect(source.supports('mimo', { provider: OFM_PROVIDER, model: 'moonshotai/kimi-k3' })).toBe(
-      false,
-    )
-    expect(source.supports('pool', { provider: OFM_PROVIDER, model: 'mimo-v2.6-flash-free' })).toBe(
-      false,
-    )
+    expect(
+      source.supports('opencode', { provider: OFM_PROVIDER, model: 'moonshotai/kimi-k3' }),
+    ).toBe(false)
+    expect(
+      source.supports('codex', { provider: OFM_PROVIDER, model: 'mimo-v2.6-flash-free' }),
+    ).toBe(false)
   })
 
   it('refuses a provider route the plugin has not registered', () => {
@@ -158,7 +152,7 @@ describe('OFM source pairing', () => {
 
   it('refuses a harness with no declared protocol', () => {
     const { source } = harness(loaded)
-    for (const harness of ['dsh', 'grok', 'zcode', 'minimax-code', 'unknown-cli'])
+    for (const harness of ['dsh', 'grok', 'minimax-code', 'unknown-cli'])
       expect(source.supports(harness, ref)).toBe(false)
   })
 

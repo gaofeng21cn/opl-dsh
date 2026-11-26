@@ -937,20 +937,29 @@ it.each(['opencode/glm-5.3-flash-free', 'opencode/deepseek-v4.1-flash-free'])(
   },
 )
 
-it('omits empty default harness setups but retains an explicitly configured existing engine', () => {
+it('drops retired harnesses and retains explicitly configured active or custom engines', () => {
   const fresh = defaultExecutionCatalog()
-  for (const id of ['muse-code']) expect(fresh.harnesses.some((h) => h.id === id)).toBe(false)
-  for (const id of ['mimo-code', 'opencode', 'step-code', 'pool'])
+  for (const id of ['muse-code', 'step-code', 'pool', 'zcode', 'mimo-code'])
+    expect(fresh.harnesses.some((h) => h.id === id)).toBe(false)
+  for (const id of ['opencode', 'pi', 'kilo', 'vibe'])
     expect(fresh.harnesses.some((h) => h.id === id)).toBe(true)
-  fresh.harnesses.push({
-    id: 'muse-code',
-    name: 'Existing Muse',
-    kind: 'acp',
-    command: 'custom-muse',
-  })
-  expect(normalizeCatalog(fresh).harnesses.find((h) => h.id === 'muse-code')?.command).toBe(
-    'custom-muse',
+  fresh.harnesses.push(
+    {
+      id: 'muse-code',
+      name: 'Legacy Muse',
+      kind: 'acp',
+      command: 'custom-muse',
+    },
+    {
+      id: 'custom-agent',
+      name: 'Custom Agent',
+      kind: 'acp',
+      command: 'custom-agent',
+    },
   )
+  const normalized = normalizeCatalog(fresh)
+  expect(normalized.harnesses.some((h) => h.id === 'muse-code')).toBe(false)
+  expect(normalized.harnesses.find((h) => h.id === 'custom-agent')?.command).toBe('custom-agent')
 })
 
 it('offers an OpenCode-only MiMo lane without generating a vendor CLI combination', async () => {

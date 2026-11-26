@@ -4,7 +4,7 @@ const record = (value: unknown): Record<string, unknown> =>
     ? (value as Record<string, unknown>)
     : {}
 
-const services = ['codex', 'zcode', 'session'] as const
+const services = ['codex', 'session'] as const
 const errorNames = [
   'NO_PROGRESS',
   'APIError',
@@ -59,7 +59,7 @@ export function safeFailureDetails(input: unknown): HarnessFailureDetails {
     record(value.attribution),
     record(data.attribution),
   ]
-  // ZCode wraps provider failures in a cause chain with structured context.
+  // Normalize nested cause chains with structured attribution context.
   let cause = value
   for (let depth = 0; depth < 5; depth++) {
     candidates.push(record(cause.context))
@@ -120,8 +120,7 @@ export function safeFailureDetails(input: unknown): HarnessFailureDetails {
 export function failureDiagnosticSuffix(input: unknown): string {
   const details = safeFailureDetails(input)
   const labels: string[] = []
-  if (details.service)
-    labels.push({ codex: 'Codex', zcode: 'ZCode', session: '模型会话' }[details.service])
+  if (details.service) labels.push({ codex: 'Codex', session: '模型会话' }[details.service])
   if (details.httpStatus !== undefined) labels.push(`HTTP ${details.httpStatus}`)
   if (details.errorName) labels.push(`错误类别 ${details.errorName}`)
   if (details.terminalState) labels.push(`结束状态 ${details.terminalState}`)
@@ -132,7 +131,7 @@ export function failureDiagnosticSuffix(input: unknown): string {
 /** A failed official CLI operation carrying only the explicitly projected error facts. */
 export class HarnessReportedError extends Error {
   readonly details: HarnessFailureDetails
-  constructor(service: 'codex' | 'zcode', error: unknown, terminalState?: 'failed') {
+  constructor(service: 'codex', error: unknown, terminalState?: 'failed') {
     super('HARNESS_EXECUTION')
     this.details = {
       ...safeFailureDetails(error),

@@ -69,10 +69,8 @@ for (const [entry, name] of [
   })
 }
 for (const [directory, name] of [
-  ['step', 'step-bridge'],
   ['pi', 'pi-bridge'],
   ['kimi', 'kimi-error-bridge'],
-  ['zcode-ofm', 'zcode-ofm-bridge'],
   ['.', 'chat-tool-bridge'],
 ]) {
   await bundle({
@@ -83,18 +81,6 @@ for (const [directory, name] of [
     target: 'node24',
     banner: esmRequireBanner,
     outfile: join(output, `package/lib/${name}.mjs`),
-  })
-}
-for (const name of ['muse-bridge.mjs', 'muse-bash-mcp.mjs', 'muse-endpoint.mjs']) {
-  await bundle({
-    entryPoints: [join(root, 'src/execution/host/adapters/muse', name)],
-    bundle: true,
-    platform: 'node',
-    format: 'esm',
-    target: 'node24',
-    external: ['./muse-bash-mcp.mjs', './muse-endpoint.mjs'],
-    banner: esmRequireBanner,
-    outfile: join(output, 'package/lib', name),
   })
 }
 /** The official client loader materializes the protocol root, not its pure remote-info leaf. */

@@ -90,39 +90,12 @@ const info: Record<
       '可使用 MiniMax 官方安装器安装 mcode；登录请在终端运行 mcode login，凭据由官方 CLI 自行保存与刷新。',
     installable: true,
   },
-  zcode: {
-    command: 'zcode',
-    website: 'https://github.com/zai-org/ZCode/releases',
-    instructions: '使用官方 ZCode CLI 的 app-server 入口；模型连接由 OFM 模型服务管理。',
-  },
   'kimi-code': {
     command: 'kimi',
     website: 'https://github.com/MoonshotAI/kimi-code#install',
     instructions:
       '可使用 Kimi Code 官方独立安装器；Windows 首次运行前需要 Git for Windows，适配使用已验证的 CLI 版本。',
     installable: true,
-  },
-  'mimo-code': {
-    command: 'mimo',
-    website: 'https://github.com/XiaomiMiMo/MiMo-Code',
-    instructions: '可使用 MiMo Code 官方安装器安装 mimo；模型连接由模型供应商管理。',
-    installable: true,
-  },
-  pool: {
-    command: 'pool',
-    website: 'https://poolside.ai',
-    instructions: '使用 Poolside 官方安装方式安装 pool；适配接口要求 1.0.16。',
-  },
-  'step-code': {
-    command: 'step',
-    website: 'https://github.com/stepfun-ai/Step-Code',
-    instructions: '可使用 StepCode 官方安装器安装 step；模型连接由模型供应商管理。',
-    installable: true,
-  },
-  'muse-code': {
-    command: 'muse',
-    website: 'https://dev.meta.ai/docs/muse-code',
-    instructions: '使用 Muse Code 官方安装方式安装 muse；模型连接由模型供应商管理。',
   },
   opencode: {
     command: 'opencode',
@@ -217,10 +190,8 @@ const knownRoots = (id: string, env: NodeJS.ProcessEnv = process.env): string[] 
   if (id === 'claude' && env.LOCALAPPDATA)
     roots.push(join(env.LOCALAPPDATA, 'Programs/Claude Code'))
   if (id === 'minimax-code') roots.push(...minimaxCodeRoots(env))
-  if (id === 'mimo-code') roots.push(join(home, '.mimocode/bin'))
   if (id === 'kimi-code') roots.push(join(home, '.local/bin'), join(home, '.kimi-code/bin'))
   if (id === 'grok-build') roots.unshift(join(home, '.grok/bin'))
-  if (id === 'step-code') roots.push(join(home, '.stepcode/bin'))
   return [...new Set(roots.filter(Boolean))]
 }
 function configuredPath(command: string): boolean {
@@ -668,13 +639,7 @@ export async function inspectHarness(
       ...(error ? { error } : {}),
     }
   }
-  // ZCode's launcher is a desktop entry point on some installations. Running
-  // `zcode --version` during settings discovery can briefly open its window.
-  // Presence is enough for the settings card; version discovery belongs to the
-  // official CLI and must never make opening Settings visible.
   const location = { path, ...(detectedBy ? { detectedBy } : {}) }
-  if (harness.id === 'zcode')
-    return { ...base, ...location, runnable: supported, verification: 'not-probed' }
   const probe = await probeVersion(path, harness, options)
   return {
     ...base,

@@ -22,7 +22,6 @@ import {
   antigravityThinkingLevelsFor,
   ANTIGRAVITY_DEFAULT_THINKING,
 } from './adapters/antigravity/models.ts'
-import { stepLaneReasoning } from './adapters/step/step-models.ts'
 import { MINIMAX_CODE_PROVIDER } from './adapters/minimax.ts'
 import type { AdapterOptions } from './adapters/types.ts'
 import type { ExecutionCatalog, ExecutionCatalogStore } from './catalog.ts'
@@ -358,8 +357,6 @@ export async function reasoningPreflightAdmitted(
   const adapter = adapterFor(definition.harnessRef, definition.modelRef, host.modelSources)
   if (!adapter || adapter.capabilities.reasoning === 'none')
     return { status: 'not-applicable', efforts: [] }
-  if (definition.harnessRef === 'step-code' && stepLaneReasoning(definition.modelRef) === false)
-    return { status: 'known', efforts: [] }
   if (
     ['codex', 'claude'].includes(definition.harnessRef) ||
     definition.modelRef.provider === MINIMAX_CODE_PROVIDER

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { VendorMessage } from '../../src/execution/host/message-edit-opencode-common.ts'
+import type { VendorMessage } from '../../src/execution/host/usage-opencode-kilo.ts'
 import { summarizeOpenCodeKiloUsage } from '../../src/execution/host/usage-opencode-kilo.ts'
 import {
   PiTurnUsage,

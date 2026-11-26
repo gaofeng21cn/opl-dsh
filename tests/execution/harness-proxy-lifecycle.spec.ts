@@ -469,8 +469,4 @@ beforeEach(() => {
     instructions: 'fixture',
     website: 'https://example.test',
   }))
-  vi.spyOn(
-    harnessAdapters.find((adapter) => adapter.id === 'zcode')!,
-    'available',
-  ).mockResolvedValue({ available: false, reason: 'ZCode outside this fixture' })
 })

@@ -114,20 +114,6 @@ export function parseGrokTurnUsage(value: unknown, modelCatalog?: unknown): Exte
 }
 
 /**
- * Parse Pool's per-response usage; cache reads are a subset of `inputTokens`.
- * @param value - Complete Pool prompt response.
- * @returns Per-response billing usage, or an empty account when malformed.
- */
-export function parsePoolTurnUsage(value: unknown): ExternalUsageAccount {
-  const response = isObject(value) ? value : undefined
-  const usage =
-    response === undefined
-      ? undefined
-      : parseUsageObject(response.usage, { inputIncludesCache: true })
-  return usage === undefined ? {} : { usage }
-}
-
-/**
  * Parse the verified OpenCode/Kilo ACP result when the local history read is delayed.
  * The official result uses input/output/total buckets; Kilo additionally publishes
  * thoughtTokens and cachedReadTokens. The persisted message graph remains the preferred
@@ -172,15 +158,6 @@ export function parseOpenCodeKiloTurnUsage(value: unknown): ExternalUsageAccount
       ...(reasoning === undefined ? {} : { reasoningTokens: reasoning }),
     },
   }
-}
-
-/**
- * Parse Pool's context update, accepting the direct ACP update or its envelope.
- * @param value - ACP context update or its enclosing update event.
- * @returns Valid context occupancy fields, or an empty account.
- */
-export function parsePoolContextUsage(value: unknown): ExternalUsageAccount {
-  return parseContextAccount(value)
 }
 
 /**

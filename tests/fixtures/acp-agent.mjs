@@ -30,36 +30,47 @@ const persistEditHistory = async () => {
   if (process.env.OPL_FIXTURE_EDIT_PERSIST === '1')
     await writeFile(editHistoryFile(), JSON.stringify(editHistory))
 }
+const editToken = () => JSON.stringify(editHistory)
 const update = (u) => stub.update(sessionId, u)
 const chunk = (t) => stub.chunk(sessionId, t)
 
 stub.start(async (m) => {
-  if (m.method?.startsWith('_x.ai/rewind/')) {
+  if (m.method === 'opl/message-edit/read' || m.method === 'opl/message-edit/rewind') {
     if (process.env.OPL_FIXTURE_EDIT !== '1') return stub.fail(m.id, -32601, 'unsupported fixture')
-    if (m.method === '_x.ai/rewind/points')
+    if (m.params?.sessionId !== sessionId) return stub.fail(m.id, -32602, 'unknown session')
+    if (m.method === 'opl/message-edit/read')
       return stub.reply(m.id, {
-        rewind_points: editHistory.map((text, prompt_index) => ({
-          prompt_index,
-          prompt_preview: text,
-          has_file_changes: false,
-        })),
+        sessionId,
+        token: editToken(),
+        boundaries: editHistory.map((text, index) => ({ id: String(index), text })),
       })
-    const index = m.params.targetPromptIndex
-    const text = editHistory[index]
+    if (m.params?.expectedToken !== editToken()) return stub.fail(m.id, -32602, 'stale edit token')
+    const index = Number(m.params?.targetId)
+    if (!Number.isInteger(index) || index < 0 || index >= editHistory.length)
+      return stub.fail(m.id, -32602, 'unknown edit target')
+    const retained = Array.from({ length: index }, (_, item) => ({
+      previousId: String(item),
+      nextId: String(item),
+    }))
     editHistory.splice(index)
     await persistEditHistory()
-    return stub.reply(m.id, {
-      success: true,
-      target_prompt_index: index,
-      mode: 'conversation_only',
-      prompt_text: text,
-    })
+    return stub.reply(m.id, { sessionId, retained })
   }
   if (m.method === 'initialize')
     stub.reply(m.id, {
       protocolVersion: 1,
       agentCapabilities: {
         loadSession: true,
+        ...(process.env.OPL_FIXTURE_EDIT === '1'
+          ? {
+              _meta: {
+                'opl/message-edit': {
+                  version: 1,
+                  methods: ['opl/message-edit/read', 'opl/message-edit/rewind'],
+                },
+              },
+            }
+          : {}),
         ...(process.env.OPL_FIXTURE_IMAGES === '1'
           ? {
               promptCapabilities: {

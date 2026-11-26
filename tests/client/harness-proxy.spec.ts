@@ -1237,7 +1237,7 @@ describe('每个外部 Harness 独立的代理设置', () => {
     for (const [id, harnessRef, provider] of [
       ['missing-codex', 'codex', 'our-free-model'],
       ['missing-kimi', 'kimi-code', 'our-free-model'],
-      ['removed-provider', 'zcode', 'huawei-maas'],
+      ['removed-provider', 'claude', 'removed-provider'],
     ]) {
       const modelRef = { provider, model: id }
       data.models.push({ ref: modelRef, name: id, source: provider, available: false })

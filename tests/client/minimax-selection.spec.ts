@@ -370,14 +370,14 @@ describe('MiniMax Code model menu labels', () => {
   it.each([false, true])(
     'hides unavailable combinations while preserving an existing selection (%s)',
     async (selectedUnavailable) => {
-      let zcodeAvailable = false
-      const zcode = {
-        id: 'zcode/glm-5.2',
-        name: 'glm-5.2 + ZCode',
+      let codexAvailable = false
+      const codex = {
+        id: 'codex/gpt-5',
+        name: 'GPT-5 + Codex',
         enabled: true,
         isDefault: false,
-        modelRef: { provider: 'huawei-maas', model: 'glm-5.2' },
-        harnessRef: 'zcode',
+        modelRef: { provider: 'opl-gateway', model: 'codex::gpt-5' },
+        harnessRef: 'codex',
         permissionPolicy: 'full-access',
       }
       const call = (async (method: string) => {
@@ -387,37 +387,37 @@ describe('MiniMax Code model menu labels', () => {
             models: [
               ...catalog.models,
               {
-                ref: zcode.modelRef,
-                name: 'GLM-5.2',
-                source: 'Huawei MaaS',
-                available: zcodeAvailable,
+                ref: codex.modelRef,
+                name: 'GPT-5',
+                source: 'OPL Gateway',
+                available: codexAvailable,
               },
             ],
             harnesses: [
               ...catalog.harnesses,
-              { id: 'zcode', name: 'ZCode', available: zcodeAvailable },
+              { id: 'codex', name: 'Codex', available: codexAvailable },
             ],
-            combinations: [...catalog.combinations, zcode],
+            combinations: [...catalog.combinations, codex],
           }
         if (method === 'combinations')
           return [
             ...catalog.combinations.map((item) => ({ id: item.id, available: true })),
-            { id: zcode.id, available: zcodeAvailable, reason: '未找到官方 ZCode CLI，请先安装' },
+            { id: codex.id, available: codexAvailable, reason: '未找到官方 Codex CLI，请先安装' },
           ]
         if (method === 'model-selection')
           return {
             current: selectedUnavailable
-              ? zcode.modelRef
+              ? codex.modelRef
               : { provider: PROVIDER, model: M3_FLASH, reasoningEffort: 'max' },
             groups,
-            combination: selectedUnavailable ? zcode.id : flashCombination.id,
+            combination: selectedUnavailable ? codex.id : flashCombination.id,
           }
         throw new Error(`unexpected RPC ${method}`)
       }) as unknown as ExecutionCall
       const face = createFace({
         lastUsed: null,
         next: selectedUnavailable
-          ? zcode.modelRef
+          ? codex.modelRef
           : { provider: PROVIDER, model: M3_FLASH, reasoningEffort: 'max' },
       })
       const view = await mount({
@@ -426,25 +426,23 @@ describe('MiniMax Code model menu labels', () => {
       })
       await view.open()
       await view.click('模型')
-      expect(view.menuText()).not.toContain('Huawei MaaS')
-      expect(view.menuText()).not.toContain('未找到官方 ZCode CLI')
+      expect(view.menuText()).not.toContain('OPL Gateway')
+      expect(view.menuText()).not.toContain('未找到官方 Codex CLI')
       const modelRows = () =>
         view.buttons().filter((button) => button.getAttribute('role') === 'menuitemradio')
-      expect(modelRows().some((button) => button.textContent?.includes('GLM-5.2'))).toBe(false)
-      if (selectedUnavailable) expect(view.trigger.textContent).toContain('GLM-5.2 · ZCode')
+      expect(modelRows().some((button) => button.textContent?.includes('GPT-5'))).toBe(false)
+      if (selectedUnavailable) expect(view.trigger.textContent).toContain('GPT-5 · Codex')
 
       await view.open()
-      zcodeAvailable = true
+      codexAvailable = true
       await view.open()
       await view.click('模型')
-      expect(modelRows().some((button) => button.textContent?.includes('GLM-5.2 · ZCode'))).toBe(
-        true,
-      )
+      expect(modelRows().some((button) => button.textContent?.includes('GPT-5 · Codex'))).toBe(true)
       await view.open()
-      zcodeAvailable = false
+      codexAvailable = false
       await view.open()
       await view.click('模型')
-      expect(modelRows().some((button) => button.textContent?.includes('GLM-5.2'))).toBe(false)
+      expect(modelRows().some((button) => button.textContent?.includes('GPT-5'))).toBe(false)
     },
   )
 

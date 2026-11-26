@@ -31,32 +31,32 @@ function fixture() {
 
 it('keeps a lease valid through preparation while its owner and pairing remain', async () => {
   const { sources } = fixture()
-  const lease = sources.lease('pool', ref)
-  expect(await sources.resolve('pool', ref, 'chat')).toEqual(route)
+  const lease = sources.lease('codex', ref)
+  expect(await sources.resolve('codex', ref, 'chat')).toEqual(route)
   expect(() => lease.assertCurrent()).not.toThrow()
 })
 
 it('rejects source removal after route resolution', async () => {
   const { sources, remove } = fixture()
-  const lease = sources.lease('pool', ref)
-  await sources.resolve('pool', ref, 'chat')
+  const lease = sources.lease('codex', ref)
+  await sources.resolve('codex', ref, 'chat')
   remove()
   expect(() => lease.assertCurrent()).toThrow('已变更')
 })
 
 it('rejects re-registration of the same source object and preserves its new owner', () => {
   const { sources, source, remove } = fixture()
-  const lease = sources.lease('pool', ref)
+  const lease = sources.lease('codex', ref)
   remove()
   sources.register(owner, source)
   remove()
-  expect(sources.supports('pool', ref)).toBe(true)
+  expect(sources.supports('codex', ref)).toBe(true)
   expect(() => lease.assertCurrent()).toThrow('已变更')
 })
 
 it('rejects a pairing withdrawn during preparation', () => {
   const { sources, withdraw } = fixture()
-  const lease = sources.lease('pool', ref)
+  const lease = sources.lease('codex', ref)
   withdraw()
   expect(() => lease.assertCurrent()).toThrow('已变更')
 })
@@ -64,15 +64,15 @@ it('rejects a pairing withdrawn during preparation', () => {
 it('retains the original model identity when the caller changes its reference', () => {
   const { sources } = fixture()
   const mutable = { ...ref }
-  const lease = sources.lease('pool', mutable)
+  const lease = sources.lease('codex', mutable)
   mutable.model = 'different-model'
   expect(() => lease.assertCurrent()).not.toThrow()
 })
 
 it('requires an explicit supported registration before capturing a lease', () => {
   const { sources } = fixture()
-  expect(() => sources.lease('pool', { ...ref, provider: 'unregistered' })).toThrow('尚未适配')
-  expect(() => sources.lease('pool', { ...ref, model: 'unassigned' })).toThrow('尚未适配')
+  expect(() => sources.lease('codex', { ...ref, provider: 'unregistered' })).toThrow('尚未适配')
+  expect(() => sources.lease('codex', { ...ref, model: 'unassigned' })).toThrow('尚未适配')
 })
 
 it('rejects source re-registration during an awaited route read', async () => {
@@ -90,7 +90,7 @@ it('rejects source re-registration during an awaited route read', async () => {
     },
   }
   const remove = sources.register(owner, source)
-  const reading = sources.resolve('pool', ref, 'chat')
+  const reading = sources.resolve('codex', ref, 'chat')
   remove()
   sources.register(owner, source)
   release()

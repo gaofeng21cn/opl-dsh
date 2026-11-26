@@ -68,6 +68,15 @@ const retiredModuleTokens = [
   'split-plugins',
   'legacy-channel',
   'cleanup-skill',
+  'step-bridge',
+  'muse-bridge',
+  'zcode-ofm',
+  'adapters/step',
+  'adapters/muse',
+  'adapters/pool',
+  'adapters/zcode-ofm',
+  'adapters/zcode-protocol',
+  'adapters/mimo',
 ]
 for (const path of sourcePaths) {
   const name = relative(repoRoot, path).replaceAll('\\', '/')
@@ -77,6 +86,9 @@ for (const path of sourcePaths) {
   }
   for (const token of retiredModuleTokens) {
     if (content.includes(token)) errors.push(`${name}: forbidden retired module reference ${token}`)
+  }
+  if (name !== 'src/execution/host/catalog.ts' && content.includes('mimo-code')) {
+    errors.push(`${name}: forbidden retired module reference mimo-code`)
   }
 }
 const infraPaths = [

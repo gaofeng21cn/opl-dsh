@@ -67,45 +67,11 @@ export const OFFICIAL_HARNESSES: readonly OfficialHarness[] = [
   },
   { id: 'qwen-code', officialModels: [] },
   {
-    id: 'zcode',
-    officialModels: [],
-  },
-  {
     id: 'kimi-code',
     officialModels: [
       { provider: 'our-free-model', model: 'moonshotai/kimi-k2.6' },
       { provider: 'our-free-model', model: 'moonshotai/kimi-k3' },
       { provider: 'our-free-model', model: 'moonshotai/kimi-k3.1-pro' },
-    ],
-  },
-  {
-    id: 'mimo-code',
-    officialModels: [
-      { provider: 'our-free-model', model: 'mimo-v2.6-flash-free' },
-      { provider: 'our-free-model', model: 'amd/MiMo-V2.6-Flash' },
-    ],
-  },
-  {
-    id: 'pool',
-    officialModels: [
-      { provider: 'our-free-model', model: 'poolside/laguna-s-2.1:free' },
-      { provider: 'our-free-model', model: 'poolside/laguna-xs-2.1:free' },
-      { provider: 'our-free-model', model: 'poolside/laguna-xs-2.1' },
-    ],
-  },
-  {
-    id: 'step-code',
-    officialModels: [
-      { provider: 'our-free-model', model: 'step-5-preview-free' },
-      { provider: 'our-free-model', model: 'stepfun/step-5-preview-free' },
-      { provider: 'our-free-model', model: 'stepfun-ai/step-5-preview' },
-    ],
-  },
-  {
-    id: 'muse-code',
-    officialModels: [
-      { provider: 'our-free-model', model: 'muse-spark-1.2-contributor-free' },
-      { provider: 'our-free-model', model: 'muse-spark-1.3-contributor-free' },
     ],
   },
   { id: 'opencode', officialModels: [] },

@@ -34,7 +34,6 @@ import { MessageEditStore } from './message-edit-store.ts'
 import { FileExternalEditJournal } from './message-edit-external-store.ts'
 import { ExternalMessageEditTransactions } from './message-edit-external.ts'
 import type { ExternalEditHistory, ExternalMessageEditDriver } from './message-edit-driver.ts'
-import { kimiMessageEditDriver } from './message-edit-kimi.ts'
 import type { HarnessPromptPart } from '../contracts/prompt.ts'
 import {
   currentHarnessInputText,
@@ -71,8 +70,6 @@ import { VibeTurnUsageTracker } from './usage-vibe.ts'
 import {
   parseGrokTurnUsage,
   parseOpenCodeKiloTurnUsage,
-  parsePoolContextUsage,
-  parsePoolTurnUsage,
   parseMiniMaxContextUsage,
 } from './usage-account.ts'
 import { QwenTurnUsage } from './adapters/qwen/usage.ts'
@@ -224,7 +221,6 @@ import {
   stopEditRuntime,
   stopEditSettle,
   stopEditTarget,
-  storedKiloHistory,
   supportsExternalEditing,
   type HarnessStopEditContext,
 } from './harness-stop-edit.ts'
@@ -798,11 +794,11 @@ export class HarnessService {
     if (this.selections[record.nativeSessionId!] === undefined)
       await this.bindSelection(record.nativeSessionId!, record.combination)
   }
-  private zcodeModeForOrigin(origin: HarnessOrigin): 'build' | 'yolo' {
-    if (origin.kind !== 'dsh') return 'yolo'
+  private isAutoReviewOrigin(origin: HarnessOrigin): boolean {
+    if (origin.kind !== 'dsh') return false
     const session = this.ctx.sessions.get(asSessionId<SessionId>(origin.sessionId))
-    if (!session) throw Error('ZCode 的原生会话已不存在')
-    return this.ctx.permissionPresets.current(session) === 'auto' ? 'build' : 'yolo'
+    if (!session) throw Error('原生会话已不存在')
+    return this.ctx.permissionPresets.current(session) === 'auto'
   }
   private currentWorkingDirectory(session: Session): string {
     try {
@@ -1593,8 +1589,8 @@ export class HarnessService {
       throw new HarnessConfigurationError(
         `Harness ${definition.harnessRef} 没有经过验证的官方 full-access 路径，已拒绝启动该受限任务；不会自动降级为工作区权限。`,
       )
-    const autoReview = origin.kind === 'dsh' && this.zcodeModeForOrigin(origin) === 'build'
-    if (autoReview && !['codex', 'claude', 'zcode'].includes(definition.harnessRef))
+    const autoReview = origin.kind === 'dsh' && this.isAutoReviewOrigin(origin)
+    if (autoReview && !['codex', 'claude'].includes(definition.harnessRef))
       throw new HarnessConfigurationError(
         '此 Harness 尚无已验证的官方 Auto Review 接口，请选择其他权限模式。',
       )
@@ -1609,7 +1605,6 @@ export class HarnessService {
       ...(['codex', 'claude'].includes(definition.harnessRef) && origin.kind === 'dsh'
         ? { externalAutoReview: autoReview }
         : {}),
-      ...(definition.harnessRef === 'zcode' ? { zcodeMode: this.zcodeModeForOrigin(origin) } : {}),
       // A delegated turn needs an independent native driver while its caller awaits the tool.
       ...(origin.kind === 'dsh' && definition.harnessRef !== 'dsh' && !followConversationPermission
         ? { nativeSessionId: `session-${id}` }
@@ -1940,11 +1935,9 @@ export class HarnessService {
       const account =
         record.harnessRef === 'vibe'
           ? active.vibeUsage!.observeUpdate(u)
-          : record.harnessRef === 'pool'
-            ? parsePoolContextUsage(u)
-            : record.harnessRef === 'minimax-code'
-              ? parseMiniMaxContextUsage(u)
-              : {}
+          : record.harnessRef === 'minimax-code'
+            ? parseMiniMaxContextUsage(u)
+            : {}
       const contextUsage = canonicalHarnessContext(
         account.contextUsage ??
           (record.harnessRef === 'vibe'
@@ -1965,23 +1958,6 @@ export class HarnessService {
         if (usageTurn) this.changed(record)
       }
       return
-    }
-    if (active.editReplay) {
-      if (u.sessionUpdate === 'user_message_chunk' && object(u.content).type === 'text')
-        active.editReplay.text += String(object(u.content).text ?? '')
-      const id = object(u._meta)['poolside/inputEventId']
-      if (typeof id === 'string' && id) {
-        active.editReplay.boundaries.push({ id, text: active.editReplay.text })
-        active.editReplay.text = ''
-      }
-      return
-    }
-    if (record.harnessRef === 'step-code' && u.sessionUpdate === 'session_info_update')
-      this.recordStepInput(record, active, object(u._meta))
-    if (record.harnessRef === 'pool' && active.turn && u.sessionUpdate === 'session_info_update') {
-      const id = object(u._meta)['poolside/inputEventId']
-      if (typeof id === 'string' && id)
-        active.turn.native = { ...active.turn.native, userMessageId: id }
     }
 
     // Configuration advertisements arrive outside any turn, so this must run before the
@@ -2016,7 +1992,7 @@ export class HarnessService {
       this.titleUpdates.set(record.id, pending)
       return
     }
-    if (!active.turn || active.deadlineError || active.inputReceiptError) return
+    if (!active.turn || active.deadlineError) return
     const turn = active.turn
     active.qwenUsage?.observe(u)
     if (
@@ -2066,56 +2042,6 @@ export class HarnessService {
       if (owner) this.conversations?.tool(owner.sessionId, record, turn, u)
     }
     this.changed(record)
-  }
-
-  /** Bind Step's exact request receipt only to the current connection's open turn. */
-  private recordStepInput(record: HarnessSession, active: Active, meta: Record<string, unknown>) {
-    const turn = active.turn
-    const inputId = meta['opl/stepInputId']
-    const operationId = meta['opl/clientRequestId']
-    if (
-      this.active.get(record.id) !== active ||
-      active.sessionInfo?.sessionId !== record.acpSessionId ||
-      !turn ||
-      turn !== record.turns.at(-1) ||
-      !['running', 'waiting_approval', 'waiting_input'].includes(turn.state) ||
-      active.cancelled ||
-      active.deadlineError ||
-      active.inputReceiptError ||
-      typeof inputId !== 'string' ||
-      !inputId ||
-      typeof operationId !== 'string' ||
-      operationId !== turn.operationId
-    )
-      return
-    if (turn.native?.userMessageId === inputId) return
-    if (turn.native?.userMessageId) {
-      active.inputReceiptError =
-        'Step 返回了相互冲突的用户消息身份，已停止本轮请求；编辑状态待核对，原任务未自动重发。'
-      turn.error = active.inputReceiptError
-    } else turn.native = { ...turn.native, userMessageId: inputId }
-    this.changed(record)
-    const stopped = active.inputReceiptError
-      ? active.acp?.terminate(active.inputReceiptError)
-      : undefined
-    const saved = active.inputReceiptError
-      ? this.persistStepInputConflict(record, turn)
-      : this.save(record)
-    active.inputReceiptWrite = Promise.all([active.inputReceiptWrite, saved, stopped]).then(
-      () => {},
-    )
-    void active.inputReceiptWrite.catch(() => {
-      this.ctx.logger?.warn('Step 用户消息身份尚未保存，原记录和编辑保护已保留')
-    })
-  }
-
-  private async persistStepInputConflict(record: HarnessSession, turn: HarnessTurn): Promise<void> {
-    const intent = record.nativeSessionId
-      ? this.externalMessageEdits.intent(record.nativeSessionId)
-      : undefined
-    if (intent && turn.operationId === 'message-edit:' + intent.requestId)
-      await this.externalEditJournal.save({ ...intent, phase: 'uncertain' })
-    await this.save(record)
   }
   private ask(record: HarnessSession, active: Active, rpcId: string | number, value: unknown) {
     const p = object(value)
@@ -2448,22 +2374,6 @@ export class HarnessService {
     record: HarnessSession,
   ): Promise<ExternalEditHistory | undefined> {
     try {
-      if (record.harnessRef === 'grok-build') {
-        const response = object(
-          await this.active
-            .get(record.id)!
-            .acp!.request('_x.ai/rewind/points', { sessionId: record.acpSessionId }, 30_000),
-        )
-        if (!Array.isArray(response.rewind_points)) return
-        return {
-          sessionId: record.acpSessionId,
-          token: hash(response.rewind_points),
-          boundaries: response.rewind_points.map((point: { prompt_index: number }) => ({
-            id: String(point.prompt_index),
-          })),
-        }
-      }
-      if (['minimax-code', 'kimi-code', 'pool'].includes(record.harnessRef)) return
       return await this.externalDriver(record)?.read(
         this.externalContext(record, new AbortController().signal),
       )
@@ -2481,8 +2391,6 @@ export class HarnessService {
       this.assertMiniMaxCodeRouteEnabled(record)
       delete active.deadlineError
       delete active.deadlineCleanup
-      delete active.inputReceiptError
-      delete active.inputReceiptWrite
       if (record.harnessRef !== 'dsh' && this.progressLimits) {
         active.watchdog = new ProgressWatchdog(this.progressLimits, () => {
           if (active.turn !== turn || active.cancelled) return
@@ -2505,19 +2413,11 @@ export class HarnessService {
           turn.state = 'cancelled'
           return
         }
-        const priorTurns = record.turns.slice(0, record.turns.indexOf(turn))
-        const priorIds = priorTurns.map((item) => item.native?.userMessageId)
-        const knownKimiPrefix =
-          record.harnessRef === 'kimi-code' &&
-          priorIds.every((id): id is string => typeof id === 'string' && !!id) &&
-          new Set(priorIds).size === priorIds.length
         editBefore =
           active.editHistory ??
-          (knownKimiPrefix
-            ? { sessionId: record.acpSessionId, boundaries: priorIds.map((id) => ({ id: id! })) }
-            : active.createdSession && record.turns.length === 1
-              ? { sessionId: record.acpSessionId, boundaries: [] }
-              : await this.observeEditHistory(record))
+          (active.createdSession && record.turns.length === 1
+            ? { sessionId: record.acpSessionId, boundaries: [] }
+            : await this.observeEditHistory(record))
         const adapter = adapterFor(record.harnessRef, record.modelRef, this.modelSources)
         const edit = record.nativeSessionId
           ? this.externalMessageEdits.intent(record.nativeSessionId)
@@ -2619,16 +2519,6 @@ export class HarnessService {
               : undefined,
           ),
         )
-        if (active.inputReceiptError) throw new HarnessTransportError(active.inputReceiptError)
-        if (['opencode', 'kilo'].includes(record.harnessRef)) {
-          const userMessageId = result.userMessageId
-          if (typeof userMessageId === 'string' && userMessageId) {
-            if (turn.native?.userMessageId && turn.native.userMessageId !== userMessageId)
-              throw Error('官方 Harness 返回的用户消息身份不一致')
-            turn.native = { ...turn.native, userMessageId }
-            await this.save(record)
-          }
-        }
         let usage =
           record.harnessRef === 'antigravity' && record.modelRef.provider === 'antigravity-google'
             ? normalizeAntigravityUsage(result.usage)
@@ -2645,11 +2535,9 @@ export class HarnessService {
             ? active.vibeUsage!.finishTurn(result)
             : record.harnessRef === 'grok-build'
               ? parseGrokTurnUsage(result)
-              : record.harnessRef === 'pool'
-                ? parsePoolTurnUsage(result)
-                : ['opencode', 'kilo'].includes(record.harnessRef)
-                  ? parseOpenCodeKiloTurnUsage(result)
-                  : {}
+              : ['opencode', 'kilo'].includes(record.harnessRef)
+                ? parseOpenCodeKiloTurnUsage(result)
+                : {}
         if (!usage) usage = account.usage
         if (usage) turn.usage = usage
         if (account.contextUsage) turn.contextUsage = account.contextUsage
@@ -2788,7 +2676,6 @@ export class HarnessService {
       // must not collapse into the generic transport text.
       turn.error =
         active.deadlineError ??
-        active.inputReceiptError ??
         (error instanceof HarnessTransportError || error instanceof HarnessConfigurationError
           ? error.message
           : '执行未完成，请检查 Harness 安装、所选渠道和模型。原任务未自动重发。')
@@ -2821,10 +2708,6 @@ export class HarnessService {
     delete active.watchdog
     await active.deadlineCleanup
     delete active.deadlineCleanup
-    await active.inputReceiptWrite?.catch(() => {
-      active.inputReceiptError ??= 'Step 用户消息身份未能保存，请检查磁盘后重新读取对话。'
-    })
-    delete active.inputReceiptWrite
     await this.titleUpdates.get(record.id)
     if (active.deadlineError) {
       turn.state = 'failed'
@@ -2834,13 +2717,6 @@ export class HarnessService {
       turn.state = 'cancelled'
       delete turn.error
     }
-    if (active.inputReceiptError) {
-      turn.state = 'failed'
-      turn.error = active.inputReceiptError
-      await this.persistStepInputConflict(record, turn).catch(() => {
-        this.ctx.logger?.warn('Step 用户消息身份冲突尚未保存，编辑保护已保留')
-      })
-    }
     if (turn.contextUsage?.size !== undefined)
       this.recordContextWindow(record, active, turn.contextUsage.size)
     for (const p of active.approvals.values()) active.acp?.answer(p.rpcId)
@@ -2848,12 +2724,7 @@ export class HarnessService {
     active.turn = undefined
     if (editBefore && record.harnessRef !== 'dsh') {
       try {
-        const after =
-          record.harnessRef === 'kimi-code'
-            ? await kimiMessageEditDriver().read(
-                this.externalContext(record, new AbortController().signal),
-              )
-            : await this.observeEditHistory(record)
+        const after = await this.observeEditHistory(record)
         if (
           after?.sessionId === editBefore.sessionId &&
           after.boundaries.length === editBefore.boundaries.length + 1 &&
@@ -3225,7 +3096,6 @@ export class HarnessService {
       disconnectIdleConnection: (record, expected) =>
         this.disconnectIdleConnection(record, expected),
       externalHistory: (record) => this.externalHistory(record),
-      storedKiloHistory: (record) => this.storedKiloHistory(record),
       externalRecoveryHistory: (record, intent) => this.externalRecoveryHistory(record, intent),
       messageEditState: (input) => this.messageEditState(input),
       stopEditTarget: (sessionId) => this.stopEditTarget(sessionId),
@@ -3260,10 +3130,6 @@ export class HarnessService {
 
   private externalHistory(record: HarnessSession) {
     return externalHistory(this.stopEditContext(), record)
-  }
-
-  private storedKiloHistory(record: HarnessSession) {
-    return storedKiloHistory(this.stopEditContext(), record)
   }
 
   private externalRecoveryHistory(
@@ -3635,8 +3501,8 @@ export class HarnessService {
     const session = this.ctx.sessions.get(asSessionId<SessionId>(options.sessionId))
     if (!session) throw new LlmError('原会话已不存在', 'HARNESS_BINDING')
     if (
-      this.zcodeModeForOrigin({ kind: 'dsh', sessionId: options.sessionId }) === 'build' &&
-      !['codex', 'claude', 'zcode'].includes(definition.harnessRef)
+      this.isAutoReviewOrigin({ kind: 'dsh', sessionId: options.sessionId }) &&
+      !['codex', 'claude'].includes(definition.harnessRef)
     )
       throw new LlmError(
         '此 Harness 尚无已验证的官方 Auto Review 接口，请选择其他权限模式。',
@@ -3707,18 +3573,10 @@ export class HarnessService {
     if (
       bound &&
       ['codex', 'claude'].includes(bound.harnessRef) &&
-      (bound.externalAutoReview ?? false) !== (this.zcodeModeForOrigin(bound.origin) === 'build')
+      (bound.externalAutoReview ?? false) !== this.isAutoReviewOrigin(bound.origin)
     )
       throw new LlmError(
         '官方审核模式已改变，请新建对话；原会话不会绕过审批。',
-        'HARNESS_PERMISSION',
-      )
-    if (
-      bound?.harnessRef === 'zcode' &&
-      (bound.zcodeMode ?? 'yolo') !== this.zcodeModeForOrigin(bound.origin)
-    )
-      throw new LlmError(
-        'ZCode 审批模式已改变，请新建对话；原会话不会绕过审批。',
         'HARNESS_PERMISSION',
       )
     if (bound && bound.sandbox !== binding.sandbox) {

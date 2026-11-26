@@ -80,14 +80,14 @@ describe('combination authority', () => {
       expect.arrayContaining([
         expect.objectContaining({ id: 'minimax-code' }),
         expect.objectContaining({ id: 'kimi-code' }),
-        expect.objectContaining({ id: 'mimo-code' }),
-        expect.objectContaining({ id: 'pool' }),
-        expect.objectContaining({ id: 'step-code' }),
+        expect.objectContaining({ id: 'qwen-code' }),
         expect.objectContaining({ id: 'pi' }),
         expect.objectContaining({ id: 'kilo' }),
         expect.objectContaining({ id: 'vibe' }),
       ]),
     )
+    for (const retired of ['step-code', 'muse-code', 'pool', 'zcode', 'mimo-code'])
+      expect(catalog.harnesses.some((item) => item.id === retired)).toBe(false)
   })
   it('persists references without a second model catalog', async () => {
     const dir = await root(),
@@ -190,6 +190,66 @@ describe('combination authority', () => {
     const catalog = defaultExecutionCatalog()
     catalog.harnesses = []
     expect(() => normalizeCatalog(catalog)).toThrow('内置 DSH')
+  })
+  it('drops retired v1 harnesses and combinations on load while keeping valid user entries', () => {
+    const base = defaultExecutionCatalog()
+    const normalized = normalizeCatalog({
+      ...base,
+      harnesses: [
+        ...base.harnesses.map((item) =>
+          item.id === 'opencode' ? { ...item, command: '/opt/opencode/bin/opencode' } : item,
+        ),
+        { id: 'step-code', name: 'StepCode', kind: 'acp', command: 'step' },
+        { id: 'muse-code', name: 'Muse Code', kind: 'acp', command: 'muse' },
+        { id: 'pool', name: 'Poolside', kind: 'acp', command: 'pool' },
+        { id: 'zcode', name: 'ZCode', kind: 'acp', command: 'zcode' },
+        { id: 'mimo-code', name: 'MiMo Code', kind: 'acp', command: 'mimo' },
+      ],
+      combinations: [
+        ...base.combinations,
+        {
+          id: 'retired-step',
+          name: 'Step 5',
+          modelRef: { provider: 'our-free-model', model: 'stepfun-ai/step-5-preview' },
+          harnessRef: 'step-code',
+          permissionPolicy: 'workspace',
+          isDefault: false,
+          enabled: true,
+        },
+        {
+          id: 'retired-zcode',
+          name: 'ZCode GLM',
+          modelRef: { provider: 'our-free-model', model: 'z-ai/glm-5.3' },
+          harnessRef: 'zcode',
+          permissionPolicy: 'workspace',
+          isDefault: false,
+          enabled: true,
+        },
+        {
+          id: 'user-opencode-custom',
+          name: 'My Custom OpenCode',
+          modelRef: { provider: 'custom-provider', model: 'custom-model' },
+          harnessRef: 'opencode',
+          permissionPolicy: 'workspace',
+          isDefault: true,
+          enabled: true,
+        },
+      ],
+    })
+    for (const retired of ['step-code', 'muse-code', 'pool', 'zcode', 'mimo-code'])
+      expect(normalized.harnesses.some((item) => item.id === retired)).toBe(false)
+    expect(normalized.harnesses.find((item) => item.id === 'opencode')?.command).toBe(
+      '/opt/opencode/bin/opencode',
+    )
+    expect(normalized.combinations.some((item) => item.id === 'retired-step')).toBe(false)
+    expect(normalized.combinations.some((item) => item.id === 'retired-zcode')).toBe(false)
+    expect(
+      normalized.combinations.find((item) => item.id === 'user-opencode-custom'),
+    ).toMatchObject({
+      harnessRef: 'opencode',
+      isDefault: true,
+      enabled: true,
+    })
   })
 })
 

@@ -31,11 +31,7 @@ import {
   MINIMAX_CODE_PROVIDER,
   MINIMAX_DEFAULT_MODEL,
 } from './adapters/minimax.ts'
-import {
-  isHiddenOfmSelection,
-  officialOpenCodeModel,
-  OFM_INACTIVE_DEFAULT_HARNESSES,
-} from './ofm-source/selection-policy.ts'
+import { isHiddenOfmSelection, officialOpenCodeModel } from './ofm-source/selection-policy.ts'
 import {
   OFM_PROVIDER,
   OFM_PROVIDERS,
@@ -681,7 +677,6 @@ export class ExecutionModelResolver {
       const official =
         declaredOfficial &&
         !officialOpenCodeModel(model.ref) &&
-        !OFM_INACTIVE_DEFAULT_HARNESSES.includes(declaredOfficial) &&
         catalog.harnesses.some(
           (harness) =>
             harness.id === declaredOfficial && adapterFor(harness.id, model.ref) !== undefined,

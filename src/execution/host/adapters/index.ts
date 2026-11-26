@@ -6,12 +6,7 @@ import { codexAdapter } from './codex.ts'
 import { claudeAdapter } from './claude.ts'
 import { minimaxCodeAdapter, MINIMAX_CODE_HARNESS } from './minimax.ts'
 import { withMinimaxPermissions } from './minimax-permissions.ts'
-import { zcodeOfmAdapter } from './zcode-ofm/index.ts'
 import { kimiCodeAdapter } from './kimi/index.ts'
-import { mimoCodeAdapter } from './mimo/index.ts'
-import { poolAdapter } from './pool/index.ts'
-import { stepCodeAdapter } from './step/index.ts'
-import { museCodeAdapter } from './muse/index.ts'
 import { openCodeAdapter } from './opencode/index.ts'
 import { piAdapter } from './pi/index.ts'
 import { kiloAdapter } from './kilo/index.ts'
@@ -29,13 +24,8 @@ export const harnessAdapters: readonly HarnessAdapter[] = [
   qwenCodeAdapter,
   claudeAdapter,
   withMinimaxPermissions(minimaxCodeAdapter),
-  zcodeOfmAdapter,
   kimiCodeAdapter,
   openCodeAdapter,
-  mimoCodeAdapter,
-  poolAdapter,
-  stepCodeAdapter,
-  museCodeAdapter,
   piAdapter,
   kiloAdapter,
   vibeAdapter,
@@ -76,7 +66,7 @@ export function automaticHarness(ref: ModelRef): string | undefined {
   )
     return 'dsh'
   if (OFM_PROVIDERS.includes(ref.provider) || ref.provider === 'opl-gateway') {
-    const recommended = [openCodeAdapter, piAdapter, kiloAdapter, zcodeOfmAdapter].find((adapter) =>
+    const recommended = [openCodeAdapter, piAdapter, kiloAdapter].find((adapter) =>
       adapter.matches(ref),
     )
     if (recommended) return recommended.id

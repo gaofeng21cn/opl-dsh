@@ -122,8 +122,6 @@ describe('Pi request-only thinking configuration', () => {
         PI_MODEL_INKLING_FULL,
         async ({ agent, provider, sessionId, configOptions }) => {
           expect(piConfigOption(configOptions, 'thinking')?.values).not.toContain('xhigh')
-          const before = await agent.acp.request('opl/edit/read', { sessionId })
-          expect(object(before).ok).toBe(true)
           for (const value of ['xhigh', 'balanced', '', undefined, null, ['low']]) {
             await expect(
               agent.acp.request('session/set_config_option', {
@@ -132,7 +130,6 @@ describe('Pi request-only thinking configuration', () => {
                 value,
               }),
             ).rejects.toThrow('官方 Harness 拒绝了本次请求参数')
-            expect(await agent.acp.request('opl/edit/read', { sessionId })).toEqual(before)
             expect(updates(agent)).toHaveLength(0)
             expect(provider.requests).toHaveLength(0)
           }
@@ -146,8 +143,6 @@ describe('Pi request-only thinking configuration', () => {
     async () => {
       await withSession(PI_MODEL_GEMMA, async ({ agent, provider, sessionId, configOptions }) => {
         expect(piConfigOption(configOptions, 'thinking')).toBeUndefined()
-        const before = await agent.acp.request('opl/edit/read', { sessionId })
-        expect(object(before).ok).toBe(true)
         for (const value of ['off', 'disabled', 'high']) {
           await expect(
             agent.acp.request('session/set_config_option', {
@@ -156,7 +151,6 @@ describe('Pi request-only thinking configuration', () => {
               value,
             }),
           ).rejects.toThrow('官方 Harness 拒绝了本次请求参数')
-          expect(await agent.acp.request('opl/edit/read', { sessionId })).toEqual(before)
           expect(updates(agent)).toHaveLength(0)
           expect(provider.requests).toHaveLength(0)
         }

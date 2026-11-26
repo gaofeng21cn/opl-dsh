@@ -41,7 +41,7 @@ describe('owner API connection reader', () => {
     // source's published signature.
     const connection = createOfmApiConnection(fixture.caller, base)
     const source = createOfmModelSource(ctx, { connection })
-    await expect(source.resolve('mimo', ref)).resolves.toEqual({
+    await expect(source.resolve('opencode', ref)).resolves.toEqual({
       baseURL: 'http://127.0.0.1:32123/v1',
       model: ref.model,
       apiKey: 'ofm-fixture-key-aaaaaaaaaaaaaaaaaaaaaaaa',
@@ -72,7 +72,7 @@ describe('owner API connection reader', () => {
   it('refuses an admission rejection instead of retrying another route', async () => {
     const fixture = fixtureCaller({ status: 401 })
     const connection = createOfmApiConnection(fixture.caller, base)
-    expect(await connection('mimo', ref, 'chat')).toBeUndefined()
+    expect(await connection('opencode', ref, 'chat')).toBeUndefined()
     expect(fixture.calls).toHaveLength(1)
   })
 
@@ -80,36 +80,36 @@ describe('owner API connection reader', () => {
     const fixture = fixtureCaller()
     fixture.stop()
     const connection = createOfmApiConnection(fixture.caller, base)
-    const facts = await connection('mimo', ref, 'chat')
+    const facts = await connection('opencode', ref, 'chat')
     expect(facts).toBeUndefined()
     expect(String(facts)).not.toContain('<forward-port>')
   })
 
   it('refuses a placeholder key presented as a real one', async () => {
     const connection = createOfmApiConnection(fixtureCaller({ key: '<forward-key>' }).caller, base)
-    expect(await connection('mimo', ref, 'chat')).toBeUndefined()
+    expect(await connection('opencode', ref, 'chat')).toBeUndefined()
   })
 
   it('follows a rotated issued key rather than caching the previous one', async () => {
     const fixture = fixtureCaller()
     const connection = createOfmApiConnection(fixture.caller, base)
-    expect((await connection('mimo', ref, 'chat'))?.apiKey).toContain('aaaa')
+    expect((await connection('opencode', ref, 'chat'))?.apiKey).toContain('aaaa')
     fixture.rotate()
-    expect((await connection('mimo', ref, 'chat'))?.apiKey).toContain('bbbb')
+    expect((await connection('opencode', ref, 'chat'))?.apiKey).toContain('bbbb')
   })
 
   it('refuses a model the same response no longer advertises', async () => {
     const fixture = fixtureCaller()
     const connection = createOfmApiConnection(fixture.caller, base)
-    expect(await connection('mimo', ref, 'chat')).toBeDefined()
+    expect(await connection('opencode', ref, 'chat')).toBeDefined()
     fixture.withdraw(ref.model)
-    expect(await connection('mimo', ref, 'chat')).toBeUndefined()
+    expect(await connection('opencode', ref, 'chat')).toBeUndefined()
   })
 
   it('never returns a key for a placeholder or out-of-range port', async () => {
     for (const port of ['<forward-port>', '0', 'notaport', '70000']) {
       const connection = createOfmApiConnection(fixtureCaller({ port }).caller, base)
-      expect(await connection('mimo', ref, 'chat')).toBeUndefined()
+      expect(await connection('opencode', ref, 'chat')).toBeUndefined()
     }
   })
 
@@ -117,7 +117,7 @@ describe('owner API connection reader', () => {
     const fixture = fixtureCaller()
     fixture.stop()
     const connection = createOfmApiConnection(fixture.caller, base)
-    const result = await connection('mimo', ref, 'chat')
+    const result = await connection('opencode', ref, 'chat')
     expect(String(result)).not.toContain('ofm-fixture-key')
   })
 })

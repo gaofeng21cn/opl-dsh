@@ -50,6 +50,45 @@ export interface ExternalEditResult {
   ephemeral?: boolean
 }
 
+export type ExternalMessageEditFailure =
+  | 'unsupported'
+  | 'busy'
+  | 'aborted'
+  | 'stale'
+  | 'history-changed'
+  | 'target-unknown'
+  | 'target-unavailable'
+  | 'control-unavailable'
+  | 'fork-rejected'
+  | 'uncertain'
+  | 'protocol'
+
+const FAILURE_MESSAGES: Record<ExternalMessageEditFailure, string> = {
+  unsupported: '当前官方 CLI 版本不提供消息编辑所需的会话历史接口',
+  busy: '会话仍在执行，暂时不能编辑历史',
+  aborted: '编辑已取消',
+  stale: '会话身份已变化，请重新读取',
+  'history-changed': '会话历史已变化，请重新读取',
+  'target-unknown': '目标消息不在当前活动历史中',
+  'target-unavailable': '目标消息当前不可编辑',
+  'control-unavailable': '无法启动官方 CLI 的临时控制服务',
+  'fork-rejected': '官方 CLI 拒绝了本次分支请求',
+  uncertain: '分支结果不确定，请核对会话历史',
+  protocol: '官方 CLI 返回了无法验证的会话历史',
+}
+
+/** Fixed, credential-free failure. `status` is the only vendor response fact retained. */
+export class ExternalMessageEditError extends Error {
+  readonly code: ExternalMessageEditFailure
+  readonly status: number | undefined
+  constructor(code: ExternalMessageEditFailure, status?: number) {
+    super(FAILURE_MESSAGES[code])
+    this.name = 'ExternalMessageEditError'
+    this.code = code
+    this.status = status
+  }
+}
+
 /**
  * A driver never sends the replacement prompt, writes HarnessSession records, or edits DSH history.
  * The shared owner journals invocation before rewind and blocks all sends on uncertain outcomes.

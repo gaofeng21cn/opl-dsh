@@ -13,47 +13,43 @@ import {
 } from '../contracts/catalog.ts'
 import { harnessAllowsFullAccess } from './permissions.ts'
 import { normalizeHarnessProxy } from './proxy.ts'
-import { OFM_INACTIVE_DEFAULT_HARNESSES } from './ofm-source/selection-policy.ts'
 import { harnessDirectoryOrder } from '../contracts/harness-groups.ts'
 export type { ExecutionCatalog } from '../contracts/catalog.ts'
+
+/** Retired v1 private bridges removed cleanly during v2 load without breaking saved catalogs. */
+export const RETIRED_BUILTIN_HARNESS_IDS: ReadonlySet<string> = new Set([
+  'step-code',
+  'muse-code',
+  'pool',
+  'zcode',
+  'mimo-code',
+])
+
 export const defaultExecutionCatalog = (): ExecutionCatalog => ({
   version: 2,
   models: [],
-  harnesses: (
-    [
-      { id: 'dsh', name: 'DSH', kind: 'dsh', adapter: 'native-session' },
-      { id: 'codex', name: 'Codex CLI', kind: 'acp', command: 'codex' },
-      { id: 'claude', name: 'Claude Code', kind: 'acp', command: 'claude' },
-      { id: 'grok-build', name: 'Grok Build', kind: 'grok-build', adapter: 'acp-v1' },
-      { id: 'antigravity', name: 'Antigravity CLI', kind: 'acp', command: 'agy' },
-      { id: 'opencode', name: 'OpenCode', kind: 'acp', command: 'opencode', adapter: 'acp-v1' },
-      // The official MiniMax Code CLI signs in with its own account; the suite never
-      // supplies an OPL Gateway key for it.
-      {
-        id: 'minimax-code',
-        name: 'MiniMax Code',
-        kind: 'acp',
-        command: 'mcode',
-        adapter: 'acp-v1',
-      },
-      { id: 'zcode', name: 'ZCode', kind: 'acp', command: 'zcode', adapter: 'zcode-protocol-v1' },
-      { id: 'kimi-code', name: 'Kimi Code', kind: 'acp', command: 'kimi', adapter: 'acp-v1' },
-      { id: 'mimo-code', name: 'MiMo Code', kind: 'acp', command: 'mimo', adapter: 'acp-v1' },
-      { id: 'pool', name: 'Poolside', kind: 'acp', command: 'pool', adapter: 'acp-v1' },
-      { id: 'step-code', name: 'StepCode', kind: 'acp', command: 'step', adapter: 'step-rpc-v1' },
-      {
-        id: 'muse-code',
-        name: 'Muse Code',
-        kind: 'acp',
-        command: 'muse',
-        adapter: 'muse-protocol-v1',
-      },
-      { id: 'qwen-code', name: 'Qwen Code', kind: 'acp', command: 'qwen', adapter: 'acp-v1' },
-      { id: 'pi', name: 'Pi Coding Agent', kind: 'acp', command: 'pi', adapter: 'pi-rpc-v1' },
-      { id: 'kilo', name: 'Kilo Code', kind: 'acp', command: 'kilo', adapter: 'acp-v1' },
-      { id: 'vibe', name: 'Mistral Vibe', kind: 'acp', command: 'vibe-acp', adapter: 'acp-v1' },
-    ] satisfies ExecutionCatalog['harnesses']
-  ).filter((harness) => !OFM_INACTIVE_DEFAULT_HARNESSES.includes(harness.id)),
+  harnesses: [
+    { id: 'dsh', name: 'DSH', kind: 'dsh', adapter: 'native-session' },
+    { id: 'codex', name: 'Codex CLI', kind: 'acp', command: 'codex' },
+    { id: 'claude', name: 'Claude Code', kind: 'acp', command: 'claude' },
+    { id: 'grok-build', name: 'Grok Build', kind: 'grok-build', adapter: 'acp-v1' },
+    { id: 'antigravity', name: 'Antigravity CLI', kind: 'acp', command: 'agy' },
+    { id: 'opencode', name: 'OpenCode', kind: 'acp', command: 'opencode', adapter: 'acp-v1' },
+    // The official MiniMax Code CLI signs in with its own account; the suite never
+    // supplies an OPL Gateway key for it.
+    {
+      id: 'minimax-code',
+      name: 'MiniMax Code',
+      kind: 'acp',
+      command: 'mcode',
+      adapter: 'acp-v1',
+    },
+    { id: 'kimi-code', name: 'Kimi Code', kind: 'acp', command: 'kimi', adapter: 'acp-v1' },
+    { id: 'qwen-code', name: 'Qwen Code', kind: 'acp', command: 'qwen', adapter: 'acp-v1' },
+    { id: 'pi', name: 'Pi Coding Agent', kind: 'acp', command: 'pi', adapter: 'pi-rpc-v1' },
+    { id: 'kilo', name: 'Kilo Code', kind: 'acp', command: 'kilo', adapter: 'acp-v1' },
+    { id: 'vibe', name: 'Mistral Vibe', kind: 'acp', command: 'vibe-acp', adapter: 'acp-v1' },
+  ],
   combinations: [
     {
       id: DSH_COMBINATION,
@@ -86,33 +82,35 @@ export function normalizeCatalog(value: unknown): ExecutionCatalog {
   const input = record(value)
   if (!Array.isArray(input.harnesses) || !Array.isArray(input.combinations))
     throw Error('组合目录格式无效')
-  const harnesses = input.harnesses.map((raw) => {
-    const x = record(raw)
-    if (x.kind === 'dsh' && x.id !== 'dsh') throw Error('内置 DSH 的身份不能修改')
-    if (!['dsh', 'grok-build', 'acp'].includes(x.kind)) throw Error('Harness 类型无效')
-    const proxy = normalizeHarnessProxy(x.proxy)
-    if (
-      x.prefix !== undefined &&
-      (!Array.isArray(x.prefix) ||
-        x.prefix.length > 32 ||
-        x.prefix.some(
-          (item: unknown) =>
-            typeof item !== 'string' || item.length > 4096 || /[\r\n\0]/.test(item),
-        ))
-    )
-      throw Error('Harness 启动参数无效')
-    if (x.kind === 'dsh' && proxy && proxy.mode !== 'inherit')
-      throw Error('内置 DSH 不使用外部 CLI 代理配置')
-    return {
-      id: text(x.id, 'Harness ID'),
-      name: text(x.name, 'Harness 名称'),
-      kind: x.kind,
-      ...(x.command ? { command: text(x.command, '可执行文件') } : {}),
-      ...(x.prefix !== undefined ? { prefix: [...x.prefix] as string[] } : {}),
-      ...(x.adapter ? { adapter: text(x.adapter, '适配器') } : {}),
-      ...(proxy ? { proxy } : {}),
-    }
-  })
+  const harnesses = input.harnesses
+    .filter((raw) => !RETIRED_BUILTIN_HARNESS_IDS.has(String(record(raw).id ?? '')))
+    .map((raw) => {
+      const x = record(raw)
+      if (x.kind === 'dsh' && x.id !== 'dsh') throw Error('内置 DSH 的身份不能修改')
+      if (!['dsh', 'grok-build', 'acp'].includes(x.kind)) throw Error('Harness 类型无效')
+      const proxy = normalizeHarnessProxy(x.proxy)
+      if (
+        x.prefix !== undefined &&
+        (!Array.isArray(x.prefix) ||
+          x.prefix.length > 32 ||
+          x.prefix.some(
+            (item: unknown) =>
+              typeof item !== 'string' || item.length > 4096 || /[\r\n\0]/.test(item),
+          ))
+      )
+        throw Error('Harness 启动参数无效')
+      if (x.kind === 'dsh' && proxy && proxy.mode !== 'inherit')
+        throw Error('内置 DSH 不使用外部 CLI 代理配置')
+      return {
+        id: text(x.id, 'Harness ID'),
+        name: text(x.name, 'Harness 名称'),
+        kind: x.kind,
+        ...(x.command ? { command: text(x.command, '可执行文件') } : {}),
+        ...(x.prefix !== undefined ? { prefix: [...x.prefix] as string[] } : {}),
+        ...(x.adapter ? { adapter: text(x.adapter, '适配器') } : {}),
+        ...(proxy ? { proxy } : {}),
+      }
+    })
   if (!harnesses.some((x) => x.id === 'dsh' && x.kind === 'dsh')) throw Error('不能移除内置 DSH')
   for (const builtin of defaultExecutionCatalog().harnesses)
     if (!harnesses.some((item) => item.id === builtin.id)) harnesses.push(builtin)
@@ -127,6 +125,12 @@ export function normalizeCatalog(value: unknown): ExecutionCatalog {
   )
   const combinations = input.combinations
     .filter((raw: any) => raw.generated !== true)
+    .filter(
+      (raw: any) =>
+        !RETIRED_BUILTIN_HARNESS_IDS.has(
+          String(record(raw).harnessRef ?? record(raw).harnessId ?? ''),
+        ),
+    )
     .map((raw) => {
       const x = record(raw)
       let modelRef: ModelRef
