@@ -9,6 +9,7 @@ import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import { launchIndependent, windowsSuiteLauncher } from './windows-lifecycle.mjs'
+import { reclaimOfficialArchives, reclaimRuntimeBackups } from './runtime-backups.mjs'
 const [app, root, payload, ...flags] = process.argv.slice(2)
 // The official desktop resolves the same default when DSH_HOME is unset.
 const home = process.env.OPL_DSH_HOME?.trim() || join(homedir(), '.dsh')
@@ -280,6 +281,27 @@ writeFileSync(
   JSON.stringify(installation, null, 2) + '\n',
   { mode: 0o600 },
 )
+if (process.platform === 'darwin') {
+  try {
+    const cleanup = reclaimRuntimeBackups({ root, app })
+    if (cleanup.removed.length > 0)
+      console.log(`已清理 ${cleanup.removed.length} 份历史桌面备份，仅保留最近 1 份备份。`)
+  } catch (error) {
+    console.warn(`历史桌面备份清理失败，已保留当前安装：${error.message}`)
+  }
+}
+try {
+  const archives = reclaimOfficialArchives({
+    root,
+    app,
+    officialVersion,
+    preservePaths: [process.env.OPL_OFFICIAL_ARCHIVE].filter(Boolean),
+  })
+  if (archives.removed.length > 0)
+    console.log(`已清理 ${archives.removed.length} 份过期官方安装包缓存。`)
+} catch (error) {
+  console.warn(`过期官方安装包缓存清理失败，已保留当前安装：${error.message}`)
+}
 console.log('官方桌面和 OPL 增强已安装。Codex Skill：opl-dsh-official。')
 if (process.platform === 'darwin' && computerUse.state === 'installed')
   console.log('KimiCU Computer Use 已安装；首次使用请在系统设置中授予辅助功能和屏幕录制权限。')

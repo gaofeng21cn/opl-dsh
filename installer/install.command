@@ -39,10 +39,22 @@ SHA512="$(printf '%s\n' "$FIELDS" | sed -n '3p')"
 [[ "$URL" == "https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-$OFFICIAL_VERSION-mac-arm64.zip" ]] || { echo '官方更新地址无效。'; exit 1; }
 [[ "$SHA512" =~ ^[A-Za-z0-9+/]{86}==$ ]] || { echo '官方校验信息无效。'; exit 1; }
 NEED_INSTALL=1
+backup_target() {
+  local prefix="$1"
+  local suffix="${2:-}"
+  local stamp candidate index=1
+  stamp="$(date +%s)"
+  candidate="${prefix}.${stamp}${suffix}"
+  while [[ -e "$candidate" || -L "$candidate" ]]; do
+    candidate="${prefix}.${stamp}-${index}${suffix}"
+    index=$((index + 1))
+  done
+  printf '%s\n' "$candidate"
+}
 CHECK_APP="$APP"
 OLD_RUNTIME="$ROOT/runtime/DeepSeek Harness.app"
 if [[ -f "$APP/Contents/Resources/opl-launcher-owner.txt" && -d "$OLD_RUNTIME" ]]; then
-  mv "$APP" "$ROOT/runtime/OPL DSH.app.backup.$(date +%s)"
+  mv "$APP" "$(backup_target "$ROOT/runtime/OPL DSH.app.backup")"
   mv "$OLD_RUNTIME" "$APP"
   CHECK_APP="$APP"
 fi
@@ -68,7 +80,7 @@ if [[ "$NEED_INSTALL" == 1 ]]; then
   codesign -v -R='anchor apple generic and certificate leaf[subject.OU] = "NAN929V4UM" and identifier "com.deepseek.dsh"' "$STAGE/DeepSeek Harness.app"
   spctl --assess --type execute "$STAGE/DeepSeek Harness.app"
   [[ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$STAGE/DeepSeek Harness.app/Contents/Info.plist")" == "$OFFICIAL_VERSION" ]] || { echo '官方版本与清单不符。'; exit 1; }
-  if [[ -d "$APP" ]]; then mv "$APP" "$ROOT/runtime/DeepSeek Harness.backup.$(date +%s).app"; fi
+  if [[ -d "$APP" ]]; then mv "$APP" "$(backup_target "$ROOT/runtime/DeepSeek Harness.backup" ".app")"; fi
   mkdir -p "$(dirname "$APP")"
   mv "$STAGE/DeepSeek Harness.app" "$APP"
 fi
@@ -76,3 +88,4 @@ export NODE_USE_SYSTEM_CA=1
 export ELECTRON_RUN_AS_NODE=1
 if [[ "${OPL_INSTALL_NO_LAUNCH:-0}" == 1 ]]; then set -- "$@" --no-launch; fi
 "$APP/Contents/MacOS/DeepSeek Harness" "$HERE/install.mjs" "$APP" "$ROOT" "$HERE" "$@"
+"$APP/Contents/MacOS/DeepSeek Harness" "$HERE/runtime-backups.mjs" "$ROOT" "$APP" || echo '警告：历史桌面备份清理未完全完成，已保留最新安装。' >&2
