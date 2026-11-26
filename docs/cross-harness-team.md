@@ -30,7 +30,7 @@
 3. 在「协作与自动化 → 角色与执行」为交互会话绑定已就绪的 DSH、Codex 或 Claude 组合。没有可用模型来源或对应 Harness 时，先完成配置；不会自动改用无关模型。正式 StageRun 的 executor 仍由 Package 合同决定，不随交互绑定改变。
 4. 开始任务后，仍由 MAS 等领域 Package 的主 Skill 指导后续公开 action、StageRun、产物和专业质量流程。选择预设本身不会创建 StageRun，也不会安装、激活或修改 Package。
 
-每个预设使用官方 persona、文件、Shell、Skill、Office 和压缩等子插件，不改变标准模式。预设加载失败会保留官方诊断；用户自行编辑的同名预设优先。真实领域结果仍需按对应 Package 的 artifact 和 owner acceptance 验收，预设注册或一次模型回复不等于专业完成。
+领域预设使用官方 persona、文件、Shell、Skill、Office 与压缩，支持会话目标、计划模式、子代理与工作流，并沿用该会话的官方权限。定时任务和 DSH profile 插件管理可从各自的官方入口操作。预设加载失败会保留官方诊断；用户自行编辑的同名预设优先。真实领域结果仍需按对应 Package 的 artifact 和 owner acceptance 验收，预设注册或一次模型回复不等于专业完成。
 
 ## 接入链路
 
