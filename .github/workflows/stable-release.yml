@@ -29,7 +29,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: opl-dsh-stable-release
+  group: >-
+    ${{ github.event_name == 'schedule' && vars.OPL_RELEASE_CENTRAL_DAILY == 'true'
+      && 'opl-dsh-disabled-schedule' || 'opl-dsh-stable-release' }}
   cancel-in-progress: false
 
 jobs:
