@@ -4,16 +4,19 @@ import type { ExecutionCall } from '../../shared/client/remote-call.ts'
 import type { EngineUpdateState } from '../contracts/engine-updates.ts'
 import css from '../../shared/client/SettingsSection.module.css'
 import choices from './RecommendationPicker.module.css'
+import { SettingsSelect } from '../../shared/client/SettingsSelect.tsx'
 import { defaultExecutionT, type ExecutionSettingsT } from './execution-settings-locales.ts'
 import { safeFailureMessage } from './proxy-draft.ts'
 
 export function EngineUpdates({
   call,
   detectButton,
+  embedded = false,
   t = defaultExecutionT,
 }: {
   call: ExecutionCall
-  detectButton: ReactNode
+  detectButton?: ReactNode
+  embedded?: boolean
   t?: ExecutionSettingsT
 }) {
   const labels = {
@@ -25,7 +28,8 @@ export function EngineUpdates({
     updated: t('engineUpdateStatusUpdated'),
     available: t('engineUpdateStatusAvailable'),
   }
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(embedded)
+  const userToggled = useRef(false)
   const [state, setState] = useState<EngineUpdateState>()
   const [skipped, setSkipped] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
@@ -46,6 +50,12 @@ export function EngineUpdates({
         const s = await call('engine-updates')
         if (mounted && id === revision.current) {
           setState(s)
+          if (
+            !embedded &&
+            !userToggled.current &&
+            s.items.some((item) => item.status === 'available')
+          )
+            setOpen(true)
         }
       } catch (e) {
         if (mounted && id === revision.current)
@@ -58,7 +68,7 @@ export function EngineUpdates({
       mounted = false
       clearInterval(timer)
     }
-  }, [active, call])
+  }, [active, call, embedded])
   const run = async (fn: () => Promise<EngineUpdateState>) => {
     if (pending.current) return
     pending.current = true
@@ -67,7 +77,15 @@ export function EngineUpdates({
     setError('')
     try {
       const s = await fn()
-      if (id === revision.current) setState(s)
+      if (id === revision.current) {
+        setState(s)
+        if (
+          !embedded &&
+          !userToggled.current &&
+          s.items.some((item) => item.status === 'available')
+        )
+          setOpen(true)
+      }
     } catch (e) {
       setError(safeFailureMessage(e, tRef.current('actionFailedRetry')))
     } finally {
@@ -83,60 +101,75 @@ export function EngineUpdates({
   const selected = available.filter((item) => !skipped.includes(item.id)).map((item) => item.id)
   const others =
     state?.items.filter((item) => item.status !== 'available' && !batchIds.has(item.id)) ?? []
+  const panelOpen = embedded || open
   return (
     <>
-      <div className={`${css.actions} ${css.engineUpdateToolbar}`}>
-        {detectButton}
-        <Button
-          id="opl-engine-updates-toggle"
-          variant="outline"
-          aria-expanded={open}
-          aria-controls="opl-engine-updates"
-          onClick={() => setOpen(!open)}
-        >
-          {t('engineUpdatesToggle')}
-          {available.length > 0 && t('engineUpdatesCount', { count: available.length })}
-        </Button>
-      </div>
-      {open && (
+      {!embedded && (
+        <div className={`${css.actions} ${css.engineUpdateToolbar}`}>
+          {detectButton}
+          <Button
+            id="opl-engine-updates-toggle"
+            variant="outline"
+            aria-expanded={open}
+            aria-controls="opl-engine-updates"
+            onClick={() => {
+              userToggled.current = true
+              setOpen(!open)
+            }}
+          >
+            {t('engineUpdatesToggle')}
+            {available.length > 0 && t('engineUpdatesCount', { count: available.length })}
+          </Button>
+        </div>
+      )}
+      {panelOpen && (
         <section
           id="opl-engine-updates"
-          className={`${css.section} ${css.engineUpdatePanel}`}
+          className={embedded ? css.engineUpdatePanel : `${css.section} ${css.engineUpdatePanel}`}
           aria-label={t('engineUpdatesPanelLabel')}
         >
-          <div className={css.preferenceRow}>
-            <div className={css.preferenceText}>
-              <span className={css.preferenceTitle}>{t('engineUpdatesAutoLabel')}</span>
-            </div>
-            <Switch
-              label={t('engineUpdatesAutoLabel')}
-              disabled={!state || busy}
-              checked={state?.enabled ?? false}
-              onChange={(enabled) => {
-                if (state)
-                  void run(() => call('engine-updates-settings', { enabled, mode: state.mode }))
-              }}
-            />
-          </div>
-          {state?.enabled && (
-            <label className={css.field}>
-              {t('engineUpdatesModeLabel')}
-              <select
-                className={css.input}
-                disabled={busy}
-                value={state.mode}
-                onChange={(e) => {
-                  const mode = e.currentTarget.value === 'auto' ? 'auto' : 'notify'
-                  void run(() => call('engine-updates-settings', { enabled: true, mode }))
+          <div className={css.cardRows}>
+            <div className={css.preferenceRow}>
+              <div className={css.preferenceText}>
+                <span className={css.preferenceTitle}>{t('engineUpdatesAutoLabel')}</span>
+                {state?.enabled && state.mode === 'auto' && (
+                  <span className={css.preferenceDescription}>{t('engineUpdatesAutoHint')}</span>
+                )}
+              </div>
+              <Switch
+                label={t('engineUpdatesAutoLabel')}
+                disabled={!state || busy}
+                checked={state?.enabled ?? false}
+                onChange={(enabled) => {
+                  if (state)
+                    void run(() => call('engine-updates-settings', { enabled, mode: state.mode }))
                 }}
-              >
-                <option value="notify">{t('engineUpdatesModeNotify')}</option>
-                <option value="auto">{t('engineUpdatesModeAuto')}</option>
-              </select>
-            </label>
-          )}
-          {state?.enabled && state.mode === 'auto' && (
-            <p className={css.muted}>{t('engineUpdatesAutoHint')}</p>
+              />
+            </div>
+            {state?.enabled && (
+              <div className={css.preferenceRow}>
+                <div className={css.preferenceText}>
+                  <span className={css.preferenceTitle}>{t('engineUpdatesModeLabel')}</span>
+                </div>
+                <SettingsSelect
+                  name="engine-update-mode"
+                  ariaLabel={t('engineUpdatesModeLabel')}
+                  value={state.mode}
+                  disabled={busy}
+                  options={[
+                    { value: 'notify', label: t('engineUpdatesModeNotify') },
+                    { value: 'auto', label: t('engineUpdatesModeAuto') },
+                  ]}
+                  onChange={(value) => {
+                    const mode = value === 'auto' ? 'auto' : 'notify'
+                    void run(() => call('engine-updates-settings', { enabled: true, mode }))
+                  }}
+                />
+              </div>
+            )}
+          </div>
+          {embedded && !active && available.length === 0 && batch.length === 0 && state && (
+            <p className={css.muted}>{t('engineUpdatesAllCurrent')}</p>
           )}
           {available.length > 0 && (
             <div className={choices.updateList}>
@@ -156,7 +189,7 @@ export function EngineUpdates({
                   />
                   <span className={choices.itemText}>
                     <span>{item.name}</span>
-                    <span className={css.muted}>
+                    <span className={choices.versionDelta}>
                       {item.current} → {item.target}
                     </span>
                   </span>
@@ -174,6 +207,7 @@ export function EngineUpdates({
             </Button>
             {available.length > 0 && (
               <Button
+                variant="primary"
                 disabled={busy || !selected.length || state?.checking}
                 onClick={() => {
                   setSubmitting(true)

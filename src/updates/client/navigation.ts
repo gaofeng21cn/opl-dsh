@@ -1,7 +1,11 @@
-/** A one-way intent channel for opening General settings on the Updates section. */
+/** A one-way intent channel for opening Updates settings on either app or engine updates. */
+export type UpdateNavigationTarget = 'suite' | 'engines'
+
 export interface UpdateNavigation {
-  /** Record one request to focus the Updates section. */
-  request(): void
+  /** Record one request to focus the Updates section or its external engines block. */
+  request(target?: UpdateNavigationTarget): void
+  /** Read the most recently requested focus target within the Updates section. */
+  getTarget(): UpdateNavigationTarget
   /** Subscribe to new focus requests and return the detach function. */
   subscribe(listener: () => void): () => void
   /** Return the monotonically increasing request revision. */
@@ -16,14 +20,19 @@ export interface UpdateNavigation {
 export function createUpdateNavigation(): UpdateNavigation {
   let revision = 0
   let consumedRevision = 0
+  let currentTarget: UpdateNavigationTarget = 'suite'
   let disposed = false
   const listeners = new Set<() => void>()
 
   return {
-    request() {
+    request(target: UpdateNavigationTarget = 'suite') {
       if (disposed) return
+      currentTarget = target
       revision += 1
       for (const listener of [...listeners]) listener()
+    },
+    getTarget() {
+      return currentTarget
     },
     subscribe(listener) {
       if (disposed) return () => {}

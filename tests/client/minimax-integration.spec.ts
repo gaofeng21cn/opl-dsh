@@ -14,6 +14,8 @@ const state = vi.hoisted(() => ({ catalogMounts: 0 }))
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Button: (props: React.ButtonHTMLAttributes<HTMLButtonElement>) =>
     React.createElement('button', props),
+  IconChevronDownOutlineRegular: () => null,
+  Menu: ({ anchor }: { anchor: React.ReactNode }) => React.createElement('div', null, anchor),
   Switch: ({
     label,
     checked,

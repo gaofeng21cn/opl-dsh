@@ -5,6 +5,7 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { OplUpdateStatus } from '../contracts.ts'
 import type { UpdateController } from './controller.ts'
 import { updatePolicy, validUpdatePolicy } from './policy.ts'
+import { SettingsSelect } from '../../shared/client/SettingsSelect.tsx'
 import css from '../../shared/client/SettingsSection.module.css'
 import updatesCss from './Updates.module.css'
 
@@ -33,38 +34,40 @@ export function PolicyControls({ controller, status, writable, t }: PolicyContro
     countdownSeconds: Number(countdownSeconds),
   }
   const valid = validUpdatePolicy(draft)
+  const helpText = t(
+    policy.mode === 'notify'
+      ? 'modeNotifyHelp'
+      : policy.mode === 'on-launch'
+        ? 'modeOnLaunchHelp'
+        : 'modeIdleHelp',
+    {
+      idleMinutes: policy.idleMinutes,
+      countdownSeconds: policy.countdownSeconds,
+    },
+  )
   return (
     <>
-      <label className={css.field}>
-        <span>{t('policy')}</span>
-        <select
-          className={css.input}
+      <div className={css.preferenceRow}>
+        <div className={css.preferenceText}>
+          <span className={css.preferenceTitle}>{t('policy')}</span>
+          <span className={css.preferenceDescription}>{helpText}</span>
+        </div>
+        <SettingsSelect
+          name="update-policy"
+          ariaLabel={t('policy')}
           value={policy.mode}
           disabled={!writable}
-          onChange={(event) => {
-            const mode = event.target.value
+          options={[
+            { value: 'notify', label: t('modeNotify') },
+            { value: 'on-launch', label: t('modeOnLaunch') },
+            { value: 'idle', label: t('modeIdle') },
+          ]}
+          onChange={(mode) => {
             if (mode === 'notify' || mode === 'on-launch' || mode === 'idle')
               void controller.setPolicy({ ...policy, mode })
           }}
-        >
-          <option value="notify">{t('modeNotify')}</option>
-          <option value="on-launch">{t('modeOnLaunch')}</option>
-          <option value="idle">{t('modeIdle')}</option>
-        </select>
-      </label>
-      <p className={css.muted}>
-        {t(
-          policy.mode === 'notify'
-            ? 'modeNotifyHelp'
-            : policy.mode === 'on-launch'
-              ? 'modeOnLaunchHelp'
-              : 'modeIdleHelp',
-          {
-            idleMinutes: policy.idleMinutes,
-            countdownSeconds: policy.countdownSeconds,
-          },
-        )}
-      </p>
+        />
+      </div>
       {policy.mode === 'idle' && (
         <details className={css.details}>
           <summary>{t('timing')}</summary>

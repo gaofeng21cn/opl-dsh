@@ -1,7 +1,7 @@
 import { isWindowsDesktop } from '../shared/client/windows-desktop.ts'
 import { mountRemotes } from '../shared/client/mount-remotes.ts'
 /** One browser package, independently mounted feature lifecycles. */
-import type { ReactNode } from 'react'
+import { useSyncExternalStore, type ReactNode } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
@@ -16,6 +16,11 @@ import type {
 import * as notifications from '../notifications/client/index.tsx'
 import * as conversationStats from '../conversation-stats/client/index.tsx'
 import * as execution from '../execution/client/index.tsx'
+import { EngineUpdates } from '../execution/client/EngineUpdates.tsx'
+import {
+  resolveExecutionT,
+  type ExecutionLocaleSource,
+} from '../execution/client/execution-settings-locales.ts'
 import * as collaboration from '../collaboration/client/index.tsx'
 import {
   COLLABORATION_SETTINGS_NAMESPACE,
@@ -33,9 +38,33 @@ import {
   type SuiteFeatureSettings,
 } from '../shared/client/FeaturePreferences.tsx'
 import { optionalRemote, remoteCall } from '../shared/client/remote-call.ts'
+import { installSettingsSectionTitleNormalization } from '../shared/client/settings-navigation.ts'
 import { NativeShellPreference, nativeShellLabels, type NativeShellApi } from '../shell/client.tsx'
+import type { ExecutionCall } from '../shared/client/remote-call.ts'
+
+const noopLocaleSubscribe = () => () => {}
+const staticLocaleSnapshot = () => undefined
+
+function EmbeddedEngineUpdates({
+  call,
+  locale,
+}: {
+  call: ExecutionCall
+  locale: ExecutionLocaleSource
+}) {
+  useSyncExternalStore(
+    typeof locale.subscribe === 'function'
+      ? (listener) => locale.subscribe!(listener)
+      : noopLocaleSubscribe,
+    typeof locale.getSnapshot === 'function' ? () => locale.getSnapshot!() : staticLocaleSnapshot,
+    staticLocaleSnapshot,
+  )
+  return <EngineUpdates embedded call={call} t={resolveExecutionT(locale)} />
+}
+
 export const inject = ['remote', 'slots', 'locale', 'sessions', 'uiConversation', 'uiWorkspace']
 export async function apply(ctx: Context): Promise<void> {
+  ctx.effect(() => installSettingsSectionTitleNormalization(ctx))
   await mountRemotes(ctx, [
     'oplSetup',
     'oplFlow',
@@ -148,6 +177,8 @@ export async function apply(ctx: Context): Promise<void> {
   const updateRemote = optionalRemote(ctx, 'oplUpdates')
   if (updateRemote) {
     const call = remoteCall(updateRemote)
+    const executionCall = executionRemote ? remoteCall(executionRemote) : undefined
+    const executionLocale = ctx.locale as unknown as ExecutionLocaleSource
     const connection = ctx.get('connection') as ConnectionHandle | undefined
     const updateConnection = connection
       ? {
@@ -172,6 +203,13 @@ export async function apply(ctx: Context): Promise<void> {
         subscribeUpdateWatch(() => updateRemote.watch(), listener, updateConnection),
       openSettings: (section) => openSettings?.(section),
       registerInlineNotice,
+      ...(executionCall
+        ? {
+            renderEngineUpdates: () => (
+              <EmbeddedEngineUpdates call={executionCall} locale={executionLocale} />
+            ),
+          }
+        : {}),
       engineCount: async () => {
         const execution = optionalRemote(ctx, 'oplExecution')
         if (!execution) return 0

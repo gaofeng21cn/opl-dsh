@@ -252,7 +252,7 @@ export function HarnessSettings({
           </Button>
         }
       />
-      <p className={css.intro}>{t('harnessIntro')}</p>
+      <p className={embedded ? css.muted : css.intro}>{t('harnessIntro')}</p>
       {error && <p role="alert">{error}</p>}
       {busy && !items.length && (
         <p className={css.muted} role="status">

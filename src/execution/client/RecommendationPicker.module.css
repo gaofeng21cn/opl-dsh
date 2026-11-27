@@ -40,18 +40,23 @@
   overflow-y: auto;
   padding: 2px;
 }
-.group,
-.updateList {
+.group {
   --item-gap: 8px;
   display: flex;
   flex-direction: column;
   gap: var(--item-gap);
-}
-.group {
   min-inline-size: 0;
   margin: 0;
   padding: 0;
   border: 0;
+}
+.updateList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 4px 12px;
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-bg-module-platform);
 }
 .groupLabel {
   margin: 0 0 var(--item-gap);
@@ -69,6 +74,14 @@
   font-size: 14px;
   line-height: 22px;
   cursor: pointer;
+}
+.updateChoice {
+  min-height: 40px;
+  padding: 8px 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+.updateChoice:last-child {
+  border-bottom: 0;
 }
 .groupLabel label {
   width: fit-content;
@@ -90,6 +103,15 @@
 .itemText > span:first-child {
   min-width: 0;
 }
+.versionDelta {
+  flex: none;
+  font-family: var(--ds-font-family-code, inherit);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+}
 .permission {
   flex-shrink: 0;
   color: var(--dsw-alias-label-secondary);
@@ -104,8 +126,51 @@
 }
 .group input,
 .updateChoice input {
-  flex-shrink: 0;
-  accent-color: var(--dsw-alias-label-primary);
+  appearance: none;
+  box-sizing: border-box;
+  position: relative;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-layer-1);
+  cursor: inherit;
+}
+.group input:checked,
+.updateChoice input:checked {
+  border-color: var(--dsw-alias-button-primary-fill);
+  background: var(--dsw-alias-button-primary-fill);
+}
+.group input:checked::after,
+.updateChoice input:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--dsw-alias-label-primary-foreground);
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg);
+}
+.group input:focus-visible,
+.updateChoice input:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid
+    var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
+}
+.group input:disabled,
+.updateChoice input:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+@media (forced-colors: active) {
+  .group input,
+  .updateChoice input {
+    appearance: auto;
+  }
 }
 
 .choiceRow {

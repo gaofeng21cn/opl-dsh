@@ -14,9 +14,11 @@ export interface Config {
   connection?: UpdateConnectionSource
   /** Observe Host status changes; the Client reads status without scheduling discovery. */
   subscribe?: (listener: () => void) => () => void
-  /** Open the existing General settings section when supplied by its navigation owner. */
-  openSettings?: (section?: 'engines') => void
+  /** Open the Updates or Engines settings section when supplied by its navigation owner. */
+  openSettings?: (section?: 'updates' | 'engines') => void
   engineCount?: () => Promise<number>
+  /** Render external execution-engine update controls inside the dedicated Updates page. */
+  renderEngineUpdates?: () => ReactNode
   /** Register/clear the inline sidebar update indicator next to the settings launcher. */
   registerInlineNotice?: (render: ((wide: boolean) => ReactNode) | undefined) => void
 }

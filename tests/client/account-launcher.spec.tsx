@@ -52,7 +52,9 @@ async function mount(
     readAccount,
     bindSettingsNavigation:
       vi.fn<
-        (navigate: ((section?: 'general' | 'engines' | 'gateway') => void) | undefined) => void
+        (
+          navigate: ((section?: 'general' | 'engines' | 'gateway' | 'updates') => void) | undefined,
+        ) => void
       >(),
     ...(trailingNotice ? { trailingNotice } : {}),
     openSettings,
@@ -89,6 +91,8 @@ it('routes settings navigation directly through official openSettings and releas
   expect(view.openSettings).toHaveBeenCalledWith('opl-execution')
   navigate!('gateway')
   expect(view.openSettings).toHaveBeenCalledWith('opl-gateway')
+  navigate!('updates')
+  expect(view.openSettings).toHaveBeenCalledWith('opl-updates')
   expect(view.openOnboarding).not.toHaveBeenCalled()
   await act(async () => view.root.unmount())
   expect(view.props.bindSettingsNavigation).toHaveBeenLastCalledWith(undefined)

@@ -31,8 +31,10 @@ export function ExecutionSettings({
   const minimaxSnapshot = useMiniMaxIntegrationSnapshot(minimax.form)
   return (
     <div className={css.section} data-opl-panel="execution">
-      <h2 className={css.title}>{t('pageTitle')}</h2>
-      <p className={css.intro}>{t('pageIntro')}</p>
+      <div className={css.pageHeader}>
+        <h2 className={css.title}>{t('pageTitle')}</h2>
+        <p className={css.intro}>{t('pageIntro')}</p>
+      </div>
       <HarnessSettings call={call} embedded t={t} />
       <details className={css.details}>
         <summary>{t('sectionCustomDefaults')}</summary>

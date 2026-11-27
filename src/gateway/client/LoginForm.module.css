@@ -4,11 +4,51 @@
   gap: 8px;
   width: fit-content;
   min-height: 32px;
+  color: var(--dsw-alias-label-primary);
   font-size: 14px;
+  line-height: 22px;
   cursor: pointer;
 }
 
 .remember input {
+  appearance: none;
+  box-sizing: border-box;
+  position: relative;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
   margin: 0;
-  accent-color: var(--dsw-alias-state-business-primary);
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-layer-1);
+  cursor: inherit;
+}
+
+.remember input:checked {
+  border-color: var(--dsw-alias-button-primary-fill);
+  background: var(--dsw-alias-button-primary-fill);
+}
+
+.remember input:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--dsw-alias-label-primary-foreground);
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg);
+}
+
+.remember input:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid
+    var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .remember input {
+    appearance: auto;
+  }
 }

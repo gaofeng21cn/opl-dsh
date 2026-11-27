@@ -1,12 +1,39 @@
 .section {
   box-sizing: border-box;
   min-width: 0;
-  max-width: 100%;
+  max-width: 720px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 20px;
   width: 100%;
   color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.section .section {
+  max-width: none;
+  gap: 16px;
+}
+
+.section p,
+.section h3 {
+  margin: 0;
+}
+
+.section button,
+.section input,
+.section select,
+.section textarea {
+  font-family: inherit;
+}
+
+.pageHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 
 /* Settings contributed by OPL use the same rhythm as the native preference rows. */
@@ -52,6 +79,7 @@
 
 .preferenceRow {
   align-items: center;
+  justify-content: space-between;
 }
 
 .preferenceContent {
@@ -81,6 +109,7 @@
   margin: 0;
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
+  font-weight: 400;
   line-height: 18px;
 }
 
@@ -88,18 +117,129 @@
   margin: 0;
   color: var(--dsw-alias-label-tertiary);
   font-size: 14px;
+  font-weight: 400;
   line-height: 22px;
 }
 
 .card {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
+  min-width: 0;
   padding: 16px;
   border: 0.5px solid var(--dsw-alias-settings-card-stroke);
   border-radius: var(--dsw-radius-xl);
   background: var(--dsw-alias-settings-card-fill);
 }
+
+.card .card {
+  border: 0;
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-bg-module-platform);
+  padding: 14px 16px;
+}
+
+.cardHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cardHeaderText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cardTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.groupHeader {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.cardRows {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cardRows > .preferenceRow {
+  padding: 12px 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.cardRows > .preferenceRow:first-child {
+  padding-top: 0;
+}
+
+.cardRows > .preferenceRow:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.cardRows > .details {
+  border-top: 0;
+  padding-top: 12px;
+}
+
+.selector {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  min-height: 36px;
+  padding: 7px 14px;
+  border: none;
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .selector:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+
+.selector:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid
+    var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
+}
+
+.selector:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.selectorChevron {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .card > summary {
   list-style: none;
   cursor: pointer;
@@ -155,8 +295,11 @@
 
 .factValue {
   display: block;
+  margin: 0;
   font-size: 14px;
+  font-weight: 500;
   line-height: 22px;
+  font-variant-numeric: tabular-nums;
   /* Long values are identifiers and URLs: break them at real boundaries first
      and only split a token when there is no other way to fit. `break-all` split
      the endpoint mid-host, which reads as a typo. */
@@ -180,8 +323,10 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
+.field > span:first-child,
 .label {
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
@@ -198,6 +343,7 @@
   border-radius: var(--dsw-radius-md);
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
+  color-scheme: light dark;
   font: inherit;
   font-size: 14px;
   line-height: 22px;
@@ -206,7 +352,8 @@
 
 .input:focus-visible {
   border-color: var(--dsw-alias-state-business-primary);
-  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline: var(--dsw-focus-ring-width, 2px) solid
+    var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 1px;
 }
 .input::placeholder {
@@ -221,16 +368,38 @@
 
 .notice {
   margin: 0;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: var(--dsw-radius-md);
   background: var(--dsw-alias-bg-module-platform);
-  font-size: 12px;
-  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.errorBanner {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--dsw-radius-md);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.notificationFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
 }
 
 .error {
+  margin: 0;
   color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
 }
 .title {
   margin: 0;
@@ -246,20 +415,34 @@
   margin: 12px 0 0;
 }
 .metrics .factValue {
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 18px;
+  font-weight: 510;
+  line-height: 28px;
+  font-variant-numeric: tabular-nums;
   margin-top: 4px;
 }
 .details {
   border-top: 0.5px solid var(--dsw-alias-border-l2);
-  padding-top: 10px;
+  padding-top: 12px;
 }
 .details summary {
   cursor: pointer;
   color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
-  line-height: 18px;
+  line-height: 20px;
+  transition: color 120ms ease;
+}
+@media (hover: hover) {
+  .details summary:hover {
+    color: var(--dsw-alias-label-primary);
+  }
+}
+.details summary:focus-visible {
+  border-radius: var(--dsw-radius-sm);
+  outline: var(--dsw-focus-ring-width, 2px) solid
+    var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
 }
 .details[open] > summary {
   margin-bottom: 12px;
@@ -269,32 +452,38 @@
   margin-top: 12px;
 }
 
-.section {
-  min-width: 0;
-  font-size: 14px;
-  line-height: 22px;
-}
-.section p {
-  margin: 0;
-}
-.section h3 {
-  margin: 0;
-}
 .section .card > button {
   align-self: flex-start;
-}
-.field {
-  min-width: 0;
-}
-.field > span:first-child {
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 18px;
 }
 select.input {
   max-width: 320px;
   cursor: pointer;
+}
+@supports (appearance: base-select) {
+  select.input,
+  select.input::picker(select) {
+    appearance: base-select;
+  }
+  select.input::picker(select) {
+    padding: 4px;
+    border: 0.5px solid var(--dsw-alias-border-l2);
+    border-radius: var(--dsw-radius-lg);
+    background: var(--dsw-alias-bg-layer-2);
+    box-shadow: var(--dsw-elevation-prominent);
+    font: inherit;
+    color: var(--dsw-alias-label-primary);
+  }
+  select.input option {
+    padding: 6px 10px;
+    border-radius: var(--dsw-radius-sm);
+    font: inherit;
+    font-size: 14px;
+    line-height: 22px;
+    cursor: pointer;
+  }
+  select.input option:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 .input:disabled {
   opacity: 0.6;
@@ -328,7 +517,6 @@ select.input {
 [data-opl-panel='execution-limits'] > .detailsBody > .preferenceRow {
   padding-block: 0 8px;
 }
-.section[data-opl-panel='execution'] .intro,
 .engineCheckResults > p {
   font-size: 12px;
   line-height: 18px;
@@ -338,6 +526,12 @@ select.input {
 }
 .engineCheckResults > p + p {
   margin-top: 4px;
+}
+.engineUpdatePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
 }
 .engineUpdatePanel > .preferenceRow:first-child {
   padding-top: 0;
@@ -373,14 +567,6 @@ select.input {
 .row input[type='radio'] {
   accent-color: var(--dsw-alias-state-business-primary);
 }
-.factValue {
-  margin: 0;
-}
-.error {
-  margin: 0;
-  font-size: 12px;
-  line-height: 18px;
-}
 .errorList {
   display: flex;
   flex-direction: column;
@@ -391,6 +577,11 @@ select.input {
 }
 .loginCard button {
   align-self: flex-start;
+}
+@media (max-width: 640px) {
+  .preferenceText {
+    padding-right: 16px;
+  }
 }
 @media (max-width: 480px) {
   .header {
@@ -408,8 +599,13 @@ select.input {
   }
 }
 @media (forced-colors: active) {
-  .input:focus-visible {
+  .input:focus-visible,
+  .selector:focus-visible,
+  .details summary:focus-visible {
     outline: 2px solid Highlight;
+  }
+  .modelRow input[type='checkbox'] {
+    appearance: auto;
   }
 }
 .modelRows {
@@ -423,6 +619,7 @@ select.input {
   gap: 12px;
   padding: 8px 0;
   font-size: 14px;
+  line-height: 22px;
 }
 .modelRow > :first-child {
   flex: 1;
@@ -432,6 +629,43 @@ select.input {
 .modelRow > :last-child:not(:first-child) {
   flex-shrink: 0;
   white-space: nowrap;
+}
+.modelRow input[type='checkbox'] {
+  appearance: none;
+  box-sizing: border-box;
+  position: relative;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-layer-1);
+  cursor: pointer;
+}
+.modelRow input[type='checkbox']:checked {
+  border-color: var(--dsw-alias-button-primary-fill);
+  background: var(--dsw-alias-button-primary-fill);
+}
+.modelRow input[type='checkbox']:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--dsw-alias-label-primary-foreground);
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg);
+}
+.modelRow input[type='checkbox']:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid
+    var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
+}
+.modelRow input[type='checkbox']:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .switchControl {
   display: inline-flex;

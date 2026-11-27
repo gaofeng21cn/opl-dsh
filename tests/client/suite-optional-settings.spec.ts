@@ -76,6 +76,9 @@ vi.mock('../../src/opl-flow/client/index.tsx', () => ({
   Config: undefined,
   apply: () => {},
 }))
+vi.mock('../../src/execution/client/EngineUpdates.tsx', () => ({
+  EngineUpdates: () => null,
+}))
 vi.mock('../../src/shared/client/FeaturePreferences.tsx', () => ({
   SuiteFeaturePreferences: () => null,
   labels: {},

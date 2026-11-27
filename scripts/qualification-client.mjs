@@ -386,6 +386,7 @@ export async function verifyDesktopClient(
     { label: ['通用设置', 'General'], marker: 'notifications' },
     { label: ['OPL Gateway'], marker: 'gateway' },
     { label: ['执行引擎与协作', 'Engines & Team'], marker: 'execution-settings' },
+    { label: ['更新', 'Updates'], marker: 'updates' },
     { label: ['模型', 'Models'], marker: 'gateway-models-footer' },
   ]
   const screenshots = result.screenshots
@@ -396,9 +397,10 @@ export async function verifyDesktopClient(
       'OPL Gateway',
       plugins,
       'Agent 预设',
-      'Our Free Model',
       '执行引擎与协作',
-      ...(billionContextEnabled ? ['bili设置'] : []),
+      '更新',
+      'Our Free Model',
+      ...(billionContextEnabled ? ['Billion Context'] : []),
     ]),
     ...['Plugins', 'Built-in plugins'].map((plugins) => [
       'General',
@@ -406,9 +408,10 @@ export async function verifyDesktopClient(
       'OPL Gateway',
       plugins,
       'Agent presets',
-      'Our Free Model',
       'Engines & Team',
-      ...(billionContextEnabled ? ['bili'] : []),
+      'Updates',
+      'Our Free Model',
+      ...(billionContextEnabled ? ['Billion Context'] : []),
     ]),
   ]
   await waitFor(
@@ -491,35 +494,6 @@ export async function verifyDesktopClient(
       result.generalPreferences = {
         notifications: true,
         nativeGeneralItems: true,
-      }
-      const updateToggle = 'document.querySelector("[data-opl-panel=updates] [role=switch]")'
-      await waitFor(
-        `Boolean(${updateToggle} && !${updateToggle}.disabled)`,
-        '更新设置未从真实 Host 加载',
-      )
-      const updateBefore = await pipe.evaluate(
-        session,
-        `${updateToggle}.getAttribute('aria-checked')`,
-      )
-      await pipe.evaluate(session, `${updateToggle}.click()`)
-      await waitFor(
-        `${updateToggle}.getAttribute('aria-checked')!==${JSON.stringify(updateBefore)} && !${updateToggle}.disabled`,
-        '自动检查更新开关未保存',
-      )
-      await selectPanel()
-      await waitFor(
-        `${updateToggle}.getAttribute('aria-checked')!==${JSON.stringify(updateBefore)} && !${updateToggle}.disabled`,
-        '重进设置后自动检查更新偏好丢失',
-      )
-      await pipe.evaluate(session, `${updateToggle}.click()`)
-      await waitFor(
-        `${updateToggle}.getAttribute('aria-checked')===${JSON.stringify(updateBefore)} && !${updateToggle}.disabled`,
-        '自动检查更新开关未恢复',
-      )
-      result.generalPreferences.updates = {
-        hostLoaded: true,
-        automaticSaved: true,
-        automaticRestored: true,
       }
       const rememberPermission = featureSwitch(['记住权限预设', 'Remember permission preset'])
       await waitFor(
@@ -816,6 +790,46 @@ export async function verifyDesktopClient(
       const executionScreenshot = await captureScreenshot('execution-settings')
       if (executionScreenshot) screenshots.push(executionScreenshot)
       else result.screenshotFailures.push('execution-settings')
+    }
+    if (panel.marker === 'updates') {
+      const updateToggle = 'document.querySelector("[data-opl-panel=updates] [role=switch]")'
+      await waitFor(
+        `Boolean(${updateToggle} && !${updateToggle}.disabled)`,
+        '更新设置未从真实 Host 加载',
+      )
+      const updateBefore = await pipe.evaluate(
+        session,
+        `${updateToggle}.getAttribute('aria-checked')`,
+      )
+      await pipe.evaluate(session, `${updateToggle}.click()`)
+      await waitFor(
+        `${updateToggle}.getAttribute('aria-checked')!==${JSON.stringify(updateBefore)} && !${updateToggle}.disabled`,
+        '自动检查更新开关未保存',
+      )
+      await selectPanel()
+      await waitFor(
+        `${updateToggle}.getAttribute('aria-checked')!==${JSON.stringify(updateBefore)} && !${updateToggle}.disabled`,
+        '重进设置后自动检查更新偏好丢失',
+      )
+      await pipe.evaluate(session, `${updateToggle}.click()`)
+      await waitFor(
+        `${updateToggle}.getAttribute('aria-checked')===${JSON.stringify(updateBefore)} && !${updateToggle}.disabled`,
+        '自动检查更新开关未恢复',
+      )
+      await waitFor(
+        `Boolean(document.querySelector('[data-opl-panel="engine-updates"] #opl-engine-updates'))`,
+        '外部执行引擎更新区块未在更新页直接展开',
+      )
+      await waitFor(
+        `(() => {const panel=document.querySelector('[data-opl-panel="engine-updates"]'); if(!panel) return false; const text=panel.textContent||''; return (text.includes('自动检查执行引擎更新')||text.includes('Automatically check engine updates')) && !/\\bengineUpdates(?:AutoLabel|ModeLabel|Check|InstallSelected|LastChecked|OthersSummary)\\b/.test(text)})()`,
+        '外部执行引擎更新区块未显示已本地化文案',
+      )
+      result.updatesSection = {
+        hostLoaded: true,
+        automaticSaved: true,
+        automaticRestored: true,
+        engineUpdatesEmbedded: true,
+      }
     }
     if (panel.marker === 'gateway-models-footer') {
       await waitFor(

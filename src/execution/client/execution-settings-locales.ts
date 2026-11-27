@@ -112,6 +112,7 @@ export const executionSettingsZh = {
   engineUpdatesBatchSummary: '本次更新 · 已处理 {finished}/{total}',
   engineUpdatesLastChecked: '上次检查：{time}',
   engineUpdatesOthersSummary: '其他检查结果（{count}）',
+  engineUpdatesAllCurrent: '所有可管理执行引擎已是最新版本。',
 
   permissionReadOnly: '仅可查看',
   permissionWorkspace: '工作区内修改',
@@ -302,6 +303,7 @@ export const executionSettingsEn: Record<ExecutionSettingsLocaleKey, string> = {
   engineUpdatesBatchSummary: 'Current batch · {finished}/{total} done',
   engineUpdatesLastChecked: 'Last checked: {time}',
   engineUpdatesOthersSummary: 'Other results ({count})',
+  engineUpdatesAllCurrent: 'All managed execution engines are up to date.',
 
   permissionReadOnly: 'Read-only',
   permissionWorkspace: 'Workspace',
@@ -383,12 +385,40 @@ export type ExecutionSettingsT = (
   params?: Record<string, string | number>,
 ) => string
 
-export const defaultExecutionT: ExecutionSettingsT = (key, params) => {
-  const template: string = executionSettingsZh[key]
+export type ExecutionLocaleSource = {
+  bind?: (ns: string) => ExecutionSettingsT
+  subscribe?: (listener: () => void) => () => void
+  getSnapshot?: () => { active?: string } | undefined
+  getLocale?: () => { active?: string } | undefined
+}
+
+function formatExecutionLocale(
+  dict: Record<ExecutionSettingsLocaleKey, string>,
+  key: ExecutionSettingsLocaleKey,
+  params?: Record<string, string | number>,
+): string {
+  const template: string = dict[key]
   if (!params) return template
   return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, name: string) =>
     name in params ? String(params[name]) : `{${name}}`,
   )
+}
+
+export const defaultExecutionT: ExecutionSettingsT = (key, params) =>
+  formatExecutionLocale(executionSettingsZh, key, params)
+
+export function resolveExecutionT(locale?: ExecutionLocaleSource): ExecutionSettingsT {
+  const bound =
+    typeof locale?.bind === 'function' ? locale.bind(EXECUTION_SETTINGS_NAMESPACE) : undefined
+  return (key, params) => {
+    if (bound) {
+      const translated = bound(key, params)
+      if (translated && translated !== key) return translated
+    }
+    const active = locale?.getSnapshot?.()?.active ?? locale?.getLocale?.()?.active ?? 'zh'
+    const dict = active.toLowerCase().startsWith('zh') ? executionSettingsZh : executionSettingsEn
+    return formatExecutionLocale(dict, key, params)
+  }
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {

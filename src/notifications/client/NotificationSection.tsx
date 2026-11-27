@@ -22,30 +22,38 @@ export function NotificationSection({
   }
   return (
     <section className={css.officialRow} data-opl-panel="notifications">
-      <div className={css.row}>
-        <h3 className={css.preferenceTitle}>{t('nav')}</h3>
+      <div className={css.preferenceContent}>
+        <div className={css.preferenceText}>
+          <h3 className={css.preferenceTitle}>{t('nav')}</h3>
+          <p className={css.preferenceDescription}>{t('intro')}</p>
+          <p className={css.preferenceDescription}>
+            {t('help')} {t('privacy')}
+          </p>
+        </div>
         <Switch
           label={t('enabled')}
           checked={state.enabled}
           onChange={(value) => controller.setEnabled(value)}
         />
       </div>
-      <p className={css.muted}>{t('intro')}</p>
-      <p className={css.muted}>{t('help')}</p>
-      <p className={css.muted}>{t('privacy')}</p>
-      <Button
-        variant="outline"
-        disabled={busy || state.status === 'unsupported'}
-        onClick={() => void test()}
-      >
-        {t(busy ? 'sending' : 'test')}
-      </Button>
-      <p
-        role="status"
-        className={state.status === 'failure' || state.status === 'denied' ? css.error : css.notice}
-      >
-        {t(state.status)}
-      </p>
+      <div className={css.notificationFooter}>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy || state.status === 'unsupported'}
+          onClick={() => void test()}
+        >
+          {t(busy ? 'sending' : 'test')}
+        </Button>
+        <span
+          role="status"
+          className={
+            state.status === 'failure' || state.status === 'denied' ? css.error : css.muted
+          }
+        >
+          {t(state.status)}
+        </span>
+      </div>
       {state.savingFailed && (
         <p role="alert" className={css.error}>
           {t('savingFailure')}

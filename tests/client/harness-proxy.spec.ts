@@ -33,8 +33,10 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
     ...props
   }: { children?: ReactNode } & Record<string, unknown>) =>
     React.createElement('button', { ...props, type }, children),
+  IconChevronDownOutlineRegular: () => null,
   IconChevronRightOutlineRegular: (props: Record<string, unknown>) =>
     React.createElement('span', { ...props, 'aria-hidden': 'true' }),
+  Menu: ({ anchor }: { anchor: ReactNode }) => React.createElement('div', null, anchor),
   StateDot: (props: Record<string, unknown>) =>
     React.createElement('span', { ...props, 'aria-hidden': 'true' }),
   Switch: ({

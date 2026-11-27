@@ -1,5 +1,22 @@
 dl.versions {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+  padding: 12px 14px;
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.versionValue {
+  font-family: var(--ds-font-family-code, inherit);
+  font-variant-numeric: tabular-nums;
+}
+
+.statusRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
 }
 
 .actions {
@@ -12,7 +29,7 @@ dl.versions {
 .summary {
   margin: 0;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 22px;
   overflow-wrap: anywhere;
 }
 

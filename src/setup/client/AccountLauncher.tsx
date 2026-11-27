@@ -10,7 +10,7 @@ import type { GatewayAccountStatus } from '../../gateway/contracts/account.ts'
 import { subscribeAccountChanges } from '../../gateway/client/account-changes.ts'
 import css from './AccountLauncher.module.css'
 
-export type SettingsNavigationTarget = 'general' | 'engines' | 'gateway'
+export type SettingsNavigationTarget = 'general' | 'engines' | 'gateway' | 'updates'
 
 export interface TrailingNoticeSource {
   getSnapshot: () => ((wide: boolean) => ReactNode) | undefined
@@ -42,7 +42,13 @@ export function AccountLauncher({
   useEffect(() => {
     bindSettingsNavigation?.((section) =>
       openSettings(
-        section === 'engines' ? 'opl-execution' : section === 'gateway' ? 'opl-gateway' : 'general',
+        section === 'updates'
+          ? 'opl-updates'
+          : section === 'engines'
+            ? 'opl-execution'
+            : section === 'gateway'
+              ? 'opl-gateway'
+              : 'general',
       ),
     )
     return () => bindSettingsNavigation?.(undefined)

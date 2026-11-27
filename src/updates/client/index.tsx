@@ -1,5 +1,6 @@
-/** General settings and an inline sidebar indicator over the same Host update projection. */
+/** Top-level Updates settings page and inline sidebar indicator over one Host update projection. */
 import { useSyncExternalStore } from 'react'
+import { IconDownloadOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -9,6 +10,7 @@ import { UpdatesSection } from './UpdatesSection.tsx'
 import { UpdateNotice, type UpdateNoticeProps } from './UpdateNotice.tsx'
 import { UPDATE_NAMESPACE, zh, en } from './locales.ts'
 import { createUpdateNavigation } from './navigation.ts'
+import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
 
 export type { Config } from './config.ts'
 export const inject = ['slots', 'locale']
@@ -32,17 +34,32 @@ export function apply(ctx: Context, config: Config): void {
   })
   const navigation = createUpdateNavigation()
   ctx.effect(() => navigation.dispose)
-  ctx.slots.inject('settings.general.item', () =>
+  ctx.slots.inject('settings.section', () =>
     ctx.slots.register(
       {
-        name: 'settings.general.item',
+        name: 'settings.section',
         id: 'opl-updates',
-        order: 60,
+        order: SETTINGS_ORDER['opl-updates'],
+        label: () =>
+          typeof (ctx.locale as unknown as ReactiveLocale).bind === 'function'
+            ? ctx.locale.bind(UPDATE_NAMESPACE)('title')
+            : zh.title,
         locale: UPDATE_NAMESPACE,
-        inject: () => ({ controller, navigation }),
+        inject: () => ({
+          controller,
+          navigation,
+          ...(config.renderEngineUpdates
+            ? { renderEngineUpdates: config.renderEngineUpdates }
+            : {}),
+        }),
       },
       UpdatesSection,
     ),
+  )
+  ctx.slots.inject('settings.section.icon', () =>
+    ctx.slots.register({ name: 'settings.section.icon', id: 'opl-updates' }, ({ size }) => (
+      <IconDownloadOutlineRegular size={size} />
+    )),
   )
   const fallbackT = ((key: keyof typeof zh, params?: Record<string, unknown>) =>
     zh[key].replace(/\{(\w+)\}/gu, (_match, name: string) =>

@@ -22,6 +22,7 @@ import { en, zh, UPDATE_NAMESPACE } from '../../src/updates/client/locales.ts'
 import * as updates from '../../src/updates/client/index.tsx'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
+  IconChevronDownOutlineRegular: () => null,
   IconDownloadOutlineRegular: () => null,
   Menu: ({
     anchor,
@@ -318,12 +319,30 @@ function countdown(seconds = 30): OplUpdateStatus {
   })
 }
 
-async function selectMode(container: HTMLElement, mode: string): Promise<void> {
-  const select = section(container).querySelector('select')!
-  await act(async () => {
-    select.value = mode
-    select.dispatchEvent(new Event('change', { bubbles: true }))
-  })
+function modeButton(container: HTMLElement): HTMLButtonElement {
+  const trigger = section(container).querySelector<HTMLButtonElement>(
+    '[data-opl-select="update-policy"]',
+  )
+  expect(trigger).not.toBeNull()
+  return trigger!
+}
+
+async function selectMode(
+  container: HTMLElement,
+  mode: 'notify' | 'on-launch' | 'idle',
+): Promise<void> {
+  const labelByMode = {
+    notify: [zh.modeNotify, en.modeNotify],
+    'on-launch': [zh.modeOnLaunch, en.modeOnLaunch],
+    idle: [zh.modeIdle, en.modeIdle],
+  } as const
+  const trigger = modeButton(container)
+  await click(trigger)
+  const option = [...section(container).querySelectorAll('button')].find(
+    (node) => node !== trigger && labelByMode[mode].includes(node.textContent ?? ''),
+  )
+  expect(option, `mode option ${mode}`).toBeDefined()
+  await click(option!)
 }
 
 async function enterNumber(input: HTMLInputElement, value: string): Promise<void> {
@@ -360,19 +379,21 @@ describe('unattended update preferences', () => {
 
   it('uses reminder defaults without changing the separate automatic-check preference', async () => {
     const f = await mount()
-    const select = section(f.container).querySelector('select')!
-    expect(select.value).toBe('notify')
-    expect([...select.options].map((option) => option.value)).toEqual([
-      'notify',
-      'on-launch',
-      'idle',
-    ])
+    const select = modeButton(f.container)
+    expect(select.dataset.value).toBe('notify')
+    await click(select)
+    const expectedLabels = [zh.modeNotify, zh.modeOnLaunch, zh.modeIdle]
+    const options = [...section(f.container).querySelectorAll('button')]
+      .filter((node) => node !== select && expectedLabels.includes(node.textContent ?? ''))
+      .map((node) => node.textContent)
+    expect(options).toEqual(expectedLabels)
+    await click(select)
     expect(f.api.setPolicy).not.toHaveBeenCalled()
     await selectMode(f.container, 'idle')
     expect(f.api.setPolicy).toHaveBeenCalledExactlyOnceWith(policy({ mode: 'idle' }))
     expect(f.api.setAutomatic).not.toHaveBeenCalled()
     expect(f.api.applyNow).not.toHaveBeenCalled()
-    expect(select.value).toBe('idle')
+    expect(select.dataset.value).toBe('idle')
     expect(f.container.textContent).toContain(
       zh.modeIdleHelp.replace('{idleMinutes}', '5').replace('{countdownSeconds}', '30'),
     )
@@ -384,9 +405,9 @@ describe('unattended update preferences', () => {
       configure: (api) => api.setPolicy.mockImplementation(() => gate.promise),
     })
     await selectMode(f.container, 'idle')
-    const select = section(f.container).querySelector('select')!
+    const select = modeButton(f.container)
     expect(select.disabled).toBe(true)
-    expect(select.value).toBe('notify')
+    expect(select.dataset.value).toBe('notify')
     expect(f.container.textContent).toContain(zh.savingPolicy)
     await act(async () => {
       await f.controller.setPolicy(policy({ mode: 'notify' }))
@@ -395,7 +416,7 @@ describe('unattended update preferences', () => {
     expect(f.api.setPolicy).toHaveBeenCalledExactlyOnceWith(policy({ mode: 'idle' }))
     expect(f.api.setAutomatic).not.toHaveBeenCalled()
     await complete(gate, status({ policy: policy({ mode: 'idle' }) }))
-    expect(select.value).toBe('idle')
+    expect(select.dataset.value).toBe('idle')
     expect(select.disabled).toBe(false)
   })
 
@@ -406,16 +427,16 @@ describe('unattended update preferences', () => {
       },
     })
     await selectMode(f.container, 'idle')
-    expect(section(f.container).querySelector('select')!.value).toBe('notify')
-    expect(section(f.container).querySelector('select')!.disabled).toBe(true)
+    expect(modeButton(f.container).dataset.value).toBe('notify')
+    expect(modeButton(f.container).disabled).toBe(true)
     expect(f.container.textContent).toContain(zh['policy-failed'])
     expect(f.container.textContent).not.toContain('private-preference-path')
     await act(async () => f.controller.setPolicy(policy({ mode: 'idle' })))
     expect(f.api.setPolicy).toHaveBeenCalledTimes(1)
     f.api.status.mockResolvedValueOnce(status({ policy: policy({ mode: 'idle' }) }))
     await click(button(f.container, zh.refreshStatus))
-    expect(section(f.container).querySelector('select')!.value).toBe('idle')
-    expect(section(f.container).querySelector('select')!.disabled).toBe(false)
+    expect(modeButton(f.container).dataset.value).toBe('idle')
+    expect(modeButton(f.container).disabled).toBe(false)
     expect(f.container.textContent).not.toContain(zh['policy-failed'])
   })
 
@@ -471,7 +492,7 @@ describe('unattended update preferences', () => {
       connection.publish(2)
     })
     await complete(gate, status({ policy: policy({ mode: 'idle' }) }))
-    expect(section(f.container).querySelector('select')!.value).toBe('notify')
+    expect(modeButton(f.container).dataset.value).toBe('notify')
     expect(f.controller.getSnapshot().uncertain).toBe(false)
   })
 
@@ -634,7 +655,7 @@ describe('restart countdown presentation', () => {
       initial: { ...initial, restart: { phase: 'handoff', dueAt: null, reason: null } },
     })
     expect(f.container.textContent).toContain(zh.restartHandoff.replace('{version}', '0.2.56'))
-    expect(section(f.container).querySelector('select')!.disabled).toBe(true)
+    expect(modeButton(f.container).disabled).toBe(true)
     expect(button(f.container, zh.check).disabled).toBe(true)
     expect(
       [...section(f.container).querySelectorAll('button')].map((node) => node.textContent),
@@ -716,7 +737,7 @@ describe('update activity reporting', () => {
     })
     expect(f.controller.getSnapshot().failure).toBeNull()
     expect(f.controller.getSnapshot().uncertain).toBe(false)
-    expect(section(f.container).querySelector('select')!.disabled).toBe(false)
+    expect(modeButton(f.container).disabled).toBe(false)
     await act(async () => vi.advanceTimersByTimeAsync(60_000))
     expect(f.api.activity).toHaveBeenCalledTimes(1)
     await events.trusted()
@@ -1400,7 +1421,7 @@ describe('update subscriptions and request lifetimes', () => {
     expect(f.api.status).toHaveBeenCalledTimes(1)
   })
 
-  it('renders one persistent notice for repeated observations and opens existing settings', async () => {
+  it('triggers one-click applyNow for compatible releases and opens settings for manual full-suite releases', async () => {
     const offer = status({ release: release() })
     const f = await mount({ initial: offer })
     for (let i = 0; i < 3; i++) await act(async () => f.publish({ ...offer }))
@@ -1408,12 +1429,30 @@ describe('update subscriptions and request lifetimes', () => {
     expect(notices).toHaveLength(1)
     expect(notices[0]!.getAttribute('aria-label')).toContain('0.2.56')
     await click(notices[0]!)
-    expect(f.openSettings).toHaveBeenCalledTimes(1)
-    expect(f.api.applyNow).not.toHaveBeenCalled()
+    expect(f.api.applyNow).toHaveBeenCalledTimes(1)
+    expect(f.openSettings).not.toHaveBeenCalled()
+
+    const blockedOffer = status({ release: release() })
+    const fBlocked = await mount({ initial: blockedOffer })
+    fBlocked.api.applyNow.mockResolvedValueOnce({
+      ...blockedOffer,
+      pendingVersion: '0.2.56',
+      restart: { phase: 'blocked', dueAt: null, reason: 'busy' },
+    })
+    await click(fBlocked.container.querySelector<HTMLButtonElement>('[data-opl-update-notice]')!)
+    expect(fBlocked.container.querySelector('[role="dialog"]')?.textContent).toContain(
+      zh.updateBusyBody,
+    )
+
+    await act(async () => {
+      f.publish(status({ release: release({ compatibility: 'full-suite' }) }))
+    })
+    await click(f.container.querySelector<HTMLButtonElement>('[data-opl-update-notice]')!)
+    expect(f.openSettings).toHaveBeenCalledWith('updates')
   })
 
   it('consumes each notice navigation intent once and ignores status refreshes', async () => {
-    const offer = status({ release: release() })
+    const offer = status({ release: release({ compatibility: 'full-suite' }) })
     const navigation = createUpdateNavigation()
     const f = await mount({ initial: offer, navigation })
     const panel = section(f.container)
@@ -1434,7 +1473,7 @@ describe('update subscriptions and request lifetimes', () => {
   })
 
   it('keeps a notice intent until the Updates section mounts', async () => {
-    const offer = status({ release: release() })
+    const offer = status({ release: release({ compatibility: 'full-suite' }) })
     const navigation = createUpdateNavigation()
     const f = await mount({ initial: offer, navigation, renderSection: false })
     const scroll = vi.fn()
@@ -1466,8 +1505,10 @@ describe('update subscriptions and request lifetimes', () => {
     expect(scroll).toHaveBeenCalledOnce()
   })
 
-  it('uses a release link without navigation injection and hides when collapsed', async () => {
-    const f = await mount({ initial: status({ release: release() }) })
+  it('uses a release link for full-suite without navigation injection and hides when collapsed', async () => {
+    const f = await mount({
+      initial: status({ release: release({ compatibility: 'full-suite' }) }),
+    })
     await act(async () =>
       f.root.render(createElement(UpdateNotice, { controller: f.controller, t, wide: true })),
     )
@@ -1511,7 +1552,20 @@ describe('update plugin lifecycle', () => {
       }
     }
     class Locale extends Service {
-      register = vi.fn(() => vi.fn())
+      private readonly registered = new Map<string, Set<string>>()
+      register = vi.fn((ns: string, dicts: Record<string, unknown>) => {
+        const locales = this.registered.get(ns) ?? new Set<string>()
+        for (const locale of Object.keys(dicts)) {
+          if (locales.has(locale))
+            throw new Error(`locale namespace "${ns}" already has locale "${locale}"`)
+        }
+        this.registered.set(ns, locales)
+        for (const locale of Object.keys(dicts)) locales.add(locale)
+        const dispose = vi.fn(() => {
+          for (const locale of Object.keys(dicts)) locales.delete(locale)
+        })
+        return dispose
+      })
       constructor(ctx: Context) {
         super(ctx, 'locale')
       }
@@ -1526,6 +1580,11 @@ describe('update plugin lifecycle', () => {
         locale = new Locale(provider)
       },
     })
+    locale.register('settings.oplNavigation', {
+      zh: { 'opl-updates': '更新' },
+      en: { 'opl-updates': 'Updates' },
+    })
+    locale.register.mockClear()
     const oldGate = deferred<OplUpdateStatus>()
     const old = host()
     old.api.status.mockImplementation(() => oldGate.promise)
@@ -1537,9 +1596,14 @@ describe('update plugin lifecycle', () => {
     })
     expect(updates.inject).toEqual(['slots', 'locale'])
     expect('default' in updates).toBe(false)
-    expect(entries.map((entry) => entry.name)).toEqual(['settings.general.item'])
+    expect(entries.map((entry) => entry.name)).toEqual([
+      'settings.section',
+      'settings.section.icon',
+    ])
+    expect(entries.map((entry) => entry.id)).toEqual(['opl-updates', 'opl-updates'])
     expect(registerInlineNotice).toHaveBeenCalledTimes(1)
     expect(registerInlineNotice.mock.calls[0]![0]).toBeTypeOf('function')
+    expect(locale.register).toHaveBeenCalledTimes(1)
     expect(locale.register).toHaveBeenCalledWith(UPDATE_NAMESPACE, { zh, en })
     const controller = entries[0]!.inject!().controller
     await first.dispose()
@@ -1556,28 +1620,32 @@ describe('update plugin lifecycle', () => {
     oldGate.resolve(status({ installedVersion: '0.2.54' }))
     await oldGate.promise
     expect(controller.getSnapshot().status).toBeNull()
-    expect(entries).toHaveLength(1)
+    expect(entries).toHaveLength(2)
     expect(entries[0]!.inject!().controller.getSnapshot().status?.installedVersion).toBe('0.2.57')
   })
 })
 
-it('routes the single engine notice directly and the combined notice through a choice', async () => {
-  const f = await mount({ renderSection: false, config: { engineCount: async () => 3 } })
+it('shows distinct engine update label opening the Updates page, and applies app updates directly when present', async () => {
+  const navigation = createUpdateNavigation()
+  const f = await mount({
+    renderSection: false,
+    navigation,
+    config: { engineCount: async () => 3 },
+  })
   const notice = () => f.container.querySelector('button')!
+  expect(notice().textContent).toBe('引擎更新 (3)')
   expect(notice().title).toContain('3 个执行引擎')
   await click(notice())
-  expect(f.openSettings).toHaveBeenCalledWith('engines')
+  expect(f.openSettings).toHaveBeenCalledWith('updates')
+  expect(navigation.getTarget()).toBe('engines')
   f.openSettings.mockClear()
   await act(async () => {
     f.publish(status({ release: release() }))
   })
+  expect(notice().textContent).toBe('更新')
   await click(notice())
+  expect(f.api.applyNow).toHaveBeenCalledTimes(1)
   expect(f.openSettings).not.toHaveBeenCalled()
-  expect(f.container.textContent).toContain('OPL DSH 更新')
-  await click(
-    [...f.container.querySelectorAll('button')].find((n) => n.textContent === '执行引擎更新（3）')!,
-  )
-  expect(f.openSettings).toHaveBeenCalledWith('engines')
 })
 
 it('lets users replace an older prepared update with a newly discovered release', async () => {
