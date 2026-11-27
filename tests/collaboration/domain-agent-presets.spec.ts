@@ -160,6 +160,47 @@ describe('OPL domain Agent projection', () => {
     expect(JSON.stringify(persona)).toContain('Do not install, activate, update, repair')
     expect(JSON.stringify(persona)).not.toContain('{{')
   })
+
+  it('composes official session tools without mounting profile management', () => {
+    const [agent] = parseDomainAgentProjection(projection())
+    const { plugins } = domainAgentPresetDefinition(agent!)
+    expect(plugins).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'command-goal', name: '@deepseek-ai/dsh-command-goal' }),
+        expect.objectContaining({ id: 'tool-goal', name: '@deepseek-ai/dsh-tool-goal' }),
+        expect.objectContaining({
+          id: 'planning',
+          isolate: { planMode: true },
+          config: [expect.objectContaining({ id: 'plan-mode' })],
+        }),
+        expect.objectContaining({
+          id: 'delegation',
+          isolate: { workflowEngine: true },
+          config: [
+            expect.objectContaining({ id: 'tool-subagent-control', config: { interrupt: false } }),
+            expect.objectContaining({
+              id: 'tool-subagent',
+              config: {
+                provider: 'spawn',
+                toolName: 'subagent',
+                modelSelection: true,
+                modelDiscovery: true,
+              },
+            }),
+            expect.objectContaining({
+              id: 'tool-subagent-fork',
+              config: { provider: 'fork', toolName: 'subagent_fork' },
+            }),
+            expect.objectContaining({ id: 'workflow-ptc', config: { provider: 'spawn' } }),
+            expect.objectContaining({ id: 'tool-workflow' }),
+          ],
+        }),
+      ]),
+    )
+    for (const id of ['tool-schedule', 'tool-plugin-manager', 'tool-plugin-market']) {
+      expect(plugins.some((plugin) => plugin.id === id)).toBe(false)
+    }
+  })
 })
 
 describe('DomainAgentPresetService', () => {
