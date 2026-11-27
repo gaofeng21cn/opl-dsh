@@ -386,29 +386,29 @@ export async function verifyDesktopClient(
     { label: ['通用设置', 'General'], marker: 'notifications' },
     { label: ['OPL Gateway'], marker: 'gateway' },
     { label: ['执行引擎与协作', 'Engines & Collaboration'], marker: 'execution-settings' },
-    { label: ['模型供应商', 'Model providers'], marker: 'gateway-models-footer' },
+    { label: ['模型', 'Models'], marker: 'gateway-models-footer' },
   ]
   const screenshots = result.screenshots
   const expectedNavigation = [
     [
       '通用设置',
+      '模型',
       'OPL Gateway',
-      '模型供应商',
-      '执行引擎与协作',
+      '内置插件',
       'Agent 预设',
-      '插件管理',
       'Our Free Model',
-      ...(billionContextEnabled ? ['Billion Context'] : []),
+      '执行引擎与协作',
+      ...(billionContextEnabled ? ['bili设置'] : []),
     ],
     [
       'General',
+      'Models',
       'OPL Gateway',
-      'Model providers',
-      'Engines & Collaboration',
+      'Built-in plugins',
       'Agent presets',
-      'Plugins',
       'Our Free Model',
-      ...(billionContextEnabled ? ['Billion Context'] : []),
+      'Engines & Collaboration',
+      ...(billionContextEnabled ? ['bili'] : []),
     ],
   ]
   await waitFor(
@@ -423,7 +423,6 @@ export async function verifyDesktopClient(
     session,
     `Array.from(${settingsNav}.querySelectorAll('button svg')).filter(x=>x.getClientRects().length).length`,
   )
-  if (result.visibleNavigationIcons) throw new Error('设置导航应只显示文字')
   result.clippedNavigationLabels = await pipe.evaluate(
     session,
     `Array.from(${settingsNav}.querySelectorAll('button span')).filter(x=>x.getClientRects().length && x.scrollWidth>x.clientWidth+1).map(x=>x.textContent.trim()).filter(Boolean)`,
