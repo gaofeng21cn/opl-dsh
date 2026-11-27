@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { HarnessDefinition } from '../contracts/catalog.ts'
+import { defaultExecutionT, type ExecutionSettingsT } from './execution-settings-locales.ts'
 import {
   PROXY_EXAMPLE,
   proxyDraftError,
@@ -17,11 +18,7 @@ export type ProxyEdit = (id: string, patch: Partial<ProxyDraft>) => void
  * read back from the state this click has just invalidated.
  */
 export type ProxySubmit = (id: string, override?: Partial<ProxyDraft>) => void
-const MODES: { mode: ProxyMode; label: string; hint: string }[] = [
-  { mode: 'inherit', label: '继承环境', hint: '沿用桌面进程的环境变量，不额外改写' },
-  { mode: 'direct', label: '直连', hint: '清空该 CLI 的代理变量，让它直接联网' },
-  { mode: 'custom', label: '指定代理', hint: `只为此 CLI 设置，例如 ${PROXY_EXAMPLE}` },
-]
+
 /**
  * A network preference inside the existing Harness card, with one draft per engine.
  *
@@ -40,6 +37,7 @@ export function HarnessProxySection({
   onEdit,
   onSave,
   onReset,
+  t = defaultExecutionT,
 }: {
   harness: HarnessDefinition
   drafts: Record<string, ProxyDraft>
@@ -49,8 +47,18 @@ export function HarnessProxySection({
   onEdit: ProxyEdit
   onSave: ProxySubmit
   onReset: (id: string) => void
+  t?: ExecutionSettingsT
 }) {
   const inputs = useRef(new Map<string, HTMLInputElement>())
+  const modes: { mode: ProxyMode; label: string; hint: string }[] = [
+    { mode: 'inherit', label: t('proxyModeInherit'), hint: t('proxyModeInheritHint') },
+    { mode: 'direct', label: t('proxyModeDirect'), hint: t('proxyModeDirectHint') },
+    {
+      mode: 'custom',
+      label: t('proxyModeCustom'),
+      hint: t('proxyModeCustomHint', { example: PROXY_EXAMPLE }),
+    },
+  ]
   /**
    * The address box is uncontrolled: it owns what the user typed, and the draft is
    * brought up to date from the box at the points where the value is actually needed —
@@ -60,7 +68,7 @@ export function HarnessProxySection({
   const builtIn = harness.kind === 'dsh'
   const stored = harness.proxy
   const draft = drafts[harness.id] ?? { mode: 'inherit' as const, url: '' }
-  const error = errors[harness.id] || proxyDraftError(draft)
+  const error = errors[harness.id] || proxyDraftError(draft, t)
   const message = outcome?.id === harness.id ? outcome.message : ''
   const dirty =
     draft.mode !== (stored?.mode ?? 'inherit') ||
@@ -71,21 +79,19 @@ export function HarnessProxySection({
     const typed = draft.mode === 'custom' ? readUrl(harness.id) || draft.url : draft.url
     onEdit(harness.id, { mode, url: typed })
   }
+  const activeModeLabel = modes.find((item) => item.mode === draft.mode)?.label ?? ''
   return (
     <details className={css.details} data-opl-proxy-row={harness.id} aria-busy={busy}>
-      <summary>网络代理 · {MODES.find((item) => item.mode === draft.mode)?.label}</summary>
+      <summary>{t('proxySummary', { mode: activeModeLabel })}</summary>
       <div className={css.detailsBody}>
-        <p className={css.muted}>
-          只影响此执行引擎的后续连接。正在运行的任务保持当前连接，后续轮次重连时使用新设置。
-        </p>
-        {builtIn && (
-          <p className={css.muted}>
-            内置 DSH 与桌面同进程运行，模型请求由 DSH
-            自身的网络栈发出，不经过这个子进程代理选项；只有外部 CLI 使用它。
-          </p>
-        )}
-        <div className={css.proxyModes} role="radiogroup" aria-label={`${harness.name} 的网络代理`}>
-          {MODES.map((item) => (
+        <p className={css.muted}>{t('proxyIntro')}</p>
+        {builtIn && <p className={css.muted}>{t('proxyBuiltInNote')}</p>}
+        <div
+          className={css.proxyModes}
+          role="radiogroup"
+          aria-label={t('proxyRadioGroupLabel', { name: harness.name })}
+        >
+          {modes.map((item) => (
             <label className={css.proxyMode} key={item.mode}>
               <input
                 type="radio"
@@ -101,7 +107,7 @@ export function HarnessProxySection({
         </div>
         {draft.mode === 'custom' && !builtIn && (
           <label className={css.field}>
-            代理地址
+            {t('proxyUrlLabel')}
             <input
               className={css.input}
               type="text"
@@ -119,7 +125,7 @@ export function HarnessProxySection({
                 else inputs.current.delete(harness.id)
               }}
             />
-            <span className={css.muted}>{MODES[2].hint}</span>
+            <span className={css.muted}>{modes[2].hint}</span>
           </label>
         )}
         {error && (
@@ -144,7 +150,7 @@ export function HarnessProxySection({
         {!builtIn && (
           <div className={css.actions}>
             <Button
-              aria-label={`保存 ${harness.name} 的代理设置`}
+              aria-label={t('proxySaveAriaLabel', { name: harness.name })}
               data-opl-proxy-save={harness.id}
               disabled={busy}
               onClick={() => {
@@ -153,11 +159,11 @@ export function HarnessProxySection({
                 onSave(harness.id, typed)
               }}
             >
-              保存代理
+              {t('proxySaveButton')}
             </Button>
             {dirty && (
               <Button
-                aria-label={`放弃 ${harness.name} 的代理修改`}
+                aria-label={t('proxyResetAriaLabel', { name: harness.name })}
                 data-opl-proxy-reset={harness.id}
                 disabled={busy}
                 onClick={() => {
@@ -166,7 +172,7 @@ export function HarnessProxySection({
                   if (input) input.value = stored?.mode === 'custom' ? stored.url : ''
                 }}
               >
-                放弃修改
+                {t('proxyResetButton')}
               </Button>
             )}
           </div>

@@ -1,12 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { RoleExecutionCall } from '../../shared/client/remote-call.ts'
 import type { RoleExecutionCatalog } from '../contracts/roles.ts'
 import css from '../../shared/client/SettingsSection.module.css'
+import { defaultCollaborationT, type CollaborationT } from './collaboration-locales.ts'
 
-export function RoleExecutions({ call }: { call?: RoleExecutionCall }) {
+export function RoleExecutions({
+  call,
+  t = defaultCollaborationT,
+}: {
+  call?: RoleExecutionCall
+  t?: CollaborationT
+}) {
   const [catalog, setCatalog] = useState<RoleExecutionCatalog>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const tRef = useRef(t)
+  tRef.current = t
   useEffect(() => {
     let live = true
     if (call)
@@ -15,7 +24,8 @@ export function RoleExecutions({ call }: { call?: RoleExecutionCall }) {
           if (live) setCatalog(value)
         })
         .catch((cause) => {
-          if (live) setError(cause instanceof Error ? cause.message : '角色绑定暂时无法读取')
+          if (live)
+            setError(cause instanceof Error ? cause.message : tRef.current('roleReadFailed'))
         })
     return () => {
       live = false
@@ -31,20 +41,16 @@ export function RoleExecutions({ call }: { call?: RoleExecutionCall }) {
     try {
       setCatalog(await call('save', { bindings }))
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '角色绑定未保存')
+      setError(cause instanceof Error ? cause.message : t('roleSaveFailed'))
     } finally {
       setBusy(false)
     }
   }
   return (
     <div className={css.detailsBody} data-opl-role-executions>
-      <p className={css.muted}>
-        为官方角色预设选择执行组合。绑定用于新对话与新团队成员，已有会话保持原组合。OPL
-        智能体预设来自本机已安装且允许启动的 Package。这里选择新会话的交互组合，正式 StageRun
-        的执行器仍由 Package 合同决定。
-      </p>
-      {!call && <p role="status">启用 OPL 执行组合与跨引擎协作后，可配置角色绑定。</p>}
-      {call && !catalog && !error && <p role="status">正在读取官方角色与执行组合…</p>}
+      <p className={css.muted}>{t('roleDescription')}</p>
+      {!call && <p role="status">{t('roleEnableRequired')}</p>}
+      {call && !catalog && !error && <p role="status">{t('roleLoading')}</p>}
       {catalog?.presets.map((preset) => {
         const selected = catalog.bindings[preset.id] ?? ''
         const missing = selected && !catalog.combinations.some((item) => item.id === selected)
@@ -57,16 +63,16 @@ export function RoleExecutions({ call }: { call?: RoleExecutionCall }) {
               disabled={busy || !!preset.broken}
               onChange={(event) => void save(preset.id, event.target.value)}
             >
-              <option value="">跟随会话设置</option>
+              <option value="">{t('roleFollowSession')}</option>
               {missing && (
                 <option value={selected} disabled>
-                  原组合已不可用
+                  {t('rolePreviousUnavailable')}
                 </option>
               )}
               {catalog.combinations.map((item) => (
                 <option key={item.id} value={item.id} disabled={!item.available}>
                   {item.name}
-                  {item.available ? '' : '（不可用）'}
+                  {item.available ? '' : t('roleUnavailableSuffix')}
                 </option>
               ))}
             </select>

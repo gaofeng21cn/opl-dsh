@@ -11,6 +11,7 @@ import {
   recommendationChoiceKey,
 } from './combination-choices.ts'
 import type { CombinationSelection } from './combination-choices.ts'
+import { defaultExecutionT, type ExecutionSettingsT } from './execution-settings-locales.ts'
 import { safeFailureMessage } from './proxy-draft.ts'
 import type {
   ExecutionCatalog,
@@ -30,6 +31,7 @@ export type SaveResult =
 export function useExecutionCatalog(
   call: RemoteCallInput<TypertRemoteNamespace<'oplExecution'>>,
   refreshKey?: unknown,
+  t: ExecutionSettingsT = defaultExecutionT,
 ) {
   const [catalog, setCatalog] = useState<ExecutionCatalog>()
   const [availability, setAvailability] = useState<HarnessCatalog['combinations']>([])
@@ -44,7 +46,9 @@ export function useExecutionCatalog(
   const [editing, setEditing] = useState<string>()
   const running = useRef(false),
     mounted = useRef(true),
-    refreshAfterSave = useRef(false)
+    refreshAfterSave = useRef(false),
+    tRef = useRef(t)
+  tRef.current = t
   useEffect(() => {
     mounted.current = true
     if (running.current) {
@@ -71,7 +75,7 @@ export function useExecutionCatalog(
           return
         } catch {
           if (attempt === 2) {
-            if (!cancelled) setNotice('无法读取组合目录')
+            if (!cancelled) setNotice(tRef.current('catalogLoadFailed'))
           } else {
             await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)))
           }
@@ -85,7 +89,7 @@ export function useExecutionCatalog(
   }, [call, loadRevision, refreshKey])
   const persist = async (operation: () => Promise<ExecutionCatalog>): Promise<SaveResult> => {
     if (running.current) {
-      if (mounted.current) setNotice('另一个配置正在保存，请稍后再试。')
+      if (mounted.current) setNotice(tRef.current('anotherSaveInFlight'))
       return { status: 'blocked' }
     }
     running.current = true
@@ -98,14 +102,14 @@ export function useExecutionCatalog(
         const combinations = await call('combinations', { includeDisabled: true })
         if (mounted.current) {
           setAvailability(combinations)
-          setNotice('已保存，新的选择使用此配置。')
+          setNotice(tRef.current('catalogSavedNotice'))
         }
       } catch {
-        if (mounted.current) setNotice('配置已保存；可用状态未刷新，请重新打开此页。')
+        if (mounted.current) setNotice(tRef.current('catalogSavedPartialNotice'))
       }
       return { status: 'saved', catalog: saved }
     } catch (cause) {
-      const message = safeFailureMessage(cause)
+      const message = safeFailureMessage(cause, tRef.current('saveFailed'))
       if (mounted.current) setNotice(message)
       return { status: 'failed', message }
     } finally {
@@ -154,7 +158,7 @@ export function useExecutionCatalog(
           modelRefKey(item.modelRef) === draft.model && item.harnessRefs.includes(draft.harness),
       )
     ) {
-      setNotice('请先选择模型及已适配的 Harness。')
+      setNotice(tRef.current('catalogSelectPairingFirst'))
       return
     }
     const chosen = { modelRef: model.ref, harnessRef: draft.harness }
@@ -163,7 +167,7 @@ export function useExecutionCatalog(
       ? draft.permissionPolicy
       : defaultPermissionPolicy(policies)
     if (!permissionPolicy) {
-      setNotice('该 Harness 当前没有可用的权限配置。')
+      setNotice(tRef.current('catalogNoPermissionPolicies'))
       return
     }
     if (
@@ -171,7 +175,7 @@ export function useExecutionCatalog(
         (item) => pairingKey(item) === pairingKey(chosen),
       )
     ) {
-      setNotice('该组合已在选择列表中，请在上方勾选。')
+      setNotice(tRef.current('catalogAlreadyInList'))
       return
     }
     const makeDefault =

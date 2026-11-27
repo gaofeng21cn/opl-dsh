@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CooperationSettings } from '../../contracts/types.ts'
 import type { ExecutionCall } from '../../shared/client/remote-call.ts'
-export function useCooperationSettings(call?: ExecutionCall) {
+import { defaultCollaborationT, type CollaborationT } from './collaboration-locales.ts'
+
+export function useCooperationSettings(
+  call?: ExecutionCall,
+  t: CollaborationT = defaultCollaborationT,
+) {
   const [value, setValue] = useState<CooperationSettings>(),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false)
   const running = useRef(false)
+  const tRef = useRef(t)
+  tRef.current = t
   useEffect(() => {
     let live = true
     if (call)
@@ -17,7 +24,7 @@ export function useCooperationSettings(call?: ExecutionCall) {
           }
         })
         .catch(() => {
-          if (live) setError('项目协作设置暂时无法读取')
+          if (live) setError(tRef.current('cooperationReadFailed'))
         })
     return () => {
       live = false
@@ -31,7 +38,7 @@ export function useCooperationSettings(call?: ExecutionCall) {
     try {
       setValue(await call('save-cooperation-settings', next))
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '协作设置未保存，请重试')
+      setError(cause instanceof Error ? cause.message : tRef.current('cooperationSaveFailed'))
     } finally {
       running.current = false
       setBusy(false)

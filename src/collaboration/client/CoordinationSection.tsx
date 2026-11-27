@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { ExecutableBrowser } from '../../shared/client/ExecutableBrowser.tsx'
 import { Button, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from '../../shared/client/SettingsSection.module.css'
@@ -6,6 +6,7 @@ import type { CoordinationStatus as Status } from '../../contracts/types.ts'
 import { useCooperationSettings } from './use-cooperation-settings.ts'
 import { RoleExecutions } from './RoleExecutions.tsx'
 import { CoordinatorHooks, useCoordinatorHooks } from './CoordinatorHooks.tsx'
+import { defaultCollaborationT, type CollaborationT } from './collaboration-locales.ts'
 import type { RoleExecutionCall } from '../../shared/client/remote-call.ts'
 import type { CoordinationCall, ExecutionCall } from '../../shared/client/remote-call.ts'
 export function CoordinationSection({
@@ -13,11 +14,13 @@ export function CoordinationSection({
   executionCall,
   roleCall,
   embedded = false,
+  t = defaultCollaborationT,
 }: {
   call: CoordinationCall
   executionCall?: ExecutionCall
   roleCall?: RoleExecutionCall
   embedded?: boolean
+  t?: CollaborationT
 }) {
   const {
     cooperation,
@@ -26,13 +29,15 @@ export function CoordinationSection({
     loading: cooperationLoading,
     save: saveCooperation,
     reload: reloadCooperation,
-  } = useCooperationSettings(executionCall)
-  const hooks = useCoordinatorHooks(call)
+  } = useCooperationSettings(executionCall, t)
+  const hooks = useCoordinatorHooks(call, t)
   const executableId = useId()
   const [status, setStatus] = useState<Status>(),
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState('')
   const [notificationConfigured, setNotificationConfigured] = useState<boolean>()
+  const tRef = useRef(t)
+  tRef.current = t
   const load = async () => {
     const saved = await call('coordination-status')
     setStatus(saved)
@@ -41,9 +46,9 @@ export function CoordinationSection({
     )
   }
   useEffect(() => {
-    void load().catch(() => setNotice('无法读取外部接入的安装信息。'))
+    void load().catch(() => setNotice(tRef.current('readStatusFailed')))
   }, [call])
-  const act = async (operation: () => Promise<unknown>, message = '已保存。') => {
+  const act = async (operation: () => Promise<unknown>, message = tRef.current('actionSaved')) => {
     setBusy(true)
     setNotice('')
     try {
@@ -51,7 +56,7 @@ export function CoordinationSection({
       await load()
       setNotice(message)
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : '操作未完成，请检查安装状态。')
+      setNotice(error instanceof Error ? error.message : tRef.current('actionFailed'))
     } finally {
       setBusy(false)
     }
@@ -62,26 +67,24 @@ export function CoordinationSection({
       data-opl-panel="collaboration"
       aria-busy={busy || cooperationBusy || cooperationLoading || (!status && !notice)}
     >
-      {embedded ? null : <h2 className={css.title}>协作与自动化</h2>}
+      {embedded ? null : <h2 className={css.title}>{t('title')}</h2>}
       <section className={css.collaborationGroup}>
-        <h3 className={css.name}>DSH 内协作</h3>
-        {!executionCall && (
-          <p className={css.muted}>项目执行服务暂不可用，外部接入设置仍可管理。</p>
-        )}
-        {cooperationLoading && <p role="status">正在读取项目协作设置…</p>}
+        <h3 className={css.name}>{t('inAppHeading')}</h3>
+        {!executionCall && <p className={css.muted}>{t('executionUnavailable')}</p>}
+        {cooperationLoading && <p role="status">{t('loadingCooperation')}</p>}
         {cooperation && (
           <>
             <div className={css.row}>
-              <span>交付后自动唤回发起对话验收</span>
+              <span>{t('autoReviewTitle')}</span>
               <Switch
-                label="交付后自动验收"
+                label={t('autoReviewSwitch')}
                 checked={cooperation.autoReview}
                 disabled={cooperationBusy}
                 onChange={(autoReview) => void saveCooperation({ ...cooperation, autoReview })}
               />
             </div>
             <label className={css.field}>
-              每个任务最多自动要求修改次数
+              {t('maxRevisionsLabel')}
               <select
                 className={css.input}
                 disabled={cooperationBusy}
@@ -98,14 +101,14 @@ export function CoordinationSection({
           </>
         )}
         <details className={css.details}>
-          <summary>角色默认组合</summary>
-          <RoleExecutions {...(roleCall ? { call: roleCall } : {})} />
+          <summary>{t('roleDefaultsSummary')}</summary>
+          <RoleExecutions {...(roleCall ? { call: roleCall } : {})} t={t} />
         </details>
         {cooperationError && <p role="alert">{cooperationError}</p>}
       </section>
       <section className={css.collaborationGroup}>
         <div className={css.row}>
-          <h3 className={css.name}>Codex 任务委派</h3>
+          <h3 className={css.name}>{t('delegationHeading')}</h3>
           <Button
             variant="outline"
             disabled={busy || cooperationBusy || !status}
@@ -119,18 +122,16 @@ export function CoordinationSection({
                 await hooks.run('status')
                 setNotice(result)
               } catch (error) {
-                setNotice(error instanceof Error ? error.message : '配置未完成，请重试。')
+                setNotice(error instanceof Error ? error.message : t('setupFailed'))
               } finally {
                 setBusy(false)
               }
             }}
           >
-            一键配置
+            {t('oneClickSetup')}
           </Button>
         </div>
-        <p className={css.muted}>
-          配置任务委派、完成通知和项目续作，并启动用于异常恢复的 Codex 本地后台服务。
-        </p>
+        <p className={css.muted}>{t('delegationIntro')}</p>
         {notice && (
           <p className={css.notice} role="status">
             {notice}
@@ -139,9 +140,9 @@ export function CoordinationSection({
         <div className={css.detailsBody}>
           {cooperation && (
             <div className={css.row}>
-              <span>允许外部 Codex Skill 连接</span>
+              <span>{t('allowExternalCodexTitle')}</span>
               <Switch
-                label="允许外部 Codex 接入"
+                label={t('allowExternalCodexSwitch')}
                 checked={cooperation.externalCodex}
                 disabled={cooperationBusy}
                 onChange={(externalCodex) =>
@@ -152,9 +153,13 @@ export function CoordinationSection({
           )}
           <details className={css.details}>
             <summary>
-              协作 Skill
+              {t('skillSummary')}
               <span className={css.coordinationSummary}>
-                {!status ? '状态未知' : status.installed ? '已安装' : '未安装'}
+                {!status
+                  ? t('statusUnknown')
+                  : status.installed
+                    ? t('statusInstalled')
+                    : t('statusNotInstalled')}
               </span>
             </summary>
             <div className={css.detailsBody}>
@@ -165,12 +170,12 @@ export function CoordinationSection({
                   void act(() => call('skill-install'))
                 }}
               >
-                {status?.installed ? '更新 / 修复 Skill' : '安装 Skill'}
+                {status?.installed ? t('updateRepairSkill') : t('installSkill')}
               </Button>
               <div className={css.row}>
-                <span>Codex 派发任务时自动启动 DSH</span>
+                <span>{t('autoStartDshLabel')}</span>
                 <Switch
-                  label="Codex 派发任务时自动启动 DSH"
+                  label={t('autoStartDshLabel')}
                   checked={status?.autoStart ?? true}
                   disabled={busy || !status}
                   onChange={(value) => {
@@ -182,24 +187,21 @@ export function CoordinationSection({
           </details>
           <details className={css.details}>
             <summary>
-              任务完成通知
+              {t('notificationSummary')}
               <span className={css.coordinationSummary}>
                 {notificationConfigured === undefined
-                  ? '状态未知'
+                  ? t('statusUnknown')
                   : notificationConfigured
-                    ? '已配置队列桥'
-                    : '未开启，需主动查询结果'}
+                    ? t('notifyConfigured')
+                    : t('notifyUnconfigured')}
               </span>
             </summary>
             <div className={css.detailsBody}>
-              <p className={css.muted}>
-                一键配置会自动查找支持任务完成通知的 Codex。使用自定义安装位置或 WSL
-                时，也可以在这里手动指定。
-              </p>
+              <p className={css.muted}>{t('notifyIntro')}</p>
               {status && (
                 <div className={css.form}>
                   <label className={css.field}>
-                    <span>回调方式</span>
+                    <span>{t('callbackTransportLabel')}</span>
                     <select
                       className={css.input}
                       disabled={busy}
@@ -212,14 +214,14 @@ export function CoordinationSection({
                         })
                       }
                     >
-                      <option value="unconnected">不主动唤醒</option>
-                      <option value="codex-queue">Codex 队列桥</option>
+                      <option value="unconnected">{t('transportUnconnected')}</option>
+                      <option value="codex-queue">{t('transportCodexQueue')}</option>
                     </select>
                   </label>
                   {status.wakeTransport === 'codex-queue' && (
                     <>
                       <label className={css.field}>
-                        <span>运行环境</span>
+                        <span>{t('executionEnvLabel')}</span>
                         <select
                           className={css.input}
                           disabled={busy}
@@ -231,12 +233,12 @@ export function CoordinationSection({
                             })
                           }
                         >
-                          <option value="native">本机</option>
-                          <option value="wsl">WSL</option>
+                          <option value="native">{t('envNative')}</option>
+                          <option value="wsl">{t('envWsl')}</option>
                         </select>
                       </label>
                       <div className={css.field}>
-                        <label htmlFor={executableId}>队列桥可执行文件</label>
+                        <label htmlFor={executableId}>{t('bridgeExecutableLabel')}</label>
                         <div className={css.pathInputRow}>
                           <input
                             id={executableId}
@@ -250,6 +252,7 @@ export function CoordinationSection({
                           {status.wakeExecution !== 'wsl' && (
                             <ExecutableBrowser
                               disabled={busy}
+                              label={t('browseExecutable')}
                               onPick={(path) => setStatus({ ...status, wakeExecutable: path })}
                             />
                           )}
@@ -257,7 +260,7 @@ export function CoordinationSection({
                       </div>
                       {status.wakeExecution === 'wsl' && (
                         <label className={css.field}>
-                          <span>WSL 发行版</span>
+                          <span>{t('wslDistroLabel')}</span>
                           <input
                             disabled={busy}
                             className={css.input}
@@ -272,13 +275,10 @@ export function CoordinationSection({
                     variant="outline"
                     disabled={busy || !status}
                     onClick={() => {
-                      void act(
-                        () => call('wake-settings', status),
-                        '已保存，重新打开 OPL DSH 后生效。',
-                      )
+                      void act(() => call('wake-settings', status), t('notifySavedNotice'))
                     }}
                   >
-                    保存通知设置
+                    {t('saveNotifyButton')}
                   </Button>
                 </div>
               )}
@@ -286,9 +286,10 @@ export function CoordinationSection({
           </details>
           <details className={css.details}>
             <summary>
-              项目续作<span className={css.coordinationSummary}>{hooks.summary}</span>
+              {t('resumeSummary')}
+              <span className={css.coordinationSummary}>{hooks.summary}</span>
             </summary>
-            <CoordinatorHooks {...hooks} />
+            <CoordinatorHooks {...hooks} t={t} />
           </details>
         </div>
       </section>

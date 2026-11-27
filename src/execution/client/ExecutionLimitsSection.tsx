@@ -1,17 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from '../../shared/client/SettingsSection.module.css'
 import type { ExecutionCall as Call } from '../../shared/client/remote-call.ts'
+import { defaultExecutionT, type ExecutionSettingsT } from './execution-settings-locales.ts'
 
 type Limits = { enabled: boolean; firstProgressMs: number; idleProgressMs: number }
 const defaults: Limits = { enabled: false, firstProgressMs: 90_000, idleProgressMs: 90_000 }
 const seconds = (value: number) => String(Math.max(1, Math.round(value / 1000)))
 
 /** Persisted execution wait controls for turns started after saving. */
-export function ExecutionLimitsSection({ call }: { call: Call }) {
+export function ExecutionLimitsSection({
+  call,
+  t = defaultExecutionT,
+}: {
+  call: Call
+  t?: ExecutionSettingsT
+}) {
   const [draft, setDraft] = useState<Limits>(defaults)
   const [busy, setBusy] = useState(true)
   const [message, setMessage] = useState('')
+  const tRef = useRef(t)
+  tRef.current = t
   useEffect(() => {
     let alive = true
     void call('execution-limits')
@@ -23,7 +32,7 @@ export function ExecutionLimitsSection({ call }: { call: Call }) {
       })
       .catch(() => {
         if (alive) {
-          setMessage('无法读取等待设置')
+          setMessage(tRef.current('limitsReadFailed'))
           setBusy(false)
         }
       })
@@ -41,9 +50,9 @@ export function ExecutionLimitsSection({ call }: { call: Call }) {
     setMessage('')
     try {
       setDraft(await call('save-execution-limits', draft))
-      setMessage('已保存，后续执行轮次生效；正在运行的轮次不变')
+      setMessage(t('limitsSavedNotice'))
     } catch {
-      setMessage('保存失败，设置未改变')
+      setMessage(t('limitsSaveFailed'))
     } finally {
       setBusy(false)
     }
@@ -51,24 +60,22 @@ export function ExecutionLimitsSection({ call }: { call: Call }) {
   const reset = () => setDraft(defaults)
   return (
     <details className={css.details} data-opl-panel="execution-limits">
-      <summary>等待与超时</summary>
+      <summary>{t('limitsSummary')}</summary>
       <div className={css.detailsBody}>
-        <p className={css.muted}>
-          关闭时遵循官方或外部执行引擎的等待策略。开启只影响新开始的执行轮次；明确的上游错误会立即结束。
-        </p>
+        <p className={css.muted}>{t('limitsIntro')}</p>
         <div className={css.preferenceRow}>
           <div className={css.preferenceText}>
-            <div className={css.preferenceTitle}>启用 OPL 进展超时</div>
+            <div className={css.preferenceTitle}>{t('limitsEnableLabel')}</div>
           </div>
           <Switch
-            label="启用 OPL 进展超时"
+            label={t('limitsEnableLabel')}
             checked={draft.enabled}
             disabled={busy}
             onChange={(enabled) => setDraft((current) => ({ ...current, enabled }))}
           />
         </div>
         <label className={css.field}>
-          首次进展等待（秒）
+          {t('limitsFirstProgressLabel')}
           <input
             className={css.input}
             type="number"
@@ -79,7 +86,7 @@ export function ExecutionLimitsSection({ call }: { call: Call }) {
           />
         </label>
         <label className={css.field}>
-          连续无进展等待（秒）
+          {t('limitsIdleProgressLabel')}
           <input
             className={css.input}
             type="number"
@@ -96,10 +103,10 @@ export function ExecutionLimitsSection({ call }: { call: Call }) {
         )}
         <div className={css.actions}>
           <Button disabled={busy} onClick={() => void save()}>
-            保存等待设置
+            {t('limitsSaveButton')}
           </Button>
           <Button variant="outline" disabled={busy} onClick={reset}>
-            恢复默认值
+            {t('limitsResetButton')}
           </Button>
         </div>
       </div>

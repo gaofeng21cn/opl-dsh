@@ -42,6 +42,11 @@ import {
   OfficialCombinationPane,
 } from './CombinationSelect.tsx'
 import { ExecutionSettings } from './ExecutionSettings.tsx'
+import {
+  EXECUTION_SETTINGS_NAMESPACE,
+  executionSettingsEn,
+  executionSettingsZh,
+} from './execution-settings-locales.ts'
 import { HarnessToolRow } from './HarnessToolRow.tsx'
 import { LiveTranscriptRow } from './LiveTranscriptRow.tsx'
 import { liveTranscriptDefinition, LIVE_TRANSCRIPT_KIND } from './live-transcript.ts'
@@ -157,6 +162,12 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
       en: projectlessComposerEn,
     }),
   )
+  ctx.effect(() =>
+    ctx.locale.register(EXECUTION_SETTINGS_NAMESPACE, {
+      zh: executionSettingsZh,
+      en: executionSettingsEn,
+    }),
+  )
   const composerText = ctx.locale.bind(PROJECTLESS_COMPOSER_NAMESPACE)
   const pendingCombination = new PendingCombination()
   const executionRemote = remoteCall(ctx.remote.oplExecution)
@@ -204,6 +215,7 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
         PermissionMemoryPreference,
       ),
     )
+    const executionT = ctx.locale.bind(EXECUTION_SETTINGS_NAMESPACE)
     ctx.slots.inject('settings.section', () =>
       ctx.slots.register(
         {
@@ -214,6 +226,7 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
           inject: () => ({
             call,
             minimax: { form: executionForm, t: minimaxT },
+            t: executionT,
             ...(config.renderCollaboration ? { collaboration: config.renderCollaboration() } : {}),
           }),
         },

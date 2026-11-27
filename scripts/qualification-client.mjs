@@ -593,15 +593,15 @@ export async function verifyDesktopClient(
         `Array.from(document.querySelectorAll('[data-opl-panel="catalog"] [data-opl-model-availability]')).map(node=>({kind:node.dataset.oplModelAvailability,label:node.textContent.trim(),reason:node.title}))`,
       )
       const availabilityLabels = {
-        'catalog-missing': '目录已移除',
-        disabled: '未启用',
-        unconfirmed: '状态未确认',
-        unavailable: '不可用',
+        'catalog-missing': ['目录已移除', 'Removed from catalog'],
+        disabled: ['未启用', 'Disabled'],
+        unconfirmed: ['状态未确认', 'Unconfirmed'],
+        unavailable: ['不可用', 'Unavailable'],
       }
       if (
         !result.modelAvailability.length ||
         result.modelAvailability.some(
-          (item) => item.label !== availabilityLabels[item.kind] || !item.reason,
+          (item) => !availabilityLabels[item.kind]?.includes(item.label) || !item.reason,
         )
       )
         throw new Error('模型可用状态未使用统一分类或缺少悬停原因')
@@ -616,11 +616,11 @@ export async function verifyDesktopClient(
       if (!selectedCombination) throw new Error('隔离目录缺少可核验启停的已保存组合')
       const choice = `Array.from(document.querySelectorAll('[data-opl-recommendation-item]')).find(x=>x.dataset.oplRecommendationItem===${JSON.stringify(selectedCombination.key)})`
       const row = `Array.from(document.querySelectorAll('[data-opl-combination]')).find(x=>x.dataset.oplCombination===${JSON.stringify(selectedCombination.id)})`
-      const saveChoices = `Array.from(document.querySelector('[data-opl-panel="recommended-combinations"]').querySelectorAll('button')).find(x=>x.textContent.startsWith('保存选择'))`
+      const saveChoices = `Array.from(document.querySelector('[data-opl-panel="recommended-combinations"]').querySelectorAll('button')).find(x=>x.textContent.startsWith('保存选择')||x.textContent.startsWith('Save selection'))`
       if (
         await pipe.evaluate(
           session,
-          `Boolean(${row}?.querySelector('[role="switch"][aria-label^="启用 "]'))`,
+          `Boolean(${row}?.querySelector('[role="switch"][aria-label^="启用 "],[role="switch"][aria-label^="Enable "]'))`,
         )
       )
         throw new Error('已启用列表仍提供重复启停开关')
@@ -648,13 +648,13 @@ export async function verifyDesktopClient(
       )
       const unavailableId = await pipe.evaluate(
         session,
-        `document.querySelector('[data-opl-combination] button[aria-label^="移除 "]')?.closest('[data-opl-combination]').dataset.oplCombination`,
+        `document.querySelector('[data-opl-combination] button[aria-label^="移除 "],[data-opl-combination] button[aria-label^="Remove "]')?.closest('[data-opl-combination]').dataset.oplCombination`,
       )
       if (!unavailableId) throw new Error('隔离目录缺少可移除的不可用组合')
       const unavailableRow = `Array.from(document.querySelectorAll('[data-opl-combination]')).find(x=>x.dataset.oplCombination===${JSON.stringify(unavailableId)})`
       await pipe.evaluate(
         session,
-        `${unavailableRow}.querySelector('button[aria-label^="移除 "]').click()`,
+        `${unavailableRow}.querySelector('button[aria-label^="移除 "],button[aria-label^="Remove "]').click()`,
       )
       await waitFor(
         `!(${unavailableRow}) && !${saveChoices}.disabled`,
@@ -662,9 +662,12 @@ export async function verifyDesktopClient(
       )
       await pipe.evaluate(
         session,
-        `Array.from(document.querySelector('[data-opl-panel="recommended-combinations"]').querySelectorAll('button')).find(x=>x.textContent==='取消全选').click()`,
+        `Array.from(document.querySelector('[data-opl-panel="recommended-combinations"]').querySelectorAll('button')).find(x=>x.textContent==='取消全选'||x.textContent==='Clear all').click()`,
       )
-      await waitFor(`${saveChoices}.textContent==='保存选择（0）'`, '取消全选的草稿未更新')
+      await waitFor(
+        `${saveChoices}.textContent==='保存选择（0）'||${saveChoices}.textContent==='Save selection (0)'`,
+        '取消全选的草稿未更新',
+      )
       await pipe.evaluate(session, `${saveChoices}.click()`)
       await waitFor(
         `!document.querySelector('[data-opl-combination]') && !${saveChoices}.disabled`,
@@ -687,7 +690,7 @@ export async function verifyDesktopClient(
         `document.querySelector('[data-opl-panel="recommended-combinations"]').open=true; for(const input of document.querySelectorAll('[data-opl-recommendation-item]')) if(${JSON.stringify(baselineChoices)}.includes(input.dataset.oplRecommendationItem)&&!input.checked)input.click()`,
       )
       await waitFor(
-        `${saveChoices}.textContent==='保存选择（${baselineChoices.length}）'`,
+        `${saveChoices}.textContent==='保存选择（${baselineChoices.length}）'||${saveChoices}.textContent==='Save selection (${baselineChoices.length})'`,
         '隔离验收未恢复原勾选草稿',
       )
       await pipe.evaluate(session, `${saveChoices}.click()`)
@@ -701,11 +704,14 @@ export async function verifyDesktopClient(
       )
       const compactRows = await pipe.evaluate(
         session,
-        `Array.from(document.querySelectorAll('[data-opl-combination] > summary')).map(x=>({id:x.parentElement.dataset.oplCombination,height:x.getBoundingClientRect().height,text:x.textContent,clipped:x.scrollWidth>x.clientWidth,defaultChoice:x.parentElement.querySelector('[role=switch][aria-label="作为此模型的默认执行组合"]')?.getAttribute('aria-checked')??null}))`,
+        `Array.from(document.querySelectorAll('[data-opl-combination] > summary')).map(x=>({id:x.parentElement.dataset.oplCombination,height:x.getBoundingClientRect().height,text:x.textContent,clipped:x.scrollWidth>x.clientWidth,defaultChoice:x.parentElement.querySelector('[role=switch][aria-label="作为此模型的默认执行组合"],[role=switch][aria-label="Set as default combination for this model"]')?.getAttribute('aria-checked')??null}))`,
       )
       if (
         !compactRows.length ||
-        compactRows.some((x) => x.height > 42 || x.text.includes('可执行') || x.clipped)
+        compactRows.some(
+          (x) =>
+            x.height > 42 || x.text.includes('可执行') || x.text.includes('Runnable') || x.clipped,
+        )
       )
         throw new Error('组合摘要未保持紧凑单行或仍重复显示可执行：' + JSON.stringify(compactRows))
       result.compactCombinationRows = compactRows
@@ -767,7 +773,7 @@ export async function verifyDesktopClient(
       )
       result.expandedPathSpacing = await pipe.evaluate(
         session,
-        `(() => {const row=document.querySelector('[data-opl-harness-row="codex"]');row.open=true;const detail=Array.from(row.querySelectorAll('details')).find(x=>x.querySelector(':scope > summary')?.textContent==='可执行文件路径');detail.open=true;const summary=detail.querySelector(':scope > summary');const input=detail.querySelector('input');const gap=input.getBoundingClientRect().top-summary.getBoundingClientRect().bottom;detail.open=false;row.open=false;return gap})()`,
+        `(() => {const row=document.querySelector('[data-opl-harness-row="codex"]');row.open=true;const detail=Array.from(row.querySelectorAll('details')).find(x=>['可执行文件路径','Executable path'].includes(x.querySelector(':scope > summary')?.textContent));detail.open=true;const summary=detail.querySelector(':scope > summary');const input=detail.querySelector('input');const gap=input.getBoundingClientRect().top-summary.getBoundingClientRect().bottom;detail.open=false;row.open=false;return gap})()`,
       )
       if (result.expandedPathSpacing < 11 || result.expandedPathSpacing > 13)
         throw new Error('展开的路径输入框未保留12px间距')
@@ -798,7 +804,7 @@ export async function verifyDesktopClient(
         `(() => {const input=document.querySelector('[data-opl-proxy-url="minimax-code"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'http://127.0.0.1:7897'); input.dispatchEvent(new Event('input',{bubbles:true})); input.dispatchEvent(new Event('change',{bubbles:true})); document.querySelector('[data-opl-proxy-save="minimax-code"]').click()})()`,
       )
       await waitFor(
-        `(() => {const status=document.querySelector('[data-opl-proxy-outcome="minimax-code"]'); return Boolean(status && status.getAttribute('role')==='status' && status.textContent.includes('已保存'))})()`,
+        `(() => {const status=document.querySelector('[data-opl-proxy-outcome="minimax-code"]'); return Boolean(status && status.getAttribute('role')==='status' && (status.textContent.includes('已保存')||status.textContent.includes('Saved')))})()`,
         '真实代理保存未成功',
       )
       result.harnessProxySaved = true

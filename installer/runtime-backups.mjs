@@ -80,9 +80,20 @@ function defaultListProcessCommands() {
     .filter(Boolean)
 }
 
+function normalizePathForCompare(target) {
+  if (!target) return target
+  return process.platform === 'win32' ? target.replaceAll('\\', '/').toLowerCase() : target
+}
+
 function isSameOrNestedPath(left, right) {
-  if (!left || !right) return false
-  return left === right || left.startsWith(right + '/') || right.startsWith(left + '/')
+  const normalizedLeft = normalizePathForCompare(left)
+  const normalizedRight = normalizePathForCompare(right)
+  if (!normalizedLeft || !normalizedRight) return false
+  return (
+    normalizedLeft === normalizedRight ||
+    normalizedLeft.startsWith(normalizedRight + '/') ||
+    normalizedRight.startsWith(normalizedLeft + '/')
+  )
 }
 
 function verifyVerifiedInstallation(resolvedRoot, resolvedApp) {
@@ -111,30 +122,48 @@ function verifyVerifiedInstallation(resolvedRoot, resolvedApp) {
   const appReal = safeRealpath(resolvedApp)
   const receiptAppReal = safeRealpath(receiptAppPath)
   const appMatches =
-    receiptAppPath === resolvedApp || (appReal !== undefined && appReal === receiptAppReal)
+    normalizePathForCompare(receiptAppPath) === normalizePathForCompare(resolvedApp) ||
+    (appReal !== undefined &&
+      receiptAppReal !== undefined &&
+      normalizePathForCompare(appReal) === normalizePathForCompare(receiptAppReal))
   if (!appMatches) return null
 
   const appStat = lstatSync(resolvedApp, { throwIfNoEntry: false })
-  const executableStat = statSync(join(resolvedApp, 'Contents/MacOS/DeepSeek Harness'), {
+  if (!appStat || !appStat.isDirectory() || appStat.isSymbolicLink()) {
+    return null
+  }
+
+  const macExecutable = statSync(join(resolvedApp, 'Contents/MacOS/DeepSeek Harness'), {
     throwIfNoEntry: false,
   })
-  const asarStat = statSync(join(resolvedApp, 'Contents/Resources/app.asar'), {
+  const macAsar = statSync(join(resolvedApp, 'Contents/Resources/app.asar'), {
     throwIfNoEntry: false,
   })
-  if (
-    !appStat ||
-    !appStat.isDirectory() ||
-    appStat.isSymbolicLink() ||
-    !executableStat?.isFile() ||
-    !asarStat
-  ) {
+  const winExecutable = statSync(join(resolvedApp, 'DeepSeek Harness.exe'), {
+    throwIfNoEntry: false,
+  })
+  const winAsar = statSync(join(resolvedApp, 'resources/app.asar'), {
+    throwIfNoEntry: false,
+  })
+  const validBundle =
+    (Boolean(macExecutable?.isFile()) && Boolean(macAsar)) ||
+    (Boolean(winExecutable?.isFile()) && Boolean(winAsar))
+  if (!validBundle) {
     return null
   }
 
   const activePaths = new Set(
     [resolvedApp, appReal, receiptAppPath, receiptAppReal].filter(Boolean),
   )
-  return { activePaths, officialVersion: receipt.officialVersion }
+  return {
+    activePaths,
+    officialVersion: receipt.officialVersion,
+    release: typeof receipt.release === 'string' && receipt.release ? receipt.release : undefined,
+    previousRelease:
+      typeof receipt.previousRelease === 'string' && receipt.previousRelease
+        ? receipt.previousRelease
+        : undefined,
+  }
 }
 
 function isRunningBundle(candidate, commands) {
@@ -328,6 +357,122 @@ export function reclaimOfficialArchives({
   return { kept, removed, failed }
 }
 
+const releaseHashPattern = /^[a-f0-9]{64}$/u
+
+function isRunningPath(candidate, commands) {
+  const prefixes = [candidate.path, candidate.realPath].filter(Boolean).map(normalizePathForCompare)
+  return commands.some((command) => {
+    const normalized = normalizePathForCompare(command)
+    return prefixes.some((base) => normalized.includes(base))
+  })
+}
+
+/**
+ * Prune obsolete unpacked enhancement release directories under `<root>/releases`
+ * after a verified installation, preserving current `release`, `previousRelease`,
+ * `preservePaths`, non-hash directories, symlinks, and any path still referenced by
+ * a running process.
+ */
+export function reclaimOldReleases({
+  root,
+  app,
+  preservePaths = [],
+  listProcessCommands = process.platform === 'win32' ? () => [] : defaultListProcessCommands,
+  removeEntry = (target) => rmSync(target, { recursive: true, force: true }),
+  onWarn = (message) => console.warn(message),
+} = {}) {
+  const empty = { kept: [], removed: [], skippedRunning: [], failed: [] }
+  if (typeof root !== 'string' || !root || typeof app !== 'string' || !app) {
+    return { ...empty, skipped: 'invalid-arguments' }
+  }
+  const resolvedRoot = resolve(root)
+  const resolvedApp = resolve(app)
+
+  const rootStat = lstatSync(resolvedRoot, { throwIfNoEntry: false })
+  if (!rootStat || !rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    return { ...empty, skipped: 'invalid-root' }
+  }
+
+  const releasesDir = join(resolvedRoot, 'releases')
+  const releasesStat = lstatSync(releasesDir, { throwIfNoEntry: false })
+  if (!releasesStat) return { ...empty, skipped: 'missing-releases' }
+  if (!releasesStat.isDirectory() || releasesStat.isSymbolicLink()) {
+    return { ...empty, skipped: 'unsafe-releases' }
+  }
+
+  const verified = verifyVerifiedInstallation(resolvedRoot, resolvedApp)
+  if (!verified || !verified.release) return { ...empty, skipped: 'unverified-active-app' }
+
+  const activeReleasePath = resolve(verified.release)
+  const activeReleaseStat = lstatSync(activeReleasePath, { throwIfNoEntry: false })
+  if (
+    !activeReleaseStat ||
+    activeReleaseStat.isSymbolicLink() ||
+    !activeReleaseStat.isDirectory()
+  ) {
+    return { ...empty, skipped: 'missing-active-release' }
+  }
+
+  const protectedPaths = new Set()
+  for (const item of [verified.release, verified.previousRelease, ...preservePaths]) {
+    if (typeof item !== 'string' || !item) continue
+    const resolvedItem = resolve(item)
+    protectedPaths.add(resolvedItem)
+    const realItem = safeRealpath(resolvedItem)
+    if (realItem) protectedPaths.add(realItem)
+  }
+
+  const kept = []
+  const candidates = []
+  for (const entry of readdirSync(releasesDir, { withFileTypes: true })) {
+    if (entry.isSymbolicLink() || !entry.isDirectory()) continue
+    if (!releaseHashPattern.test(entry.name)) continue
+
+    const entryPath = join(releasesDir, entry.name)
+    const entryStat = lstatSync(entryPath, { throwIfNoEntry: false })
+    if (!entryStat || entryStat.isSymbolicLink() || !entryStat.isDirectory()) continue
+
+    const realPath = safeRealpath(entryPath)
+    const isProtected = [...protectedPaths].some(
+      (target) => isSameOrNestedPath(entryPath, target) || isSameOrNestedPath(realPath, target),
+    )
+    if (isProtected) {
+      kept.push(entryPath)
+      continue
+    }
+    candidates.push({ name: entry.name, path: entryPath, realPath })
+  }
+
+  if (candidates.length === 0) {
+    return { ...empty, kept }
+  }
+
+  const commands = listProcessCommands()
+  if (!Array.isArray(commands)) {
+    onWarn('无法确认运行中进程，已跳过历史增强版本清理。')
+    return { ...empty, kept, skipped: 'process-inspection-failed' }
+  }
+
+  const removed = []
+  const skippedRunning = []
+  const failed = []
+  for (const candidate of candidates) {
+    if (isRunningPath(candidate, commands)) {
+      skippedRunning.push(candidate.path)
+      continue
+    }
+    try {
+      removeEntry(candidate.path)
+      removed.push(candidate.path)
+    } catch (error) {
+      failed.push({ path: candidate.path, message: error.message })
+      onWarn(`无法清理历史增强版本目录 ${candidate.name}：${error.message}`)
+    }
+  }
+
+  return { kept, removed, skippedRunning, failed }
+}
+
 function isCliEntry() {
   const entry = process.argv[1]
   if (!entry) return false
@@ -349,6 +494,10 @@ if (isCliEntry()) {
     })
     if (archives.removed.length > 0) {
       console.log(`已清理 ${archives.removed.length} 份过期官方安装包缓存。`)
+    }
+    const oldReleases = reclaimOldReleases({ root, app })
+    if (oldReleases.removed.length > 0) {
+      console.log(`已清理 ${oldReleases.removed.length} 份历史增强版本目录，仅保留当前与上一版本。`)
     }
   }
 }

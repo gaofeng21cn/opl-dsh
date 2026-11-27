@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { HarnessInstallation } from '../../contracts/types.ts'
 import type { ExecutionCall } from '../../shared/client/remote-call.ts'
+import { defaultExecutionT, type ExecutionSettingsT } from './execution-settings-locales.ts'
 import {
   normalizeProxy,
   proxyFromDraft,
@@ -9,7 +10,7 @@ import {
   type ProxyOutcome,
 } from './proxy-draft.ts'
 /** Detection, maintenance polling and catalog edits share one busy/error owner. */
-export function useHarnessSettings(call: ExecutionCall) {
+export function useHarnessSettings(call: ExecutionCall, t: ExecutionSettingsT = defaultExecutionT) {
   const [draft, setDraft] = useState({ name: '', command: '', args: '' })
   const [items, setItems] = useState<HarnessInstallation[]>([])
   const [proxyDrafts, setProxyDrafts] = useState<Record<string, ProxyDraft>>({})
@@ -18,7 +19,9 @@ export function useHarnessSettings(call: ExecutionCall) {
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(true)
   const running = useRef(false),
-    mounted = useRef(true)
+    mounted = useRef(true),
+    tRef = useRef(t)
+  tRef.current = t
   useEffect(() => {
     mounted.current = true
     return () => {
@@ -38,7 +41,7 @@ export function useHarnessSettings(call: ExecutionCall) {
       await operation()
       return true
     } catch (cause) {
-      if (mounted.current) setError(safeFailureMessage(cause, '操作未完成，请重试'))
+      if (mounted.current) setError(safeFailureMessage(cause, tRef.current('actionFailedRetry')))
       return false
     } finally {
       running.current = false
@@ -97,7 +100,7 @@ export function useHarnessSettings(call: ExecutionCall) {
       })
       saved = true
       await refresh().catch(() => {
-        throw new Error('Harness 已登记；检测状态未刷新，请重新检测。')
+        throw new Error(tRef.current('customAcpRefreshWarning'))
       })
     })
     if (saved && mounted.current) setDraft({ name: '', command: '', args: '' })
@@ -124,13 +127,16 @@ export function useHarnessSettings(call: ExecutionCall) {
   }
   const saveProxy = async (id: string, override?: Partial<ProxyDraft>) => {
     if (running.current) {
-      setProxyOutcome({ id, ok: false, message: '另一个配置正在保存，请稍后再试。' })
+      setProxyOutcome({ id, ok: false, message: tRef.current('anotherSaveInFlight') })
       return false
     }
-    const parsed = proxyFromDraft({
-      ...(proxyDrafts[id] ?? normalizeProxy(undefined)),
-      ...override,
-    })
+    const parsed = proxyFromDraft(
+      {
+        ...(proxyDrafts[id] ?? normalizeProxy(undefined)),
+        ...override,
+      },
+      tRef.current,
+    )
     if (!parsed.ok) {
       setProxyErrors((current) => ({ ...current, [id]: parsed.error }))
       setProxyOutcome({ id, ok: false, message: parsed.error })
@@ -152,7 +158,7 @@ export function useHarnessSettings(call: ExecutionCall) {
           setProxyDrafts((current) => ({ ...current, [id]: normalizeProxy(stored?.proxy) }))
         }
       } catch (cause) {
-        message = safeFailureMessage(cause)
+        message = safeFailureMessage(cause, tRef.current('saveFailed'))
         throw new Error(message)
       }
     })
@@ -161,8 +167,8 @@ export function useHarnessSettings(call: ExecutionCall) {
       id,
       ok: saved,
       message: saved
-        ? '已保存。正在运行的任务保持当前连接，后续轮次重连时使用此设置。'
-        : `保存失败：${message}`,
+        ? tRef.current('proxySavedNotice')
+        : tRef.current('saveFailedWithReason', { message }),
     })
     return saved
   }

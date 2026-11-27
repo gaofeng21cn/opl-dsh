@@ -7,7 +7,11 @@ import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import { launchIndependent, windowsSuiteLauncher } from './windows-lifecycle.mjs'
-import { reclaimOfficialArchives, reclaimRuntimeBackups } from './runtime-backups.mjs'
+import {
+  reclaimOfficialArchives,
+  reclaimOldReleases,
+  reclaimRuntimeBackups,
+} from './runtime-backups.mjs'
 const [app, root, payload, ...flags] = process.argv.slice(2)
 // The official desktop resolves the same default when DSH_HOME is unset.
 const home = process.env.OPL_DSH_HOME?.trim() || join(homedir(), '.dsh')
@@ -273,6 +277,17 @@ try {
     console.log(`已清理 ${archives.removed.length} 份过期官方安装包缓存。`)
 } catch (error) {
   console.warn(`过期官方安装包缓存清理失败，已保留当前安装：${error.message}`)
+}
+try {
+  const oldReleases = reclaimOldReleases({
+    root,
+    app,
+    preservePaths: [payload, release, installation.previousRelease].filter(Boolean),
+  })
+  if (oldReleases.removed.length > 0)
+    console.log(`已清理 ${oldReleases.removed.length} 份历史增强版本目录，仅保留当前与上一版本。`)
+} catch (error) {
+  console.warn(`历史增强版本清理失败，已保留当前安装：${error.message}`)
 }
 console.log('官方桌面和 OPL 增强已安装。Codex Skill：opl-dsh-official。')
 if (!flags.includes('--no-launch')) {

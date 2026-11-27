@@ -13,22 +13,26 @@ import { isPrimaryHarness } from '../contracts/harness-groups.ts'
 import css from '../../shared/client/SettingsSection.module.css'
 import rowCss from './HarnessSettings.module.css'
 import type { ExecutionCall as Call } from '../../shared/client/remote-call.ts'
+import { defaultExecutionT, type ExecutionSettingsT } from './execution-settings-locales.ts'
 
-function statusOf(item: HarnessInstallation): { label: string; state: StateDotState } {
-  if (item.id === 'dsh') return { label: '内置', state: 'done' }
-  if (item.maintenance?.state === 'running') return { label: '处理中', state: 'ongoing' }
-  if (item.installed && item.runnable) return { label: '可用', state: 'done' }
+function statusOf(
+  item: HarnessInstallation,
+  t: ExecutionSettingsT,
+): { label: string; state: StateDotState } {
+  if (item.id === 'dsh') return { label: t('statusBuiltIn'), state: 'done' }
+  if (item.maintenance?.state === 'running') return { label: t('statusRunning'), state: 'ongoing' }
+  if (item.installed && item.runnable) return { label: t('statusRunnable'), state: 'done' }
   if (item.installed && item.verification === 'failed')
-    return { label: '需要处理', state: 'warning' }
-  if (item.installed) return { label: '仅检测到', state: 'warning' }
-  return { label: '未安装', state: 'idle' }
+    return { label: t('statusNeedsAttention'), state: 'warning' }
+  if (item.installed) return { label: t('statusDetectedOnly'), state: 'warning' }
+  return { label: t('statusNotInstalled'), state: 'idle' }
 }
 
-function discoveryLabel(item: HarnessInstallation): string {
-  if (item.detectedBy === 'configured-path') return '指定路径'
-  if (item.detectedBy === 'shell-path') return 'PATH'
-  if (item.detectedBy === 'known-path') return '常见安装目录'
-  if (item.detectedBy === 'app-bundle') return '官方应用'
+function discoveryLabel(item: HarnessInstallation, t: ExecutionSettingsT): string {
+  if (item.detectedBy === 'configured-path') return t('discoveryConfigured')
+  if (item.detectedBy === 'shell-path') return t('discoveryPath')
+  if (item.detectedBy === 'known-path') return t('discoveryKnown')
+  if (item.detectedBy === 'app-bundle') return t('discoveryAppBundle')
   return ''
 }
 
@@ -43,6 +47,7 @@ function HarnessRow({
   editProxy,
   saveProxy,
   resetProxy,
+  t,
 }: {
   item: HarnessInstallation
   busy: boolean
@@ -54,9 +59,10 @@ function HarnessRow({
   editProxy: Parameters<typeof HarnessProxySection>[0]['onEdit']
   saveProxy: Parameters<typeof HarnessProxySection>[0]['onSave']
   resetProxy: Parameters<typeof HarnessProxySection>[0]['onReset']
+  t: ExecutionSettingsT
 }) {
-  const status = statusOf(item)
-  const discovery = discoveryLabel(item)
+  const status = statusOf(item, t)
+  const discovery = discoveryLabel(item, t)
   return (
     <details className={rowCss.row} data-opl-harness-row={item.id}>
       <summary className={rowCss.summary}>
@@ -77,28 +83,30 @@ function HarnessRow({
         {item.installed && (
           <p className={css.muted}>
             {item.runnable
-              ? '可用于执行组合。'
+              ? t('runnableNote')
               : item.verification === 'failed'
-                ? '启动入口尚未通过验证，请检查运行依赖和路径。'
-                : '已检测到程序，但当前版本还不能用于执行组合。'}
+                ? t('verificationFailedNote')
+                : t('notRunnableNote')}
           </p>
         )}
         {item.path && (
           <p className={rowCss.path}>
-            启动入口：{item.path}
-            {discovery ? `（来自${discovery}）` : ''}
+            {t('launchEntry', { path: item.path })}
+            {discovery ? t('discoverySuffix', { source: discovery }) : ''}
           </p>
         )}
         {item.installedCandidate && (
           <p className={css.muted}>
-            另发现安装入口：{item.installedCandidate.path}
-            {item.installedCandidate.version ? `（${item.installedCandidate.version}）` : ''}
-            。确认下方路径后重新检测。
+            {t('candidateEntry', { path: item.installedCandidate.path })}
+            {item.installedCandidate.version
+              ? t('candidateVersion', { version: item.installedCandidate.version })
+              : ''}
+            {t('candidateVerifyHint')}
           </p>
         )}
         {item.discovery && (
           <details>
-            <summary>其他发现的启动入口（未验证）</summary>
+            <summary>{t('otherDiscoverySummary')}</summary>
             {item.discovery.otherPaths.length > 0 && (
               <ul>
                 {item.discovery.otherPaths.map((path) => (
@@ -108,8 +116,8 @@ function HarnessRow({
                 ))}
               </ul>
             )}
-            {item.discovery.limited && <p>安装目录搜索已达到上限。</p>}
-            <p>在下方填写要使用的绝对路径后重新检测。</p>
+            {item.discovery.limited && <p>{t('discoveryLimited')}</p>}
+            <p>{t('discoveryManualHint')}</p>
           </details>
         )}
         <div className={rowCss.action}>
@@ -121,15 +129,15 @@ function HarnessRow({
               onClick={() => void update(item.id)}
             >
               {item.maintenance?.state === 'running'
-                ? '正在安装或更新…'
+                ? t('maintenanceRunning')
                 : item.maintenanceAction === 'install'
-                  ? '官方安装'
-                  : '检查更新'}
+                  ? t('maintenanceInstall')
+                  : t('maintenanceUpdate')}
             </Button>
           )}
           {item.website && (
             <a href={item.website} target="_blank" rel="noreferrer">
-              官方说明
+              {t('officialWebsite')}
             </a>
           )}
         </div>
@@ -137,28 +145,28 @@ function HarnessRow({
           <div role="status">
             <p>
               {item.maintenance.state === 'running'
-                ? '官方安装器正在运行，请保持应用打开。'
+                ? t('maintenanceStatusRunning')
                 : item.maintenance.state === 'completed'
-                  ? '已完成，并重新核验了启动入口。'
+                  ? t('maintenanceStatusCompleted')
                   : item.maintenance.message.startsWith('更新服务器的证书未受信任')
                     ? item.maintenance.message.split('\n')[0]
-                    : '未完成，可以重新检测或重试。'}
+                    : t('maintenanceStatusFailed')}
             </p>
             <details>
-              <summary>更新详情</summary>
+              <summary>{t('updateDetailsSummary')}</summary>
               <pre className={rowCss.path}>{item.maintenance.message}</pre>
             </details>
           </div>
         )}
         {item.id !== 'dsh' && (
           <details className={css.pathDetails}>
-            <summary>可执行文件路径</summary>
+            <summary>{t('executablePathSummary')}</summary>
             <div className={css.pathInputRow}>
               <input
                 key={item.definition?.command ?? item.path ?? ''}
                 className={css.input}
                 defaultValue={item.definition?.command ?? item.path ?? ''}
-                placeholder="绝对路径或 PATH 中的命令"
+                placeholder={t('executablePlaceholder')}
                 disabled={busy}
                 onBlur={(e) => {
                   const command = e.target.value.trim()
@@ -166,7 +174,11 @@ function HarnessRow({
                     void savePath(item.id, command)
                 }}
               />
-              <ExecutableBrowser disabled={busy} onPick={(path) => void savePath(item.id, path)} />
+              <ExecutableBrowser
+                disabled={busy}
+                label={t('browseExecutable')}
+                onPick={(path) => void savePath(item.id, path)}
+              />
             </div>
           </details>
         )}
@@ -180,6 +192,7 @@ function HarnessRow({
             onEdit={editProxy}
             onSave={saveProxy}
             onReset={resetProxy}
+            t={t}
           />
         )}
       </div>
@@ -187,7 +200,15 @@ function HarnessRow({
   )
 }
 
-export function HarnessSettings({ call, embedded = false }: { call: Call; embedded?: boolean }) {
+export function HarnessSettings({
+  call,
+  embedded = false,
+  t = defaultExecutionT,
+}: {
+  call: Call
+  embedded?: boolean
+  t?: ExecutionSettingsT
+}) {
   const {
     draft,
     setDraft,
@@ -204,7 +225,7 @@ export function HarnessSettings({ call, embedded = false }: { call: Call; embedd
     editProxy,
     saveProxy,
     resetProxy,
-  } = useHarnessSettings(call)
+  } = useHarnessSettings(call, t)
   const primary = items.filter((item) => isPrimaryHarness(item.id))
   const others = items.filter((item) => !isPrimaryHarness(item.id))
   const rowProps = {
@@ -217,25 +238,25 @@ export function HarnessSettings({ call, embedded = false }: { call: Call; embedd
     editProxy,
     saveProxy,
     resetProxy,
+    t,
   }
   return (
     <div className={css.section} data-opl-panel="execution-settings" aria-busy={busy}>
-      {embedded ? null : <h2 className={css.title}>执行引擎</h2>}
+      {embedded ? null : <h2 className={css.title}>{t('harnessTitle')}</h2>}
       <EngineUpdates
         call={call}
+        t={t}
         detectButton={
           <Button variant="outline" disabled={busy} onClick={() => void load()}>
-            {busy ? '检测中…' : '重新检测'}
+            {busy ? t('detecting') : t('redetect')}
           </Button>
         }
       />
-      <p className={css.intro}>
-        自动发现本机执行引擎，并管理版本、安装入口与网络代理。常用的直接列出，其余按需展开。
-      </p>
+      <p className={css.intro}>{t('harnessIntro')}</p>
       {error && <p role="alert">{error}</p>}
       {busy && !items.length && (
         <p className={css.muted} role="status">
-          正在检测本机执行程序…
+          {t('detectingLocal')}
         </p>
       )}
       {items.length > 0 && (
@@ -247,8 +268,10 @@ export function HarnessSettings({ call, embedded = false }: { call: Call; embedd
             <details data-opl-harness-group="more">
               <summary className={rowCss.groupSummary}>
                 <IconChevronRightOutlineRegular className={rowCss.chevron} size={14} />
-                更多执行引擎
-                <span className={rowCss.groupCount}>{others.length} 个</span>
+                {t('moreEngines')}
+                <span className={rowCss.groupCount}>
+                  {t('moreEnginesCount', { count: others.length })}
+                </span>
               </summary>
               <div className={rowCss.groupBody}>
                 {others.map((item) => (
@@ -260,10 +283,10 @@ export function HarnessSettings({ call, embedded = false }: { call: Call; embedd
         </div>
       )}
       <details className={css.details} data-opl-panel="custom-acp-registration">
-        <summary>添加自定义标准 ACP 引擎</summary>
+        <summary>{t('customAcpHeading')}</summary>
         <div className={css.detailsBody}>
           <label className={css.field}>
-            名称
+            {t('customAcpName')}
             <input
               className={css.input}
               value={draft.name}
@@ -271,39 +294,36 @@ export function HarnessSettings({ call, embedded = false }: { call: Call; embedd
             />
           </label>
           <label className={css.field}>
-            可执行文件
+            {t('customAcpExecutable')}
             <div className={css.pathInputRow}>
               <input
                 className={css.input}
                 value={draft.command}
-                placeholder="绝对路径或 PATH 中的命令"
+                placeholder={t('executablePlaceholder')}
                 onChange={(e) => setDraft({ ...draft, command: e.target.value })}
               />
               <ExecutableBrowser
                 disabled={busy}
+                label={t('browseExecutable')}
                 onPick={(path) => setDraft({ ...draft, command: path })}
               />
             </div>
           </label>
           <label className={css.field}>
-            启动参数（可选）
+            {t('customAcpArgs')}
             <input
               className={css.input}
               value={draft.args}
-              placeholder="例如 acp 或 --acp，留空则直接启动"
+              placeholder={t('customAcpArgsPlaceholder')}
               onChange={(e) => setDraft({ ...draft, args: e.target.value })}
             />
           </label>
-          <p className={css.muted}>
-            支持标准 ACP（Agent Client Protocol）的 CLI
-            登记并验证通过后，即可直接在聊天框中为任意模型选择使用；自定义 ACP 引擎使用 CLI
-            自身登录态与完全访问权限。
-          </p>
+          <p className={css.muted}>{t('customAcpNote')}</p>
           <Button
             disabled={busy || !draft.name.trim() || !draft.command.trim()}
             onClick={() => void register()}
           >
-            添加自定义 ACP 引擎
+            {t('customAcpSubmit')}
           </Button>
         </div>
       </details>

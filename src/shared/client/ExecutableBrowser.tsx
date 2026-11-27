@@ -4,9 +4,11 @@ import css from './SettingsSection.module.css'
 export function ExecutableBrowser({
   disabled,
   onPick,
+  label = '浏览可执行文件',
 }: {
   disabled: boolean
   onPick: (path: string) => void
+  label?: string
 }) {
   const input = useRef<HTMLInputElement>(null)
   const paths = (
@@ -30,8 +32,8 @@ export function ExecutableBrowser({
         type="button"
         className={css.browseButton}
         disabled={disabled}
-        aria-label="浏览可执行文件"
-        title="浏览可执行文件"
+        aria-label={label}
+        title={label}
         onClick={() => input.current?.click()}
       >
         ...

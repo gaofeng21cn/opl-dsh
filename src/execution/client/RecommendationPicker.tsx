@@ -10,6 +10,7 @@ import {
   savedChoiceKey,
 } from './combination-choices.ts'
 import type { CombinationSelection } from './combination-choices.ts'
+import { defaultExecutionT, type ExecutionSettingsT } from './execution-settings-locales.ts'
 
 /** One selection surface controls saved configurations and new recommendations. */
 export function RecommendationPicker({
@@ -17,11 +18,13 @@ export function RecommendationPicker({
   busy,
   onAdd,
   onRemove,
+  t = defaultExecutionT,
 }: {
   catalog: ExecutionCatalog
   busy: boolean
   onRemove: (id: string) => Promise<boolean>
   onAdd: (selection: CombinationSelection) => Promise<void>
+  t?: ExecutionSettingsT
 }) {
   const removing = useRef<{ id: string; edits: Map<string, boolean> } | undefined>(undefined)
   const candidates = combinationChoices(catalog).map((item) => [item.key, item] as const)
@@ -100,12 +103,12 @@ export function RecommendationPicker({
       <div className={css.toolbar}>
         <search className={css.search}>
           <label>
-            <span>筛选组合</span>
+            <span>{t('filterLabel')}</span>
             <input
               type="search"
               name="filter"
               className={settingsCss.input}
-              placeholder="模型、来源或执行引擎"
+              placeholder={t('filterPlaceholder')}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -123,7 +126,7 @@ export function RecommendationPicker({
                 )
               }
             >
-              全选
+              {t('selectAllButton')}
             </Button>
             <Button
               type="button"
@@ -133,14 +136,14 @@ export function RecommendationPicker({
                 clearSaved()
               }}
             >
-              取消全选
+              {t('clearAllButton')}
             </Button>
           </>
         )}
       </div>
       <form
         className={css.selection}
-        aria-label="选择执行组合"
+        aria-label={t('pickerFormLabel')}
         onSubmit={(event) => {
           event.preventDefault()
           void onAdd({
@@ -151,7 +154,7 @@ export function RecommendationPicker({
       >
         {visible.length === 0 && (
           <p className={css.muted} role="status">
-            {normalizedQuery ? '没有匹配的组合。' : '当前没有可选组合。'}
+            {normalizedQuery ? t('pickerNoMatch') : t('pickerNoOptions')}
           </p>
         )}
         <div className={css.groups}>
@@ -185,9 +188,9 @@ export function RecommendationPicker({
                       }}
                     />
                     <span>
-                      {name}（{checked}/{items.length}）
+                      {t('pickerGroupHeader', { name, checked, total: items.length })}
                       {groupRequiresFullAccess && (
-                        <span className={css.permission}>仅支持完全权限</span>
+                        <span className={css.permission}>{t('pickerFullAccessOnlyTag')}</span>
                       )}
                     </span>
                   </label>
@@ -210,7 +213,7 @@ export function RecommendationPicker({
                             {displayModelSource(item.modelRef)} · {item.name}
                           </span>
                           {!groupRequiresFullAccess && fullAccessOnly.has(key) && (
-                            <span className={css.permission}>仅支持完全权限</span>
+                            <span className={css.permission}>{t('pickerFullAccessOnlyTag')}</span>
                           )}
                         </span>
                       </label>
@@ -219,7 +222,7 @@ export function RecommendationPicker({
                           type="button"
                           className={css.remove}
                           disabled={busy}
-                          aria-label={`移除自定义组合 ${item.name}`}
+                          aria-label={t('pickerRemoveCustomAriaLabel', { name: item.name })}
                           onClick={async () => {
                             if (removing.current) return
                             const id = item.removableId!
@@ -232,7 +235,7 @@ export function RecommendationPicker({
                             if (!(await onRemove(id))) removing.current = undefined
                           }}
                         >
-                          移除
+                          {t('removeButton')}
                         </button>
                       )}
                     </div>
@@ -243,10 +246,10 @@ export function RecommendationPicker({
           })}
         </div>
         <Button variant="primary" type="submit" disabled={busy}>
-          保存选择（{count}）
+          {t('pickerSaveButton', { count })}
         </Button>
         {visible.some(([key]) => fullAccessOnly.has(key)) && (
-          <p className={css.muted}>运行此类组合前，请在当前会话选择“完全权限”。</p>
+          <p className={css.muted}>{t('pickerFullAccessHint')}</p>
         )}
       </form>
     </div>

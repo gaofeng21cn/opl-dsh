@@ -4,25 +4,27 @@ import type { ExecutionCall } from '../../shared/client/remote-call.ts'
 import type { EngineUpdateState } from '../contracts/engine-updates.ts'
 import css from '../../shared/client/SettingsSection.module.css'
 import choices from './RecommendationPicker.module.css'
+import { defaultExecutionT, type ExecutionSettingsT } from './execution-settings-locales.ts'
 import { safeFailureMessage } from './proxy-draft.ts'
-
-const labels = {
-  current: '已是当前版本',
-  unsupported: '单独管理',
-  failed: '未完成',
-  installing: '正在安装',
-  waiting: '等待引擎空闲',
-  updated: '已更新',
-  available: '可更新',
-}
 
 export function EngineUpdates({
   call,
   detectButton,
+  t = defaultExecutionT,
 }: {
   call: ExecutionCall
   detectButton: ReactNode
+  t?: ExecutionSettingsT
 }) {
+  const labels = {
+    current: t('engineUpdateStatusCurrent'),
+    unsupported: t('engineUpdateStatusUnsupported'),
+    failed: t('engineUpdateStatusFailed'),
+    installing: t('engineUpdateStatusInstalling'),
+    waiting: t('engineUpdateStatusWaiting'),
+    updated: t('engineUpdateStatusUpdated'),
+    available: t('engineUpdateStatusAvailable'),
+  }
   const [open, setOpen] = useState(false)
   const [state, setState] = useState<EngineUpdateState>()
   const [skipped, setSkipped] = useState<string[]>([])
@@ -31,6 +33,8 @@ export function EngineUpdates({
   const [error, setError] = useState('')
   const revision = useRef(0)
   const pending = useRef(false)
+  const tRef = useRef(t)
+  tRef.current = t
   const active =
     state?.checking || state?.items.some((item) => ['installing', 'waiting'].includes(item.status))
   useEffect(() => {
@@ -45,7 +49,7 @@ export function EngineUpdates({
         }
       } catch (e) {
         if (mounted && id === revision.current)
-          setError(safeFailureMessage(e, '无法读取引擎更新状态'))
+          setError(safeFailureMessage(e, tRef.current('engineUpdatesReadFailed')))
       }
     }
     void read()
@@ -65,7 +69,7 @@ export function EngineUpdates({
       const s = await fn()
       if (id === revision.current) setState(s)
     } catch (e) {
-      setError(safeFailureMessage(e, '操作未完成，请重试'))
+      setError(safeFailureMessage(e, tRef.current('actionFailedRetry')))
     } finally {
       pending.current = false
       setBusy(false)
@@ -90,21 +94,22 @@ export function EngineUpdates({
           aria-controls="opl-engine-updates"
           onClick={() => setOpen(!open)}
         >
-          管理更新{available.length > 0 && `（${available.length}）`}
+          {t('engineUpdatesToggle')}
+          {available.length > 0 && t('engineUpdatesCount', { count: available.length })}
         </Button>
       </div>
       {open && (
         <section
           id="opl-engine-updates"
           className={`${css.section} ${css.engineUpdatePanel}`}
-          aria-label="执行引擎更新"
+          aria-label={t('engineUpdatesPanelLabel')}
         >
           <div className={css.preferenceRow}>
             <div className={css.preferenceText}>
-              <span className={css.preferenceTitle}>自动检查执行引擎更新</span>
+              <span className={css.preferenceTitle}>{t('engineUpdatesAutoLabel')}</span>
             </div>
             <Switch
-              label="自动检查执行引擎更新"
+              label={t('engineUpdatesAutoLabel')}
               disabled={!state || busy}
               checked={state?.enabled ?? false}
               onChange={(enabled) => {
@@ -115,7 +120,7 @@ export function EngineUpdates({
           </div>
           {state?.enabled && (
             <label className={css.field}>
-              发现更新后
+              {t('engineUpdatesModeLabel')}
               <select
                 className={css.input}
                 disabled={busy}
@@ -125,13 +130,13 @@ export function EngineUpdates({
                   void run(() => call('engine-updates-settings', { enabled: true, mode }))
                 }}
               >
-                <option value="notify">仅提醒</option>
-                <option value="auto">自动安装更新</option>
+                <option value="notify">{t('engineUpdatesModeNotify')}</option>
+                <option value="auto">{t('engineUpdatesModeAuto')}</option>
               </select>
             </label>
           )}
           {state?.enabled && state.mode === 'auto' && (
-            <p className={css.muted}>正在使用的执行引擎将在空闲后更新。</p>
+            <p className={css.muted}>{t('engineUpdatesAutoHint')}</p>
           )}
           {available.length > 0 && (
             <div className={choices.updateList}>
@@ -165,7 +170,7 @@ export function EngineUpdates({
               disabled={busy || active}
               onClick={() => void run(() => call('engine-updates-check'))}
             >
-              {state?.checking ? '正在检查…' : '检查引擎更新'}
+              {state?.checking ? t('engineUpdatesChecking') : t('engineUpdatesCheck')}
             </Button>
             {available.length > 0 && (
               <Button
@@ -177,21 +182,28 @@ export function EngineUpdates({
                   )
                 }}
               >
-                {submitting ? '正在提交更新…' : `更新所选（${selected.length}）`}
+                {submitting
+                  ? t('engineUpdatesSubmitting')
+                  : t('engineUpdatesInstallSelected', { count: selected.length })}
               </Button>
             )}
           </div>
           {batch.length > 0 && (
             <div aria-live="polite" className={css.engineBatch}>
               <p>
-                本次更新 · 已处理 {finished.length}/{batch.length}
+                {t('engineUpdatesBatchSummary', {
+                  finished: finished.length,
+                  total: batch.length,
+                })}
               </p>
               {batch.map((item) => (
                 <div key={item.id}>
                   <p className={css.row}>
                     <span>{item.name}</span>
                     <span className={item.status === 'failed' ? css.error : css.muted}>
-                      {item.status === 'available' ? '排队中' : labels[item.status]}
+                      {item.status === 'available'
+                        ? t('engineUpdateStatusQueued')
+                        : labels[item.status]}
                     </span>
                   </p>
                   {item.status === 'failed' && item.message && (
@@ -202,11 +214,15 @@ export function EngineUpdates({
             </div>
           )}
           {state?.checkedAt && (
-            <p className={css.muted}>上次检查：{new Date(state.checkedAt).toLocaleString()}</p>
+            <p className={css.muted}>
+              {t('engineUpdatesLastChecked', {
+                time: new Date(state.checkedAt).toLocaleString(),
+              })}
+            </p>
           )}
           {others.length > 0 && (
             <details className={css.engineCheckResults}>
-              <summary>其他检查结果（{others.length}）</summary>
+              <summary>{t('engineUpdatesOthersSummary', { count: others.length })}</summary>
               {others.map((item) => (
                 <p key={item.id}>
                   {item.name} · {labels[item.status]}

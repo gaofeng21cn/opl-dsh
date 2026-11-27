@@ -3,13 +3,19 @@ import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CoordinationCall } from '../../shared/client/remote-call.ts'
 import type { CoordinatorHooksStatus } from '../../contracts/types.ts'
 import css from '../../shared/client/SettingsSection.module.css'
+import { defaultCollaborationT, type CollaborationT } from './collaboration-locales.ts'
 
-export function useCoordinatorHooks(call: CoordinationCall) {
+export function useCoordinatorHooks(
+  call: CoordinationCall,
+  t: CollaborationT = defaultCollaborationT,
+) {
   const [status, setStatus] = useState<CoordinatorHooksStatus>()
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false)
   const active = useRef(false),
-    generation = useRef(0)
+    generation = useRef(0),
+    tRef = useRef(t)
+  tRef.current = t
   async function run(action: 'status' | 'install' | 'remove') {
     if (active.current) return
     active.current = true
@@ -21,7 +27,7 @@ export function useCoordinatorHooks(call: CoordinationCall) {
       if (id === generation.current) setStatus(s)
     } catch (e) {
       if (id === generation.current)
-        setError(e instanceof Error ? e.message : '暂时无法读取 Hook 状态。')
+        setError(e instanceof Error ? e.message : tRef.current('hookReadFailed'))
     } finally {
       if (id === generation.current) {
         active.current = false
@@ -42,18 +48,18 @@ export function useCoordinatorHooks(call: CoordinationCall) {
     }
   }, [call])
   const summary = error
-    ? 'Hook 状态未知'
+    ? t('hookSummaryUnknown')
     : !status
-      ? '正在检查 Hook…'
+      ? t('hookSummaryChecking')
       : !status.installed
-        ? 'Hook 未安装'
+        ? t('hookSummaryMissing')
         : status.registered !== status.total
-          ? 'Hook 配置待检查'
+          ? t('hookSummaryCheckConfig')
           : status.verified !== status.total
-            ? 'Hook 信任状态未知'
+            ? t('hookSummaryTrustUnknown')
             : status.disabled
-              ? `Hook 已禁用 ${status.disabled} 项`
-              : `Hook 已信任 ${status.trusted}/${status.total}`
+              ? t('hookSummaryDisabled', { count: status.disabled })
+              : t('hookSummaryTrusted', { trusted: status.trusted, total: status.total })
   return { status, error, busy, run, summary }
 }
 
@@ -62,18 +68,19 @@ export function CoordinatorHooks({
   error,
   busy,
   run,
-}: ReturnType<typeof useCoordinatorHooks>) {
+  t = defaultCollaborationT,
+}: ReturnType<typeof useCoordinatorHooks> & { t?: CollaborationT }) {
   const hint =
     !error &&
     s?.installed &&
     s.registered === s.total &&
     s.verified === s.total &&
     s.trusted < s.total
-      ? `请到 Codex 设置 → 钩子，确认剩余 ${s.total - s.trusted} 项。`
+      ? t('hookPendingConfirmHint', { remaining: s.total - s.trusted })
       : undefined
   return (
     <div className={css.detailsBody}>
-      <p className={css.muted}>仅用于已登记项目的续作。移除 Hook 不影响普通任务回执。</p>
+      <p className={css.muted}>{t('hooksIntro')}</p>
       {hint && <p role="status">{hint}</p>}
       {error && <p role="alert">{error}</p>}
       <div className={css.actions}>
@@ -82,10 +89,10 @@ export function CoordinatorHooks({
           disabled={busy || !s}
           onClick={() => void run(s?.installed ? 'remove' : 'install')}
         >
-          {s?.installed ? '移除 Hook' : '安装 Hook'}
+          {s?.installed ? t('hooksRemove') : t('hooksInstall')}
         </Button>
         <Button variant="outline" disabled={busy} onClick={() => void run('status')}>
-          刷新状态
+          {t('hooksRefresh')}
         </Button>
       </div>
     </div>

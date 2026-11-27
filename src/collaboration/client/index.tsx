@@ -8,6 +8,11 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { Context } from '@deepseek-ai/cordis'
 import { CoordinationSection } from './CoordinationSection.tsx'
+import {
+  COLLABORATION_SETTINGS_NAMESPACE,
+  collaborationEn,
+  collaborationZh,
+} from './collaboration-locales.ts'
 import { remoteCall, optionalRemote } from '../../shared/client/remote-call.ts'
 export { CoordinationSection }
 export const inject = ['slots', 'locale', 'remote.oplCoordination']
@@ -18,7 +23,14 @@ export function apply(ctx: Context): void {
       en: settingsNavigationEn,
     }),
   )
+  ctx.effect(() =>
+    ctx.locale.register(COLLABORATION_SETTINGS_NAMESPACE, {
+      zh: collaborationZh,
+      en: collaborationEn,
+    }),
+  )
   const call = remoteCall(ctx.remote.oplCoordination)
+  const collaborationT = ctx.locale.bind(COLLABORATION_SETTINGS_NAMESPACE)
   ctx.slots.inject('settings.section', () =>
     ctx.slots.register(
       {
@@ -32,6 +44,7 @@ export function apply(ctx: Context): void {
           const roles = optionalRemote(ctx, 'oplRoleExecution')
           return {
             call,
+            t: collaborationT,
             ...(execution ? { executionCall: remoteCall(execution) } : {}),
             ...(roles ? { roleCall: remoteCall(roles) } : {}),
           }

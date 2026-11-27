@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url'
 import {
   classifyRuntimeBackup,
   reclaimOfficialArchives,
+  reclaimOldReleases,
   reclaimRuntimeBackups,
 } from '../installer/runtime-backups.mjs'
 
@@ -591,4 +592,178 @@ test('reclaimOfficialArchives keeps only the active officialVersion archive and 
   const second = reclaimOfficialArchives({ root, app })
   assert.deepEqual(second.kept, [join(cache, 'deepseek-harness-0.2.2-rc.5.zip')])
   assert.deepEqual(second.removed, [])
+})
+
+function hashDirName(seed) {
+  return createHash('sha256').update(seed).digest('hex')
+}
+
+test('reclaimOldReleases keeps active, previous, preservePaths, non-hash dirs, and symlinks while removing older releases', (t) => {
+  const { scratch, root, app } = createSuiteFixture(t, { version: '0.2.2-rc.5' })
+  const releases = join(root, 'releases')
+  const currentHash = hashDirName('0.2.84')
+  const previousHash = hashDirName('0.2.83')
+  const preservedHash = hashDirName('staging-preserve')
+  const staleA = hashDirName('0.2.80')
+  const staleB = hashDirName('0.2.81')
+  for (const dir of [currentHash, previousHash, preservedHash, staleA, staleB, 'custom-dir']) {
+    mkdirSync(join(releases, dir), { recursive: true })
+  }
+  const externalRelease = join(scratch, 'external-release')
+  mkdirSync(externalRelease, { recursive: true })
+  symlinkSync(externalRelease, join(releases, hashDirName('symlink-release')))
+
+  writeFileSync(
+    join(root, 'installation.json'),
+    JSON.stringify(
+      {
+        version: 3,
+        suiteRoot: root,
+        app,
+        officialVersion: '0.2.2-rc.5',
+        release: join(releases, currentHash),
+        previousRelease: join(releases, previousHash),
+      },
+      null,
+      2,
+    ),
+  )
+
+  const first = reclaimOldReleases({
+    root,
+    app,
+    preservePaths: [join(releases, preservedHash)],
+    listProcessCommands: () => [`/usr/bin/node ${join(releases, currentHash)}/setup.mjs`],
+  })
+  assert.equal(first.kept.length, 3)
+  assert.deepEqual(first.removed.sort(), [join(releases, staleA), join(releases, staleB)].sort())
+  assert.deepEqual(first.skippedRunning, [])
+  assert.deepEqual(first.failed, [])
+  assert.equal(existsSync(join(releases, currentHash)), true)
+  assert.equal(existsSync(join(releases, previousHash)), true)
+  assert.equal(existsSync(join(releases, preservedHash)), true)
+  assert.equal(existsSync(join(releases, 'custom-dir')), true)
+  assert.equal(existsSync(externalRelease), true)
+
+  const second = reclaimOldReleases({
+    root,
+    app,
+    preservePaths: [join(releases, preservedHash)],
+    listProcessCommands: () => [],
+  })
+  assert.deepEqual(second.removed, [])
+})
+
+test('reclaimOldReleases skips running release directories and fails safe on missing receipt, missing release, symlink, or ps failure', (t) => {
+  const { scratch, root, app } = createSuiteFixture(t, { version: '0.2.2-rc.5' })
+  const releases = join(root, 'releases')
+  const currentHash = hashDirName('0.2.84')
+  const runningOldHash = hashDirName('0.2.79')
+  const idleOldHash = hashDirName('0.2.78')
+  for (const dir of [currentHash, runningOldHash, idleOldHash]) {
+    mkdirSync(join(releases, dir), { recursive: true })
+  }
+
+  // Without receipt `release` field, fails safe.
+  const withoutRelease = reclaimOldReleases({ root, app, listProcessCommands: () => [] })
+  assert.equal(withoutRelease.skipped, 'unverified-active-app')
+  assert.deepEqual(withoutRelease.removed, [])
+
+  // Active release pointing to non-existent directory fails safe.
+  writeFileSync(
+    join(root, 'installation.json'),
+    JSON.stringify(
+      {
+        version: 3,
+        suiteRoot: root,
+        app,
+        officialVersion: '0.2.2-rc.5',
+        release: join(releases, hashDirName('missing')),
+      },
+      null,
+      2,
+    ),
+  )
+  const missingActive = reclaimOldReleases({ root, app, listProcessCommands: () => [] })
+  assert.equal(missingActive.skipped, 'missing-active-release')
+  assert.deepEqual(missingActive.removed, [])
+
+  // Valid receipt: ps failure skips without removing anything.
+  writeFileSync(
+    join(root, 'installation.json'),
+    JSON.stringify(
+      {
+        version: 3,
+        suiteRoot: root,
+        app,
+        officialVersion: '0.2.2-rc.5',
+        release: join(releases, currentHash),
+      },
+      null,
+      2,
+    ),
+  )
+  const psFailed = reclaimOldReleases({
+    root,
+    app,
+    listProcessCommands: () => null,
+    onWarn: () => {},
+  })
+  assert.equal(psFailed.skipped, 'process-inspection-failed')
+  assert.deepEqual(psFailed.removed, [])
+
+  // Running process keeps runningOldHash while idleOldHash is pruned.
+  const runningResult = reclaimOldReleases({
+    root,
+    app,
+    listProcessCommands: () => [`node ${join(releases, runningOldHash, 'plugin/dist/host.js')}`],
+  })
+  assert.deepEqual(runningResult.skippedRunning, [join(releases, runningOldHash)])
+  assert.deepEqual(runningResult.removed, [join(releases, idleOldHash)])
+
+  // Symlink releases directory fails safe.
+  rmSync(releases, { recursive: true, force: true })
+  const external = join(scratch, 'external-releases')
+  mkdirSync(external, { recursive: true })
+  symlinkSync(external, releases)
+  const symlinked = reclaimOldReleases({ root, app, listProcessCommands: () => [] })
+  assert.equal(symlinked.skipped, 'unsafe-releases')
+})
+
+test('verifyVerifiedInstallation supports Windows DeepSeek Harness.exe layout for archive and release reclamation', (t) => {
+  const scratch = mkdtempSync(join(tmpdir(), 'opl-win-reclaim-'))
+  t.after(() => rmSync(scratch, { recursive: true, force: true }))
+  const root = join(scratch, 'suite')
+  const app = join(root, 'runtime/official')
+  const releases = join(root, 'releases')
+  const cache = join(root, 'cache')
+  const currentHash = hashDirName('win-0.2.84')
+  const staleHash = hashDirName('win-0.2.80')
+  mkdirSync(join(app, 'resources'), { recursive: true })
+  mkdirSync(join(releases, currentHash), { recursive: true })
+  mkdirSync(join(releases, staleHash), { recursive: true })
+  mkdirSync(cache, { recursive: true })
+  writeFileSync(join(app, 'DeepSeek Harness.exe'), 'exe')
+  writeFileSync(join(app, 'resources/app.asar'), 'asar')
+  writeFileSync(join(cache, 'deepseek-harness-0.2.2-rc.5-win-x64.exe'), 'current')
+  writeFileSync(join(cache, 'deepseek-harness-0.2.2-rc.1-win-x64.exe'), 'old')
+  writeFileSync(
+    join(root, 'installation.json'),
+    JSON.stringify(
+      {
+        version: 3,
+        suiteRoot: root,
+        app,
+        officialVersion: '0.2.2-rc.5',
+        release: join(releases, currentHash),
+      },
+      null,
+      2,
+    ),
+  )
+
+  const archives = reclaimOfficialArchives({ root, app })
+  assert.deepEqual(archives.removed, [join(cache, 'deepseek-harness-0.2.2-rc.1-win-x64.exe')])
+  const oldReleases = reclaimOldReleases({ root, app, listProcessCommands: () => [] })
+  assert.deepEqual(oldReleases.removed, [join(releases, staleHash)])
 })

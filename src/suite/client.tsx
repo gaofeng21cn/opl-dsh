@@ -13,6 +13,11 @@ import * as notifications from '../notifications/client/index.tsx'
 import * as conversationStats from '../conversation-stats/client/index.tsx'
 import * as execution from '../execution/client/index.tsx'
 import * as collaboration from '../collaboration/client/index.tsx'
+import {
+  COLLABORATION_SETTINGS_NAMESPACE,
+  collaborationEn,
+  collaborationZh,
+} from '../collaboration/client/collaboration-locales.ts'
 import * as updates from '../updates/client/index.tsx'
 import * as windowTitle from '../window-title/client/index.tsx'
 import { subscribeUpdateWatch } from '../updates/client/watch.ts'
@@ -66,6 +71,17 @@ export async function apply(ctx: Context): Promise<void> {
     const coordinationCall = coordinationRemote ? remoteCall(coordinationRemote) : undefined
     const roleRemote = optionalRemote(ctx, 'oplRoleExecution')
     const roleCall = roleRemote ? remoteCall(roleRemote) : undefined
+    let collaborationT: ReturnType<typeof ctx.locale.bind<'settings.oplCollaboration'>> | undefined
+    if (coordinationCall) {
+      ctx.effect(() =>
+        ctx.locale.register(COLLABORATION_SETTINGS_NAMESPACE, {
+          zh: collaborationZh,
+          en: collaborationEn,
+        }),
+      )
+      if (typeof ctx.locale.bind === 'function')
+        collaborationT = ctx.locale.bind(COLLABORATION_SETTINGS_NAMESPACE)
+    }
     ctx.plugin(
       execution,
       coordinationCall
@@ -76,6 +92,7 @@ export async function apply(ctx: Context): Promise<void> {
                 call={coordinationCall}
                 executionCall={executionCall}
                 {...(roleCall ? { roleCall } : {})}
+                {...(collaborationT ? { t: collaborationT } : {})}
               />
             ),
           }
