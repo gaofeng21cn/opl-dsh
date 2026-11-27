@@ -26,6 +26,7 @@ async function runtime(
   {
     disableAndReinstall = false,
     computerUsePlatforms,
+    computerUseWindowsHelper = true,
     teamVersion,
     promotedTeam = false,
     migrationReceipt,
@@ -177,6 +178,26 @@ export async function withFileLock(file, operation, options) {
         },
       },
     })
+  if (computerUsePlatforms?.includes('win32')) {
+    await module('@deepseek-ai/dsh-cua-windows', { './package.json': './package.json' }, '', {
+      version: runtimeVersion,
+    })
+    if (computerUseWindowsHelper && !cliProfile) {
+      const helperDir = join(
+        resources,
+        'app.asar.unpacked',
+        'dsh',
+        'node_modules',
+        '@deepseek-ai',
+        'dsh-cua-windows',
+        'native',
+        'bin',
+        `win-${process.arch}`,
+      )
+      await mkdir(helperDir, { recursive: true })
+      await writeFile(join(helperDir, 'dsh-cua-windows.exe'), 'fake-win-cua-helper')
+    }
+  }
   if (existing) {
     await mkdir(profile, { recursive: true })
     await writeFile(join(profile, 'package.json'), JSON.stringify(existing))
@@ -539,4 +560,11 @@ test('desktop upgrade enables supported Computer Use once and preserves later op
     computerUsePlatforms: [],
   })
   assert.deepEqual(unsupported.manifest, existing)
+  if (process.platform === 'win32') {
+    const missingWinHelper = await runtime(t, 'official-bundles', existing, {
+      ...options,
+      computerUseWindowsHelper: false,
+    })
+    assert.deepEqual(missingWinHelper.manifest, existing)
+  }
 })

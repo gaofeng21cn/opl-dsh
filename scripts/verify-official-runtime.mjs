@@ -480,14 +480,18 @@ async function verifyRemainingRuntime() {
   if (computerUseSupported === 'true') {
     assert.equal(nativeComputerUse?.enabled, true, 'Official Computer Use bundle is disabled')
     const status = await wire('cuaAccess/systemStatus')
-    assert.equal(status.platform, process.platform)
-    const { platform, accessibility, screenRecording, captureAvailable } = status
+    const expectedCuaPlatform = process.platform === 'win32' ? 'windows' : process.platform
+    assert.equal(status.platform, expectedCuaPlatform)
+    const { platform, accessibility, screenRecording, captureAvailable, sessionLocked, elevated } =
+      status
     officialCapabilities.computerUse = {
       bundle: nativeComputerUse.name,
       platform,
-      accessibility,
-      screenRecording,
-      captureAvailable,
+      ...(accessibility !== undefined ? { accessibility } : {}),
+      ...(screenRecording !== undefined ? { screenRecording } : {}),
+      ...(captureAvailable !== undefined ? { captureAvailable } : {}),
+      ...(sessionLocked !== undefined ? { sessionLocked } : {}),
+      ...(elevated !== undefined ? { elevated } : {}),
     }
   } else {
     assert.notEqual(nativeComputerUse?.enabled, true, 'Unsupported Computer Use bundle is enabled')

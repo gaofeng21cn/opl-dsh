@@ -1,5 +1,5 @@
 /** Use the installed official release's shared, locked package operations. */
-const { join, resolve, delimiter } = require('node:path')
+const { join, resolve, delimiter, dirname } = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { createRequire } = require('node:module')
 const { parseArgs } = require('node:util')
@@ -27,6 +27,28 @@ if (
 )
   throw new Error('CLI profile 名称无效')
 const profileName = cliProfile ?? 'desktop'
+
+function isBundledComputerUseReady(requireRuntime, manifestPath) {
+  if (process.platform !== 'win32') return true
+  try {
+    let winPkg
+    try {
+      winPkg = createRequire(manifestPath).resolve('@deepseek-ai/dsh-cua-windows/package.json')
+    } catch {
+      winPkg = requireRuntime.resolve('@deepseek-ai/dsh-cua-windows/package.json')
+    }
+    const unpackedRoot = dirname(winPkg).replace(
+      /([\\/])app\.asar(?=[\\/])/u,
+      '$1app.asar.unpacked',
+    )
+    return existsSync(
+      join(unpackedRoot, 'native', 'bin', `win-${process.arch}`, 'dsh-cua-windows.exe'),
+    )
+  } catch {
+    return false
+  }
+}
+
 async function main() {
   const resources = cliProfile
     ? undefined
@@ -48,10 +70,12 @@ async function main() {
     throw new Error('官方桌面缺少 Team 插件且未声明迁移，未改动插件选择')
   const officialBundles = retiredTeam ? [] : [teamBundle]
   if (!cliProfile && official.dependencies?.[computerUseBundle]) {
-    const metadata = JSON.parse(
-      readFileSync(requireRuntime.resolve(computerUseBundle + '/package.json'), 'utf8'),
+    const computerUseManifestPath = requireRuntime.resolve(computerUseBundle + '/package.json')
+    const metadata = JSON.parse(readFileSync(computerUseManifestPath, 'utf8'))
+    if (
+      metadata.dsh?.bundle?.platforms?.includes(process.platform) &&
+      isBundledComputerUseReady(requireRuntime, computerUseManifestPath)
     )
-    if (metadata.dsh?.bundle?.platforms?.includes(process.platform))
       officialBundles.push(computerUseBundle)
   }
   process.env.DSH_HOME = home

@@ -1,6 +1,6 @@
 # 官方 DSH 能力复用检查
 
-2026-11-27 对齐与复核：官方 `0.2.3-alpha.2` 的 macOS 与 Windows `@deepseek-ai/dsh-cua-bundle` 均已声明双平台原生 Computer Use（`platforms: ["darwin","win32"]`）。开发依赖与官方桌面发布基线维持 `>= 0.2.3-alpha.2`（当官方 `nightly` feed 低于该版本时自动使用已校验 SHA-512 的官方 `0.2.3-alpha.2` 包体，待上游发布更高版本后无缝跟进）。KimiCU 已彻底退役；`vendor/dsh-superagent`、OPL 私有 Auto Review 与三个拆包插件已收归并精简为单一插件 `@one-person-lab/dsh-opl`；`step-code`/`muse-code`/`pool`/`zcode`/`mimo-code` 等私有适配器及长尾消息编辑驱动已退役；`src/updates/` 已移除对官方服务与 Agent 方法的全部 `Object.defineProperty` 运行时劫持。
+2026-11-27 对齐与复核：开发依赖与官方桌面发布基线已对齐 `>= 0.2.3-alpha.2`（当官方 `nightly` feed 低于该版本时自动使用已校验 SHA-512 的官方 `0.2.3-alpha.2` 包体，待上游发布更高版本后无缝跟进）。官方 `0.2.3-alpha.2` 的 `@deepseek-ai/dsh-cua-bundle` 已声明 `platforms: ["darwin","win32"]` 并引入 `@deepseek-ai/dsh-cua-windows`：其中 macOS 已随包内置已签名 helper、开箱可用，但官方 `0.2.3-alpha.2` Windows 安装包尚未随包打包 `dsh-cua-windows.exe`（见官方包 README 已知限制）；OPL 安装器与资格门禁已在 `win32` 上校验随包 helper 存在性，待官方 `0.2.3-alpha.3+` / `0.2.3-rc.*` 随包打包后将自动无缝启用。KimiCU 已彻底退役；`vendor/dsh-superagent`、OPL 私有 Auto Review 与三个拆包插件已收归并精简为单一插件 `@one-person-lab/dsh-opl`；`step-code`/`muse-code`/`pool`/`zcode`/`mimo-code` 等私有适配器及长尾消息编辑驱动已退役；`src/updates/` 已移除对官方服务与 Agent 方法的全部 `Object.defineProperty` 运行时劫持。
 
 OPL 先定义用户需要完成的任务，再选择能力负责人。官方已有的能力使用官方插件、公开 API 与持久状态；OPL 只补官方尚未覆盖的部分。官方后续补齐时，在同一升级任务中验证真实调用链、切换调用者并退役重复实现，避免把过渡适配变成永久分叉。
 
@@ -24,7 +24,7 @@ OPL 先定义用户需要完成的任务，再选择能力负责人。官方已�
 | 编辑与重发                   | 官方会话分支/日志接口、Native DSH / Codex app-server / Claude SDK 历史分叉与回滚                                                             | OPL 保留已完成历史的停止后编辑，并仅保留原生 DSH、Codex 与 Claude 的停止后编辑驱动（退役长尾 CLI 逆向消息编辑驱动）。                                                                |
 | MCP 工具与 MCP Apps          | 官方 MCP Client、Resources、连接和工具执行                                                                                                   | 完全交由官方 MCP 服务负责，OPL 不再维护独立 `src/mcp-apps` 宿主包。                                                                                                                  |
 | 设置、Todo 与系统通知        | 官方 Slot、`configForms`、volatile plugin config、设置镜像、会话列表、消息流、todo 投影及状态流                                            | 设置导航收敛为「OPL Gateway」与「执行引擎与协作」两个专属页面；Todo 归官方面板；OPL 保留组合选择、通知偏好与 MiniMax 开关。                                                          |
-| Computer Use                 | 官方桌面随附 `@deepseek-ai/dsh-cua-bundle` 原生插件                                                                                          | 完全由官方 `0.2.3-alpha.2+` 双平台 CUA 插件拥有（`darwin` + `win32`），OPL v2 已彻底退役 KimiCU 及其驱动。                                                                                                          |
+| Computer Use                 | 官方桌面随附 `@deepseek-ai/dsh-cua-bundle` 原生插件                                                                                          | 完全由官方 `0.2.3-alpha.2+` 原生 CUA 插件拥有，OPL v2 已彻底退役 KimiCU 及其驱动；macOS 已内置签名 helper 开箱可用，Windows 待官方后续随包打包 `dsh-cua-windows.exe`（当前可由用户配置 `helperPath`）后自动启用。 |
 | 发布与后续迁回               | 官方桌面 feed、既有每日兼容检查与联合发布流程                                                                                                | 新版检查同时核对本表中的缺口；有替代能力时优先完成同一用户任务的迁移，再验证增强包，不新增一套升级调度器。                                                                           |
 
 ## 保留适配的边界说明

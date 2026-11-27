@@ -1,7 +1,7 @@
 /** Read actual plugin/runtime dependency identities using the official Electron loader. */
 import { createRequire } from 'node:module'
-import { join } from 'node:path'
-import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
 
 const [app, profile, expectedZod] = process.argv.slice(2)
 const runtime = createRequire(
@@ -35,15 +35,43 @@ const bundleName = '@deepseek-ai/dsh-cua-bundle'
 const runtimePackage = JSON.parse(
   readFileSync(runtime.resolve('@deepseek-ai/dsh/package.json'), 'utf8'),
 )
-const computerUse = runtimePackage.dependencies?.[bundleName]
-  ? JSON.parse(readFileSync(runtime.resolve(bundleName + '/package.json'), 'utf8'))
+const computerUseManifestPath = runtimePackage.dependencies?.[bundleName]
+  ? runtime.resolve(bundleName + '/package.json')
   : undefined
-const computerUseSupported =
-  computerUse?.dsh?.bundle?.platforms?.includes(process.platform) === true
+const computerUse = computerUseManifestPath
+  ? JSON.parse(readFileSync(computerUseManifestPath, 'utf8'))
+  : undefined
+let computerUseSupported = computerUse?.dsh?.bundle?.platforms?.includes(process.platform) === true
+let computerUseBundledHelper = computerUseSupported
+if (computerUseSupported && process.platform === 'win32' && computerUseManifestPath) {
+  let helperPath
+  try {
+    let winPkg
+    try {
+      winPkg = createRequire(computerUseManifestPath).resolve(
+        '@deepseek-ai/dsh-cua-windows/package.json',
+      )
+    } catch {
+      winPkg = runtime.resolve('@deepseek-ai/dsh-cua-windows/package.json')
+    }
+    const unpackedRoot = dirname(winPkg).replace(
+      /([\\/])app\.asar(?=[\\/])/u,
+      '$1app.asar.unpacked',
+    )
+    helperPath = join(unpackedRoot, 'native', 'bin', `win-${process.arch}`, 'dsh-cua-windows.exe')
+  } catch {
+    helperPath = undefined
+  }
+  if (!helperPath || !existsSync(helperPath)) {
+    computerUseSupported = false
+    computerUseBundledHelper = false
+  }
+}
 console.log(
   JSON.stringify({
     plugin: { path: pluginPath, zod: ownZod },
     official,
     computerUseSupported,
+    computerUseBundledHelper,
   }),
 )
