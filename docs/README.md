@@ -20,6 +20,7 @@
 | [跨 Harness 团队接入](cross-harness-team.md) | 跨 Harness 团队接入与 OPL 领域智能体预设 |
 | [编辑消息](stop-edit.md) | 停止后编辑重发与外部 CLI 分支/恢复技术契约 |
 | [并行写入与工作树](parallel-writes.md) | 并行写入、官方 worktree 与窄 `writeScope` 长期约束（`AGENTS.md` 引用） |
+| [OPL Flow 控制塔与桌面底部体验约定](opl-flow-workbench-integration.md) | OPL DSH 接入 OPL Flow 控制塔的轻量边界，以及左下角账户与官方风格更新提示约定 |
 
 ## 架构、开发、验证与发布
 

@@ -7,6 +7,7 @@
 - 修改前确认真实调用者与官方接口；Host 和 Client 分别严格类型检查。
 - 第三方 PR 只是提案，合并前须核对用户确认的原始意图和当前默认路径。平台、模型与 Harness 扩展不得静默改变默认权限、串行化普通并发或缩小原生能力；修改 PR 内文档及通过 CI 不能代替产品必要性证据。默认行为变化须单独说明必要性，原默认路径与可选扩展路径分别验证。
 - 官方能力优先：先确定用户需要的能力，再检查最新官方 DSH、官方插件及公开接口。官方已覆盖的任务使用官方实现与状态负责人；OPL 只补尚未覆盖的差异，不维护平行的 Agent、Bot、团队或原生权限状态。每次官方升级同步复查 `docs/dsh-reuse-audit.md` 的保留项；官方补齐后，在该次升级中验证真实调用链、切换调用者并退役重复实现，保留用户数据和设置。
+- 跨仓边界与已退役控制面（见 [OPL Flow 控制塔与桌面底部体验约定](docs/opl-flow-workbench-integration.md) 与 [官方 DSH 能力复用检查](docs/dsh-reuse-audit.md)）：`opl-dsh` 仅作为官方 DeepSeek Harness 的轻量化增强套件，不强依赖 `opld`。**严禁**在 `opl-dsh` 中实现、恢复或新增以下正式退役能力的相关 UI、RPC 或 CLI：Homebrew Tap 客户端管理、多安装切换、Action Rollback、Temporal `provider_*` 面板；**严禁**在本仓实现或接管 `OPL Link companion host`（由 OPL Studio `opl-host-core` 独占）以及 `opl-framework-bridge` 侧的桥接/非微信 `channel_access` 插件过滤逻辑。Framework v2 上游仅保留只读 `opl_base` 版本展示与 `source_refresh`，`opl-dsh` 读取的任何外部投影（如 `domain-agent-presets.ts`）必须保持严格只读，不得引入安装、切换或回滚写路径。
 - 并发写入与 Git 隔离遵循[并行写入与工作树](docs/parallel-writes.md)：不得只因会话使用相同目录就串行化任务，也不得新增进程内写锁、项目写队列或并行 Agent 循环。写任务优先使用官方 worktree；验收通过后按改动来源使用 Git 或官方 Forge 合入，不能由 OPL 绕过验收自动合并。
 - 新增或吸收能力必须遵循[功能接入与 UI 成本判断](docs/development.md#功能接入与-ui-成本判断)：先限定当前功能真正要解决的用户任务，再检查官方 DSH、已安装第三方插件和现有 OPL 模块。优先复用已有能力，但必要的新模块、页面、导航或交互可以新增；目标是合理纳入，不是照单全收上游，也不是默认阻断新功能。
 - 模型供应商及其凭据归模型来源入口，Harness 程序归执行引擎，模型与 Harness 的绑定归执行组合。增加供应商、模型、Harness 或执行程序本身不自动构成独立设置页的理由；如果它带来独立且重要的用户任务，应在已有 owner 中合理扩展，或在适合的信息层级新增入口。原版第三方插件需要保留完整管理能力时，由 OPL 做必要的入口与展示适配，不分叉其实现。

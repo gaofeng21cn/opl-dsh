@@ -37,6 +37,8 @@ OPL 先定义用户需要完成的任务，再选择能力负责人。官方已�
 
 官方 `ProviderEditor.layoutOf` 仍只识别 DeepSeek 与 pi-ai 布局；OPL Gateway 内部使用官方 `DeepSeekAdapter` 与 `PiAiAdapter`，用户只面对单一 `opl-gateway` 第一公民入口；待官方模型选择身份覆盖 Harness 绑定后迁回组合选择适配。
 
+按最新 Framework v2 与 Studio/DSH 边界（详见 [OPL Flow 控制塔与桌面底部体验约定](opl-flow-workbench-integration.md)）：`opl-dsh` 不承接已退役的 Homebrew Tap 客户端管理、多安装切换、Action Rollback 与 Temporal `provider_*` 面板，也不复制 Studio `opl-host-core` 独占的 `OPL Link companion host` 或 `opl-framework-bridge` 的非微信 `channel_access` 过滤职责；上游保留的 `opl_base` 版本展示与 `source_refresh` 之外，本仓任何外部投影接入均须严格保持只读。
+
 ## 迁回要求
 
 升级发现官方提供等价能力时，先验证最小真实路径，再切换唯一写入者与调用者，删除重复服务、配置、UI 和测试。已有用户数据保留必要的单次迁移或只读兼容，不通过自动回退长期运行两套负责人。源码状态不替代类型检查、测试、未修改官方桌面隔离运行或发布证据。
