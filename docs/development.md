@@ -1,6 +1,6 @@
 # 开发与验证
 
-OPL DSH 在未修改的官方 DeepSeek Harness 桌面中维护三个功能插件：基础增强 `@one-person-lab/dsh-opl`、执行组合 `@one-person-lab/dsh-execution` 和跨引擎协作 `@one-person-lab/dsh-collaboration`。它们分别管理 Host、Client、配置和 RPC 生命周期，由同一安装器以同一修订交付。用户可以分别启停，协作插件依赖执行插件。
+OPL DSH 在未修改的官方 DeepSeek Harness 桌面中维护单一功能增强插件 `@one-person-lab/dsh-opl`（Host 与 Client 均装配同一插件配置 `opl-suite`），将 Gateway 账号、执行引擎组合、跨引擎协作、更新检查与桌面通用体验统一打包交付，避免多包拆分状态。
 
 ## 功能接入与 UI 成本判断
 
@@ -66,19 +66,15 @@ Issue 在实现前记录这些判断，PR 在合并前核对实现与用户目�
 
 `npm run check:boundaries` 检查浏览器不得运行 Host 实现、Gateway 不反向依赖执行/协作、首启不得接管其他能力，以及功能不得依赖套件装配。前端数据请求和异步状态由各能力的 hook 管理，视图负责渲染和明确用户操作。
 
-### 插件展示与拆分
+### 单一插件展示与设置页面收敛
 
-已安装插件使用官方包展示接口：每包提供中英文名称、说明、离线详情（`docs/plugins/*.md` 由 `scripts/build-feature-plugins.mjs` 打包）、OPL 图标及维护者与项目地址。OPL 不修改官方插件管理器。Our Free Model 与 SuperAgent 保留各自来源和名称。
+已安装插件使用官方包展示接口：提供中英文名称、说明、离线详情（`docs/plugins/opl-dsh.{zh,en}.md` 由 `build.mjs` 复制入包）、OPL 图标及维护者与项目地址。OPL 不修改官方插件管理器。Our Free Model 保留各自来源和名称。
 
-| 展示名称         | 包与配置 owner                                           | 职责与关闭行为                                                    |
-| ---------------- | -------------------------------------------------------- | ----------------------------------------------------------------- |
-| OPL DSH 基础增强 | `@one-person-lab/dsh-opl`；`opl-suite`                   | Gateway、首启、更新与通用体验；关闭后其他模型来源仍由各自插件管理 |
-| OPL 执行组合     | `@one-person-lab/dsh-execution`；`opl-execution`         | 模型与执行器组合、CLI 和外部会话；关闭时依赖它的 OPL 协作接入暂停 |
-| OPL 跨引擎协作   | `@one-person-lab/dsh-collaboration`；`opl-collaboration` | 角色绑定、官方工具桥与交付验收；关闭后组合执行仍可使用            |
+| 展示名称 | 包与配置 owner | 设置页面布局 | 职责与关闭行为 |
+| --- | --- | --- | --- |
+| OPL DSH | `@one-person-lab/dsh-opl`；`opl-suite` | 「OPL Gateway」与「执行引擎与协作」两页，及通用设置条目 | Gateway、首启、引擎与组合、跨引擎协作、更新与通用体验；关闭后保留配置与会话，官方及第三方来源继续运行 |
 
-各插件沿用已有账号页、执行页和协作页。角色绑定放在协作页，不增加导航项，也不复制官方角色编辑器。外部协议桥只随执行包打包；每个包只登记自己的 Host/Remote 描述和 Client 命名空间。
-
-停止状态下，安装器通过一次官方包管理操作更新三个包，保留已有启停选择。旧 `opl-suite` 中的执行、协作字段迁到对应配置 owner；目标已有显式值时保留目标值，迁移前保存 `cordis.patch.before-opl-split.yml`。组合 ID、官方会话 ID、外部会话关联和交付记录的数据位置保持不变。重复安装不会重新迁移或重新启用被关闭的包。
+停止状态下，安装器通过官方包管理操作升级或修复单一插件包；升级旧三包（`dsh-execution`/`dsh-collaboration`）时，一次性将旧 `cordis.patch.yml` 中的执行与协作配置字段合入 `opl-suite`（保留目标显式值并保存 `cordis.patch.before-v2-merge.yml`），移除旧包引用后保持组合 ID、官方会话与交付记录位置不变。
 
 官方角色与团队继续拥有唯一的人设、成员、消息、任务板和权限。OPL 保存精确组合引用，并通过公开 `agent/created`、`llm/stream` 与官方工具执行接口转接。具体链路和验证范围见[跨 Harness 团队接入](cross-harness-team.md)。
 
@@ -87,8 +83,6 @@ Issue 在实现前记录这些判断，PR 在合并前核对实现与用户目�
 官方升级同时承担能力迁回。先以用户任务判断新版官方 DSH、官方插件和公开接口是否已覆盖 [复用审计](dsh-reuse-audit.md) 中仍由 OPL 保留的差异。已覆盖时，在同次升级中验证最小真实链路，切换唯一调用者，再移除重复实现；只保留无法由官方表达的业务语义。官方 Team、Subagent、preset/persona 与原生权限不建立第二套 OPL 状态。新增 OPL 能力须写明官方缺口、接入位置与迁回条件；不以永久双写或静默回退维持旧路径。
 
 开发使用官方 DSH 支持的 Node.js `^24.22.3` 或 `>=26.13.1`。
-
-SuperAgent 原型以固定源码快照保存在 `vendor/dsh-superagent`，通过同一 npm workspace 和锁文件安装开发依赖。根类型检查覆盖它，测试可通过 `npm run test:superagent` 按需运行；构建生成独立 bundle 并把摘要写入套件清单。官方服务仍为运行时 peer，原版面板与存储保持自身 owner；适配范围见其 `UPSTREAM.md` 和[使用说明](superagent.md)。
 
 ```sh
 npm ci --ignore-scripts
@@ -110,19 +104,15 @@ npm test
 
 ## 执行器与协作
 
-`execution/host/adapters` 中的各执行器各自声明匹配规则和启动方式，外部程序保留自己的上下文、工具与原生会话（Codex 使用 app-server、Claude 使用官方 Agent SDK、Grok 使用 ACP）。Harness 注册表同时搜索桌面 PATH、登录 Shell PATH、常见用户目录和官方应用附带 CLI；Codex CLI 与 Claude Code 的安装/更新只走固定官方入口并重读绝对路径和版本。设置页把 DSH、Codex CLI、Claude Code、Grok Build、Antigravity CLI 与 OpenCode 作为常用引擎直接列出，其余适配器放在“更多执行引擎”折叠目录中；分类只决定信息层级。
+`execution/host/adapters` 中的各执行器各自声明匹配规则和启动方式，外部程序保留自己的上下文、工具与原生会话（Codex 使用 app-server、Claude 使用官方 Agent SDK、Grok 使用 ACP）。Harness 注册表同时搜索桌面 PATH、登录 Shell PATH、常见用户目录和官方应用附带 CLI；Codex CLI 与 Claude Code 的安装/更新只走固定官方入口并重读绝对路径和版本。设置页把 DSH、Codex CLI、Claude Code、Grok Build、Antigravity CLI 与 OpenCode 作为常用引擎直接列出，其余内置及用户添加的自定义标准 ACP 引擎收在“更多执行引擎”与“添加自定义标准 ACP 引擎”中；分类只决定信息层级。
 
 CLI 维护回读绕过版本缓存，并检查安装器返回的实际安装目录；维护命令复用该 Harness 的代理设置。Codex app-server 在启动时和每次创建、加载会话时核验同一个 provider，避免线程参数与全局 Responses 客户端使用不同渠道。已有 CLI 的发现与版本验证不依赖 npm；显式路径保留用户选择。
 
-组合目录只保存模型引用、Harness 引用、默认/启用状态和权限。`ExecutionModelResolver` 从官方模型注册表和 Gateway 读取投影，不另存模型连接。MiniMax 官方 mcode 路线继续由专用 ACP 适配器拥有，它的 opt-out 归 `opl-execution` 的 volatile `minimaxCodeEnabled`（默认 `true`），Client 执行页开关、目录重载和账号 Gate 共用官方 `configForms` snapshot。
+组合目录只保存模型引用、Harness 引用、默认/启用状态和权限。`ExecutionModelResolver` 从官方模型注册表和 Gateway 读取投影，不另存模型连接。MiniMax 官方 mcode 路线继续由专用 ACP 适配器拥有，它的 opt-out 归 `opl-suite` 的 volatile `minimaxCodeEnabled`（默认 `true`），Client 执行页开关、目录重载和账号 Gate 共用官方 `configForms` snapshot。
 
 DSH 内部新子任务由官方 Subagent/Team 管理。导入外部 Harness 历史后，使用官方 Workspace 的 `attachSession` 登记原会话（`session.create` 仅负责创建或复用空会话）。OPL 协作后台只为跨 Harness 任务保留父子映射、明确任务、验收要求、执行状态、交付和回传状态，并兼容已有 OPL 原生任务。普通会话不因使用同一目录而排队，只读任务可并行；只有双方显式声明且范围重叠的 `writeScope` 才等待，并行 Git 写任务优先使用官方 worktree。取消父任务传递给后代，子任务不能扩大权限。主界面保持官方 DSH 会话 UI，外部 Codex 开关只限制外部桥接，不关闭内部 Codex CLI 组合。
 
 TaskFeedback 的事件投影（`taskFeedbackFacts` 投影缓存版本为 2，含待处理审批 ID 与最后审批事件位置，旧缓存从原始会话日志重投影而不改写日志或 task/outbox/receipt 格式）、纯状态决策、持久回执与投递调度分别位于 `src/collaboration/host/feedback/` 下的 `session-facts.ts`、`state.ts`、`receipts.ts`、`delivery.ts`。尚未送出的审批或问题通知在确认解决后从投递队列退役并保留 outbox 记录，接收方先 `receive` 并在 `review`/`resume` 时核对最新会话再请用户操作。
-
-## MCP Apps 与无 UI 交接
-
-`src/mcp-apps` 只提供当前 Agent 作用域的只读能力诊断，复用官方工具注册、step admission 与审批，不保存 MCP 连接或领域状态。当前官方公开 API 的缺口与后续薄宿主接入条件见 [MCP Apps 支持范围](mcp-apps.md)。
 
 ## 数据位置与恢复
 
@@ -146,9 +136,9 @@ Windows 安装后自动启动与 Codex Skill 自动启动均通过 WMI（`Win32_
 
 ## 更新与发布边界
 
-官方桌面自行更新；OPL 增强层的自动检查、下载校验与退出后一次性后台 watcher 规则，以及 GitHub API 限流降级与联合发布合同，统一归[发布约定](release-policy.md)与[稳定发布 SOP](release-sop.md)。协议 1 增强包不要求包含本地候选版的 `ofm-upgrade.cjs` 或 `update-errors.mjs`，下载或逐文件摘要校验失败记录为 `verify/integrity`。
+官方桌面自行更新；OPL 增强层的自动检查、下载校验与退出后一次性后台 watcher 规则，以及 GitHub API 限流降级与联合发布合同，统一归[发布约定](release-policy.md)与[稳定发布 SOP](release-sop.md)。更新准入与排空（`src/updates/`）不通过 `Object.defineProperty` 修改或拦截官方服务或 Agent 实例的方法描述符，而是在应用重启前由只读活动检查与 `host-drained.json` 标记保证安全退出。协议 1 增强包不要求包含本地候选版的 `ofm-upgrade.cjs` 或 `update-errors.mjs`，下载或逐文件摘要校验失败记录为 `verify/integrity`。
 
-Linux CI 执行契约漂移、模块边界、格式、Host/Client 类型、构建与测试（构建必须先于 artifact 测试）。SuperAgent 的 POSIX 服务控制、账户 Shell wrapper、Unix 信号与权限测试在 Linux/macOS 执行，Windows 仅运行共享语义测试且不提供 Windows SuperAgent 启动入口。官方桌面资格边界见[官方桌面兼容验证](compatibility.md)。
+Linux CI 执行契约漂移、模块边界、格式、Host/Client 类型、构建与测试（构建必须先于 artifact 测试）。官方桌面资格边界见[官方桌面兼容验证](compatibility.md)。
 
 ## Linux CLI/Web 迁移
 
@@ -161,7 +151,7 @@ node installer/install-linux.mjs "dist/OPL DSH 一键安装"
 "$HOME/.local/share/OPL DSH Suite/launch-opl-linux.sh"
 ```
 
-安装器复用官方 `runPluginCommand`，固定三包和 OFM 的版本与摘要，并保持 `suite → execution → collaboration` 的装载顺序。Linux 不安装 KimiCU、Windows 会话清理 Skill，也不启用 Desktop 的增强层自动更新。SuperAgent 使用单独的 `opl-superagent` home/profile/state，不与主 OPL profile 共享会话或工单状态。Linux CLI/Web 验收不替代 macOS/Windows 官方桌面资格。
+安装器复用官方 `runPluginCommand`，安装单一插件 `@one-person-lab/dsh-opl` 与 OFM 的固定版本。Linux 不启用 Desktop 的增强层自动更新。Linux CLI/Web 验收不替代 macOS/Windows 官方桌面资格。
 
 ## 本地候选安装
 

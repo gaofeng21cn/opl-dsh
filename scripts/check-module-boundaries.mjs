@@ -57,6 +57,10 @@ const runtimeAntipatterns = [
   "Object.defineProperty(controller, 'modelCatalog'",
   'opl-model-navigation',
   'followEngineUpdates',
+  'installUpdateAdmission',
+  'guardUpdateMethods',
+  'updateAdmissionOriginal',
+  'Object.defineProperty(target, name',
 ]
 const retiredModuleTokens = [
   'kimi-cu',

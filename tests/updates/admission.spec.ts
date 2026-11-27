@@ -1,24 +1,16 @@
-/** Admission races use explicit barriers and detached Sessions, without model calls or user state. */
-import { Context, Service } from '@deepseek-ai/cordis'
-import { TypertGatewayService } from '@deepseek-ai/dsh-api-gateway'
-import {
-  SessionController,
-  type SessionPromptRequest,
-} from '@deepseek-ai/dsh-api-session-controller'
-import { createUserMessage, type ContentBlock, type UserMessage } from '@deepseek-ai/dsh-llm'
+/** Admission exclusion, non-invasive Host activity inspection, and update freeze state. */
+import { Context } from '@deepseek-ai/cordis'
+import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
-import { TypertRemoteService, type InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { testPeer } from '../test-peer.ts'
 import {
   UpdateAdmission,
   assertSuiteAdmission,
   drainUpdateActivity,
-  guardUpdateMethods,
   inspectUpdateActivity,
-  installUpdateAdmission,
   type UpdateActivityCalls,
 } from '../../src/updates/host/admission.ts'
+import { installUpdateRuntime } from '../../src/updates/host/runtime-admission.ts'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -233,388 +225,124 @@ describe('update admission exclusion', () => {
   })
 })
 
-describe('public method compatibility guards', () => {
-  it('guards real Typert Gateway calls through the dynamically resolved service method', async () => {
-    const ctx = new Context()
-    cleanups.push(() => ctx.fiber.dispose())
-    const entered = deferred<void>()
-    const barrier = deferred<void>()
-    class Calls extends TypertRemoteService {
-      calls = 0
-      constructor(scope: Context) {
-        super(scope, 'updateTestCalls')
-      }
-      async change(): Promise<string | undefined> {
-        this.calls++
-        entered.resolve()
-        await barrier.promise
-        return this.ctx.invocation?.peer.id
-      }
-    }
-    const service = new Calls(ctx)
-    const descriptor: InvocationDescriptor = {
-      id: 'update-test/change',
-      service: 'updateTestCalls',
-      namespace: 'updateTestCalls',
-      method: 'change',
-      invocation: { kind: 'direct' },
-      parameters: [],
-      result: { mode: 'src-json' },
-    }
-    ctx.provide('typert', { local: { get: () => descriptor } })
-    const gateway = new TypertGatewayService(ctx, {})
-    const gate = new UpdateAdmission()
-    cleanups.push(guardUpdateMethods(service, ['change'], gate))
-    const request = {
-      namespace: 'updateTestCalls',
-      method: 'change',
-      args: {},
-      peer: testPeer,
-    }
-    const work = gateway.invoke(request)
-    await entered.promise
-    expect(() => gate.freeze()).toThrow('活动任务或启动请求')
-    barrier.resolve()
-    expect(await work).toBe(testPeer.id)
-    const lease = gate.freeze()
-    await expect(gateway.invoke(request)).rejects.toThrow('正在应用更新')
-    expect(service.calls).toBe(1)
-    lease.release()
-  })
+function runtimeFixture() {
+  const ctx = new Context()
+  cleanups.push(() => ctx.fiber.dispose())
+  const agent = new TestAgent(ctx)
+  const live = [agent]
+  const commands = {
+    prompt: vi.fn(async () => ({ accepted: true })),
+    create: vi.fn(async () => ({})),
+    selectModel: vi.fn(async () => ({})),
+    fork: vi.fn(async () => ({})),
+    updateQueue: vi.fn(async () => ({})),
+  }
+  const registry = {
+    list: () => [...live],
+    get: (id: SessionId) => live.find((item) => item.id === id),
+    create: vi.fn(async () => ({})),
+    resume: vi.fn(async () => ({})),
+  }
+  const settings = {
+    update: vi.fn(async () => {}),
+    mutate: vi.fn(async () => {}),
+  }
+  const harness = {
+    updateBusy: vi.fn(() => false),
+    drainForUpdate: vi.fn(async () => {}),
+  }
+  const feedback = {
+    tasks: vi.fn(() => []),
+  }
+  ctx.provide('sessionController', commands as never)
+  ctx.provide('agents', registry as never)
+  ctx.provide('sessions', { list: () => live.map((item) => item.session) } as never)
+  ctx.provide('workspaceRegistry', { list: () => [] } as never)
+  ctx.provide('settings', settings as never)
+  ctx.provide('taskFeedback', feedback as never)
+  const runtime = installUpdateRuntime(ctx, harness as never)
+  return { ctx, agent, live, commands, registry, settings, harness, feedback, runtime }
+}
 
-  it('retains the Cordis caller context and guards a prototype method before its first await', async () => {
-    const ctx = new Context()
-    cleanups.push(() => ctx.fiber.dispose())
-    const gate = new UpdateAdmission()
-    const barrier = deferred<void>()
-    class Calls extends Service {
-      entered = 0
-      constructor(scope: Context) {
-        super(scope, 'updateTestCalls')
-      }
-      async change(): Promise<unknown> {
-        this.entered++
-        const caller: unknown = Reflect.get(this.ctx, 'updateCaller')
-        await barrier.promise
-        return caller
-      }
+describe('non-invasive update runtime', () => {
+  it('never patches own method descriptors on official services or live Agents', async () => {
+    const controller = {
+      prompt: async () => ({}),
+      create: async () => ({}),
+      selectModel: async () => ({}),
+      fork: async () => ({}),
+      updateQueue: async () => ({}),
     }
-    const service = new Calls(ctx)
-    cleanups.push(guardUpdateMethods(ctx.get('updateTestCalls'), ['change'], gate))
-    const caller = ctx.extend({ updateCaller: 'owner-client' }).get('updateTestCalls') as Calls
-    const work = caller.change()
-    expect(service.entered).toBe(1)
-    expect(() => gate.freeze()).toThrow('活动任务或启动请求')
-    barrier.resolve()
-    expect(await work).toBe('owner-client')
-    const lease = gate.freeze()
-    await expect(caller.change()).rejects.toThrow('正在应用更新')
-    expect(service.entered).toBe(1)
-    lease.release()
-  })
-
-  it('rolls back a partial install when a required method cannot be extended', () => {
-    const gate = new UpdateAdmission()
-    const owner = { first: () => 1, second: () => 2 }
-    Object.defineProperty(owner, 'second', { configurable: false, writable: false })
-    const before = Object.getOwnPropertyDescriptors(owner)
-    expect(() => guardUpdateMethods(owner, ['first', 'second'], gate)).toThrow()
-    expect(Object.getOwnPropertyDescriptors(owner)).toEqual(before)
-    expect(() => guardUpdateMethods(owner, ['first', 'missing'], gate)).toThrow('缺少公开方法')
-    expect(Object.getOwnPropertyDescriptors(owner)).toEqual(before)
-    gate.freeze().release()
-  })
-
-  it('refuses freeze after a guard is replaced and preserves the replacement during disposal', () => {
-    const gate = new UpdateAdmission()
-    const owner = { change: async () => 1 }
-    const dispose = guardUpdateMethods(owner, ['change'], gate)
-    const later = async () => 2
-    owner.change = later
-    expect(() => gate.freeze()).toThrow('准入保护已改变')
-    expect(gate.inspect().frozen).toBe(false)
-    dispose()
-    dispose()
-    expect(owner.change).toBe(later)
-    gate.freeze().release()
-  })
-})
-
-describe('native and scheduled input admission', () => {
-  it('retains real official prompt admission while its attachment service is awaiting', async () => {
-    const ctx = new Context()
-    cleanups.push(() => ctx.fiber.dispose())
-    const agent = new TestAgent(ctx)
-    const entered = deferred<void>()
-    const content = deferred<ContentBlock[]>()
-    const commit = vi.fn()
-    ctx.provide('agents', {
+    const agent = new TestAgent(new Context())
+    const registry = {
       list: () => [agent],
       get: (id: SessionId) => (id === agent.id ? agent : undefined),
       create: async () => ({}),
       resume: async () => ({}),
-    } as never)
-    ctx.provide('sessions', { list: () => [agent.session], get: () => agent.session } as never)
-    ctx.provide('attachments', {
-      admitPromptContent: () => {
-        entered.resolve()
-        return content.promise
-      },
-    } as never)
-    ctx.provide('fileUploads', {
-      registerAgentResolver: () => () => {},
-      bindPrompt: () => ({ commit, [Symbol.dispose]: () => {} }),
-    } as never)
-    ctx.provide('typert', {
-      resources: { register: () => () => {} },
-      lookups: { configure: () => {} },
-      contexts: { configureHost: () => {} },
-    })
-    ctx.provide('sessionProjections', {
-      onEventChanged: () => () => {},
-      register: async () => ({ stateOf: () => ({ blank: true, lastPromptAt: null }) }),
-    } as never)
-    ctx.provide('workspaceRegistry', { archivedSessionIds: [] } as never)
-    class ReadySessionController extends SessionController {
-      initializeForTest(): Promise<void> {
-        return this[Service.init]()
-      }
     }
-    const controller = new ReadySessionController(ctx, { nativeOpen: false })
-    await controller.initializeForTest()
-    const gate = new UpdateAdmission()
-    installUpdateAdmission(ctx, gate)
-    const request: SessionPromptRequest = {
-      sessionId: agent.id,
-      requestId: 'prompt-real' as SessionPromptRequest['requestId'],
-      content: [{ type: 'text', text: 'continue' }],
-      mode: 'queue',
-    }
-    const work = controller.prompt(request, new AbortController().signal)
-    void work.catch(entered.reject)
-    expect(gate.inspect().pending).toBe(1)
-    await entered.promise
-    expect(() => gate.freeze()).toThrow('活动任务或启动请求')
-    expect(agent.session.snapshotEvents()).toEqual([])
-    content.resolve([{ type: 'text', text: 'continue' }])
-    expect(await work).toEqual({ accepted: true })
-    expect(commit).toHaveBeenCalledOnce()
-    expect(agent.inbox.nextTurn).toHaveLength(1)
-    expect(agent.session.snapshotEvents()).toHaveLength(1)
-    expect(gate.inspect().pending).toBe(0)
-  })
+    const settings = { update: async () => {}, mutate: async () => {} }
+    const ctx = new Context()
+    cleanups.push(() => ctx.fiber.dispose())
+    ctx.provide('sessionController', controller as never)
+    ctx.provide('agents', registry as never)
+    ctx.provide('sessions', { list: () => [agent.session] } as never)
+    ctx.provide('workspaceRegistry', { list: () => [] } as never)
+    ctx.provide('settings', settings as never)
 
-  it('guards an in-flight native submit before attachment or Agent resolution can await', async () => {
-    const f = nativeFixture()
-    const submit = f.commands.prompt()
-    expect(f.spies.prompt).toHaveBeenCalledTimes(1)
-    expect(f.agent.inbox.nextTurn).toEqual([])
-    expect(() => f.gate.freeze()).toThrow('活动任务或启动请求')
-    f.barrier.resolve()
-    await submit
-    expect(f.agent.inbox.nextTurn).toHaveLength(1)
-    expect(f.agent.session.snapshotEvents()).toHaveLength(1)
-  })
+    const beforeController = Object.getOwnPropertyDescriptors(controller)
+    const beforeRegistry = Object.getOwnPropertyDescriptors(registry)
+    const beforeSettings = Object.getOwnPropertyDescriptors(settings)
+    const beforeAgent = Object.getOwnPropertyDescriptors(agent)
 
-  it.each(['send', 'followup', 'steer', 'inject'] as const)(
-    'refuses scheduled %s synchronously without changing inbox or Session history',
-    (method) => {
-      const f = nativeFixture()
-      const scheduled = f.agent[method].bind(f.agent)
-      const before = f.agent.session.snapshotEvents()
-      const lease = f.gate.freeze()
-      expect(() => scheduled(message(), 'next-turn', true)).toThrow('正在应用更新')
-      expect(f.agent.inbox).toEqual({ nextTurn: [], nextStep: [] })
-      expect(f.agent.status).toBe('idle')
-      expect(f.agent.session.snapshotEvents()).toEqual(before)
-      lease.release()
-      scheduled(message(), 'next-turn', true)
-      expect(f.agent.session.snapshotEvents()).toHaveLength(1)
-    },
-  )
+    const runtime = installUpdateRuntime(ctx)
 
-  it('guards the official SessionController methods while frozen before their business code runs', async () => {
-    const f = nativeFixture(true)
-    const controller = f.ctx.get('sessionController')!
-    const lease = f.gate.freeze()
-    for (const method of ['prompt', 'create', 'selectModel', 'fork', 'updateQueue']) {
-      const operation = Reflect.get(controller, method) as (...args: unknown[]) => Promise<unknown>
-      await expect(operation.call(controller, {}, new AbortController().signal)).rejects.toThrow(
-        '正在应用更新',
-      )
-    }
-    lease.release()
-    expect(f.agent.session.snapshotEvents()).toEqual([])
-  })
+    expect(Object.getOwnPropertyDescriptors(controller)).toEqual(beforeController)
+    expect(Object.getOwnPropertyDescriptors(registry)).toEqual(beforeRegistry)
+    expect(Object.getOwnPropertyDescriptors(settings)).toEqual(beforeSettings)
+    expect(Object.getOwnPropertyDescriptors(agent)).toEqual(beforeAgent)
 
-  it('installs guards before later serial Agent creation listeners can drive input', async () => {
-    const f = nativeFixture()
-    const created = new TestAgent(f.ctx, 'session-created')
-    const later = vi.fn(() => {
-      created.followup(message())
-      return undefined
-    })
-    f.ctx.on('agent/created', later, { global: true })
-    f.live.push(created)
-    await f.ctx.serial('agent/created', {
+    const created = new TestAgent(ctx, 'session-created')
+    const beforeCreated = Object.getOwnPropertyDescriptors(created)
+    await ctx.serial('agent/created', {
       agent: created as never,
       source: 'startup',
       signal: new AbortController().signal,
     })
-    expect(later).toHaveBeenCalledOnce()
-    expect(created.inbox.nextTurn).toHaveLength(1)
-    const lease = f.gate.freeze()
-    expect(() => created.followup(message())).toThrow('正在应用更新')
-    const rejected = new TestAgent(f.ctx, 'session-rejected')
-    await expect(
-      f.ctx.serial('agent/created', {
-        agent: rejected as never,
-        source: 'startup',
-        signal: new AbortController().signal,
-      }),
-    ).rejects.toThrow('正在应用更新')
-    expect(later).toHaveBeenCalledOnce()
-    lease.release()
-  })
-
-  it('retains idle maintenance through completion and preserves synchronous busy errors', async () => {
-    const f = nativeFixture()
-    const barrier = deferred<void>()
-    const work = f.agent.runMaintenance(() => barrier.promise)
-    expect(f.agent.status).toBe('idle')
-    expect(() => f.gate.freeze()).toThrow('活动任务或启动请求')
-    expect(() => f.agent.runMaintenance(async () => {})).toThrow('maintenance already active')
-    expect(f.gate.inspect().pending).toBe(1)
-    barrier.resolve()
-    await work
-    f.gate.freeze().release()
-  })
-
-  it('holds Schedule idle retry behind a freeze without running or spinning maintenance', async () => {
-    const f = nativeFixture()
-    const lease = f.gate.freeze()
-    let attempts = 0
-    let callbackRuns = 0
-    const retried = deferred<void>()
-    const attempt = (): void => {
-      attempts++
-      try {
-        void f.agent.runMaintenance(async () => {
-          callbackRuns++
-          retried.resolve()
-          return true
-        })
-      } catch {
-        void f.agent.whenIdle().then(attempt, () => {})
-      }
+    expect(Object.getOwnPropertyDescriptors(created)).toEqual(beforeCreated)
+    for (const method of ['send', 'followup', 'steer', 'inject', 'runMaintenance', 'whenIdle']) {
+      expect(Object.hasOwn(created, method)).toBe(false)
     }
-    attempt()
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(attempts).toBe(1)
-    expect(callbackRuns).toBe(0)
-    lease.release()
-    await retried.promise
-    expect(attempts).toBe(2)
-    expect(callbackRuns).toBe(1)
+    expect(await runtime.inspect()).toBe(true)
   })
 
-  it('turns a Suite lock maintenance denial into one synchronous failure without spinning', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'opl-suite-admission-'))
-    try {
-      const gate = new UpdateAdmission(() => assertSuiteAdmission(root))
-      const f = nativeFixture(false, true, gate)
-      await writeFile(
-        join(root, 'enhancement-transaction.lock'),
-        JSON.stringify({ kind: 'update', id: 'update', nonce: 'nonce', pid: 1 }),
-      )
-      let attempts = 0
-      let callbackRuns = 0
-      const failure = deferred<unknown>()
-      const attempt = (): void => {
-        attempts++
-        try {
-          void f.agent
-            .runMaintenance(async () => {
-              callbackRuns++
-              return true
-            })
-            .catch(failure.resolve)
-        } catch (error) {
-          failure.resolve(error)
-          void f.agent.whenIdle().then(attempt, () => {})
-        }
-      }
-      attempt()
-      await failure.promise
-      await Promise.resolve()
-      await Promise.resolve()
-      expect(attempts).toBe(1)
-      expect(callbackRuns).toBe(0)
-    } finally {
-      await rm(root, { recursive: true, force: true })
-    }
-  })
-
-  it('rejects a deferred Schedule idle retry during close without replaying its task', async () => {
-    const f = nativeFixture()
-    const lease = f.gate.freeze()
-    let attempts = 0
-    let callbackRuns = 0
-    const stopped = deferred<void>()
-    const attempt = (): void => {
-      attempts++
-      try {
-        void f.agent.runMaintenance(async () => {
-          callbackRuns++
-          return true
-        })
-      } catch {
-        void f.agent.whenIdle().then(attempt, () => stopped.resolve())
-      }
-    }
-    attempt()
+  it('refuses freeze when live work is active and drains idle Agents before releasing', async () => {
+    const f = runtimeFixture()
+    const maintenance = deferred<void>()
+    const task = f.agent.runMaintenance(() => maintenance.promise)
+    let release!: () => void
+    const freezing = f.runtime.freeze().then((done) => {
+      release = done
+    })
     await Promise.resolve()
-    await f.gate.close()
-    await stopped.promise
-    lease.release()
-    await Promise.resolve()
-    expect(attempts).toBe(1)
-    expect(callbackRuns).toBe(0)
+    expect(f.harness.drainForUpdate).not.toHaveBeenCalled()
+    maintenance.resolve()
+    await Promise.all([task, freezing])
+    expect(f.harness.drainForUpdate).toHaveBeenCalledOnce()
+    expect(() => f.runtime.assertAvailable?.()).toThrow('正在应用更新')
+    release()
+    expect(() => f.runtime.assertAvailable?.()).not.toThrow()
   })
 
-  it('drains a pre-existing maintenance task through the original whenIdle during freeze', async () => {
-    const f = nativeFixture(false, false)
-    f.ctx.provide('sessions', { list: () => [f.agent.session] } as never)
-    f.ctx.provide('workspaceRegistry', { list: () => [] } as never)
-    const barrier = deferred<void>()
-    const maintenance = f.agent.runMaintenance(() => barrier.promise)
-    installUpdateAdmission(f.ctx, f.gate)
-    const lease = f.gate.freeze()
-    const drain = drainUpdateActivity(f.ctx, new AbortController().signal)
-    await Promise.resolve()
-    expect(f.gate.inspect().pending).toBe(0)
-    barrier.resolve()
-    await Promise.all([maintenance, drain])
-    lease.release()
-  })
-
-  it('fails closed if a registry changes or a published Agent has no input guards', () => {
-    const f = nativeFixture()
-    const created = new TestAgent(f.ctx, 'session-unannounced')
-    f.live.push(created)
-    expect(() => f.gate.freeze()).toThrow('未受更新准入保护')
-    f.live.pop()
-    f.ctx.set('sessionController', { ...f.commands } as never)
-    expect(() => f.gate.freeze()).toThrow('官方服务已改变')
-  })
-
-  it('restores native descriptors when the owning effect unloads', async () => {
-    const f = nativeFixture()
-    expect(Object.hasOwn(f.agent, 'followup')).toBe(true)
-    await f.ctx.fiber.dispose()
-    expect(Object.hasOwn(f.agent, 'followup')).toBe(false)
-    expect(f.spies.prompt).toHaveBeenCalledTimes(0)
+  it('aborts freeze when Harness or feedback reports busy activity', async () => {
+    const f = runtimeFixture()
+    f.harness.updateBusy.mockReturnValue(true)
+    await expect(f.runtime.freeze()).rejects.toThrow('仍有任务活动')
+    f.harness.updateBusy.mockReturnValue(false)
+    f.feedback.tasks.mockReturnValue([{ state: 'running' }] as never)
+    await expect(f.runtime.freeze()).rejects.toThrow('仍有任务活动')
+    f.feedback.tasks.mockReturnValue([])
+    const release = await f.runtime.freeze()
+    release()
   })
 })
 

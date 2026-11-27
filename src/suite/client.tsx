@@ -59,8 +59,31 @@ export async function apply(ctx: Context): Promise<void> {
   }
   let openSettings: ((section?: SettingsNavigationTarget) => void) | undefined
   ctx.plugin(gateway, { openGateway: () => openSettings?.('gateway') })
-  if (optionalRemote(ctx, 'oplExecution')) ctx.plugin(execution)
-  if (optionalRemote(ctx, 'oplCoordination')) ctx.plugin(collaboration)
+  const executionRemote = optionalRemote(ctx, 'oplExecution')
+  const coordinationRemote = optionalRemote(ctx, 'oplCoordination')
+  if (executionRemote) {
+    const executionCall = remoteCall(executionRemote)
+    const coordinationCall = coordinationRemote ? remoteCall(coordinationRemote) : undefined
+    const roleRemote = optionalRemote(ctx, 'oplRoleExecution')
+    const roleCall = roleRemote ? remoteCall(roleRemote) : undefined
+    ctx.plugin(
+      execution,
+      coordinationCall
+        ? {
+            renderCollaboration: () => (
+              <collaboration.CoordinationSection
+                embedded
+                call={coordinationCall}
+                executionCall={executionCall}
+                {...(roleCall ? { roleCall } : {})}
+              />
+            ),
+          }
+        : {},
+    )
+  } else if (coordinationRemote) {
+    ctx.plugin(collaboration)
+  }
   ctx.plugin(notifications)
   ctx.effect(() => ctx.locale.register(SUITE_FEATURE_NAMESPACE, labels))
   ctx.plugin(conversationStats)

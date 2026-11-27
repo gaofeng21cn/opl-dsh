@@ -63,11 +63,11 @@ OPL 从官方 LLM 注册表读取插件公开的 Provider 和模型，以原始 
 
 ## 设置与使用
 
-- **Computer Use** 由桌面随附的官方插件管理权限与原生工具。KimiCU 继续提供已有的 `computer_use` 工具，桌面变更要求会话显式选择“完全访问”。详见[桌面观察与操作](computer-use.md)。
+- **Computer Use** 由官方桌面随附 `@deepseek-ai/dsh-cua-bundle` 原生插件直接提供，v2 已移除 KimiCU。
 - **推理档位默认值**：DeepSeek 4.1 Flash 的 DeepSeek 与 OpenAI 协议渠道默认推理档位为 `high`；GPT 模型默认 `medium`。MiniMax M3.1 默认 `max`，M3 默认开启思考。默认值仅在未选择档位时使用，同一对话按模型和渠道保存的选择优先，切换模型不沿用其他模型的档位。外部 Harness 在切换组合后自动读取官方能力并显示已确认档位（Antigravity 与 Grok 默认 `high`，不支持档位的组合不显示选项），能力读取不发送模型提示词。
-- **OPL Gateway / 模型**：账号页管登录、用量、分组权限与凭据；模型页沿用官方页面并置顶 OPL Gateway，默认平铺模型（高级字段在编辑区展开）。
-- **Harness**：检测安装、版本与路径，区分文件存在与版本验证成功，Windows npm 入口选择 `.cmd` 等可执行启动器；ZCode 桌面入口不在检测时启动。内置 DSH 随官方桌面更新，不可删除。执行引擎页常显 DSH、Codex CLI、Claude Code、Grok Build、Antigravity CLI 与 OpenCode，其余已适配引擎收在“更多执行引擎”中；未提供一键安装的引擎保留官方说明与路径登记入口。
-- **组合**：从 DSH 模型目录选择模型，绑定 Harness 与权限。每个模型可指定默认组合；没有自定义默认时，GPT 默认 Codex CLI、Claude 默认 Claude Code，Gemini 组默认 Antigravity CLI，其他模型使用已配置的官方默认组合。
+- **OPL Gateway（单一入口）**：由 `opl-suite` 通过官方 `DeepSeekAdapter` 与 `PiAiAdapter`（`mountGatewayPiAiBridge`）统一托管登录、余额、七组权限、分组模型目录、渠道协议及外部 Codex 配置；聊天框模型菜单与「模型供应商」中仅以单一 `opl-gateway` 身份出现，零 CSS/DOM 隐藏补丁。
+- **执行引擎与协作页**：顶部平铺展示本机检测（DSH、Codex CLI、Claude Code、Grok Build、Antigravity CLI 与 OpenCode 常显，其余内置与自定义引擎收在“更多执行引擎”）及“添加自定义标准 ACP 引擎”；可选默认规则、运行超时、跨引擎协作与外部 Codex 委派收进页面下方的三个折叠面板。
+- **组合与就地切换**：每个模型开箱拥有官方推荐默认引擎（DeepSeek→DSH、GPT→Codex、Claude→Claude Code、Gemini→Antigravity、Grok→Grok Build）；若默认引擎未安装或想自由搭配，直接在聊天框模型菜单打开「执行引擎」即可一键安装、切换 DSH 或就地选用 OpenCode/自定义标准 ACP（按需自动登记 `custom:<harness>:<provider>:<model>` 并保留原模型默认，除非显式点击“设为该模型默认”）。
 
 对话输入栏复用官方模型目录、模型选择投影、菜单组件与 Slot；OPL 的组合选择菜单显示“模型 · Harness”，来源仅作为展开菜单的分组标题。没有凭据的官方 DeepSeek 模型不作为可选项。DSH 原生组合调用官方 Session 的模型选择接口；外部 Harness 组合绑定到当前官方 Session，由 Host 在 `llm/stream` 阶段转发同一轮请求并把文本流回官方 Session。自动生成组合的权限只作为新委派任务的缺省值，切换模型保留当前会话选择的权限；显式只读组合通过官方只读预设同时设置 sandbox 与审批策略，不会静默扩大当前权限。
 
@@ -89,12 +89,11 @@ MiniMax 官方账号与 mcode ACP 专用集成的开关归唯一偏好 `opl-exec
 
 ## 模型与组合的界面规则
 
-模型配置继续写入 DSH 原生设置，页面按模型来源、执行与组合、协作与行为、应用扩展组织：
+模型配置继续写入 DSH 原生设置，OPL 专属设置导航收敛为两页（「OPL Gateway」与「执行引擎与协作」）：
 
-- 账号页管账号、用量与分组凭据；模型页平铺展示模型并仅以渠道标记区分同名路由，编辑时展开协议和高级字段，不因新增供应商或决策模型复制独立设置页。
-- BambooNode StartLux 与 TypeSafe Jev 注册到官方可配置提供商目录，兼容层扩展 `llm-pi-ai` 公开 Schema 并提供固定凭据目标（Windows Keyring）与精确 Jev 发现，卸载恢复原方法。
-- 系统通知复用官方通用设置条目，token 用量与上下文占用复用官方统计（旧上下文预算服务与未挂载 UI 已删除）；外部 Harness 网络代理和工具审批折叠区收在“执行与组合”内，不占独立导航。
-- 导航名称与顺序集中定义在 `src/shared/client/settings-navigation.ts`，由 `src/compat/client/settings-navigation.ts` 仅在界面层调整公开 Slot 标签与顺序、隐藏导航图标，不改动官方或 OFM 包文件。新增能力与 UI 放置依据见[功能接入与 UI 成本判断](development.md#功能接入与-ui-成本判断)。
+- 「OPL Gateway」一站式管理登录、余额、七组启用状态、模型勾选与外部 Codex 接入，不因新增供应商或分组复制独立设置页。
+- 系统通知复用官方通用设置条目，token 用量与上下文占用复用官方统计；独立引擎代理、默认规则预设、运行限制及跨引擎协作（`CoordinationSection`）统一收在「执行引擎与协作」内，不占第三项独立导航。
+- 导航顺序集中定义在 `src/shared/client/settings-navigation.ts`，通过官方 `settings.section` Slot 顺序与 `label()` 渲染，零官方或 OFM 包文件补丁。新增能力与 UI 放置依据见[功能接入与 UI 成本判断](development.md#功能接入与-ui-成本判断)。
 
 ## 原生协作与跨 Harness 交付
 
@@ -102,9 +101,9 @@ MiniMax 官方账号与 mcode ACP 专用集成的开关归唯一偏好 `opl-exec
 
 跨 Harness 连续会话与交付验收由 `HarnessService`（`harness-sessions/`）持久化，Agent 工具注册在 `src/collaboration/host/tools.ts`，外部 Codex 入口位于 `src/collaboration/host/external-codex.ts`。执行态与验收态分离，通知回传经 `taskFeedbackFacts`（v2 投影缓存）与 outbox/receipt 幂等去重，已解决的待审批/提问通知在确认后从投递队列退役并保留审计记录。普通写任务不因共享 cwd 排队；并发 Git 写任务遵循[并行写入与工作树](parallel-writes.md)。
 
-## 审批、计量与 MCP 边界
+## 审批与计量边界
 
-原生 Auto Review 的权限预设、pre-execute gate 与生命周期由官方 `dsh-experimental-auto-review` 负责，安装器不再自动启用它；OPL 仅保留路由、预算、记录与 ZCode 外部审批桥，详见[Auto Review 工具审批](auto-review.md)。原生计量与编辑统计、MCP Apps 公开接口缺口分别见[日常使用指南](everyday-guide.md)与[MCP Apps 支持范围](mcp-apps.md)。
+原生 Auto Review 的权限预设、pre-execute gate 与生命周期完全归属官方 `dsh-experimental-auto-review`；OPL v2 已移除私有 reviewer 路由与弹窗。原生计量与编辑统计见[日常使用指南](everyday-guide.md)。
 
 ## 实现边界
 

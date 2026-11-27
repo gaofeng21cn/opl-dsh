@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { installEffortDirectories } from './official-effort-directory.ts'
 import {
   AntigravityAccountCard,
@@ -61,7 +62,9 @@ import {
 import { HARNESS_TRANSCRIPT_TOOL } from '../contracts/tool-display.ts'
 import { remoteCall } from '../../shared/client/remote-call.ts'
 
-export interface ClientConfig {}
+export interface ClientConfig {
+  renderCollaboration?: () => ReactNode
+}
 
 export const inject = [
   'slots',
@@ -196,10 +199,11 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
           name: 'settings.section',
           id: 'opl-execution',
           order: SETTINGS_ORDER['opl-execution'],
-          label: () => '执行与组合',
+          label: () => '执行引擎与协作',
           inject: () => ({
             call,
             minimax: { form: executionForm, t: minimaxT },
+            ...(config.renderCollaboration ? { collaboration: config.renderCollaboration() } : {}),
           }),
         },
         ExecutionSettings,

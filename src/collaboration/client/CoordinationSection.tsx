@@ -12,10 +12,12 @@ export function CoordinationSection({
   call,
   executionCall,
   roleCall,
+  embedded = false,
 }: {
   call: CoordinationCall
   executionCall?: ExecutionCall
   roleCall?: RoleExecutionCall
+  embedded?: boolean
 }) {
   const {
     cooperation,
@@ -60,7 +62,7 @@ export function CoordinationSection({
       data-opl-panel="collaboration"
       aria-busy={busy || cooperationBusy || cooperationLoading || (!status && !notice)}
     >
-      <h2 className={css.title}>协作与自动化</h2>
+      {embedded ? null : <h2 className={css.title}>协作与自动化</h2>}
       <section className={css.collaborationGroup}>
         <h3 className={css.name}>DSH 内协作</h3>
         {!executionCall && (

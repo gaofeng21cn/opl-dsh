@@ -315,7 +315,14 @@ afterEach(async () => {
   while (mounted.length) await mounted.pop()!()
 })
 /** Open the execution settings surface and let the catalog load. */
-async function open(call: ExecutionCall, component = HarnessSettings) {
+async function open(
+  call: ExecutionCall,
+  component:
+    | typeof HarnessSettings
+    | typeof ExecutionSettings
+    | typeof ExecutionCatalogSection = HarnessSettings,
+  extraProps: Record<string, unknown> = {},
+) {
   const container = dom.container()
   const root = createRoot(container as unknown as Element)
   mounted.push(() =>
@@ -340,6 +347,7 @@ async function open(call: ExecutionCall, component = HarnessSettings) {
       React.createElement(component as never, {
         call,
         ...(component === ExecutionSettings ? { minimax } : {}),
+        ...extraProps,
       }),
     )
   })
@@ -643,15 +651,19 @@ describe('每个外部 Harness 独立的代理设置', () => {
     expect(saved.catalog.combinations.at(-1)?.generated).not.toBe(true)
   })
 
-  it('把组合、执行程序、代理和工具审批收拢在一个设置入口内', async () => {
+  it('把组合、执行程序、代理和协作设置收拢在一个设置入口内', async () => {
     const { call } = fixture(catalog())
-    const view = await open(call, ExecutionSettings)
+    const view = await open(call, ExecutionSettings, {
+      collaboration: React.createElement('div', { 'data-opl-panel': 'collaboration' }, '外部协作'),
+    })
     const panels = walk(view)
       .map((node) => node.getAttribute?.('data-opl-panel'))
       .filter(Boolean)
     expect(panels).toContain('execution')
     expect(panels).toContain('catalog')
     expect(panels).toContain('execution-settings')
+    expect(panels).toContain('collaboration')
+    expect(text(view)).toContain('跨引擎协作与外部 Codex 委派')
   })
 
   it('代理配置归执行引擎，组合页面不再重复提供且检测不读取模型目录', async () => {

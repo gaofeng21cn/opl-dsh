@@ -6,9 +6,7 @@ import type { HarnessService } from '../../execution/host/harness.ts'
 import {
   assertSuiteAdmission,
   drainUpdateActivity,
-  guardUpdateMethods,
   inspectUpdateActivity,
-  installUpdateAdmission,
   UpdateAdmission,
 } from './admission.ts'
 
@@ -22,6 +20,7 @@ export interface UpdateHandoffIdentity {
 export interface UpdateRuntime {
   inspect(): Promise<boolean>
   freeze(): Promise<() => void>
+  assertAvailable?(): void
   shutdownTarget(identity: UpdateHandoffIdentity | undefined): void
   drained(participant: 'controller' | 'harness'): void
   failed(): void
@@ -34,7 +33,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Install one gate before exposing OPL task dispatch and the update Remote. */
+/** Install a non-invasive update runtime coordinate without patching official DSH methods. */
 export function installUpdateRuntime(ctx: Context, harness?: HarnessService): UpdateRuntime {
   const resumed =
     process.env.OPL_UPDATE_TRANSACTION_ID && process.env.OPL_UPDATE_TRANSACTION_NONCE
@@ -51,56 +50,7 @@ export function installUpdateRuntime(ctx: Context, harness?: HarnessService): Up
       Number(process.env.OPL_LAUNCHER_PID) || undefined,
     ),
   )
-  installUpdateAdmission(ctx, gate)
-  const guardHarness = (scope: Context, owner: HarnessService) =>
-    scope.effect(() =>
-      guardUpdateMethods(
-        owner,
-        [
-          'start',
-          'prompt',
-          'delegateFrom',
-          'messageEditSend',
-          'stopEdit',
-          'selectCombination',
-          'createProjectlessSession',
-          'updateHarness',
-          'saveExecutionCatalog',
-          'saveHarnessProxy',
-          'removeCombination',
-          'minimaxAccountLogin',
-          'minimaxAccountLogout',
-        ],
-        gate,
-      ),
-    )
-  if (harness) guardHarness(ctx, harness)
-  else
-    ctx.inject(['oplHarness'], (child) => {
-      guardHarness(child, child.oplHarness)
-    })
   const currentHarness = () => harness ?? ctx.get('oplHarness')
-  ctx.inject(['taskFeedback'], (child) => {
-    child.effect(() =>
-      guardUpdateMethods(
-        child.taskFeedback,
-        ['register', 'registerHarnessOperation', 'resumeFailed'],
-        gate,
-      ),
-    )
-  })
-  ctx.inject(['settings'], (child) => {
-    child.effect(() => guardUpdateMethods(child.settings, ['update', 'mutate'], gate))
-  })
-  ctx.inject(['oplExecution'], (child) => {
-    child.effect(() =>
-      guardUpdateMethods(
-        child.oplExecution,
-        ['saveExecutionLimits', 'saveCooperationSettings', 'selectEffort'],
-        gate,
-      ),
-    )
-  })
   let target: UpdateHandoffIdentity | undefined
   let requireHarnessDrain = false
   const drained = new Set<string>()
@@ -144,6 +94,7 @@ export function installUpdateRuntime(ctx: Context, harness?: HarnessService): Up
   }
   return {
     inspect,
+    assertAvailable: () => gate.assertAvailable(),
     async freeze() {
       const lease = gate.freeze()
       try {

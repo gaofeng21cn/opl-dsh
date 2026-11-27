@@ -2,6 +2,7 @@ import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import { CoordinationSection } from './CoordinationSection.tsx'
 import { remoteCall, optionalRemote } from '../../shared/client/remote-call.ts'
+export { CoordinationSection }
 export const inject = ['slots', 'remote.oplCoordination']
 export function apply(ctx: Context): void {
   const call = remoteCall(ctx.remote.oplCoordination)

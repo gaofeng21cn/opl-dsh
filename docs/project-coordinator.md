@@ -44,7 +44,7 @@ node '<Skill目录>/coordinator/cli.mjs' init --file /absolute/plan.json
 
 默认状态保存在 `CODEX_HOME/opl-dsh-coordinator`，与 worker 的执行记录和原 taskFeedback 数据分开。计划和 checkpoint 可包含验收文字，应按项目资料保管；状态不是另一份 Session 日志。
 
-主审空闲时的通知直接复用 DSH「协作与自动化」中的通知桥。协调器每次需要发送时经公开 `coordination-status --no-autostart` 读取当前 wakeTransport、wakeExecution、wakeExecutable 和 wakeDistro；不另存 queue 配置，旧 settings.json 中的 queue 不再参与决策。DSH 未运行或设置不可读取时停止发送；未配置桥时保持 unconnected，不猜测 Codex 程序位置。
+主审空闲时的通知直接复用 DSH「设置 → 执行引擎与协作 → 跨引擎协作与外部 Codex 委派」中的通知桥。协调器每次需要发送时经公开 `coordination-status --no-autostart` 读取当前 wakeTransport、wakeExecution、wakeExecutable 和 wakeDistro；不另存 queue 配置，旧 settings.json 中的 queue 不再参与决策。DSH 未运行或设置不可读取时停止发送；未配置桥时保持 unconnected，不猜测 Codex 程序位置。
 
 状态目录的第一个项目可用计划中的 `connection` 指定该目录共享的公开 helper、变化信号目录和初始 watcher 启停方式：
 

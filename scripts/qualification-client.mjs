@@ -379,30 +379,27 @@ export async function verifyDesktopClient(
   await openSettings()
   const panels = [
     { label: ['通用设置', 'General'], marker: 'notifications' },
-    { label: ['执行与组合', 'Execution'], marker: 'catalog' },
-    { label: ['协作与自动化', 'Collaboration'], marker: 'collaboration' },
+    { label: ['执行引擎与协作', 'Engines & Collaboration'], marker: 'execution-settings' },
     { label: ['模型供应商', 'Model providers'], marker: 'gateway-models' },
   ]
   const screenshots = result.screenshots
   const expectedNavigation = [
     [
       '通用设置',
-      '网关账户',
+      'OPL Gateway',
       '模型供应商',
-      '执行与组合',
+      '执行引擎与协作',
       'Agent 预设',
-      '协作与自动化',
       '插件管理',
       'Our Free Model',
       ...(billionContextEnabled ? ['Billion Context'] : []),
     ],
     [
       'General',
-      'Gateway',
+      'OPL Gateway',
       'Model providers',
-      'Execution',
+      'Engines & Collaboration',
       'Agent presets',
-      'Collaboration',
       'Plugins',
       'Our Free Model',
       ...(billionContextEnabled ? ['Billion Context'] : []),
@@ -555,7 +552,19 @@ export async function verifyDesktopClient(
         currentSaved: true,
       }
     }
-    if (panel.marker === 'catalog') {
+    if (panel.marker === 'execution-settings') {
+      await pipe.evaluate(
+        session,
+        `for (const d of document.querySelectorAll('[data-opl-panel="execution"] > details')) d.open = true`,
+      )
+      await waitFor(
+        `Boolean(document.querySelector('[data-opl-panel="catalog"]')) && !document.querySelector('[data-opl-panel="catalog"]').getAttribute('aria-busy')?.includes('true') && Boolean(document.querySelector('[data-opl-panel="collaboration"]')) && !document.querySelector('[data-opl-panel="collaboration"]').getAttribute('aria-busy')?.includes('true')`,
+        '默认规则或协作折叠区未就绪',
+      )
+      const collaborationShot = await captureScreenshot('collaboration')
+      if (collaborationShot) screenshots.push(collaborationShot)
+      else result.screenshotFailures.push('collaboration')
+      result.settingsSlots.push('collaboration', 'catalog')
       if (
         await pipe.evaluate(
           session,
@@ -647,10 +656,17 @@ export async function verifyDesktopClient(
         '取消全选后仍有已启用组合，包括隐藏的不可用项',
       )
       await pipe.evaluate(session, clickLabel(['通用设置', 'General'], settingsNav))
-      await pipe.evaluate(session, clickLabel(['执行与组合', 'Execution'], settingsNav))
+      await pipe.evaluate(
+        session,
+        clickLabel(['执行引擎与协作', 'Engines & Collaboration'], settingsNav),
+      )
+      await pipe.evaluate(
+        session,
+        `for (const d of document.querySelectorAll('[data-opl-panel="execution"] > details')) if (d.querySelector('[data-opl-panel="catalog"]')) d.open = true`,
+      )
       await waitFor(
         `Boolean(document.querySelector('[data-opl-panel="catalog"]')) && !document.querySelector('[data-opl-panel="catalog"]').getAttribute('aria-busy')?.includes('true')`,
-        '重开执行组合页未完成',
+        '重开执行引擎与协作页未完成',
       )
       if (await pipe.evaluate(session, `Boolean(document.querySelector('[data-opl-combination]'))`))
         throw new Error('重开设置后已停用组合重新出现')
@@ -702,10 +718,9 @@ export async function verifyDesktopClient(
         `document.querySelector('[data-opl-panel="recommended-combinations"]').open=false`,
       )
 
-      await pipe.evaluate(
-        session,
-        `document.querySelector('[data-opl-panel="execution-settings"]').open=true`,
-      )
+      const catalogScreenshot = await captureScreenshot('catalog')
+      if (catalogScreenshot) screenshots.push(catalogScreenshot)
+      else result.screenshotFailures.push('catalog')
       await waitFor(
         `Boolean(document.querySelector('[data-opl-harness-row="codex"]')) && Boolean(document.querySelector('[data-opl-harness-group="more"]'))`,
         '执行引擎目录未挂载',
