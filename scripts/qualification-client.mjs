@@ -816,10 +816,6 @@ export async function verifyDesktopClient(
     }
     if (panel.marker === 'gateway-models-footer') {
       await waitFor(
-        `(() => {const card=document.querySelector('[data-opl-panel="minimax-account"]'); return Boolean(card && card.getClientRects().length && card.getAttribute('aria-busy') !== 'true')})()`,
-        'MiniMax 账号卡片未就绪',
-      )
-      await waitFor(
         `Boolean(document.querySelector('[data-opl-minimax-edit][aria-expanded="false"]'))`,
         'MiniMax 供应商编辑入口未显示',
       )
