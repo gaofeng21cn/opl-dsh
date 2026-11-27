@@ -51,6 +51,7 @@ export interface OplFlowSessionEntry {
   session_ref: string
   carrier: string
   surface?: string | undefined
+  is_subagent?: boolean | undefined
   harness?: string | undefined
   model_label?: string | undefined
   title?: string | undefined
@@ -89,6 +90,11 @@ export interface OplFlowDashboardCounts {
   safe_to_archive: number
   active_objectives: number
   active_sessions: number
+  running_sessions?: number | undefined
+  primary_sessions?: number | undefined
+  subagent_sessions?: number | undefined
+  unique_occupied_workspaces?: number | undefined
+  collision_workspaces?: number | undefined
   blocked: number
   backlog: number
   pending_events: number

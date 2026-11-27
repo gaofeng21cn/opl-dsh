@@ -141,9 +141,14 @@ describe('OPL Flow conditional DSH workbench', () => {
           needs_action: 2,
           safe_to_archive: 1,
           active_objectives: 0,
-          active_sessions: 1,
+          active_sessions: 3,
+          running_sessions: 1,
+          primary_sessions: 2,
+          subagent_sessions: 1,
+          unique_occupied_workspaces: 1,
+          collision_workspaces: 0,
           blocked: 0,
-          backlog: 0,
+          backlog: 1,
           pending_events: 0,
         },
         inbox: {
@@ -175,11 +180,55 @@ describe('OPL Flow conditional DSH workbench', () => {
           ],
           active_objectives: [],
           blocked: [],
-          backlog: [],
+          backlog: [
+            {
+              bead_id: 'opl-13',
+              title: 'OPL Link｜冻结保留',
+              first_blocker: 'user_directed_freeze',
+              next_action: '等待用户手动重启',
+              remaining: ['Step 1', 'Step 2'],
+              remaining_count: 2,
+              jump_mode: 'launch_new',
+            },
+          ],
           pending_events: [],
-        },
-        active_sessions: {
-          sessions: [],
+          active_sessions: [
+            {
+              session_ref: 'dsh:dsh-active-1',
+              carrier: 'dsh',
+              surface: 'dsh-desktop',
+              is_subagent: false,
+              title: 'DSH Main Session Title',
+              model_label: 'deepseek-chat',
+              workspace_label: 'ws-dsh',
+              session_id: 'dsh-active-1',
+              jump_mode: 'native_switch',
+              status: 'active',
+              updated_at: new Date().toISOString(),
+            },
+            {
+              session_ref: 'codex:codex-idle-2',
+              carrier: 'codex',
+              surface: 'cli',
+              is_subagent: false,
+              title: 'Recent Codex CLI Task',
+              model_label: 'gpt-6.2-sol',
+              workspace_label: 'ws-codex',
+              status: 'idle',
+              updated_at: new Date().toISOString(),
+            },
+            {
+              session_ref: 'codex:codex-sub-3',
+              carrier: 'codex',
+              surface: 'subagent',
+              is_subagent: true,
+              title: 'Hidden Helper Subagent',
+              model_label: 'gpt-6.2-sol',
+              workspace_label: 'ws-codex',
+              status: 'active',
+              updated_at: new Date().toISOString(),
+            },
+          ],
           active_workspace_occupants: [
             { workspace_label: 'ws-codex', carrier: 'codex', session_ref: 'codex:t1' },
           ],
@@ -237,9 +286,6 @@ describe('OPL Flow conditional DSH workbench', () => {
     expect(calls.some((c) => c.method === 'tick')).toBe(true)
 
     await act(async () => {
-      findButton('待批归档')!.click()
-    })
-    await act(async () => {
       findButton('批准归档')!.click()
     })
     await act(async () => {
@@ -250,5 +296,32 @@ describe('OPL Flow conditional DSH workbench', () => {
         (c) => c.method === 'approve' && (c.args[0] as { confirmed?: boolean })?.confirmed === true,
       ),
     ).toBe(true)
+
+    // Switch to 长期目标 and verify blocker + next_action + remaining are all rendered
+    await act(async () => {
+      findButton('长期目标')!.click()
+    })
+    expect(host.textContent).toContain('用户已冻结，等待手动重启')
+    expect(host.textContent).toContain('等待用户手动重启')
+    expect(host.textContent).toContain('剩余步骤（2 项）')
+
+    // Switch to 本机对话: shows running primary session by default, hides subagent until toggled
+    await act(async () => {
+      findButton('本机对话')!.click()
+    })
+    expect(host.textContent).toContain('DSH Main Session Title')
+    expect(host.textContent).not.toContain('Hidden Helper Subagent')
+    await act(async () => {
+      findButton('全部近期')!.click()
+    })
+    expect(host.textContent).toContain('Recent Codex CLI Task')
+    const subCheckbox = Array.from(host.querySelectorAll('input[type="checkbox"]')).find((el) =>
+      el.parentElement?.textContent?.includes('显示子代理'),
+    ) as HTMLInputElement | undefined
+    expect(subCheckbox).toBeDefined()
+    await act(async () => {
+      subCheckbox!.click()
+    })
+    expect(host.textContent).toContain('Hidden Helper Subagent')
   })
 })
