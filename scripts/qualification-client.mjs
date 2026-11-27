@@ -188,9 +188,14 @@ export async function verifyDesktopClient(
   }
   progress(result)
   await Promise.all(
-    ['execution-settings', 'catalog', 'collaboration', 'gateway-models', 'failure'].map((name) =>
-      rm(screenshotPrefix + '-' + name + '.png', { force: true }),
-    ),
+    [
+      'execution-settings',
+      'catalog',
+      'collaboration',
+      'gateway',
+      'gateway-models-footer',
+      'failure',
+    ].map((name) => rm(screenshotPrefix + '-' + name + '.png', { force: true })),
   )
   let session
   // The actual desktop content is a WebContentsView, separate from the native shell.
@@ -379,8 +384,9 @@ export async function verifyDesktopClient(
   await openSettings()
   const panels = [
     { label: ['通用设置', 'General'], marker: 'notifications' },
+    { label: ['OPL Gateway'], marker: 'gateway' },
     { label: ['执行引擎与协作', 'Engines & Collaboration'], marker: 'execution-settings' },
-    { label: ['模型供应商', 'Model providers'], marker: 'gateway-models' },
+    { label: ['模型供应商', 'Model providers'], marker: 'gateway-models-footer' },
   ]
   const screenshots = result.screenshots
   const expectedNavigation = [
@@ -452,7 +458,10 @@ export async function verifyDesktopClient(
       },
       // The native page waits for the Windows OS credential probe, whose
       // first helper invocation has a 60-second budget on a fresh runner.
-      panel.marker === 'gateway-models' && process.platform === 'win32' ? 520 : 80,
+      (panel.marker === 'gateway' || panel.marker === 'gateway-models-footer') &&
+        process.platform === 'win32'
+        ? 520
+        : 80,
     )
     const alerts = await pipe.evaluate(
       session,
@@ -551,6 +560,13 @@ export async function verifyDesktopClient(
         historyDefault: true,
         currentSaved: true,
       }
+    }
+    if (panel.marker === 'gateway') {
+      await waitFor(
+        `Boolean(document.querySelector('[data-opl-panel="gateway"] form input[type="email"]'))`,
+        'OPL Gateway 登录表单未挂载',
+      )
+      result.gatewayPanel = true
     }
     if (panel.marker === 'execution-settings') {
       await pipe.evaluate(
@@ -799,7 +815,11 @@ export async function verifyDesktopClient(
       if (executionScreenshot) screenshots.push(executionScreenshot)
       else result.screenshotFailures.push('execution-settings')
     }
-    if (panel.marker === 'gateway-models') {
+    if (panel.marker === 'gateway-models-footer') {
+      await waitFor(
+        `(() => {const card=document.querySelector('[data-opl-panel="minimax-account"]'); return Boolean(card && card.getClientRects().length && card.getAttribute('aria-busy') !== 'true')})()`,
+        'MiniMax 账号卡片未就绪',
+      )
       await waitFor(
         `Boolean(document.querySelector('[data-opl-minimax-edit][aria-expanded="false"]'))`,
         'MiniMax 供应商编辑入口未显示',
