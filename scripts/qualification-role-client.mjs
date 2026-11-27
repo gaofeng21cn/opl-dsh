@@ -38,7 +38,7 @@ export async function verifyRoleClient(pipe, screenshot) {
       )
       await waitFor(click(['设置', 'Settings']), '设置入口未找到')
     }
-    await waitFor(click(['执行引擎与协作', 'Engines & Collaboration']), '执行引擎与协作入口未显示')
+    await waitFor(click(['执行引擎与协作', 'Engines & Team']), '执行引擎与协作入口未显示')
     await waitFor(
       'Boolean(document.querySelector(\'[data-opl-panel="execution"]\'))',
       '执行引擎与协作设置页未加载',

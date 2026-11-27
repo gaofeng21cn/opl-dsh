@@ -29,7 +29,7 @@ export const settingsNavigationEn: Record<keyof typeof SETTINGS_ORDER, string> =
   models: 'Model providers',
   'our-free-model': 'Our Free Model',
   bili: 'Billion Context',
-  'opl-execution': 'Engines & Collaboration',
+  'opl-execution': 'Engines & Team',
   'agent-presets': 'Agent presets',
   'opl-codex': 'Collaboration',
   plugins: 'Plugins',

@@ -385,7 +385,7 @@ export async function verifyDesktopClient(
   const panels = [
     { label: ['通用设置', 'General'], marker: 'notifications' },
     { label: ['OPL Gateway'], marker: 'gateway' },
-    { label: ['执行引擎与协作', 'Engines & Collaboration'], marker: 'execution-settings' },
+    { label: ['执行引擎与协作', 'Engines & Team'], marker: 'execution-settings' },
     { label: ['模型', 'Models'], marker: 'gateway-models-footer' },
   ]
   const screenshots = result.screenshots
@@ -407,7 +407,7 @@ export async function verifyDesktopClient(
       'Built-in plugins',
       'Agent presets',
       'Our Free Model',
-      'Engines & Collaboration',
+      'Engines & Team',
       ...(billionContextEnabled ? ['bili'] : []),
     ],
   ]
@@ -671,10 +671,7 @@ export async function verifyDesktopClient(
         '取消全选后仍有已启用组合，包括隐藏的不可用项',
       )
       await pipe.evaluate(session, clickLabel(['通用设置', 'General'], settingsNav))
-      await pipe.evaluate(
-        session,
-        clickLabel(['执行引擎与协作', 'Engines & Collaboration'], settingsNav),
-      )
+      await pipe.evaluate(session, clickLabel(['执行引擎与协作', 'Engines & Team'], settingsNav))
       await pipe.evaluate(
         session,
         `for (const d of document.querySelectorAll('[data-opl-panel="execution"] > details')) if (d.querySelector('[data-opl-panel="catalog"]')) d.open = true`,
