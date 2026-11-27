@@ -34,7 +34,9 @@ concurrency:
 
 jobs:
   prepare:
-    if: ${{ !inputs.cask_only || inputs.opl_release_control_run_id != '' }}
+    if: >-
+      (github.event_name != 'schedule' || vars.OPL_RELEASE_CENTRAL_DAILY != 'true') &&
+      (!inputs.cask_only || inputs.opl_release_control_run_id != '')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
