@@ -224,7 +224,7 @@ test('central daily dispatch verifies the parent run and rejects duplicate or mi
   }
   const earlierDispatch = {
     id: 200,
-    actor: { id: 173561466 },
+    actor: { id: 356454848 },
     display_title: 'Stable release [opl-release:100]',
   }
   const run = ({ parent = controller, dispatches = [], overrides = {} } = {}) =>
@@ -246,7 +246,7 @@ test('central daily dispatch verifies the parent run and rejects duplicate or mi
           REBUILD: 'false',
           GITHUB_EVENT_NAME: 'workflow_dispatch',
           GITHUB_REF: 'refs/heads/main',
-          GITHUB_ACTOR_ID: '173561466',
+          GITHUB_ACTOR_ID: '356454848',
           GITHUB_REPOSITORY: 'gaofeng21cn/opl-dsh',
           GITHUB_RUN_ID: '201',
           PARENT_RUN: JSON.stringify(parent),
@@ -261,7 +261,7 @@ test('central daily dispatch verifies the parent run and rejects duplicate or mi
   assert.equal(run({ dispatches: [{ ...earlierDispatch, id: 202 }] }).status, 0)
   assert.equal(run({ dispatches: [earlierDispatch] }).status, 1)
   assert.equal(run({ parent: { ...controller, event: 'workflow_dispatch' } }).status, 1)
-  assert.equal(run({ overrides: { GITHUB_ACTOR_ID: '987' } }).status, 1)
+  assert.equal(run({ overrides: { GITHUB_ACTOR_ID: '173561466' } }).status, 1)
   assert.equal(run({ overrides: { CASK_ONLY: 'true' } }).status, 1)
   assert.equal(run({ overrides: { REBUILD: 'true' } }).status, 1)
 })
