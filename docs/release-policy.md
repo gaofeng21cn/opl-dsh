@@ -6,13 +6,16 @@ OPL DSH 使用一个联合稳定版本表示一套可安装组合。macOS arm64 
 
 ## 每日自动发布
 
-根目录 `product-release.json` 把本流程登记为 OPL 统一产品巡检的 `owner_schedule`。
-统一任务回读本仓最近的定时发布结果；版本准备、官方 feed 比较与发布继续由下述
-唯一 workflow 执行。
+根目录 `product-release.json` 把本流程登记为 OPL 统一产品巡检的 `owner_schedule`，
+并声明可接收 `opl-release` 的每日派发。接收端校验中央定时运行、派发 GitHub App
+身份和控制运行 ID，版本准备、官方 feed 比较与发布均由本仓 Stable 工作流执行。
+切换前，统一任务回读本仓发布结果，本仓定时入口负责触发。中央派发验收后，
+将本仓变量 `OPL_RELEASE_CENTRAL_DAILY` 设为 `true`，本仓定时运行会跳过候选准备，
+每日派发由 `opl-release` 执行。该变量只影响本仓 `schedule` 事件。
 
 OPL DSH 是官方桌面的打包增强层，采用与 OPL 智能体相同的每日云端巡检发布策略。用户持续授权 GitHub Actions 在 `gaofeng21cn/opl-dsh` 内自动准备版本、提交主线、创建发布 tag、运行既有稳定发布工作流并公开合格资产，无需用户逐次手动触发或批准。
 
-`.github/workflows/stable-release.yml` 每日北京时间 02:37 检查 `main` 与最新公开稳定 tag 之间的增强层改动，同时读取官方 macOS arm64、Windows x64 更新清单，并与最新公开联合清单的官方版本比较；GitHub 调度可能延迟。插件源码、配置、协作 Skill、安装器、构建入口和依赖有未发布更新或修复，或官方 feed 版本发生变化时，自动递增 OPL patch 版本并生成中文发布说明。上游单独更新也会重新构建；两份 feed 必须解析成功且版本相同，发布全过程使用准备阶段冻结的版本。开发 API 依赖仍按实际接口需要维护。维护者已准备的更高稳定版本和对应说明予以沿用。只有文档、测试、发布流程或 Homebrew 派生元数据变化，且官方版本也未变化时跳过，不制造空版本。
+本仓定时入口启用期间，`.github/workflows/stable-release.yml` 每日北京时间 02:37 运行，GitHub 调度可能延迟。每次运行检查 `main` 与最新公开稳定 tag 之间的增强层改动，同时读取官方 macOS arm64、Windows x64 更新清单，并与最新公开联合清单的官方版本比较。插件源码、配置、协作 Skill、安装器、构建入口和依赖有未发布更新或修复，或官方 feed 版本发生变化时，自动递增 OPL patch 版本并生成中文发布说明。上游单独更新也会重新构建；两份 feed 必须解析成功且版本相同，发布全过程使用准备阶段冻结的版本。开发 API 依赖仍按实际接口需要维护。维护者已准备的更高稳定版本和对应说明予以沿用。只有文档、测试、发布流程或 Homebrew 派生元数据变化，且官方版本也未变化时跳过，不制造空版本。
 
 官方版本比较使用 GitHub Latest 中经资产摘要校验的 `release-manifest.json`，不解析 Release Note 作为版本依据。任一 feed 读取失败、字段无效、两平台版本不一致或冻结版本发生变化时停止准备、打包和发布。新候选的 annotated tag 固定两平台共同版本；打包和发布再次核对实时 feed。上游在未完成候选期间变化时，从主线准备新的 OPL patch，保留旧 tag；显式恢复旧 tag 时若官方版本已变化则拒绝混用。
 

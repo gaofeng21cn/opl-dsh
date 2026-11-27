@@ -9,5 +9,6 @@
     "kind": "github_release"
   },
   "schedule_utc": "37 18 * * *",
-  "scope": "Own enhancement and official desktop feed changes; existing owner scheduler remains the single writer."
+  "daily_dispatch": true,
+  "scope": "Own enhancement and official desktop feed changes; existing owner scheduler remains the single writer until central dispatch is enabled."
 }
