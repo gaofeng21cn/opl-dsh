@@ -16,18 +16,30 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   IconEllipsisOutlineMedium: () => null,
   IconSettingsOutlineMedium: () => null,
 }))
+import type { TrailingNoticeSource } from '../../src/setup/client/AccountLauncher.tsx'
 const { AccountLauncher } = await import('../../src/setup/client/AccountLauncher.tsx')
 const roots: Root[] = []
 afterEach(async () => {
   await act(async () => roots.splice(0).forEach((root) => root.unmount()))
 })
-const status = (email?: string): GatewayAccountStatus => ({
-  phase: email ? 'connected' : 'signed-out',
+const status = (email?: string, displayName?: string): GatewayAccountStatus => ({
+  phase: email || displayName ? 'connected' : 'signed-out',
   endpoint: 'https://fixture.invalid',
   keyReady: true,
-  ...(email ? { account: { email } as NonNullable<GatewayAccountStatus['account']> } : {}),
+  ...(email || displayName
+    ? {
+        account: {
+          ...(email ? { email } : {}),
+          ...(displayName ? { displayName } : {}),
+        } as NonNullable<GatewayAccountStatus['account']>,
+      }
+    : {}),
 })
-async function mount(readAccount: () => Promise<GatewayAccountStatus>, wide = true) {
+async function mount(
+  readAccount: () => Promise<GatewayAccountStatus>,
+  wide = true,
+  trailingNotice?: TrailingNoticeSource,
+) {
   const dom = createTestDom()
   const container = dom.container()
   const root = createRoot(container as unknown as HTMLElement)
@@ -42,6 +54,7 @@ async function mount(readAccount: () => Promise<GatewayAccountStatus>, wide = tr
       vi.fn<
         (navigate: ((section?: 'general' | 'engines' | 'gateway') => void) | undefined) => void
       >(),
+    ...(trailingNotice ? { trailingNotice } : {}),
     openSettings,
     openOnboarding,
     t: (key: keyof typeof zh) => zh[key],
@@ -118,4 +131,33 @@ it('clears stale identity on a failed read and unsubscribes on unmount', async (
   const calls = read.mock.calls.length
   notifyAccountChanged()
   expect(read).toHaveBeenCalledTimes(calls)
+})
+
+it('prefers Gateway displayName over email and keeps email in the tooltip', async () => {
+  const view = await mount(async () => status('gf@fenggaolab.org', '高峰'))
+  expect(view.container.textContent).toBe('高峰')
+  expect(view.container.firstChild?.getAttribute('title')).toBe('高峰 (gf@fenggaolab.org)')
+})
+
+it('renders inline trailing update notice only when wide and updates on change', async () => {
+  let current: ((wide: boolean) => ReactNode) | undefined
+  const listeners = new Set<() => void>()
+  const source: TrailingNoticeSource = {
+    getSnapshot: () => current,
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+  }
+  const view = await mount(async () => status('gf@fenggaolab.org', '高峰'), true, source)
+  expect(view.container.textContent).toBe('高峰')
+  await act(async () => {
+    current = (wide) => (wide ? <button type="button">更新</button> : null)
+    for (const listener of listeners) listener()
+  })
+  expect(view.container.textContent).toBe('高峰更新')
+  const collapsed = await mount(async () => status('gf@fenggaolab.org', '高峰'), false, source)
+  expect(collapsed.container.textContent).toBe('')
 })

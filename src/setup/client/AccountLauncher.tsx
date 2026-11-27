@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   IconEllipsisOutlineMedium,
   IconSettingsOutlineMedium,
@@ -12,6 +12,14 @@ import css from './AccountLauncher.module.css'
 
 export type SettingsNavigationTarget = 'general' | 'engines' | 'gateway'
 
+export interface TrailingNoticeSource {
+  getSnapshot: () => ((wide: boolean) => ReactNode) | undefined
+  subscribe: (listener: () => void) => () => void
+}
+
+const noopSubscribe = () => () => {}
+const emptyTrailingNotice = () => undefined
+
 /** The official settings shell owns navigation; this launcher chooses the account. */
 export function AccountLauncher({
   wide,
@@ -21,6 +29,7 @@ export function AccountLauncher({
   openOnboarding,
   readAccount,
   bindSettingsNavigation,
+  trailingNotice,
   t,
 }: PropsRuntime<'settings.launcher'> &
   PropsLocale<'settings.oplGateway'> & {
@@ -28,6 +37,7 @@ export function AccountLauncher({
     bindSettingsNavigation?: (
       navigate: ((section?: SettingsNavigationTarget) => void) | undefined,
     ) => void
+    trailingNotice?: TrailingNoticeSource
   }) {
   useEffect(() => {
     bindSettingsNavigation?.((section) =>
@@ -62,55 +72,67 @@ export function AccountLauncher({
       active = false
     }
   }, [readAccount, settingsOpen, open, revision])
+  const renderTrailing = useSyncExternalStore(
+    trailingNotice?.subscribe ?? noopSubscribe,
+    trailingNotice?.getSnapshot ?? emptyTrailingNotice,
+    emptyTrailingNotice,
+  )
   const connected = account?.phase === 'connected'
+  const displayName = account?.account?.displayName?.trim()
+  const email = account?.account?.email?.trim()
   const label = connected
-    ? account.account?.email?.trim() || t('accountSignedIn')
+    ? displayName || email || t('accountSignedIn')
     : t(failed || account?.phase === 'unavailable' ? 'unavailable' : 'accountSignedOut')
+  const tooltip =
+    connected && displayName && email && displayName !== email ? `${displayName} (${email})` : label
   return (
-    <Menu
-      open={open}
-      side="top"
-      portal
-      autoFocus
-      className={css.root}
-      anchor={
-        <button
-          type="button"
-          className={css.trigger}
-          data-collapsed={!wide}
-          aria-label={t('accountMenu')}
-          title={label}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-        >
-          {connected ? (
-            <IconUserOutlineMedium size={16} />
-          ) : (
-            <IconEllipsisOutlineMedium size={14} />
-          )}
-          {wide && <span className={css.label}>{label}</span>}
-        </button>
-      }
-      items={[
-        {
-          id: 'settings',
-          label: t('accountSettings'),
-          icon: <IconSettingsOutlineMedium size={16} />,
-          ...(settingsShortcut ? { shortcut: settingsShortcut } : {}),
-        },
-        {
-          id: 'account',
-          label: t(connected ? 'accountTitle' : 'signIn'),
-          icon: <IconUserOutlineMedium size={16} />,
-        },
-      ]}
-      onClose={() => setOpen(false)}
-      onSelect={(id) => {
-        setOpen(false)
-        if (id === 'settings') openSettings()
-        else openOnboarding('opl-account')
-      }}
-    />
+    <>
+      <Menu
+        open={open}
+        side="top"
+        portal
+        autoFocus
+        className={css.root}
+        anchor={
+          <button
+            type="button"
+            className={css.trigger}
+            data-collapsed={!wide}
+            aria-label={t('accountMenu')}
+            title={tooltip}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            {connected ? (
+              <IconUserOutlineMedium size={16} />
+            ) : (
+              <IconEllipsisOutlineMedium size={14} />
+            )}
+            {wide && <span className={css.label}>{label}</span>}
+          </button>
+        }
+        items={[
+          {
+            id: 'settings',
+            label: t('accountSettings'),
+            icon: <IconSettingsOutlineMedium size={16} />,
+            ...(settingsShortcut ? { shortcut: settingsShortcut } : {}),
+          },
+          {
+            id: 'account',
+            label: t(connected ? 'accountTitle' : 'signIn'),
+            icon: <IconUserOutlineMedium size={16} />,
+          },
+        ]}
+        onClose={() => setOpen(false)}
+        onSelect={(id) => {
+          setOpen(false)
+          if (id === 'settings') openSettings()
+          else openOnboarding('opl-account')
+        }}
+      />
+      {wide ? renderTrailing?.(wide) : null}
+    </>
   )
 }

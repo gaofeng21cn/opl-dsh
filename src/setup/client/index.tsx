@@ -1,7 +1,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { useEffect } from 'react'
 import { SetupScreen, type SetupActions } from './SetupScreen.tsx'
-import { AccountLauncher, type SettingsNavigationTarget } from './AccountLauncher.tsx'
+import {
+  AccountLauncher,
+  type SettingsNavigationTarget,
+  type TrailingNoticeSource,
+} from './AccountLauncher.tsx'
 import { remoteCall, optionalRemote } from '../../shared/client/remote-call.ts'
 import type { OplGatewaySectionInjected } from '../../gateway/client/OplGatewaySection.tsx'
 export const inject = ['slots', 'locale', 'remote.oplSetup']
@@ -12,6 +16,7 @@ export function apply(
     bindSettingsNavigation?: (
       navigate: ((section?: SettingsNavigationTarget) => void) | undefined,
     ) => void
+    trailingNotice?: TrailingNoticeSource
   } = {},
 ): void {
   const call = remoteCall(ctx.remote.oplSetup)
@@ -81,6 +86,7 @@ export function apply(
           ...(navigation.bindSettingsNavigation
             ? { bindSettingsNavigation: navigation.bindSettingsNavigation }
             : {}),
+          ...(navigation.trailingNotice ? { trailingNotice: navigation.trailingNotice } : {}),
         }),
       },
       AccountLauncher,

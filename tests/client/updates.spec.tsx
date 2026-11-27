@@ -22,6 +22,7 @@ import { en, zh, UPDATE_NAMESPACE } from '../../src/updates/client/locales.ts'
 import * as updates from '../../src/updates/client/index.tsx'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
+  IconDownloadOutlineRegular: () => null,
   Menu: ({
     anchor,
     open,
@@ -537,7 +538,7 @@ describe('restart countdown presentation', () => {
     expect(f.container.querySelector('[data-opl-update-pending]')).toBeNull()
   })
 
-  it('offers the same postpone action in the wide sidebar and a compact countdown when collapsed', async () => {
+  it('offers the same postpone action in the wide sidebar and hides the notice when collapsed', async () => {
     const f = await mount({ initial: countdown(), dictionary: en })
     const footer = f.container.querySelector('[data-opl-update-notice]')!.parentElement!
     const postpone = [...footer.querySelectorAll('button')].find(
@@ -548,14 +549,17 @@ describe('restart countdown presentation', () => {
     expect(f.api.postpone).toHaveBeenCalledTimes(1)
     await act(async () => {
       f.publish(countdown(17))
+    })
+    expect(f.container.querySelector('[data-opl-update-notice]')!.textContent).toContain(
+      en.noticeCountdownShort.replace('{seconds}', '17'),
+    )
+    await act(async () => {
       f.root.render(
         createElement(UpdateNotice, { controller: f.controller, t: translator(en), wide: false }),
       )
     })
-    expect(f.container.textContent).toBe('17s')
-    expect(
-      f.container.querySelector('[data-opl-update-notice]')!.getAttribute('aria-label'),
-    ).toContain('17 seconds')
+    expect(f.container.textContent).toBe('')
+    expect(f.container.querySelector('[data-opl-update-notice]')).toBeNull()
   })
 
   it('preempts a slow status read with postponement and ignores its old countdown result', async () => {
@@ -1462,10 +1466,10 @@ describe('update subscriptions and request lifetimes', () => {
     expect(scroll).toHaveBeenCalledOnce()
   })
 
-  it('uses a release link without navigation injection and labels a pending collapsed notice', async () => {
+  it('uses a release link without navigation injection and hides when collapsed', async () => {
     const f = await mount({ initial: status({ release: release() }) })
     await act(async () =>
-      f.root.render(createElement(UpdateNotice, { controller: f.controller, t, wide: false })),
+      f.root.render(createElement(UpdateNotice, { controller: f.controller, t, wide: true })),
     )
     const link = f.container.querySelector<HTMLAnchorElement>('a')!
     expect(link.href).toBe(release().url)
@@ -1475,11 +1479,15 @@ describe('update subscriptions and request lifetimes', () => {
     expect(f.container.querySelector('[data-opl-update-notice]')!.getAttribute('aria-label')).toBe(
       zh.noticePending.replace('{version}', '0.2.56'),
     )
+    await act(async () =>
+      f.root.render(createElement(UpdateNotice, { controller: f.controller, t, wide: false })),
+    )
+    expect(f.container.querySelector('[data-opl-update-notice]')).toBeNull()
   })
 })
 
 describe('update plugin lifecycle', () => {
-  it('registers only additive official slots and cleans up a replaced plugin fiber', async () => {
+  it('registers general settings and inline launcher notice, cleaning up on fiber disposal', async () => {
     type Entry = {
       name: string
       id?: string
@@ -1521,25 +1529,34 @@ describe('update plugin lifecycle', () => {
     const oldGate = deferred<OplUpdateStatus>()
     const old = host()
     old.api.status.mockImplementation(() => oldGate.promise)
-    const first = await ctx.plugin(updates, { api: old.api, subscribe: old.source.subscribe })
+    const registerInlineNotice = vi.fn()
+    const first = await ctx.plugin(updates, {
+      api: old.api,
+      subscribe: old.source.subscribe,
+      registerInlineNotice,
+    })
     expect(updates.inject).toEqual(['slots', 'locale'])
     expect('default' in updates).toBe(false)
-    expect(entries.map((entry) => entry.name).sort()).toEqual([
-      'settings.general.item',
-      'sidebar.footer.action',
-    ])
+    expect(entries.map((entry) => entry.name)).toEqual(['settings.general.item'])
+    expect(registerInlineNotice).toHaveBeenCalledTimes(1)
+    expect(registerInlineNotice.mock.calls[0]![0]).toBeTypeOf('function')
     expect(locale.register).toHaveBeenCalledWith(UPDATE_NAMESPACE, { zh, en })
     const controller = entries[0]!.inject!().controller
     await first.dispose()
     expect(entries).toHaveLength(0)
+    expect(registerInlineNotice).toHaveBeenLastCalledWith(undefined)
     expect(old.source.listeners.size).toBe(0)
     expect(locale.register.mock.results[0]!.value).toHaveBeenCalledTimes(1)
     const replacement = host(status({ installedVersion: '0.2.57' }))
-    await ctx.plugin(updates, { api: replacement.api, subscribe: replacement.source.subscribe })
+    await ctx.plugin(updates, {
+      api: replacement.api,
+      subscribe: replacement.source.subscribe,
+      registerInlineNotice,
+    })
     oldGate.resolve(status({ installedVersion: '0.2.54' }))
     await oldGate.promise
     expect(controller.getSnapshot().status).toBeNull()
-    expect(entries).toHaveLength(2)
+    expect(entries).toHaveLength(1)
     expect(entries[0]!.inject!().controller.getSnapshot().status?.installedVersion).toBe('0.2.57')
   })
 })

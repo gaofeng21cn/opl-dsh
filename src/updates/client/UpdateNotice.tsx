@@ -1,19 +1,19 @@
-/** A persistent status at the official sidebar foot; no toast or system notification. */
+/** A compact status pill aligned with the official sidebar update indicator. */
 import { useSyncExternalStore, useEffect, useState } from 'react'
-import { Button, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { Button, IconDownloadOutlineRegular, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { UpdateController } from './controller.ts'
 import { useUpdateCountdown } from './countdown.ts'
 import type { UpdateNavigation } from './navigation.ts'
 import css from './Updates.module.css'
 
-export type UpdateNoticeProps = PropsRuntime<'sidebar.footer.action'> &
-  PropsLocale<'settings.oplUpdates'> & {
-    controller: UpdateController
-    navigation?: UpdateNavigation
-    openSettings?: (section?: 'engines') => void
-    engineCount?: () => Promise<number>
-  }
+export type UpdateNoticeProps = PropsLocale<'settings.oplUpdates'> & {
+  wide: boolean
+  controller: UpdateController
+  navigation?: UpdateNavigation
+  openSettings?: (section?: 'engines') => void
+  engineCount?: () => Promise<number>
+}
 
 /** @param props - Sidebar geometry, shared status, and existing settings navigation. @returns Release notice. */
 export function UpdateNotice({
@@ -52,18 +52,21 @@ export function UpdateNotice({
     }
   }, [engineCount])
   const hasRelease = !!(status?.release || status?.pendingVersion)
+  if (!wide) return null
   if (!hasRelease)
     return count && openSettings ? (
-      <Button
+      <button
+        type="button"
         className={css.notice}
-        variant="ghost"
-        size="sm"
         title={t('engineNotice', { count })}
         aria-label={t('engineNotice', { count })}
         onClick={() => openSettings('engines')}
       >
-        ↑{wide && ' ' + t('noticeShort')}
-      </Button>
+        <span className={css.icon} aria-hidden="true">
+          <IconDownloadOutlineRegular size={14} />
+        </span>
+        <span>{t('noticeShort')}</span>
+      </button>
     ) : null
   if (!status) return null
   const version = status.pendingVersion ?? status.release!.version
@@ -94,21 +97,18 @@ export function UpdateNotice({
   const title = count ? releaseTitle + ' · ' + t('engineNotice', { count }) : releaseTitle
   const content = (
     <>
-      {(wide || countdown === null) && <span aria-hidden="true">↑</span>}
-      {countdown !== null ? (
-        <span>
-          {t(wide ? 'noticeCountdownShort' : 'noticeCountdownCompact', { seconds: countdown })}
-        </span>
-      ) : (
-        wide && <span>{t('noticeShort')}</span>
-      )}
+      <span className={css.icon} aria-hidden="true">
+        <IconDownloadOutlineRegular size={14} />
+      </span>
+      <span>
+        {countdown !== null ? t('noticeCountdownShort', { seconds: countdown }) : t('noticeShort')}
+      </span>
     </>
   )
   const notice = openSettings ? (
-    <Button
+    <button
+      type="button"
       className={css.notice}
-      variant="ghost"
-      size="sm"
       title={title}
       aria-label={title}
       data-opl-update-notice={version}
@@ -122,7 +122,7 @@ export function UpdateNotice({
       }}
     >
       {content}
-    </Button>
+    </button>
   ) : status.release ? (
     <a
       className={css.notice}
@@ -169,7 +169,7 @@ export function UpdateNotice({
       ) : (
         notice
       )}
-      {wide && restart?.phase === 'countdown' && (
+      {restart?.phase === 'countdown' && (
         <Button
           variant="ghost"
           size="sm"

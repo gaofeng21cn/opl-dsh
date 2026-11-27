@@ -1,6 +1,7 @@
 import { isWindowsDesktop } from '../shared/client/windows-desktop.ts'
 import { mountRemotes } from '../shared/client/mount-remotes.ts'
 /** One browser package, independently mounted feature lifecycles. */
+import type { ReactNode } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
@@ -8,7 +9,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import * as gateway from '../gateway/client/index.tsx'
 import * as setup from '../setup/client/index.tsx'
-import type { SettingsNavigationTarget } from '../setup/client/AccountLauncher.tsx'
+import type {
+  SettingsNavigationTarget,
+  TrailingNoticeSource,
+} from '../setup/client/AccountLauncher.tsx'
 import * as notifications from '../notifications/client/index.tsx'
 import * as conversationStats from '../conversation-stats/client/index.tsx'
 import * as execution from '../execution/client/index.tsx'
@@ -120,6 +124,21 @@ export async function apply(ctx: Context): Promise<void> {
       ),
     )
   })
+  let inlineNoticeRenderer: ((wide: boolean) => ReactNode) | undefined
+  const inlineNoticeListeners = new Set<() => void>()
+  const trailingNotice: TrailingNoticeSource = {
+    getSnapshot: () => inlineNoticeRenderer,
+    subscribe(listener) {
+      inlineNoticeListeners.add(listener)
+      return () => {
+        inlineNoticeListeners.delete(listener)
+      }
+    },
+  }
+  const registerInlineNotice = (render: ((wide: boolean) => ReactNode) | undefined) => {
+    inlineNoticeRenderer = render
+    for (const listener of [...inlineNoticeListeners]) listener()
+  }
   const updateRemote = optionalRemote(ctx, 'oplUpdates')
   if (updateRemote) {
     const call = remoteCall(updateRemote)
@@ -146,6 +165,7 @@ export async function apply(ctx: Context): Promise<void> {
       subscribe: (listener: () => void) =>
         subscribeUpdateWatch(() => updateRemote.watch(), listener, updateConnection),
       openSettings: (section) => openSettings?.(section),
+      registerInlineNotice,
       engineCount: async () => {
         const execution = optionalRemote(ctx, 'oplExecution')
         if (!execution) return 0
@@ -160,5 +180,6 @@ export async function apply(ctx: Context): Promise<void> {
     ) => {
       openSettings = navigate
     },
+    trailingNotice,
   })
 }

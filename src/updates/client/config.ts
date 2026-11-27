@@ -1,4 +1,5 @@
 /** Browser dependencies supplied by the suite's generated RPC adapter. */
+import type { ReactNode } from 'react'
 import type { OplUpdateApi } from '../contracts.ts'
 
 /** A missing connection generation disables writes and invalidates pending responses. */
@@ -16,4 +17,6 @@ export interface Config {
   /** Open the existing General settings section when supplied by its navigation owner. */
   openSettings?: (section?: 'engines') => void
   engineCount?: () => Promise<number>
+  /** Register/clear the inline sidebar update indicator next to the settings launcher. */
+  registerInlineNotice?: (render: ((wide: boolean) => ReactNode) | undefined) => void
 }
