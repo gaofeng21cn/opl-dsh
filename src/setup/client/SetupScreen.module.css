@@ -1,16 +1,23 @@
 /* Match the official desktop's monochrome controls, spacing and theme tokens. */
-.setup {
+.setup,
+.setup[role='dialog'] {
   box-sizing: border-box;
-  width: min(500px, calc(100vw - 32px));
-  max-height: calc(100dvh - 32px);
-  overflow: auto;
-  padding: 40px 44px 24px;
+  width: min(500px, 100%);
+  max-width: 100%;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 36px 40px 24px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
   border: 0.5px solid var(--dsw-alias-border-l4);
   border-radius: var(--dsw-radius-panel);
   color: var(--dsw-alias-label-primary);
+}
+.setup > * {
+  min-width: 0;
+  max-width: 100%;
 }
 .brand {
   display: flex;
@@ -33,7 +40,8 @@
   object-fit: cover;
 }
 .welcomeHeading {
-  margin: 12px 0 4px;
+  margin: 8px 0 4px;
+  min-width: 0;
 }
 .welcomeHeading h1 {
   margin: 0 0 12px;
@@ -41,18 +49,24 @@
   line-height: 1.3;
   font-weight: 550;
   letter-spacing: -0.6px;
+  overflow-wrap: anywhere;
 }
 .welcomeHeading p {
   margin: 0;
   color: var(--dsw-alias-label-secondary, #61666b);
   line-height: 1.65;
   font-size: 14px;
+  overflow-wrap: anywhere;
 }
 .choices {
   display: grid;
   gap: 12px;
+  min-width: 0;
 }
 .choice {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   padding: 18px;
   text-align: left;
   border: 0.5px solid var(--dsw-alias-border-l3);
@@ -75,6 +89,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
 }
 .choice strong {
   font-size: 16px;
@@ -84,43 +100,85 @@
   font-size: 13px;
   color: var(--dsw-alias-label-secondary, #61666b);
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .recommended {
   border-color: var(--dsw-alias-label-primary, #0f1115);
 }
 .loginSection {
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  max-width: 400px;
-  gap: 24px;
+  max-width: 100%;
+  min-width: 0;
+  gap: 20px;
 }
+.title,
 .loginSection .title {
-  font-size: 26px;
+  margin: 4px 0;
+  font-size: 24px;
   font-weight: 550;
-  margin: 10px 0;
+  line-height: 1.3;
   letter-spacing: -0.5px;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
 }
+.intro,
 .loginSection .intro {
+  margin: 0;
   font-size: 14px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary, #61666b);
+  overflow-wrap: anywhere;
 }
 .loginCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
   padding: 0;
   border: 0;
+  background: transparent;
 }
 .form {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
+  width: 100%;
+  min-width: 0;
 }
 .field {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
 }
 .label {
   font-size: 13px;
   font-weight: 500;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, #61666b);
+}
+.notice {
+  margin: 0;
+  padding: 8px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-module-platform, transparent);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+.error {
+  color: var(--dsw-alias-state-error-primary, #d92d20);
 }
 .input {
   box-sizing: border-box;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   height: 46px;
   padding: 12px 14px;
   border-radius: 10px;
@@ -213,9 +271,10 @@
     align-items: flex-start;
     flex-wrap: wrap;
   }
-  .setup {
-    padding: 28px 24px 20px;
-    gap: 20px;
+  .setup,
+  .setup[role='dialog'] {
+    padding: 24px 20px 20px;
+    gap: 16px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

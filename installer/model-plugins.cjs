@@ -59,8 +59,46 @@ async function prepareModelPlugin({ dir, plugin, fetchImpl = fetch }) {
   return archive
 }
 
+function seedOfmAnnouncementAck({ dir, home }) {
+  if (typeof home !== 'string' || !home.trim()) return { seeded: false, reason: 'missing-home' }
+  const entry = [
+    join(dir, 'node_modules', 'dsh-our-free-model', 'index.js'),
+    join(dir, 'ofm', 'dsh-our-free-model', 'index.js'),
+  ].find((candidate) => existsSync(candidate))
+  if (!entry) return { seeded: false, reason: 'missing-ofm' }
+  const source = readFileSync(entry, 'utf8')
+  const match = source.match(/\bANNOUNCEMENT_VERSION\s*=\s*['"]([^'"]+)['"]/u)
+  const version = match?.[1]?.trim()
+  if (!version) return { seeded: false, reason: 'missing-version' }
+  const settingsDir = join(home, 'our-free-model')
+  const settingsFile = join(settingsDir, 'settings.json')
+  let existing = {}
+  if (existsSync(settingsFile)) {
+    try {
+      const parsed = JSON.parse(readFileSync(settingsFile, 'utf8'))
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return { seeded: false, reason: 'invalid-settings' }
+      }
+      existing = parsed
+    } catch {
+      return { seeded: false, reason: 'invalid-settings' }
+    }
+  }
+  if (typeof existing.announcementAck === 'string' && existing.announcementAck.trim() !== '') {
+    return { seeded: false, reason: 'already-acked', version: existing.announcementAck }
+  }
+  mkdirSync(settingsDir, { recursive: true, mode: 0o700 })
+  writeFileAtomic.sync(
+    settingsFile,
+    JSON.stringify({ ...existing, announcementAck: version }, null, 2) + '\n',
+    { mode: 0o600 },
+  )
+  return { seeded: true, version }
+}
+
 async function installModelPlugins({
   dir,
+  home,
   install,
   plugins = MODEL_PLUGINS,
   fetchImpl = fetch,
@@ -75,6 +113,7 @@ async function installModelPlugins({
         fetchImpl,
         restoreBundles,
       })
+      seedOfmAnnouncementAck({ dir, home })
       continue
     }
     const profile = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
@@ -112,4 +151,10 @@ async function preserveModelPlugins({ dir, install }) {
   }
 }
 
-module.exports = { MODEL_PLUGINS, prepareModelPlugin, installModelPlugins, preserveModelPlugins }
+module.exports = {
+  MODEL_PLUGINS,
+  prepareModelPlugin,
+  seedOfmAnnouncementAck,
+  installModelPlugins,
+  preserveModelPlugins,
+}

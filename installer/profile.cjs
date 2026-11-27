@@ -144,10 +144,7 @@ async function main() {
     return
   }
   const suitePackage = '@one-person-lab/dsh-opl'
-  const legacyOplPackages = [
-    '@one-person-lab/dsh-execution',
-    '@one-person-lab/dsh-collaboration',
-  ]
+  const legacyOplPackages = ['@one-person-lab/dsh-execution', '@one-person-lab/dsh-collaboration']
   const manifestBefore = boot.readProfileManifest('dsh', dir)
   const depsBefore = manifestBefore.dependencies ?? {}
   const bundlesBefore = manifestBefore.dsh?.profile?.bundles ?? []
@@ -202,7 +199,7 @@ async function main() {
     },
     { waitMs: 1000 },
   )
-  await installModelPlugins({ dir, install, restoreBundles })
+  await installModelPlugins({ dir, home, install, restoreBundles })
   const { releaseOfmManaged } = require('./ofm-owner.cjs')
   await releaseOfmManaged({
     dir,
@@ -331,8 +328,7 @@ function hasYamlAnchorOrAlias(node, yaml) {
   if (yaml.isAlias(node) || (typeof node.anchor === 'string' && node.anchor)) return true
   if (yaml.isMap(node))
     return node.items.some(
-      (pair) =>
-        hasYamlAnchorOrAlias(pair.key, yaml) || hasYamlAnchorOrAlias(pair.value, yaml),
+      (pair) => hasYamlAnchorOrAlias(pair.key, yaml) || hasYamlAnchorOrAlias(pair.value, yaml),
     )
   if (yaml.isSeq(node)) return node.items.some((item) => hasYamlAnchorOrAlias(item, yaml))
   return false

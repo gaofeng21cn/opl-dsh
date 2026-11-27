@@ -231,6 +231,60 @@ describe('OPL Gateway composition', () => {
     }
   })
 
+  it('registers opl-gateway in configurable providers while credentials are configured and withdraws on sign-out', async () => {
+    const ctx = new Context()
+    let revision = 0
+    const suiteValue: Record<string, any> = {
+      gatewayChannels: {
+        aws: { apiKeyEnv: 'OPL_GATEWAY_AWS_API_KEY' },
+      },
+    }
+    ctx.provide('settings', {
+      configure: () => () => {},
+      describe: () => [{ ns: 'opl-suite', value: suiteValue, user: suiteValue, revision }],
+    })
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LocalCredentialProvider, {
+      path: join(home, '.credentials.yaml'),
+      watch: false,
+    })
+    await ctx.credentials.set(credentialRef('OPL_GATEWAY_AWS_API_KEY'), 'aws-fixture-key')
+    await ctx.plugin(OplGateway, {})
+    try {
+      expect(ctx.llm.listConfigurableProviders()).toContainEqual({
+        provider: 'opl-gateway',
+        displayName: 'OPL Gateway',
+        settingsNs: 'opl-suite',
+        settingsPath: ['gatewayChannels', 'aws'],
+      })
+
+      await ctx.credentials.set(
+        credentialRef('OPL_GATEWAY_DEEPSEEK_API_KEY'),
+        'deepseek-fixture-key',
+      )
+      suiteValue.gateway = { apiKeyEnv: 'OPL_GATEWAY_DEEPSEEK_API_KEY' }
+      revision++
+      ctx.emit('settings/document-updated', 'opl-suite')
+      await vi.waitFor(() => {
+        expect(ctx.llm.listConfigurableProviders()).toContainEqual({
+          provider: 'opl-gateway',
+          displayName: 'OPL Gateway',
+          settingsNs: 'opl-suite',
+          settingsPath: ['gateway'],
+        })
+      })
+
+      await ctx.credentials.unset(credentialRef('OPL_GATEWAY_DEEPSEEK_API_KEY'))
+      await ctx.credentials.unset(credentialRef('OPL_GATEWAY_AWS_API_KEY'))
+      await ctx.get('oplGatewayAccount')?.signOut()
+      expect(
+        ctx.llm.listConfigurableProviders().some((entry) => entry.provider === 'opl-gateway'),
+      ).toBe(false)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('provides the account surface the settings page drives', async () => {
     const ctx = await mount()
     const account = ctx.get('oplGatewayAccount')

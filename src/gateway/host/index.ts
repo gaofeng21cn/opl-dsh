@@ -6,7 +6,7 @@ import { mountGatewayPiAiBridge } from './pi-ai-bridge.ts'
 
 import type { Context } from '@deepseek-ai/cordis'
 import { resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
-import type { LlmProviderInfo } from '@deepseek-ai/dsh-llm'
+import type { DirectoryRegistrationHandle, LlmProviderInfo } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-attachment'
 import {
   getOrCreateAnonymousUserId,
@@ -248,10 +248,78 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     ),
   )
 
+  let configurableHandle: DirectoryRegistrationHandle | undefined
+  let configurablePathKey: string | undefined
+  let configurableSyncQueue: Promise<void> | undefined
+
+  const resolveConfigurableSettingsPath = async (): Promise<string[] | undefined> => {
+    const credentials = ctx.get('credentials')
+    if (credentials === undefined) return undefined
+    const primaryRef = options().apiKeyEnv
+    if ((await credentials.resolve(primaryRef))?.value) return ['gateway']
+    const suiteValue = ctx
+      .get('settings')
+      ?.describe({ redactSecrets: true })
+      .find((item) => item.ns === 'opl-suite')?.value as
+      { gatewayChannels?: Record<string, { apiKeyEnv?: string } | undefined> } | undefined
+    for (const group of GATEWAY_GROUPS) {
+      if (group.id === 'deepseek') continue
+      if (!gatewayGroupEnabled(ctx, group.id)) continue
+      const channelRef = suiteValue?.gatewayChannels?.[group.id]?.apiKeyEnv?.trim()
+      if (!channelRef) continue
+      if ((await credentials.resolve(credentialRef(channelRef)))?.value) {
+        return ['gatewayChannels', group.id]
+      }
+    }
+    return undefined
+  }
+
+  const syncConfigurableProvider = (): Promise<void> => {
+    const step = async () => {
+      if (ctx.fiber.uid === null || typeof ctx.llm.registerConfigurableProviders !== 'function') {
+        return
+      }
+      const nextPath = await resolveConfigurableSettingsPath()
+      if (ctx.fiber.uid === null) return
+      if (!nextPath) {
+        configurableHandle?.()
+        configurableHandle = undefined
+        configurablePathKey = undefined
+        return
+      }
+      const nextKey = nextPath.join('.')
+      const entry = {
+        provider: PROVIDER,
+        displayName: DISPLAY_NAME,
+        settingsNs: 'opl-suite',
+        settingsPath: nextPath,
+      }
+      if (!configurableHandle) {
+        configurableHandle = ctx.llm.registerConfigurableProviders([entry])
+        configurablePathKey = nextKey
+        return
+      }
+      if (configurablePathKey !== nextKey) {
+        configurableHandle.replace([entry])
+        configurablePathKey = nextKey
+      }
+    }
+    const chained = (configurableSyncQueue ?? Promise.resolve()).then(step, step)
+    configurableSyncQueue = chained.catch(() => {})
+    return chained
+  }
+
+  ctx.effect(() => () => {
+    configurableHandle?.()
+    configurableHandle = undefined
+    configurablePathKey = undefined
+  })
+
   let account: OplGatewayAccountService | undefined
   ctx.inject(['credentials'], (credentialsCtx) => {
     const credentials = credentialsCtx.get('credentials')
     if (credentials === undefined) return
+    void syncConfigurableProvider()
     // The Remote surface exists only where a credential store does: signing in
     // without one could not make the route usable.
     account ??= new OplGatewayAccountService(credentialsCtx, {
@@ -259,10 +327,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       activeChannel: () => activeChannel,
       endpoint: () => options().baseURL,
       syncModels: () => syncGatewayModels(ctx),
+      onCredentialStateChanged: syncConfigurableProvider,
     })
     void account
       .refresh()
       .then(async (status) => {
+        await syncConfigurableProvider()
         // A previous OPL release could leave the official DeepSeek adapter as
         // the default even though no official key exists. Once Gateway keys are
         // ready, point new conversations at the configured OPL route so the
@@ -280,6 +350,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         ctx.logger.warn('OPL Gateway account refresh failed')
       })
   })
+  await syncConfigurableProvider()
 
   // Non-volatile Config is remounted by the Loader when its profile patch changes.
   ctx.inject(['settings'], (child) => {
@@ -334,6 +405,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         restored = false
         queueMicrotask(restore)
       }
+      if (ns === 'opl-suite') void syncConfigurableProvider()
     })
     queueMicrotask(restore)
   })

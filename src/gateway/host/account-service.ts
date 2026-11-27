@@ -159,6 +159,7 @@ export class OplGatewayAccountService extends TypertRemoteService {
       /** Control transport override, for tests. */
       readonly control?: GatewayControlClient
       readonly syncModels?: () => Promise<void>
+      readonly onCredentialStateChanged?: () => Promise<void> | void
       /** Last successful channel, for the account page. */
       readonly activeChannel?: () => GatewayGroupId | undefined
     },
@@ -492,6 +493,7 @@ export class OplGatewayAccountService extends TypertRemoteService {
       }
       this.source = 'session'
       await this.syncModels()
+      await this.options.onCredentialStateChanged?.()
       writeFacts(this.home(), this.facts, new Date().toISOString())
       return { status: await this.status(), createdKey: created }
     } catch (error) {
@@ -643,6 +645,7 @@ export class OplGatewayAccountService extends TypertRemoteService {
       this.source = 'session'
       this.failure = undefined
       await this.syncModels()
+      await this.options.onCredentialStateChanged?.()
       writeFacts(this.home(), this.facts, new Date().toISOString())
     } catch (error) {
       // The cached facts stay: the account may be fine and only the network
@@ -688,6 +691,7 @@ export class OplGatewayAccountService extends TypertRemoteService {
     this.failure = undefined
     this.modelSyncError = undefined
     clearGatewayCatalogStatus(this.ctx)
+    await this.options.onCredentialStateChanged?.()
     return this.status()
   }
 }

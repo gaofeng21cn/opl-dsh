@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import {
   MODEL_PLUGINS,
   prepareModelPlugin,
+  seedOfmAnnouncementAck,
   installModelPlugins,
   preserveModelPlugins,
 } from '../installer/model-plugins.cjs'
@@ -279,3 +280,37 @@ async function ownedOfm(
   await writeFile(join(dir, 'package.json'), JSON.stringify(manifest))
   return manifest
 }
+
+test('seedOfmAnnouncementAck seeds first-run ack while keeping self-update distribution and skips when home is omitted', async () => {
+  await profile({}, async (dir) => {
+    const ofmDir = join(dir, 'node_modules/dsh-our-free-model')
+    await mkdir(ofmDir, { recursive: true })
+    await writeFile(
+      join(ofmDir, 'index.js'),
+      "export const ANNOUNCEMENT_VERSION = '2026-09-25.1'\n",
+    )
+
+    assert.deepEqual(seedOfmAnnouncementAck({ dir }), { seeded: false, reason: 'missing-home' })
+
+    const home = join(dir, 'dsh-home')
+    assert.deepEqual(seedOfmAnnouncementAck({ dir, home }), {
+      seeded: true,
+      version: '2026-09-25.1',
+    })
+    const seeded = JSON.parse(await readFile(join(home, 'our-free-model/settings.json'), 'utf8'))
+    assert.equal(seeded.announcementAck, '2026-09-25.1')
+    assert.equal(seeded.distribution, undefined)
+
+    await writeFile(
+      join(home, 'our-free-model/settings.json'),
+      JSON.stringify({ announcementAck: 'custom-ack', enabled: false }),
+    )
+    assert.deepEqual(seedOfmAnnouncementAck({ dir, home }), {
+      seeded: false,
+      reason: 'already-acked',
+      version: 'custom-ack',
+    })
+    const preserved = JSON.parse(await readFile(join(home, 'our-free-model/settings.json'), 'utf8'))
+    assert.deepEqual(preserved, { announcementAck: 'custom-ack', enabled: false })
+  })
+})
