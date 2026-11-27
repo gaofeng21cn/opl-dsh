@@ -53,12 +53,9 @@
 
 各 Harness 保留自己的工具与会话，不通过提示词包装 `bash.exe` 伪装后端；自动生成组合的只读默认值不覆盖显式授权，已保存的受限会话不能在续作时扩大权限。除 Kimi 另支持 Plan 模式（工具层拒绝写入，非系统隔离）外，其余通用 ACP 执行器（OpenCode、Kilo、Pi、Mistral Vibe、Qwen Code 及自定义标准 ACP 引擎）在现行边界下均仅接受明确选择的完全访问并拒绝只读/工作区权限。
 
-## Windows Codex Git Bash 运行时
+## Windows Codex Git Bash 边界
 
-Windows 可为 Codex CLI 显式选择套件拥有的自建 Git Bash 便携构建（默认仍使用已配置的官方 Codex CLI，不修改官方程序或日常配置）。当前候选为 `0.169.0-opl-gitbash.20261116.1`（基于 `rust-v0.169.0` 加公开补丁构建，未签名开发版本，仅支持 Windows x64 与完全访问任务，每次建/恢会话均实测 Bash 且不回退 PowerShell）。
-
-- **打包与导入**：`scripts/codex-candidate/lifecycle.mjs` 的 `packageCodexCandidate` 可从已验收 `codex.exe` 生成便携目录（含可执行文件、`manifest.json` 固定 SHA-256、许可证与补丁）；拒绝额外文件、错误版本、符号链接及 junction。也可从仓库公开交付包解压含 `manifest.json` 的目录导入。
-- **切换与回退**：通过安装后的协作 Skill（按 Electron Node 启动方式）执行 `control.mjs codex-runtime-select --mode git-bash --version 0.169.0-opl-gitbash.20261116.1 --source <便携目录绝对路径>`（省略 `--source` 可重选已导入版本），`--mode official` 恢复官方命令及前缀。有活动任务、人工等待或在途启动时拒绝切换，失败保留原选择，Auto Review 仍由实际 Codex app-server 回读决定。
+Windows 下 Codex CLI 使用配置中指定的官方 Codex CLI 或用户在「设置 → 执行引擎与协作」填写的可执行文件路径（旧版私有自建 `codex-candidate` 便携包与 `codex-runtime-select` 路径已在 v2 退役）。原生 DSH 的 Git Bash 支持（`src/shell/host/git-bash.ts` 与「通用设置 → DSH 使用 Git Bash」）及 Codex 协调器 Hook（`--shell powershell|git-bash`）继续按各自边界维护。
 
 ## 通用执行保护与验收
 

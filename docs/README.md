@@ -26,7 +26,7 @@
 | 文档 | 职责 |
 | --- | --- |
 | [模型、Harness 与组合架构](model-harness-architecture.md) | 模型、Gateway 分组与断流恢复、OFM 接入、执行组合与 UI 导航架构 |
-| [外部 Harness 适配准备](harness-adaptation.md) | 显式来源注册、OFM 渠道与执行器适配表、Windows Git Bash/ACL 与 Codex 候选边界、通用执行保护 |
+| [外部 Harness 适配准备](harness-adaptation.md) | 显式来源注册、OFM 渠道与执行器适配表、Windows Git Bash/ACL 权限边界、通用执行保护 |
 | [官方 DSH 能力复用检查](dsh-reuse-audit.md) | 官方 DSH 能力复用检查与迁回条件表（`AGENTS.md` 引用） |
 | [开发与验证](development.md) | 功能接入与 UI 成本判断、目录与模块边界、构建/RPC/数据位置、Linux/Windows 本地边界 |
 | [官方桌面兼容验证](compatibility.md) | 官方桌面隔离资格脚本、覆盖范围与 CI 边界 |

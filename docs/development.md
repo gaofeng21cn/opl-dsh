@@ -128,7 +128,7 @@ TaskFeedback 的事件投影（`taskFeedbackFacts` 投影缓存版本为 2，含
 
 安装回执明确 `suiteRoot`、`profileHome`、`skillDir`、`ledgerDir`，profile 下的回执用于找到 Suite。自定义 profile 的升级、回滚与启动都显式传递原 profile。
 
-旧 `harness-sessions.json` 首次读取时迁移为按会话文件，完成标记在数据写完后保存；旧文件原样保留。会话列表返回分页摘要，选中会话返回最近轮次；更早轮次按需加载，新 UI 不轮询全量历史。`releases` 保留已安装版本和恢复资料，回执记录 `previousRelease`。
+旧 `harness-sessions.json` 首次读取时迁移为按会话文件，完成标记在数据写完后保存；旧文件原样保留。会话列表返回分页摘要，选中会话返回最近轮次；更早轮次按需加载，新 UI 不轮询全量历史。`releases` 默认仅保留当前与上一版本 `previousRelease`，其余过期增强版本目录及过期官方安装包缓存会在安装或更新时自动清理。
 
 ### Windows 桌面独立生命周期
 
