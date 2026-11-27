@@ -22,6 +22,7 @@ export type GatewayCall = RemoteCall<TypertRemoteNamespace<'oplGatewayModels'>>
 export type CoordinationCall = RemoteCall<TypertRemoteNamespace<'oplCoordination'>>
 export type RoleExecutionCall = RemoteCall<TypertRemoteNamespace<'oplRoleExecution'>>
 export type SetupCall = RemoteCall<TypertRemoteNamespace<'oplSetup'>>
+export type OplFlowCall = RemoteCall<TypertRemoteNamespace<'oplFlow'>>
 /** Probe an optional namespace without requiring it for the feature lifecycle. */
 export function optionalRemote<K extends keyof TypertRemoteNamespaceMap>(
   ctx: Context,

@@ -70,6 +70,12 @@ vi.mock('../../src/updates/client/index.tsx', () => ({
   Config: undefined,
   apply: () => {},
 }))
+vi.mock('../../src/opl-flow/client/index.tsx', () => ({
+  name: undefined,
+  inject: [],
+  Config: undefined,
+  apply: () => {},
+}))
 vi.mock('../../src/shared/client/FeaturePreferences.tsx', () => ({
   SuiteFeaturePreferences: () => null,
   labels: {},

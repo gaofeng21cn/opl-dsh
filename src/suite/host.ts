@@ -1,6 +1,7 @@
 import { installUpdateRuntime } from '../updates/host/runtime-admission.ts'
 import { GatewayModelsService } from '../gateway/host/model-service.ts'
 import { SetupService } from '../setup/host/index.ts'
+import { OplFlowService } from '../opl-flow/host/index.ts'
 import { UpdateService } from '../updates/host/index.ts'
 /** OPL account, execution and collaboration enhancements for an unmodified DSH Desktop. */
 import type { Context } from '@deepseek-ai/cordis'
@@ -51,6 +52,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   await ctx.plugin(conversationStats)
   await ctx.plugin(GatewayModelsService)
   await ctx.plugin(SetupService)
+  await ctx.plugin(OplFlowService)
   await ctx.plugin(suiteControl)
   ctx.inject(['sessions', 'agents', 'sessionController', 'settings', 'typertGateway'], (child) => {
     child.provide('oplUpdateRuntime', installUpdateRuntime(child))

@@ -23,6 +23,7 @@ import {
   collaborationZh,
 } from '../collaboration/client/collaboration-locales.ts'
 import * as updates from '../updates/client/index.tsx'
+import * as oplFlow from '../opl-flow/client/index.tsx'
 import * as windowTitle from '../window-title/client/index.tsx'
 import { subscribeUpdateWatch } from '../updates/client/watch.ts'
 import {
@@ -37,6 +38,7 @@ export const inject = ['remote', 'slots', 'locale', 'sessions', 'uiConversation'
 export async function apply(ctx: Context): Promise<void> {
   await mountRemotes(ctx, [
     'oplSetup',
+    'oplFlow',
     'oplGatewayAccount',
     'oplGatewayModels',
     'oplUpdates',
@@ -108,6 +110,10 @@ export async function apply(ctx: Context): Promise<void> {
   ctx.plugin(notifications)
   ctx.effect(() => ctx.locale.register(SUITE_FEATURE_NAMESPACE, labels))
   ctx.plugin(conversationStats)
+  const oplFlowRemote = optionalRemote(ctx, 'oplFlow')
+  if (oplFlowRemote) {
+    ctx.plugin(oplFlow, { call: remoteCall(oplFlowRemote) })
+  }
   ctx.plugin(windowTitle)
   ctx.inject(['configForms'], (settings) => {
     const suiteSettings = settings.configForms.get<SuiteFeatureSettings>('opl-suite')

@@ -15,6 +15,7 @@ export type * from '../execution/contracts/antigravity-account.ts'
 export type * from '../execution/contracts/engine-updates.ts'
 export type * from '../collaboration/host/feedback/types.ts'
 export type * from '../setup/contracts.ts'
+export type * from '../opl-flow/contracts/index.ts'
 export interface GatewayModelEdit {
   group: string
   revision: number

@@ -12,13 +12,13 @@ State: `active`
 OPL DSH 的核心定位是**官方 DeepSeek Harness 的轻量化增强套件**（不强依赖 OPL Framework `opld`，交互界面由 DSH/Cordis 载体自行装配，与 Framework v2 的职责划分以 `one-person-lab/docs/architecture.md` 为准）。在后续集成 OPL Flow 总控/决策看板时，必须遵守以下边界（完整跨端规划见 [opl-flow-workbench-plugin-plan.md](https://github.com/gaofeng21cn/opl-flow/blob/main/docs/opl-flow-workbench-plugin-plan.md)）：
 
 1. **未安装即零存在感**：
-   - 仅当本机存在有效绑定的 `~/.config/opl-flow/instance.json` 及可执行 `opl-flow` 控制面时，才在侧栏「更多」条件挂载 `OPL Flow 总控` 入口；
-   - 未启用 OPL Flow 的用户完全不可见该入口，不产生任何后台守护进程、常驻轮询或错误提示，也不依赖已删除的 Framework v1 CLI。
+   - 后端通过纯文件系统探测 [src/opl-flow/host/probe.ts](../src/opl-flow/host/probe.ts) 检查 `~/.config/opl-flow/instance.json`（含有效 `instance_root` / `ledger_repo`）与可执行 `opl_app_contribution.py`；探测过程**绝不**拉起子进程、绝不轮询，也不依赖已删除的 Framework v1 CLI。
+   - 仅当 `oplFlow.availability()` 返回 `available: true` 时，客户端 [src/opl-flow/client/index.tsx](../src/opl-flow/client/index.tsx) 才按条件注册侧栏入口 `sidebar.panellist`（`id: "opl-flow"`，`order: 34`，中文「OPL Flow 总控」）与 `main`（`key: "opl-flow"`）；未绑定时零槽位、零报错、零后台常驻进程。
 2. **只做控制塔，不复制聊天气泡与总账真相**：
-   - 前端直接复用标准决策看板数据与动作模型（`dashboard / send / approve / tick / service`），后端通过增强层 Remote 调用 `opl-flow` 的 `opl_app_contribution.py`；
-   - 禁止在 `@one-person-lab/dsh-opl` 中维护第二份 Beads/Dolt 状态或第二套对话窗口；用户需要推进具体目标时，直接触发打开/新建 DSH 原生会话（衔接 `opl_dsh_bridge`）。
-3. **默认收于侧栏「更多」**：
-   - 与 OPL App 一致，默认不常驻固定在主侧栏顶部，避免影响日常单会话体验。
+   - 后端 [src/opl-flow/host/index.ts](../src/opl-flow/host/index.ts)（`OplFlowService` `@Remote`）直接调用 `opl_app_contribution.py` 消费 `opl-flow.decision.v1` 契约，读看板时显式携带 `{ include_local_navigation: true, host_carrier: "dsh" }`，并在服务端对 `approve` / `service` 变更强制执行 `confirmed === true` 确认保护。
+   - 禁止在 `@one-person-lab/dsh-opl` 中维护第二份 Beads/Dolt 状态或第二套聊天窗口；前端 [src/opl-flow/client/OplFlowPanel.tsx](../src/opl-flow/client/OplFlowPanel.tsx) 严格按只读 `jump_mode` 导航：当载体为 `dsh` 且存在 `session_id` 时触发 `ctx.uiWorkspace.openSession(session_id)` 切换原生会话；跨端条目显示 `外部载体` 标记并提供显式 `新建 DSH 会话`（`ctx.uiWorkspace.startSession()`），绝不伪造跨应用焦点切换。
+3. **随 DSH 原生「更多 / 取消固定」收放控制**：
+   - 与 OPL App 一致保持低干扰收敛定位，同时复用 DSH 原生 `sidebar.panellist` 与「更多 / 取消固定」交互体系，不自建平行固定栏状态。
 
 ---
 
