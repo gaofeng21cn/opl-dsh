@@ -31,7 +31,6 @@ export interface Active {
   provisional?: boolean
   editLaunch?: AdapterLaunch
   editHistory?: ExternalEditHistory
-  editReplay?: { text: string; boundaries: { id: string; text: string }[] }
   mcpServers?: unknown[]
   createdSession?: boolean
   contextUsage?: import('../contracts/usage.ts').HarnessContextUsage
@@ -41,8 +40,6 @@ export interface Active {
   watchdog?: ProgressWatchdog
   deadlineError?: string
   deadlineCleanup?: Promise<void>
-  inputReceiptError?: string
-  inputReceiptWrite?: Promise<void>
 
   acp?: AcpProcess
   turn: HarnessTurn | undefined

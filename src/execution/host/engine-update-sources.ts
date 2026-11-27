@@ -63,12 +63,7 @@ async function run(
   }
 }
 function source(item: HarnessInstallation) {
-  if (
-    !item.path ||
-    !item.version ||
-    item.definition?.codexRuntime ||
-    /opl[-.]?(git)?bash/i.test(item.version + ' ' + item.path)
-  )
+  if (!item.path || !item.version || /opl[-.]?(git)?bash/i.test(item.version + ' ' + item.path))
     return
   if (item.id === 'antigravity')
     return (
@@ -79,9 +74,6 @@ function source(item: HarnessInstallation) {
       '.json'
     )
   if (item.id === 'claude') return 'https://downloads.claude.ai/claude-code-releases/latest'
-  if (item.id === 'step-code') return 'https://static-openapi.stepfun.com/stepcode/latest.json'
-  if (item.id === 'mimo-code')
-    return 'https://mimocode.cnbj1.mi-fds.com/mimocode/mimocode/releases/latest'
   if (item.id === 'kimi-code') return 'https://code.kimi.com/kimi-code/latest'
   if (Object.hasOwn(packages, item.id))
     return 'https://registry.npmjs.org/' + packages[item.id]!.replace('/', '%2F') + '/latest'
@@ -120,8 +112,6 @@ export async function checkEngineUpdate(item: HarnessInstallation): Promise<Engi
   const officialPaths: Record<string, string> = {
     'kimi-code': join(homedir(), '.kimi-code', 'bin', win ? 'kimi.exe' : 'kimi'),
     'minimax-code': join(homedir(), '.minimax-code', win ? 'mcode.cmd' : 'bin/mcode'),
-    'mimo-code': join(homedir(), '.mimocode', 'bin', win ? 'mimo.exe' : 'mimo'),
-    'step-code': join(homedir(), '.stepcode', 'bin', win ? 'step.exe' : 'step'),
   }
   if (
     item.maintenanceAction === 'update' &&
@@ -131,10 +121,7 @@ export async function checkEngineUpdate(item: HarnessInstallation): Promise<Engi
   )
     return { ...base, status: 'unsupported', message: '自定义启动路径请通过原安装渠道更新' }
   const url = source(item)
-  if (
-    !url ||
-    (!item.maintenanceAction && !['step-code', 'opencode', 'pi', 'kilo'].includes(item.id))
-  )
+  if (!url || (!item.maintenanceAction && !['opencode', 'pi', 'kilo'].includes(item.id)))
     return {
       ...base,
       status: 'unsupported',
@@ -163,11 +150,11 @@ async function verify(path: string, target: string, env: NodeJS.ProcessEnv) {
     throw Error('启动入口版本与目标版本不一致')
 }
 async function probe(path: string, id: string, env: NodeJS.ProcessEnv, cwd: string) {
-  if (id === 'pi' || id === 'step-code') {
+  if (id === 'pi') {
     const output = await run(
       path,
       ['--mode', 'rpc', '--session-dir', cwd],
-      { ...env, PI_CODING_AGENT_DIR: cwd, STEP_CODING_AGENT_DIR: cwd },
+      { ...env, PI_CODING_AGENT_DIR: cwd },
       20000,
       '{"id":"opl-check","type":"get_state"}\n',
       cwd,
@@ -222,10 +209,7 @@ async function probe(path: string, id: string, env: NodeJS.ProcessEnv, cwd: stri
   }
 }
 export function usesPrivateUpdateDirectory(item: HarnessInstallation): boolean {
-  return (
-    ['opencode', 'kilo', 'pi'].includes(item.id) ||
-    (item.id === 'step-code' && !item.maintenanceAction)
-  )
+  return ['opencode', 'kilo', 'pi'].includes(item.id)
 }
 
 export async function applyEngineUpdate(
@@ -248,72 +232,24 @@ export async function applyEngineUpdate(
     const stage = await mkdtemp(join(root, target + '-'))
     const scratch = await mkdtemp(join(tmpdir(), 'opl-engine-check-'))
     try {
-      let path: string
-      if (item.id === 'step-code') {
-        if (process.platform !== 'win32') throw Error('该平台的固定 StepCode 请通过原安装渠道更新')
-        const manifest = JSON.parse(
-          await run(
-            'curl.exe',
-            [
-              '-q',
-              '--proto',
-              '=https',
-              '-fsS',
-              'https://static-openapi.stepfun.com/stepcode/' + target + '/manifest.json',
-            ],
-            env,
-          ),
-        )
-        const key = 'windows-' + process.arch
-        const url =
-          'https://static-openapi.stepfun.com/stepcode/' +
-          target +
-          '/step-' +
-          target +
-          '-' +
-          key +
-          '.zip'
-        const sha = manifest.checksums?.[key]
-        if (
-          manifest.version !== target ||
-          manifest.packages?.[key] !== url ||
-          !/^[0-9a-f]{64}$/.test(sha)
-        )
-          throw Error('StepCode 官方包校验信息不匹配')
-        const archive = join(scratch, 'step.zip')
-        await run('curl.exe', ['-q', '--proto', '=https', '-fsS', '-o', archive, url], env, 180000)
-        await run(
-          'powershell.exe',
-          [
-            '-NoProfile',
-            '-NonInteractive',
-            '-Command',
-            "$ErrorActionPreference='Stop'; if((Get-FileHash -LiteralPath $env:OPL_ARCHIVE).Hash -ne $env:OPL_HASH){throw 'SHA256 mismatch'}; Expand-Archive -LiteralPath $env:OPL_ARCHIVE -DestinationPath $env:OPL_STAGE",
-          ],
-          { ...env, OPL_ARCHIVE: archive, OPL_STAGE: stage, OPL_HASH: sha },
-          180000,
-        )
-        path = join(stage, 'step.exe')
-      } else {
-        const npm = await executablePath('npm')
-        if (!npm) throw Error('未找到 npm')
-        await run(
-          npm,
-          [
-            'install',
-            '--global',
-            '--prefix',
-            stage,
-            '--registry=https://registry.npmjs.org',
-            packages[item.id] + '@' + target,
-            ...(item.id === 'pi' ? ['--ignore-scripts'] : []),
-          ],
-          env,
-          300000,
-        )
-        path =
-          process.platform === 'win32' ? join(stage, item.id + '.cmd') : join(stage, 'bin', item.id)
-      }
+      const npm = await executablePath('npm')
+      if (!npm) throw Error('未找到 npm')
+      await run(
+        npm,
+        [
+          'install',
+          '--global',
+          '--prefix',
+          stage,
+          '--registry=https://registry.npmjs.org',
+          packages[item.id] + '@' + target,
+          ...(item.id === 'pi' ? ['--ignore-scripts'] : []),
+        ],
+        env,
+        300000,
+      )
+      const path =
+        process.platform === 'win32' ? join(stage, item.id + '.cmd') : join(stage, 'bin', item.id)
       await verify(path, target, env)
       await probe(path, item.id, env, scratch)
       return { path, version: target }

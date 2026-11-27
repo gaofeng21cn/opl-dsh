@@ -21,17 +21,19 @@ import { gatewayGroupEnabled } from '../../gateway/host/group-settings.ts'
 import { inspectHarness, inspectInstalledHarness } from './harness-registry.ts'
 import { maintainHarness } from './harness-maintenance.ts'
 import type { HarnessInstallation } from '../contracts/installations.ts'
-import { executionModelRefKey, isRemovableCombination, modelRefKey } from '../contracts/catalog.ts'
-import type { MiniMaxCandidateRequest, MiniMaxCandidateResult } from '../contracts/candidate.ts'
+import {
+  executionModelRefKey,
+  isRemovableCombination,
+  isRetiredModel,
+  modelRefKey,
+  type CombinationDefinition,
+  type HarnessDefinition,
+  type ModelRef,
+} from '../contracts/catalog.ts'
+import { isCustomAcpHarness } from '../contracts/harness-groups.ts'
 import { RuntimeMaintenance } from './runtime-maintenance.ts'
-import { prepareMiniMaxCandidate } from './minimax-candidate.ts'
-import { prepareCodexRuntime } from './codex-runtime.ts'
-import type {
-  CodexRuntimeRequest,
-  CodexRuntimeResult,
-  CodexGitBashRuntime,
-} from '../contracts/codex-runtime.ts'
 import { ExternalModelSources } from './model-sources.ts'
+import { CUSTOM_ACP_CAPABILITIES } from './adapters/custom-acp.ts'
 import { harnessAdapters } from './adapters/index.ts'
 import { acceptVisibleCliResult } from './adapters/visible-result.ts'
 import { GATEWAY_GROUPS } from '../../gateway/contracts/groups.ts'
@@ -42,7 +44,6 @@ import { MessageEditStore } from './message-edit-store.ts'
 import { FileExternalEditJournal } from './message-edit-external-store.ts'
 import { ExternalMessageEditTransactions } from './message-edit-external.ts'
 import type { ExternalEditHistory, ExternalMessageEditDriver } from './message-edit-driver.ts'
-import { kimiMessageEditDriver } from './message-edit-kimi.ts'
 import type { HarnessPromptPart } from '../contracts/prompt.ts'
 import {
   currentHarnessInputText,
@@ -72,15 +73,17 @@ import {
   type TokenUsage,
 } from '@deepseek-ai/dsh-llm'
 import type { Context } from '@deepseek-ai/cordis'
-import type { HarnessReasoningPreflight, HarnessStartRequest } from '../../contracts/types.ts'
+import type {
+  HarnessReasoningPreflight,
+  HarnessStartRequest,
+  SelectModelHarnessRequest,
+} from '../../contracts/types.ts'
 import { projectlessSessionCwd } from './projectless-path.ts'
 import { canonicalHarnessContext, canonicalHarnessUsage, latestHarnessContext } from './usage.ts'
 import { VibeTurnUsageTracker } from './usage-vibe.ts'
 import {
   parseGrokTurnUsage,
   parseOpenCodeKiloTurnUsage,
-  parsePoolContextUsage,
-  parsePoolTurnUsage,
   parseMiniMaxContextUsage,
 } from './usage-account.ts'
 import { QwenTurnUsage } from './adapters/qwen/usage.ts'
@@ -124,9 +127,9 @@ import {
 import { ExternalEffortStore } from './external-effort-store.ts'
 import { ExecutionModelResolver } from './execution-models.ts'
 import { assertOfmModelAvailable } from './model-admission.ts'
-import { OFM_PROVIDERS } from './ofm-source/provider.ts'
+import { OFM_PROVIDERS, isOfmVirtualRef } from './ofm-source/provider.ts'
+import { isHiddenOfmSelection } from './ofm-source/selection-policy.ts'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
-import type { CombinationDefinition, ModelRef } from '../contracts/catalog.ts'
 import { adapterFor, defaultHarness } from './adapters/index.ts'
 import { connectDsh } from './adapters/dsh.ts'
 import {
@@ -140,7 +143,6 @@ import { HarnessSessionStore } from './session-store.ts'
 import { NativeHarnessConversations, harnessRequestId } from './native-conversations.ts'
 import { StopEditService, type StopEditHost } from './stop-edit.ts'
 import { StopEditIntentStore } from './stop-edit-intent.ts'
-import { HISTORY_BOUNDARY } from './stop-edit-minimax.ts'
 import { harnessAllowsFullAccess } from './permissions.ts'
 import { resolveWriteScope } from './write-scope.ts'
 import { harnessProxyEnvironment } from './proxy.ts'
@@ -181,6 +183,7 @@ import {
   replacementFor,
   selectCombination,
   selectEffort,
+  selectModelHarness,
   selectionForModel,
   unavailableConversationSelection,
   type HarnessSelectionHost,
@@ -219,6 +222,7 @@ import {
   externalDriver,
   externalHistory,
   externalRecoveryHistory,
+  HISTORY_BOUNDARY,
   messageEditSend,
   messageEditState,
   rebindNativeBranch,
@@ -232,7 +236,6 @@ import {
   stopEditRuntime,
   stopEditSettle,
   stopEditTarget,
-  storedKiloHistory,
   supportsExternalEditing,
   type HarnessStopEditContext,
 } from './harness-stop-edit.ts'
@@ -437,7 +440,7 @@ export class HarnessService {
   /** Persist validated limits and apply them to subsequent turns. */
   async saveExecutionLimits(value: unknown): Promise<ProgressWatchdogLimits> {
     const limits = executionLimitsSchema(value as never) as ProgressWatchdogLimits
-    const descriptor = featureSettings(this.ctx, 'opl-execution')
+    const descriptor = featureSettings(this.ctx, 'opl-suite')
     if (!descriptor) throw Error('执行设置不可用')
     await this.ctx.settings.mutate(
       descriptor.ns,
@@ -566,6 +569,7 @@ export class HarnessService {
   /** Monotonic source of {@link Active.generation}; never reused within a process. */
   private connectionGeneration = 0
   private readonly catalogStore: ExecutionCatalogStore
+  private knownHarnesses: readonly HarnessDefinition[] = defaultExecutionCatalog().harnesses
   private readonly modelResolver: ExecutionModelResolver
   /** Share one catalog build among the parallel catalog/combination/selection reads. */
   private executionCatalogPending:
@@ -806,11 +810,11 @@ export class HarnessService {
     if (this.selections[record.nativeSessionId!] === undefined)
       await this.bindSelection(record.nativeSessionId!, record.combination)
   }
-  private zcodeModeForOrigin(origin: HarnessOrigin): 'build' | 'yolo' {
-    if (origin.kind !== 'dsh') return 'yolo'
+  private isAutoReviewOrigin(origin: HarnessOrigin): boolean {
+    if (origin.kind !== 'dsh') return false
     const session = this.ctx.sessions.get(asSessionId<SessionId>(origin.sessionId))
-    if (!session) throw Error('ZCode 的原生会话已不存在')
-    return this.ctx.permissionPresets.current(session) === 'auto' ? 'build' : 'yolo'
+    if (!session) throw Error('原生会话已不存在')
+    return this.ctx.permissionPresets.current(session) === 'auto'
   }
   private currentWorkingDirectory(session: Session): string {
     try {
@@ -858,10 +862,17 @@ export class HarnessService {
     const policy = this.ctx.agents.get(session.id)?.ctx.get('sandboxPolicy')?.resolve({ session })
     const preset = this.ctx.permissionPresets.current(session)
     const mode = policy?.mode ?? preset
+    const adapter = adapterFor(
+      definition.harnessRef,
+      definition.modelRef,
+      this.modelSources,
+      this.knownHarnesses,
+    )
     const sandbox =
       mode === 'read-only'
         ? 'read-only'
-        : mode === 'danger-full-access' && harnessAllowsFullAccess(definition.harnessRef)
+        : mode === 'danger-full-access' &&
+            harnessAllowsFullAccess(definition.harnessRef, this.knownHarnesses, adapter)
           ? 'full-access'
           : 'workspace'
     return {
@@ -871,7 +882,9 @@ export class HarnessService {
     } as const
   }
   private async load() {
-    for (const record of await this.sessionStore.load()) {
+    const persistedCatalog = await this.catalogStore.get()
+    this.knownHarnesses = persistedCatalog.harnesses
+    for (const record of await this.sessionStore.load(persistedCatalog.harnesses)) {
       for (const turn of record.turns) {
         if (
           ['queued', 'running', 'waiting_child', 'waiting_approval', 'waiting_input'].includes(
@@ -958,16 +971,11 @@ export class HarnessService {
   private command() {
     return this.options.command ?? (process.env.OPL_GROK_COMMAND?.trim() || 'grok')
   }
-  private adapterOptions(
-    command?: string,
-    prefix?: string[],
-    codexRuntime?: CodexGitBashRuntime,
-  ): AdapterOptions {
+  private adapterOptions(command?: string, prefix?: string[]): AdapterOptions {
     const launchPrefix = prefix ?? this.options.prefix
     return {
       home: this.directory,
       modelSources: this.modelSources,
-      ...(codexRuntime ? { codexRuntime } : {}),
       grokCommand: this.command(),
       nativeBridgePath: fileURLToPath(new URL('./native-harness-bridge.mjs', import.meta.url)),
       ...(command ? { command } : {}),
@@ -977,32 +985,20 @@ export class HarnessService {
   }
   async installations() {
     const catalog = await this.catalogStore.get()
+    this.knownHarnesses = catalog.harnesses
     return Promise.all(
       catalog.harnesses.map(async (harness) => {
         const item = await inspectHarness(harness, this.directory, this.command()),
           maintenance = this.maintenance.get(harness.id)
-        const capabilities = harnessAdapters.find(
-          (adapter) => adapter.id === harness.id,
-        )?.capabilities
+        const capabilities =
+          harnessAdapters.find((adapter) => adapter.id === harness.id)?.capabilities ??
+          (isCustomAcpHarness(harness) ? CUSTOM_ACP_CAPABILITIES : undefined)
         const result: HarnessInstallation = {
           ...item,
           definition: harness,
-          ...(capabilities
-            ? {
-                capabilities: harness.codexRuntime
-                  ? { ...capabilities, permissions: ['full-access'] as ['full-access'] }
-                  : capabilities,
-              }
-            : {}),
-          ...(harness.codexRuntime
-            ? {
-                installable: false,
-                instructions: 'OPL Git Bash 固定候选；升级与回切使用 Codex 运行时选择入口。',
-              }
-            : {}),
+          ...(capabilities ? { capabilities } : {}),
           ...(maintenance ? { maintenance } : {}),
         }
-        if (harness.codexRuntime) delete result.maintenanceAction
         return result
       }),
     )
@@ -1019,8 +1015,6 @@ export class HarnessService {
     const catalog = await this.catalogStore.get(),
       definition = catalog.harnesses.find((item) => item.id === id)
     if (!definition) throw Error('Harness 不存在')
-    if (definition.codexRuntime)
-      throw Error('Codex Git Bash 候选不使用官方更新器；请先回切官方或导入已验收新候选')
     const item = await inspectHarness(definition, this.directory, this.command())
     if (!item.maintenanceAction) throw Error('请使用此 Harness 的官方安装与更新入口')
     // Recheck after discovery so concurrent clicks cannot launch two updaters.
@@ -1110,14 +1104,19 @@ export class HarnessService {
   /** Concurrent readers of the same snapshot share only unfinished CLI checks. */
   private async probeCatalogAvailability(catalog: ExecutionCatalog) {
     const availability = new Map<string, { available: boolean; reason?: string }>()
-    const probes = new Map<HarnessAdapter, Promise<{ available: boolean; reason?: string }>>()
+    const probes = new Map<string, Promise<{ available: boolean; reason?: string }>>()
     const pending = new Map<string, Promise<{ available: boolean; reason?: string }>>()
     for (const combination of catalog.combinations) {
       const model = catalog.models.find(
         (item) => modelRefKey(item.ref) === modelRefKey(combination.modelRef),
       )
       const harness = catalog.harnesses.find((item) => item.id === combination.harnessRef)
-      const adapter = adapterFor(combination.harnessRef, combination.modelRef, this.modelSources)
+      const adapter = adapterFor(
+        combination.harnessRef,
+        combination.modelRef,
+        this.modelSources,
+        catalog.harnesses,
+      )
       if (!model?.available)
         availability.set(combination.id, {
           available: false,
@@ -1129,17 +1128,14 @@ export class HarnessService {
           reason: '该模型与 Harness 尚无兼容适配器',
         })
       else {
-        if (!probes.has(adapter))
+        if (!probes.has(harness.id))
           probes.set(
-            adapter,
+            harness.id,
             Promise.resolve().then(() =>
-              adapter.available(
-                this.ctx,
-                this.adapterOptions(harness.command, harness.prefix, harness?.codexRuntime),
-              ),
+              adapter.available(this.ctx, this.adapterOptions(harness.command, harness.prefix)),
             ),
           )
-        pending.set(combination.id, probes.get(adapter)!)
+        pending.set(combination.id, probes.get(harness.id)!)
       }
     }
     await Promise.all(
@@ -1258,15 +1254,12 @@ export class HarnessService {
         ...catalog,
         supportedPairings: catalog.models.map((model) => {
           const supported = catalog.harnesses.flatMap((harness) => {
-            const adapter = adapterFor(harness.id, model.ref, this.modelSources)
+            const adapter = adapterFor(harness.id, model.ref, this.modelSources, catalog.harnesses)
             return adapter
               ? [
                   {
                     harness: harness.id,
-                    permissions:
-                      harness.id === 'codex' && harness.codexRuntime
-                        ? ['full-access' as const]
-                        : adapter.capabilities.permissions,
+                    permissions: adapter.capabilities.permissions,
                   },
                 ]
               : []
@@ -1283,6 +1276,7 @@ export class HarnessService {
       this.executionCatalogPending = { minimaxCodeEnabled, promise: pending }
       void pending.then(
         (catalog) => {
+          this.knownHarnesses = catalog.harnesses
           if (
             this.executionCatalogPending?.promise === pending &&
             this.isMinimaxCodeEnabled() === minimaxCodeEnabled
@@ -1302,7 +1296,17 @@ export class HarnessService {
       if (snapshot?.minimaxCodeEnabled === minimaxCodeEnabled)
         return structuredClone(snapshot.catalog)
       const persisted = await this.catalogStore.get()
-      return { ...persisted, minimaxCodeEnabled }
+      this.knownHarnesses = persisted.harnesses
+      return {
+        ...persisted,
+        combinations: persisted.combinations.filter(
+          (item) =>
+            !isHiddenOfmSelection(item.modelRef) &&
+            !isRetiredModel(item.modelRef) &&
+            (minimaxCodeEnabled || !isMiniMaxCodeRoute(item)),
+        ),
+        minimaxCodeEnabled,
+      }
     }
     return this.executionCatalogAfter(pending, minimaxCodeEnabled)
   }
@@ -1343,15 +1347,14 @@ export class HarnessService {
   private async probeExternalModel(
     ref: ModelRef,
   ): Promise<{ available: boolean; reason?: string }> {
-    const adapter = adapterFor(defaultHarness(ref), ref, this.modelSources)
+    const harnesses = (await this.catalogStore.get()).harnesses
+    const adapter = adapterFor(defaultHarness(ref), ref, this.modelSources, harnesses)
     if (!adapter) return { available: false, reason: '该模型尚无兼容的官方 CLI 适配器' }
     try {
-      const harness = (await this.catalogStore.get()).harnesses.find(
-        (item) => item.id === adapter.id,
-      )
+      const harness = harnesses.find((item) => item.id === adapter.id)
       return await adapter.available(
         this.ctx,
-        this.adapterOptions(harness?.command, harness?.prefix, harness?.codexRuntime),
+        this.adapterOptions(harness?.command, harness?.prefix),
       )
     } catch {
       return { available: false, reason: '官方 CLI 状态检测未完成，请重新打开此页' }
@@ -1369,7 +1372,13 @@ export class HarnessService {
     this.runtimeMaintenance.assertAvailable()
     const previous = await this.catalogStore.get()
     this.runtimeMaintenance.assertAvailable()
-    const supplied = normalizeCatalog(value)
+    const rawSupplied = normalizeCatalog(value)
+    const supplied = rawSupplied.combinations.some((item) => isOfmVirtualRef(item.modelRef))
+      ? normalizeCatalog({
+          ...rawSupplied,
+          combinations: rawSupplied.combinations.filter((item) => !isOfmVirtualRef(item.modelRef)),
+        })
+      : rawSupplied
     // Hidden integration rows are not editable in this projection. Restore their
     // persisted values so an unrelated catalog save cannot delete or replace them.
     const next = !preserveMiniMaxRows
@@ -1390,14 +1399,19 @@ export class HarnessService {
       const unchanged = samePairing && (!combination.enabled || old.enabled)
       if (
         !unchanged &&
-        !adapterFor(combination.harnessRef, combination.modelRef, this.modelSources)
+        !adapterFor(combination.harnessRef, combination.modelRef, this.modelSources, next.harnesses)
       )
         throw Error('该模型与 Harness 尚无兼容适配器，未保存组合')
       if (
         combination.harnessRef === 'pi' &&
         (!samePairing || old.permissionPolicy !== combination.permissionPolicy)
       ) {
-        const adapter = adapterFor(combination.harnessRef, combination.modelRef, this.modelSources)
+        const adapter = adapterFor(
+          combination.harnessRef,
+          combination.modelRef,
+          this.modelSources,
+          next.harnesses,
+        )
         if (adapter && !adapter.capabilities.permissions.includes(combination.permissionPolicy))
           throw Error('所选 Harness 不支持此权限档位，未保存组合')
       }
@@ -1408,6 +1422,7 @@ export class HarnessService {
     const publish = async () => {
       if (changed) await this.assertNoGlobalActivity()
       const saved = await this.catalogStore.set(next)
+      this.knownHarnesses = saved.harnesses
       this.antigravityAccount.updateRoute(saved.harnesses.find((item) => item.id === 'antigravity'))
       this.events.emit('catalog')
       return this.executionCatalog()
@@ -1443,21 +1458,6 @@ export class HarnessService {
     await this.externalEditJournal.drain()
     if (this.updateBusy()) throw Error('更新排空期间出现活动任务')
   }
-  /**
-   * Exclude reviewer settings changes from CLI admission and native model requests.
-   * @param operation - Validation and durable settings publication owned by Auto Review.
-   * @returns The publication result after all visible projects were checked for activity.
-   */
-  async changeReviewerSettings<T>(operation: () => Promise<T>): Promise<T> {
-    await this.ready
-    return this.runtimeMaintenance.change(
-      () => this.runtimeBusy(),
-      async () => {
-        await this.assertNoGlobalActivity()
-        return await operation()
-      },
-    )
-  }
   private runtimeBusy(): boolean {
     return (
       this.disposed ||
@@ -1487,49 +1487,6 @@ export class HarnessService {
       if (activity.length) throw Error('仍有活动任务，不能切换 Harness 运行时')
     }
     if (this.runtimeBusy()) throw Error('仍有活动任务，不能切换 Harness 运行时')
-  }
-  /** Publish the verified candidate into the actual catalog; receipts do not select it. */
-  async selectMiniMaxCandidate(request: MiniMaxCandidateRequest): Promise<MiniMaxCandidateResult> {
-    this.assertMinimaxCodeEnabled()
-    await this.ready
-    return this.runtimeMaintenance.change(
-      () => this.runtimeBusy(),
-      async () => {
-        await this.assertNoGlobalActivity()
-        const verified = prepareMiniMaxCandidate(request)
-        await this.assertNoGlobalActivity()
-        const previous = await this.catalogStore.setHarnessLaunch(
-          MINIMAX_CODE_HARNESS,
-          verified.command,
-          [],
-        )
-        this.events.emit('catalog')
-        return { ...verified, ...previous, version: request.version, validation: 'static' }
-      },
-    )
-  }
-  /** Select a pinned build or restore the previous official command while all projects are idle. */
-  async selectCodexRuntime(request: CodexRuntimeRequest): Promise<CodexRuntimeResult> {
-    await this.ready
-    return this.runtimeMaintenance.change(
-      () => this.runtimeBusy(),
-      async () => {
-        await this.assertNoGlobalActivity()
-        if (request.mode !== 'official' && request.mode !== 'git-bash')
-          throw Error('Codex 运行时选择无效')
-        const verified =
-          request.mode === 'git-bash' ? prepareCodexRuntime(this.directory, request) : null
-        await this.assertNoGlobalActivity()
-        const previous = await this.catalogStore.setCodexRuntime(verified)
-        this.events.emit('catalog')
-        return {
-          ...(verified ?? {}),
-          ...previous,
-          mode: request.mode,
-          validation: verified ? 'static' : 'launch-settings',
-        }
-      },
-    )
   }
   async saveHarnessProxy(harnessId: string, proxy: unknown): Promise<ExecutionCatalog> {
     await this.ready
@@ -1613,8 +1570,10 @@ export class HarnessService {
     if (!definition) throw Error('未知或已停用的模型 + Harness 组合')
     this.assertMiniMaxCodeRouteEnabled(definition)
     const harness = catalog.harnesses.find((item) => item.id === definition.harnessRef)
-    if (!harness || !adapterFor(harness.id, definition.modelRef, this.modelSources))
-      throw Error('该组合已保存，但尚未安装对应 Harness 适配器')
+    const resolvedAdapter = harness
+      ? adapterFor(harness.id, definition.modelRef, this.modelSources, catalog.harnesses)
+      : undefined
+    if (!harness || !resolvedAdapter) throw Error('该组合已保存，但尚未安装对应 Harness 适配器')
     const supplied = required(input.cwd, 'cwd')
     if (!isAbsolute(supplied) || supplied.includes('\0')) throw Error('工作目录必须为绝对路径')
     const cwd = await realpath(supplied)
@@ -1681,12 +1640,15 @@ export class HarnessService {
     // An explicitly requested full-access task is never quietly downgraded. A harness without a
     // verified official full-access path is refused before any session or model request exists,
     // so the caller learns the task cannot run instead of running with weaker permissions.
-    if (requestedSandbox === 'full-access' && !harnessAllowsFullAccess(definition.harnessRef))
+    if (
+      requestedSandbox === 'full-access' &&
+      !harnessAllowsFullAccess(definition.harnessRef, catalog.harnesses, resolvedAdapter)
+    )
       throw new HarnessConfigurationError(
         `Harness ${definition.harnessRef} 没有经过验证的官方 full-access 路径，已拒绝启动该受限任务；不会自动降级为工作区权限。`,
       )
-    const autoReview = origin.kind === 'dsh' && this.zcodeModeForOrigin(origin) === 'build'
-    if (autoReview && !['codex', 'claude', 'zcode'].includes(definition.harnessRef))
+    const autoReview = origin.kind === 'dsh' && this.isAutoReviewOrigin(origin)
+    if (autoReview && !['codex', 'claude'].includes(definition.harnessRef))
       throw new HarnessConfigurationError(
         '此 Harness 尚无已验证的官方 Auto Review 接口，请选择其他权限模式。',
       )
@@ -1701,7 +1663,6 @@ export class HarnessService {
       ...(['codex', 'claude'].includes(definition.harnessRef) && origin.kind === 'dsh'
         ? { externalAutoReview: autoReview }
         : {}),
-      ...(definition.harnessRef === 'zcode' ? { zcodeMode: this.zcodeModeForOrigin(origin) } : {}),
       // A delegated turn needs an independent native driver while its caller awaits the tool.
       ...(origin.kind === 'dsh' && definition.harnessRef !== 'dsh' && !followConversationPermission
         ? { nativeSessionId: `session-${id}` }
@@ -1753,13 +1714,12 @@ export class HarnessService {
   }
   private async openConnection(record: HarnessSession, provisional = false) {
     this.assertMiniMaxCodeRouteEnabled(record)
-    const chosenHarness = (await this.catalogStore.get()).harnesses.find(
-      (h) => h.id === record.harnessRef,
-    )
+    const currentCatalog = await this.catalogStore.get()
+    this.knownHarnesses = currentCatalog.harnesses
+    const chosenHarness = currentCatalog.harnesses.find((h) => h.id === record.harnessRef)
     const launchSettings = hash([
       chosenHarness?.command,
       chosenHarness?.prefix,
-      chosenHarness?.codexRuntime,
       ...(record.harnessRef === 'minimax-code'
         ? [
             await minimaxExecutionRegion(
@@ -1784,7 +1744,12 @@ export class HarnessService {
       await existing.bridgeStop?.()
       this.active.delete(record.id)
     }
-    const adapter = adapterFor(record.harnessRef, record.modelRef, this.modelSources)
+    const adapter = adapterFor(
+      record.harnessRef,
+      record.modelRef,
+      this.modelSources,
+      currentCatalog.harnesses,
+    )
     if (!adapter) throw Error('此组合没有兼容的 Harness 适配器')
     if (adapter.transport === 'dsh') {
       await connectDsh(this.ctx, record, () => this.save(record))
@@ -1801,11 +1766,7 @@ export class HarnessService {
     const launch = await adapter.prepare!(
       this.ctx,
       record,
-      this.adapterOptions(
-        chosenHarness?.command,
-        chosenHarness?.prefix,
-        chosenHarness?.codexRuntime,
-      ),
+      this.adapterOptions(chosenHarness?.command, chosenHarness?.prefix),
     )
     const home = launch.home
     const active: Active = {
@@ -2037,11 +1998,9 @@ export class HarnessService {
       const account =
         record.harnessRef === 'vibe'
           ? active.vibeUsage!.observeUpdate(u)
-          : record.harnessRef === 'pool'
-            ? parsePoolContextUsage(u)
-            : record.harnessRef === 'minimax-code'
-              ? parseMiniMaxContextUsage(u)
-              : {}
+          : record.harnessRef === 'minimax-code'
+            ? parseMiniMaxContextUsage(u)
+            : {}
       const contextUsage = canonicalHarnessContext(
         account.contextUsage ??
           (record.harnessRef === 'vibe'
@@ -2062,23 +2021,6 @@ export class HarnessService {
         if (usageTurn) this.changed(record)
       }
       return
-    }
-    if (active.editReplay) {
-      if (u.sessionUpdate === 'user_message_chunk' && object(u.content).type === 'text')
-        active.editReplay.text += String(object(u.content).text ?? '')
-      const id = object(u._meta)['poolside/inputEventId']
-      if (typeof id === 'string' && id) {
-        active.editReplay.boundaries.push({ id, text: active.editReplay.text })
-        active.editReplay.text = ''
-      }
-      return
-    }
-    if (record.harnessRef === 'step-code' && u.sessionUpdate === 'session_info_update')
-      this.recordStepInput(record, active, object(u._meta))
-    if (record.harnessRef === 'pool' && active.turn && u.sessionUpdate === 'session_info_update') {
-      const id = object(u._meta)['poolside/inputEventId']
-      if (typeof id === 'string' && id)
-        active.turn.native = { ...active.turn.native, userMessageId: id }
     }
 
     // Configuration advertisements arrive outside any turn, so this must run before the
@@ -2113,7 +2055,7 @@ export class HarnessService {
       this.titleUpdates.set(record.id, pending)
       return
     }
-    if (!active.turn || active.deadlineError || active.inputReceiptError) return
+    if (!active.turn || active.deadlineError) return
     const turn = active.turn
     active.qwenUsage?.observe(u)
     if (
@@ -2163,56 +2105,6 @@ export class HarnessService {
       if (owner) this.conversations?.tool(owner.sessionId, record, turn, u)
     }
     this.changed(record)
-  }
-
-  /** Bind Step's exact request receipt only to the current connection's open turn. */
-  private recordStepInput(record: HarnessSession, active: Active, meta: Record<string, unknown>) {
-    const turn = active.turn
-    const inputId = meta['opl/stepInputId']
-    const operationId = meta['opl/clientRequestId']
-    if (
-      this.active.get(record.id) !== active ||
-      active.sessionInfo?.sessionId !== record.acpSessionId ||
-      !turn ||
-      turn !== record.turns.at(-1) ||
-      !['running', 'waiting_approval', 'waiting_input'].includes(turn.state) ||
-      active.cancelled ||
-      active.deadlineError ||
-      active.inputReceiptError ||
-      typeof inputId !== 'string' ||
-      !inputId ||
-      typeof operationId !== 'string' ||
-      operationId !== turn.operationId
-    )
-      return
-    if (turn.native?.userMessageId === inputId) return
-    if (turn.native?.userMessageId) {
-      active.inputReceiptError =
-        'Step 返回了相互冲突的用户消息身份，已停止本轮请求；编辑状态待核对，原任务未自动重发。'
-      turn.error = active.inputReceiptError
-    } else turn.native = { ...turn.native, userMessageId: inputId }
-    this.changed(record)
-    const stopped = active.inputReceiptError
-      ? active.acp?.terminate(active.inputReceiptError)
-      : undefined
-    const saved = active.inputReceiptError
-      ? this.persistStepInputConflict(record, turn)
-      : this.save(record)
-    active.inputReceiptWrite = Promise.all([active.inputReceiptWrite, saved, stopped]).then(
-      () => {},
-    )
-    void active.inputReceiptWrite.catch(() => {
-      this.ctx.logger?.warn('Step 用户消息身份尚未保存，原记录和编辑保护已保留')
-    })
-  }
-
-  private async persistStepInputConflict(record: HarnessSession, turn: HarnessTurn): Promise<void> {
-    const intent = record.nativeSessionId
-      ? this.externalMessageEdits.intent(record.nativeSessionId)
-      : undefined
-    if (intent && turn.operationId === 'message-edit:' + intent.requestId)
-      await this.externalEditJournal.save({ ...intent, phase: 'uncertain' })
-    await this.save(record)
   }
   private ask(record: HarnessSession, active: Active, rpcId: string | number, value: unknown) {
     const p = object(value)
@@ -2316,72 +2208,6 @@ export class HarnessService {
     }
     return this.view(record)
   }
-  /**
-   * Bind the one pending external-Harness permission ask of a native Session.
-   *
-   * The approval waterfall only carries the ask's tool reference and display
-   * text, so the exact facts are read here, from the live connection record:
-   * the ACP session and its connection generation, the owning Harness turn, the
-   * structured action the ask declared, and the authorization the task runs
-   * under. Nothing is derived from the ask's prose.
-   *
-   * This is deliberately all-or-nothing. Zero pending external asks means there
-   * is nothing to bind; more than one means the pending approval request cannot
-   * be attributed to an exact ask; a missing turn, an unknown record, an
-   * unreadable preset or an ask without a structured action all return `null`.
-   * Every `null` leaves the ask to the ordinary human approval chain.
-   * @param sessionId - the native Session that owns the Harness conversation.
-   * @param callId - the exact native approval request identity.
-   * @returns the exact binding, or null when it cannot be proven.
-   */
-  externalApprovalBinding(
-    sessionId: string,
-    callId?: string,
-  ): HarnessExternalApprovalBinding | null {
-    const session = this.ctx.sessions?.get(asSessionId<SessionId>(sessionId))
-    if (!session || !callId) return null
-    const matches: {
-      record: HarnessSession
-      active: Active
-      external: HarnessExternalAsk
-    }[] = []
-    for (const [recordId, active] of this.active) {
-      if (this.conversationOwners.get(recordId)?.sessionId !== sessionId) continue
-      const record = this.records.get(recordId)
-      if (!record) continue
-      for (const ask of active.approvals.values())
-        if (ask.external !== undefined && ask.reviewCallId === callId)
-          matches.push({ record, active, external: ask.external })
-    }
-    if (matches.length !== 1) return null
-    const { record, active, external } = matches[0]!
-    const turn = active.turn
-    if (!turn) return null
-    const index = record.turns.findIndex((item) => item.operationId === turn.operationId)
-    if (index < 0) return null
-    let preset: string
-    try {
-      preset = this.ctx.permissionPresets.current(session)
-    } catch {
-      return null
-    }
-    return {
-      harness: record.harnessRef,
-      callId,
-      acpSessionId: record.acpSessionId,
-      generation: active.generation,
-      turn: index + 1,
-      turnId: turn.operationId,
-      action: { name: external.name, parameters: external.parameters },
-      authorization: {
-        sessionId,
-        preset,
-        sandbox: record.sandbox,
-        combination: record.combination,
-      },
-    }
-  }
-
   async prompt(input: HarnessPromptRequest, reasoningEffort?: string): Promise<HarnessSnapshot> {
     return this.runtimeMaintenance.admit(() => {
       requireHarnessInputText(input?.text, 'request')
@@ -2583,7 +2409,12 @@ export class HarnessService {
    * with parameters the combination did not ask for.
    */
   private async pinSession(record: HarnessSession, active: Active, effort?: string) {
-    const adapter = adapterFor(record.harnessRef, record.modelRef, this.modelSources)
+    const adapter = adapterFor(
+      record.harnessRef,
+      record.modelRef,
+      this.modelSources,
+      this.knownHarnesses,
+    )
     if (!adapter || (!adapter.configureSession && !adapter.verifySession)) return
     const acp = active.acp
     if (!acp) throw Error('Harness 连接已关闭，无法在发送任务前确认固定模型')
@@ -2611,22 +2442,6 @@ export class HarnessService {
     record: HarnessSession,
   ): Promise<ExternalEditHistory | undefined> {
     try {
-      if (record.harnessRef === 'grok-build') {
-        const response = object(
-          await this.active
-            .get(record.id)!
-            .acp!.request('_x.ai/rewind/points', { sessionId: record.acpSessionId }, 30_000),
-        )
-        if (!Array.isArray(response.rewind_points)) return
-        return {
-          sessionId: record.acpSessionId,
-          token: hash(response.rewind_points),
-          boundaries: response.rewind_points.map((point: { prompt_index: number }) => ({
-            id: String(point.prompt_index),
-          })),
-        }
-      }
-      if (['minimax-code', 'kimi-code', 'pool'].includes(record.harnessRef)) return
       return await this.externalDriver(record)?.read(
         this.externalContext(record, new AbortController().signal),
       )
@@ -2644,8 +2459,6 @@ export class HarnessService {
       this.assertMiniMaxCodeRouteEnabled(record)
       delete active.deadlineError
       delete active.deadlineCleanup
-      delete active.inputReceiptError
-      delete active.inputReceiptWrite
       if (record.harnessRef !== 'dsh' && this.progressLimits) {
         active.watchdog = new ProgressWatchdog(this.progressLimits, () => {
           if (active.turn !== turn || active.cancelled) return
@@ -2668,20 +2481,17 @@ export class HarnessService {
           turn.state = 'cancelled'
           return
         }
-        const priorTurns = record.turns.slice(0, record.turns.indexOf(turn))
-        const priorIds = priorTurns.map((item) => item.native?.userMessageId)
-        const knownKimiPrefix =
-          record.harnessRef === 'kimi-code' &&
-          priorIds.every((id): id is string => typeof id === 'string' && !!id) &&
-          new Set(priorIds).size === priorIds.length
         editBefore =
           active.editHistory ??
-          (knownKimiPrefix
-            ? { sessionId: record.acpSessionId, boundaries: priorIds.map((id) => ({ id: id! })) }
-            : active.createdSession && record.turns.length === 1
-              ? { sessionId: record.acpSessionId, boundaries: [] }
-              : await this.observeEditHistory(record))
-        const adapter = adapterFor(record.harnessRef, record.modelRef, this.modelSources)
+          (active.createdSession && record.turns.length === 1
+            ? { sessionId: record.acpSessionId, boundaries: [] }
+            : await this.observeEditHistory(record))
+        const adapter = adapterFor(
+          record.harnessRef,
+          record.modelRef,
+          this.modelSources,
+          this.knownHarnesses,
+        )
         const edit = record.nativeSessionId
           ? this.externalMessageEdits.intent(record.nativeSessionId)
           : undefined
@@ -2782,16 +2592,6 @@ export class HarnessService {
               : undefined,
           ),
         )
-        if (active.inputReceiptError) throw new HarnessTransportError(active.inputReceiptError)
-        if (['opencode', 'kilo'].includes(record.harnessRef)) {
-          const userMessageId = result.userMessageId
-          if (typeof userMessageId === 'string' && userMessageId) {
-            if (turn.native?.userMessageId && turn.native.userMessageId !== userMessageId)
-              throw Error('官方 Harness 返回的用户消息身份不一致')
-            turn.native = { ...turn.native, userMessageId }
-            await this.save(record)
-          }
-        }
         let usage =
           record.harnessRef === 'antigravity' && record.modelRef.provider === 'antigravity-google'
             ? normalizeAntigravityUsage(result.usage)
@@ -2808,11 +2608,9 @@ export class HarnessService {
             ? active.vibeUsage!.finishTurn(result)
             : record.harnessRef === 'grok-build'
               ? parseGrokTurnUsage(result)
-              : record.harnessRef === 'pool'
-                ? parsePoolTurnUsage(result)
-                : ['opencode', 'kilo'].includes(record.harnessRef)
-                  ? parseOpenCodeKiloTurnUsage(result)
-                  : {}
+              : ['opencode', 'kilo'].includes(record.harnessRef)
+                ? parseOpenCodeKiloTurnUsage(result)
+                : {}
         if (!usage) usage = account.usage
         if (usage) turn.usage = usage
         if (account.contextUsage) turn.contextUsage = account.contextUsage
@@ -2951,7 +2749,6 @@ export class HarnessService {
       // must not collapse into the generic transport text.
       turn.error =
         active.deadlineError ??
-        active.inputReceiptError ??
         (error instanceof HarnessTransportError || error instanceof HarnessConfigurationError
           ? error.message
           : '执行未完成，请检查 Harness 安装、所选渠道和模型。原任务未自动重发。')
@@ -2984,10 +2781,6 @@ export class HarnessService {
     delete active.watchdog
     await active.deadlineCleanup
     delete active.deadlineCleanup
-    await active.inputReceiptWrite?.catch(() => {
-      active.inputReceiptError ??= 'Step 用户消息身份未能保存，请检查磁盘后重新读取对话。'
-    })
-    delete active.inputReceiptWrite
     await this.titleUpdates.get(record.id)
     if (active.deadlineError) {
       turn.state = 'failed'
@@ -2997,13 +2790,6 @@ export class HarnessService {
       turn.state = 'cancelled'
       delete turn.error
     }
-    if (active.inputReceiptError) {
-      turn.state = 'failed'
-      turn.error = active.inputReceiptError
-      await this.persistStepInputConflict(record, turn).catch(() => {
-        this.ctx.logger?.warn('Step 用户消息身份冲突尚未保存，编辑保护已保留')
-      })
-    }
     if (turn.contextUsage?.size !== undefined)
       this.recordContextWindow(record, active, turn.contextUsage.size)
     for (const p of active.approvals.values()) active.acp?.answer(p.rpcId)
@@ -3011,12 +2797,7 @@ export class HarnessService {
     active.turn = undefined
     if (editBefore && record.harnessRef !== 'dsh') {
       try {
-        const after =
-          record.harnessRef === 'kimi-code'
-            ? await kimiMessageEditDriver().read(
-                this.externalContext(record, new AbortController().signal),
-              )
-            : await this.observeEditHistory(record)
+        const after = await this.observeEditHistory(record)
         if (
           after?.sessionId === editBefore.sessionId &&
           after.boundaries.length === editBefore.boundaries.length + 1 &&
@@ -3268,16 +3049,21 @@ export class HarnessService {
       get catalogEpoch() {
         return self.catalogEpoch
       },
+      get knownHarnesses() {
+        return self.knownHarnesses
+      },
+      notifyCatalogChanged: () => {
+        this.events.emit('catalog')
+      },
       executionCatalog: (options) => this.executionCatalog(options),
-      adapterOptions: (command, prefix, codexRuntime) =>
-        this.adapterOptions(command, prefix, codexRuntime),
+      adapterOptions: (command, prefix) => this.adapterOptions(command, prefix),
       conversationBinding: (session, definition, cwd) =>
         this.conversationBinding(session, definition, cwd),
       bindSelection: (sessionId, combination) => this.bindSelection(sessionId, combination),
       runSelectionChange: (sessionId, operation) => this.runSelectionChange(sessionId, operation),
       native: (method, request) => this.native(method, request),
       assertMiniMaxCodeRouteEnabled: (route) => this.assertMiniMaxCodeRouteEnabled(route),
-      cliOwnsEffort: (definition) => this.cliOwnsEffort(definition),
+      cliOwnsEffort: (definition, harnesses) => this.cliOwnsEffort(definition, harnesses),
       normalizeConversationSelection: (selection, definition, signal) =>
         this.normalizeConversationSelection(selection, definition, signal),
       modelSelection: (sessionId) => this.modelSelection(sessionId),
@@ -3389,7 +3175,6 @@ export class HarnessService {
       disconnectIdleConnection: (record, expected) =>
         this.disconnectIdleConnection(record, expected),
       externalHistory: (record) => this.externalHistory(record),
-      storedKiloHistory: (record) => this.storedKiloHistory(record),
       externalRecoveryHistory: (record, intent) => this.externalRecoveryHistory(record, intent),
       messageEditState: (input) => this.messageEditState(input),
       stopEditTarget: (sessionId) => this.stopEditTarget(sessionId),
@@ -3424,10 +3209,6 @@ export class HarnessService {
 
   private externalHistory(record: HarnessSession) {
     return externalHistory(this.stopEditContext(), record)
-  }
-
-  private storedKiloHistory(record: HarnessSession) {
-    return storedKiloHistory(this.stopEditContext(), record)
   }
 
   private externalRecoveryHistory(
@@ -3678,8 +3459,11 @@ export class HarnessService {
     return modelSelection(this.selectionHost(), sessionId)
   }
   /** CLI-advertised controls for third-party sources are not native provider effort IDs. */
-  private cliOwnsEffort(definition: CombinationDefinition): boolean {
-    return cliOwnsEffort(definition, this.modelSources)
+  private cliOwnsEffort(
+    definition: CombinationDefinition,
+    harnesses: readonly HarnessDefinition[] = this.knownHarnesses,
+  ): boolean {
+    return cliOwnsEffort(definition, this.modelSources, harnesses)
   }
   private selectEffort(input: ModelSelection & { sessionId: string }): Promise<unknown> {
     return selectEffort(this.selectionHost(), input)
@@ -3729,6 +3513,9 @@ export class HarnessService {
   }
   async selectCombination(input: { sessionId: string; combination: string }) {
     return selectCombination(this.selectionHost(), input)
+  }
+  async selectModelHarness(input: SelectModelHarnessRequest) {
+    return selectModelHarness(this.selectionHost(), input)
   }
   /** Bind a new official role without changing deployment defaults or an existing conversation. */
   async bindRoleCombination(agent: Agent, combination: string): Promise<void> {
@@ -3799,8 +3586,8 @@ export class HarnessService {
     const session = this.ctx.sessions.get(asSessionId<SessionId>(options.sessionId))
     if (!session) throw new LlmError('原会话已不存在', 'HARNESS_BINDING')
     if (
-      this.zcodeModeForOrigin({ kind: 'dsh', sessionId: options.sessionId }) === 'build' &&
-      !['codex', 'claude', 'zcode'].includes(definition.harnessRef)
+      this.isAutoReviewOrigin({ kind: 'dsh', sessionId: options.sessionId }) &&
+      !['codex', 'claude'].includes(definition.harnessRef)
     )
       throw new LlmError(
         '此 Harness 尚无已验证的官方 Auto Review 接口，请选择其他权限模式。',
@@ -3871,18 +3658,10 @@ export class HarnessService {
     if (
       bound &&
       ['codex', 'claude'].includes(bound.harnessRef) &&
-      (bound.externalAutoReview ?? false) !== (this.zcodeModeForOrigin(bound.origin) === 'build')
+      (bound.externalAutoReview ?? false) !== this.isAutoReviewOrigin(bound.origin)
     )
       throw new LlmError(
         '官方审核模式已改变，请新建对话；原会话不会绕过审批。',
-        'HARNESS_PERMISSION',
-      )
-    if (
-      bound?.harnessRef === 'zcode' &&
-      (bound.zcodeMode ?? 'yolo') !== this.zcodeModeForOrigin(bound.origin)
-    )
-      throw new LlmError(
-        'ZCode 审批模式已改变，请新建对话；原会话不会绕过审批。',
         'HARNESS_PERMISSION',
       )
     if (bound && bound.sandbox !== binding.sandbox) {
@@ -3975,7 +3754,7 @@ export class HarnessService {
     // external session (for example, Kimi may not advertise `high`).
     const requestEffort = admitted
       ? admitted.reasoningEffort
-      : this.cliOwnsEffort(definition)
+      : this.cliOwnsEffort(definition, catalog?.harnesses)
         ? (this.conversationEffort(session.id, definition, catalog!) ?? undefined)
         : ['codex', 'claude'].includes(definition.harnessRef) ||
             definition.modelRef.provider === MINIMAX_CODE_PROVIDER
@@ -4122,6 +3901,8 @@ export class HarnessService {
         return this.updateHarness(required(p.id, 'Harness ID'))
       case 'select-combination':
         return this.selectCombination(p as { sessionId: string; combination: string })
+      case 'select-model-harness':
+        return this.selectModelHarness(p as SelectModelHarnessRequest)
       case 'model-selection':
         return this.modelSelection(p.sessionId)
       case 'reasoning-preflight':
@@ -4144,10 +3925,6 @@ export class HarnessService {
         return this.saveExecutionCatalog(p.catalog)
       case 'save-harness-proxy':
         return this.saveHarnessProxy(p.harnessId, p.proxy)
-      case 'select-codex-runtime':
-        return this.selectCodexRuntime(p as CodexRuntimeRequest)
-      case 'select-minimax-candidate':
-        return this.selectMiniMaxCandidate(p as MiniMaxCandidateRequest)
       case 'start':
         return this.start(p as HarnessStartRequest)
       case 'prompt':

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent/types'
@@ -8,14 +8,15 @@ import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { invokeHostRemote } from '../../compat/host/remote-invocation.ts'
 import { withoutRememberingPermission } from '../../compat/host/permission-memory.ts'
 import { modelDefaultEffort } from '../../shared/model-reasoning.ts'
-import type { HarnessReasoningPreflight } from '../../contracts/types.ts'
+import type { HarnessReasoningPreflight, SelectModelHarnessRequest } from '../../contracts/types.ts'
 import {
+  displayModelName,
   executionModelRefKey,
   modelRefKey,
   type CombinationDefinition,
+  type HarnessDefinition,
   type ModelRef,
 } from '../contracts/catalog.ts'
-import type { CodexGitBashRuntime } from '../contracts/codex-runtime.ts'
 import type { HarnessSession } from '../contracts/sessions.ts'
 import { adapterFor } from './adapters/index.ts'
 import {
@@ -23,7 +24,6 @@ import {
   antigravityThinkingLevelsFor,
   ANTIGRAVITY_DEFAULT_THINKING,
 } from './adapters/antigravity/models.ts'
-import { stepLaneReasoning } from './adapters/step/step-models.ts'
 import { MINIMAX_CODE_PROVIDER } from './adapters/minimax.ts'
 import type { AdapterOptions } from './adapters/types.ts'
 import type { ExecutionCatalog, ExecutionCatalogStore } from './catalog.ts'
@@ -58,11 +58,9 @@ export interface HarnessSelectionHost {
   officialModelCatalog(): Promise<ModelCatalog>
   readonly catalogEpoch: number
   executionCatalog(options?: { fast?: boolean }): Promise<ExecutionCatalog>
-  adapterOptions(
-    command?: string,
-    prefix?: string[],
-    codexRuntime?: CodexGitBashRuntime,
-  ): AdapterOptions
+  readonly knownHarnesses: readonly HarnessDefinition[]
+  notifyCatalogChanged(): void
+  adapterOptions(command?: string, prefix?: string[]): AdapterOptions
   conversationBinding(
     session: Session,
     definition: CombinationDefinition,
@@ -72,7 +70,10 @@ export interface HarnessSelectionHost {
   runSelectionChange<T>(sessionId: string, operation: () => Promise<T>): Promise<T>
   native(method: string, request: object): Promise<unknown>
   assertMiniMaxCodeRouteEnabled(route: { harnessRef: string; modelRef: ModelRef }): void
-  cliOwnsEffort(definition: CombinationDefinition): boolean
+  cliOwnsEffort(
+    definition: CombinationDefinition,
+    harnesses?: readonly HarnessDefinition[],
+  ): boolean
   normalizeConversationSelection(
     selection: ModelSelection,
     definition: CombinationDefinition | undefined,
@@ -114,11 +115,12 @@ export interface HarnessSelectionHost {
 export function cliOwnsEffort(
   definition: CombinationDefinition,
   modelSources: ExternalModelSources,
+  harnesses?: readonly HarnessDefinition[],
 ): boolean {
   return (
     definition.modelRef.provider !== MINIMAX_CODE_PROVIDER &&
-    adapterFor(definition.harnessRef, definition.modelRef, modelSources)?.capabilities.reasoning ===
-      'cli-advertised'
+    adapterFor(definition.harnessRef, definition.modelRef, modelSources, harnesses)?.capabilities
+      .reasoning === 'cli-advertised'
   )
 }
 
@@ -129,8 +131,13 @@ export async function normalizeConversationSelection(
   signal?: AbortSignal,
 ): Promise<AgentModelSelection> {
   const ref = { provider: selection.provider, model: selection.model }
-  const adapter = definition && adapterFor(definition.harnessRef, ref, host.modelSources)
-  if (definition && (host.cliOwnsEffort(definition) || adapter?.capabilities.reasoning === 'none'))
+  const adapter =
+    definition && adapterFor(definition.harnessRef, ref, host.modelSources, host.knownHarnesses)
+  if (
+    definition &&
+    (host.cliOwnsEffort(definition, host.knownHarnesses) ||
+      adapter?.capabilities.reasoning === 'none')
+  )
     return ref
   if (selection.reasoningEffort !== undefined)
     return { ...ref, reasoningEffort: ReasoningEffortId(selection.reasoningEffort) }
@@ -184,7 +191,14 @@ export async function modelSelection(host: HarnessSelectionHost, sessionId: stri
     historical?.modelRef ??
     catalog.default
   const selected = host.combinationFor(sessionId, executionCatalog, current)
-  const adapter = selected && adapterFor(selected.harnessRef, selected.modelRef, host.modelSources)
+  const adapter =
+    selected &&
+    adapterFor(
+      selected.harnessRef,
+      selected.modelRef,
+      host.modelSources,
+      executionCatalog.harnesses,
+    )
   const groups =
     adapter?.capabilities.reasoning === 'none'
       ? catalog.groups.map((group) => ({
@@ -197,7 +211,7 @@ export async function modelSelection(host: HarnessSelectionHost, sessionId: stri
         }))
       : catalog.groups
   const choice =
-    selected && host.cliOwnsEffort(selected)
+    selected && host.cliOwnsEffort(selected, executionCatalog.harnesses)
       ? host.conversationEffort(sessionId, selected, executionCatalog)
       : undefined
   const nativeReasoning = catalog.groups
@@ -205,7 +219,9 @@ export async function modelSelection(host: HarnessSelectionHost, sessionId: stri
     ?.models.find((model) => model.id === current.model)?.reasoning
   const { reasoningEffort: _providerEffort, ...ref } = current as ModelSelection
   const harnessOwnsEffort =
-    !!selected && (host.cliOwnsEffort(selected) || adapter?.capabilities.reasoning === 'none')
+    !!selected &&
+    (host.cliOwnsEffort(selected, executionCatalog.harnesses) ||
+      adapter?.capabilities.reasoning === 'none')
   const explicitEffort =
     current.reasoningEffort === 'default' &&
     !nativeReasoning?.efforts.some((effort) => effort.id === 'default')
@@ -259,17 +275,16 @@ export async function selectEffort(
   const { provider, model } = selected.current
   const nativeRef = { provider, model }
   const nativeKey = modelRefKey(nativeRef)
-  const definition = (await host.executionCatalog()).combinations.find(
-    (c) => c.id === selected.combination,
-  )
+  const execution = await host.executionCatalog({ fast: true })
+  const definition = execution.combinations.find((c) => c.id === selected.combination)
   if (
     definition &&
-    adapterFor(definition.harnessRef, definition.modelRef, host.modelSources)?.capabilities
-      .reasoning === 'none' &&
+    adapterFor(definition.harnessRef, definition.modelRef, host.modelSources, execution.harnesses)
+      ?.capabilities.reasoning === 'none' &&
     input.reasoningEffort !== undefined
   )
     throw Error('当前 Harness 未提供推理档位，请重新选择')
-  if (!definition || !host.cliOwnsEffort(definition)) {
+  if (!definition || !host.cliOwnsEffort(definition, execution.harnesses)) {
     const { sessionId, ...request } = input
     const normalized = await host.normalizeConversationSelection(
       { ...request, ...nativeRef },
@@ -360,11 +375,14 @@ export async function reasoningPreflightAdmitted(
   )
   if (!definition || definition.harnessRef === 'dsh')
     return { status: 'not-applicable', efforts: [] }
-  const adapter = adapterFor(definition.harnessRef, definition.modelRef, host.modelSources)
+  const adapter = adapterFor(
+    definition.harnessRef,
+    definition.modelRef,
+    host.modelSources,
+    catalog.harnesses,
+  )
   if (!adapter || adapter.capabilities.reasoning === 'none')
     return { status: 'not-applicable', efforts: [] }
-  if (definition.harnessRef === 'step-code' && stepLaneReasoning(definition.modelRef) === false)
-    return { status: 'known', efforts: [] }
   if (
     ['codex', 'claude'].includes(definition.harnessRef) ||
     definition.modelRef.provider === MINIMAX_CODE_PROVIDER
@@ -399,7 +417,7 @@ export async function reasoningPreflightAdmitted(
       (record) => record.nativeSessionId === session.id && record.combination === definition.id,
     ) ?? (replacement?.definition.id === definition.id ? replacement.record : undefined)
   const requestedEffort =
-    (host.cliOwnsEffort(definition)
+    (host.cliOwnsEffort(definition, catalog.harnesses)
       ? host.conversationEffort(session.id, definition, catalog)
       : ((await host.modelSelection(session.id)).current as ModelSelection).reasoningEffort) ??
     undefined
@@ -441,7 +459,7 @@ export async function reasoningPreflightAdmitted(
     const launch = await adapter.prepare!(
       host.ctx,
       record,
-      host.adapterOptions(harness?.command, harness?.prefix, harness?.codexRuntime),
+      host.adapterOptions(harness?.command, harness?.prefix),
     )
     if (host.disposed) return { status: 'unavailable', efforts: [] }
     const result = await probeHarnessReasoning(adapter, record, {
@@ -554,8 +572,8 @@ export async function selectionForModel(
   selected: CombinationDefinition,
 ): Promise<ModelSelection> {
   const ref = selected.modelRef
-  const adapter = adapterFor(selected.harnessRef, ref, host.modelSources)
-  if (host.cliOwnsEffort(selected)) return ref
+  const adapter = adapterFor(selected.harnessRef, ref, host.modelSources, host.knownHarnesses)
+  if (host.cliOwnsEffort(selected, host.knownHarnesses)) return ref
   if (adapter?.capabilities.reasoning === 'none') return ref
   const catalog = (await invokeHostRemote(host.ctx, {
     namespace: 'session',
@@ -598,6 +616,38 @@ export async function selectionForModel(
   return { ...ref, ...(reasoningEffort === undefined ? {} : { reasoningEffort }) }
 }
 
+async function applyCombinationSelection(
+  host: HarnessSelectionHost,
+  session: Session,
+  catalog: ExecutionCatalog,
+  definition: CombinationDefinition,
+) {
+  const model = catalog.models.find(
+    (item) => modelRefKey(item.ref) === modelRefKey(definition.modelRef),
+  )
+  if (!model?.available) throw Error(model?.reason ?? '模型未配置或凭据未就绪')
+  const harness = catalog.harnesses.find((item) => item.id === definition.harnessRef)
+  const adapter = adapterFor(
+    definition.harnessRef,
+    definition.modelRef,
+    host.modelSources,
+    catalog.harnesses,
+  )
+  if (!harness || !adapter) throw Error('组合没有兼容适配器')
+  const available = await adapter.available(
+    host.ctx,
+    host.adapterOptions(harness.command, harness.prefix),
+  )
+  if (!available.available) throw Error(available.reason ?? 'Harness 未就绪')
+  const selection = await host.selectionForModel(session, definition)
+  await host.native('selectModel', { sessionId: session.id, ...selection })
+  await host.bindSelection(session.id, definition.id)
+  return {
+    kind: definition.harnessRef === 'dsh' ? 'native' : 'external',
+    sessionId: session.id,
+  }
+}
+
 export async function selectCombination(
   host: HarnessSelectionHost,
   input: { sessionId: string; combination: string },
@@ -614,30 +664,110 @@ export async function selectCombination(
         (item) => item.id === input.combination && item.enabled,
       )
     if (!definition) throw Error('组合不存在或已停用')
-    const model = catalog.models.find(
-      (item) => modelRefKey(item.ref) === modelRefKey(definition.modelRef),
-    )
+    return applyCombinationSelection(host, session, catalog, definition)
+  })
+}
+
+export async function selectModelHarness(
+  host: HarnessSelectionHost,
+  input: SelectModelHarnessRequest,
+): Promise<{ kind: string; sessionId: string; combination: string }> {
+  const sessionId = required(input.sessionId, 'sessionId')
+  const harnessRef = required(input.harnessRef, 'Harness ID')
+  const provider = required(input.modelRef?.provider, '模型来源')
+  const modelId = required(input.modelRef?.model, '模型 ID')
+  const requestedModel: ModelRef = { provider, model: modelId }
+  const requestedKey = executionModelRefKey(requestedModel)
+  return host.runSelectionChange(sessionId, async () => {
+    await host.ready
+    const session = host.ctx.sessions.get(asSessionId<SessionId>(sessionId))
+    if (!session) throw Error('对话不存在')
+    if (host.ctx.agents.get(session.id)?.status === 'running')
+      throw Error('请等待当前轮次结束后切换组合')
+    let catalog = await host.executionCatalog()
+    const model = catalog.models.find((item) => executionModelRefKey(item.ref) === requestedKey)
     if (!model?.available) throw Error(model?.reason ?? '模型未配置或凭据未就绪')
-    const harness = catalog.harnesses.find((item) => item.id === definition.harnessRef)
-    const adapter = adapterFor(definition.harnessRef, definition.modelRef, host.modelSources)
-    if (!harness || !adapter) throw Error('组合没有兼容适配器')
-    const available = await adapter.available(
+    const harness = catalog.harnesses.find((item) => item.id === harnessRef)
+    const adapter = adapterFor(harnessRef, model.ref, host.modelSources, catalog.harnesses)
+    if (!harness || !adapter) throw Error('该模型与所选执行引擎尚无兼容适配器')
+    const availability = await adapter.available(
       host.ctx,
-      host.adapterOptions(harness.command, harness.prefix, harness?.codexRuntime),
+      host.adapterOptions(harness.command, harness.prefix),
     )
-    if (!available.available) throw Error(available.reason ?? 'Harness 未就绪')
-    const selection = await host.selectionForModel(session, definition)
-    if (definition.harnessRef === 'dsh') {
-      await host.native('selectModel', { sessionId: session.id, ...selection })
-      await host.bindSelection(session.id, definition.id)
-      return { kind: 'native', sessionId: session.id }
+    if (!availability.available) throw Error(availability.reason ?? '执行引擎未就绪')
+    let definition = catalog.combinations.find(
+      (item) =>
+        item.enabled &&
+        executionModelRefKey(item.modelRef) === requestedKey &&
+        item.harnessRef === harnessRef,
+    )
+    if (!definition || (input.setAsDefault === true && !definition.isDefault)) {
+      const persisted = await host.catalogStore.get()
+      const hasExistingDefault =
+        catalog.combinations.some(
+          (item) =>
+            item.enabled && item.isDefault && executionModelRefKey(item.modelRef) === requestedKey,
+        ) ||
+        persisted.combinations.some(
+          (item) =>
+            item.enabled && item.isDefault && executionModelRefKey(item.modelRef) === requestedKey,
+        )
+      const makeDefault = input.setAsDefault === true || !hasExistingDefault
+      const persistedMatches = (item: CombinationDefinition) =>
+        executionModelRefKey(item.modelRef) === requestedKey && item.harnessRef === harnessRef
+      const existingIndex = persisted.combinations.findIndex(persistedMatches)
+      const updated = persisted.combinations.map((item) => {
+        if (executionModelRefKey(item.modelRef) !== requestedKey) return item
+        if (makeDefault) return { ...item, isDefault: false, defaultDisabled: true }
+        return item
+      })
+      if (existingIndex >= 0) {
+        const target = updated[existingIndex]!
+        updated[existingIndex] = {
+          ...target,
+          enabled: true,
+          autoEnabledDisabled: false,
+          ...(makeDefault ? { isDefault: true, defaultDisabled: false } : {}),
+        }
+      } else {
+        const rawBaseId = `custom:${harnessRef}:${model.ref.provider}:${model.ref.model}`
+        const baseId =
+          rawBaseId.length <= 480
+            ? rawBaseId
+            : `custom:${harnessRef}:${createHash('sha256').update(rawBaseId).digest('hex').slice(0, 24)}`
+        const id = updated.some((item) => item.id === baseId)
+          ? `${baseId}:${randomUUID().slice(0, 8)}`
+          : baseId
+        const permissionPolicy = adapter.capabilities.permissions.includes('workspace')
+          ? 'workspace'
+          : adapter.capabilities.permissions.includes('read-only')
+            ? 'read-only'
+            : 'full-access'
+        updated.push({
+          id,
+          name: `${displayModelName(model.ref, model.name)} + ${harness.name}`,
+          modelRef: model.ref,
+          harnessRef,
+          permissionPolicy,
+          isDefault: makeDefault,
+          enabled: true,
+          generated: false,
+          autoEnabled: false,
+        })
+      }
+      await host.catalogStore.set({ ...persisted, combinations: updated })
+      host.notifyCatalogChanged()
+      catalog = await host.executionCatalog()
+      definition = catalog.combinations.find(
+        (item) =>
+          item.enabled &&
+          executionModelRefKey(item.modelRef) === requestedKey &&
+          item.harnessRef === harnessRef,
+      )
     }
-    await host.native('selectModel', {
-      sessionId: session.id,
-      ...selection,
-    })
-    await host.bindSelection(session.id, definition.id)
-    return { kind: 'external', sessionId: session.id }
+    if (!definition) throw Error('未能激活所选模型与执行引擎组合')
+    const applied = await applyCombinationSelection(host, session, catalog, definition)
+    return { ...applied, combination: definition.id }
   })
 }
 

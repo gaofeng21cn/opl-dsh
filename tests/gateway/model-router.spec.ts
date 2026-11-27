@@ -209,66 +209,36 @@ describe('explicit group routing', () => {
   })
 })
 
-describe('dedicated reviewer routing', () => {
-  it('keeps the reviewer independent from a user-owned chat model list', async () => {
-    const run = vi.fn(async function* (options: GenerateOptions): AsyncGenerator<StreamChunk> {
-      yield { type: 'finish', reason: { kind: 'stop' } }
-    })
-    const ordinary = vi.fn(async function* (): AsyncGenerator<StreamChunk> {
-      yield { type: 'finish', reason: { kind: 'stop' } }
-    })
+describe('canonical presentation and retired model filtering', () => {
+  it('normalizes bare catalog ids into canonical display names and preserves custom labels', async () => {
     const adapter = new GatewayModelAdapter(
       [
         {
-          group: 'codex',
-          provider: 'chat',
-          adapter: new Adapter(ordinary, ['gpt-6-sol']),
+          group: 'gemini',
+          provider: 'opl-gateway-gemini',
           available: async () => true,
+          adapter: new Adapter(async function* () {}, ['gemini-4-carbon', 'gemini-4-hydrogen']),
+        },
+        {
+          group: 'deepseek',
+          provider: 'opl-gateway',
+          available: async () => true,
+          adapter: {
+            ...new Adapter(async function* () {}, []),
+            listModels: async (provider: string) => [
+              { provider, id: 'deepseek-flash', name: '自选名称' },
+              { provider, id: 'deepseek-v4-pro', name: 'Retired' },
+            ],
+          } as unknown as LlmAdapter,
         },
       ],
-      () => {},
-      {
-        group: 'codex',
-        provider: 'opl-gateway-auto-review',
-        adapter: new Adapter(run, ['codex-auto-review']),
-        available: async () => true,
-      },
+      vi.fn(),
     )
-    expect((await adapter.listModels('opl-gateway')).map((model) => model.id)).toEqual([
-      'codex::gpt-6-sol',
-      'codex::codex-auto-review',
+    const models = await adapter.listModels('opl-gateway')
+    expect(models.map((item) => [item.id, item.name])).toEqual([
+      ['gemini::gemini-4-carbon', 'Gemini 4 Carbon'],
+      ['gemini::gemini-4-hydrogen', 'Gemini 4 Hydrogen'],
+      ['deepseek-flash', '自选名称'],
     ])
-    await collect(adapter, { ...request, model: 'codex::codex-auto-review' })
-    expect(run.mock.calls[0]?.[0]).toMatchObject({
-      provider: 'opl-gateway-auto-review',
-      model: 'codex-auto-review',
-    })
-    expect(ordinary).not.toHaveBeenCalled()
-  })
-  it('does not borrow a chat route when the dedicated provider is unavailable', async () => {
-    const run = async function* (): AsyncGenerator<StreamChunk> {
-      yield { type: 'finish', reason: { kind: 'stop' } }
-    }
-    const adapter = new GatewayModelAdapter(
-      [
-        {
-          group: 'codex',
-          provider: 'chat',
-          adapter: new Adapter(run, ['codex-auto-review']),
-          available: async () => true,
-        },
-      ],
-      () => {},
-      {
-        group: 'codex',
-        provider: 'dedicated',
-        adapter: new Adapter(run, ['codex-auto-review']),
-        available: async () => false,
-      },
-    )
-    expect(await adapter.listModels('opl-gateway')).toEqual([])
-    await expect(
-      collect(adapter, { ...request, model: 'codex::codex-auto-review' }),
-    ).rejects.toThrow('凭据未就绪')
   })
 })

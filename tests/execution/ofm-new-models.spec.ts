@@ -8,8 +8,6 @@ import { createOfmModelSource } from '../../src/execution/host/ofm-source/source
 import { officialOpenCodeModel } from '../../src/execution/host/ofm-source/selection-policy.ts'
 import { ExternalModelSources } from '../../src/execution/host/model-sources.ts'
 import { displayModelName } from '../../src/shared/models.ts'
-import { stepLane, stepLaneReasoning } from '../../src/execution/host/adapters/step/step-models.ts'
-import { stepCodeAdapter } from '../../src/execution/host/adapters/step/step.ts'
 import { buildOpenCodeRouteConfig } from '../../src/execution/host/adapters/opencode/opencode-route.ts'
 import { buildKiloRouteConfig } from '../../src/execution/host/adapters/kilo/kilo-route.ts'
 import {
@@ -32,14 +30,12 @@ const lanes = [
     'EAC Nemotron 3 Nano Omni 30B-A3B Reasoning',
   ],
   ['meta/muse-glimmer-30b', 'pi', 'EAC Muse Glimmer 30B'],
-  ['poolside/laguna-xs-2.1', 'pool', 'EAC Laguna XS 2.1'],
   ['opencode/nemotron-3.5-lightning-free', 'opencode', 'EAC Nemotron 3.5 Lightning Free'],
   ['opencode/nemotron-3.5-super-vl-free', 'opencode', 'EAC Nemotron 3.5 Super VL Free'],
   ['opencode/flint-40b-free', 'opencode', 'EAC Flint 40B Free'],
   ['thinkingmachines/inkling:free', 'pi', 'Kilo Inkling'],
   ['google/gemma-4-31b-it:free', 'pi', 'Kilo Gemma 4 31B'],
   ['minimaxai/minimax-m3.1-flash', 'opencode', 'EAC MiniMax M3.1 Flash'],
-  ['stepfun-ai/step-5-preview', 'step-code', 'EAC Step 5 Preview'],
   [VIBE_MODEL, 'vibe', 'EAC Mistral Large 4'],
   ['inclusionai/ling-3.1-flash-1019-free', 'kilo', 'Kilo Ling 3.1 Flash 1019'],
   ['inclusionai/ling-3.2-flash:free', 'kilo', 'Kilo Ling 3.2 Flash'],
@@ -86,9 +82,9 @@ describe('new OFM channel pairings', () => {
     } as never).resolve()
     const status = (id: string) =>
       catalog.ofmDiscovery?.find((row) => row.modelRef.model === id)?.status
-    for (const [id, harness] of lanes.filter(([, harness]) => ['pool', 'pi'].includes(harness)))
+    for (const [id, harness] of lanes.filter(([, harness]) => ['vibe', 'pi'].includes(harness)))
       expect(status(id)).toMatchObject({
-        kind: harness === 'pool' ? 'official' : 'recommended',
+        kind: harness === 'vibe' ? 'official' : 'recommended',
         harness,
       })
     for (const [id, label] of specialists)
@@ -121,11 +117,7 @@ describe('new OFM channel pairings', () => {
     for (const [, otherHarness] of lanes)
       if (otherHarness !== harness) expect(ofmHarnessPinsModel(otherHarness, model)).toBe(false)
   })
-  it('keeps the EAC Step provider separate from the free lanes', () => {
-    expect(stepLane(ref('stepfun-ai/step-5-preview'))?.provider).toBe('opl-step-eac-lane')
-    expect(stepLane(ref('stepfun/step-5-preview-free'))?.provider).toBe('opl-step-kilo-lane')
-    expect(stepLaneReasoning(ref('stepfun-ai/step-5-preview'))).toBe(false)
-    expect(stepLaneReasoning(ref('stepfun/step-5-preview-free'))).toBe(true)
+  it('does not route MiniMax M3.1 Flash OFM lane through minimax-code', () => {
     expect(adapterFor('minimax-code', ref('minimaxai/minimax-m3.1-flash'))).toBeUndefined()
   })
   it.each(lanes)('resolves %s only through its exact registered source', async (model, harness) => {
@@ -156,25 +148,6 @@ describe('new OFM channel pairings', () => {
       dispose()
     }
     await expect(sources.resolve(harness, ref(model), 'chat')).rejects.toThrow('尚未适配')
-  })
-  it('refuses an effort carried onto the EAC Step lane before writing configuration', async () => {
-    const model = 'stepfun-ai/step-5-preview'
-    const request = vi.fn()
-    await expect(
-      stepCodeAdapter.configureSession!(
-        { request },
-        { modelRef: ref(model), reasoningEffort: 'max' } as HarnessSession,
-        {
-          agent: {},
-          session: { sessionId: 'owned' },
-          configOptions: [
-            { id: 'model', type: 'select', currentValue: model, options: [{ value: model }] },
-            { id: 'thinking', type: 'select', currentValue: 'off', options: [{ value: 'off' }] },
-          ],
-        },
-      ),
-    ).rejects.toThrow('max')
-    expect(request).not.toHaveBeenCalled()
   })
   it.each([
     ['minimaxai/minimax-m3.1-flash', buildOpenCodeRouteConfig, 'oplopencode'],

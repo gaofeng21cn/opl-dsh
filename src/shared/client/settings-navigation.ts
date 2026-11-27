@@ -14,22 +14,22 @@ export const SETTINGS_ORDER = {
 export const SETTINGS_NAVIGATION_NS = 'settings.oplNavigation'
 export const settingsNavigationZh = {
   general: '通用设置',
-  'opl-gateway': '网关账户',
+  'opl-gateway': 'OPL Gateway',
   models: '模型供应商',
   'our-free-model': 'Our Free Model',
   bili: 'Billion Context',
-  'opl-execution': '执行与组合',
+  'opl-execution': '执行引擎与协作',
   'agent-presets': 'Agent 预设',
   'opl-codex': '协作与自动化',
   plugins: '插件管理',
 } satisfies Record<keyof typeof SETTINGS_ORDER, string>
 export const settingsNavigationEn: Record<keyof typeof SETTINGS_ORDER, string> = {
   general: 'General',
-  'opl-gateway': 'Gateway',
+  'opl-gateway': 'OPL Gateway',
   models: 'Model providers',
   'our-free-model': 'Our Free Model',
   bili: 'Billion Context',
-  'opl-execution': 'Execution',
+  'opl-execution': 'Engines & Collaboration',
   'agent-presets': 'Agent presets',
   'opl-codex': 'Collaboration',
   plugins: 'Plugins',

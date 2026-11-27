@@ -4,7 +4,6 @@ import {
   type ModelRef,
   type ModelDefinition,
 } from '../../shared/models.ts'
-import type { CodexGitBashRuntime } from './codex-runtime.ts'
 import { isOfficialPairing } from './official-harnesses.ts'
 import { DSH_COMBINATION } from './sessions.ts'
 export * from '../../shared/models.ts'
@@ -21,8 +20,6 @@ export interface HarnessDefinition {
   prefix?: string[]
   adapter?: string
   proxy?: HarnessProxy
-  /** Optional suite-owned Windows build; omission uses the configured official CLI. */
-  codexRuntime?: CodexGitBashRuntime
 }
 export interface CombinationDefinition {
   id: string

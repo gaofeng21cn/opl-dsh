@@ -1,8 +1,9 @@
-/** Host-only Gateway access: executors never inspect account storage or provider settings. */
+/** Host-only Gateway access: executors read unified `opl-suite` channel settings. */
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { GATEWAY_ANTIGRAVITY_GEMINI_MODELS } from '../../shared/models.ts'
 import { GATEWAY_GROUPS } from '../contracts/groups.ts'
+import { resolveGatewayChannelProfile } from './channel-defaults.ts'
 import { gatewayGroupEnabled } from './group-settings.ts'
 import { gatewayInferenceBaseURL, OPL_GATEWAY_GEMINI_NATIVE_BASE_URL } from './protocol.ts'
 import { DEFAULT_MODELS, toAdapterConfig } from './config.ts'
@@ -14,20 +15,6 @@ export { internalGatewayProvider } from '../contracts/groups.ts'
 const NATIVE_GEMINI_MODELS = new Set(GATEWAY_ANTIGRAVITY_GEMINI_MODELS.map((id) => `gemini::${id}`))
 const GEMINI_GROUP = GATEWAY_GROUPS.find((group) => group.id === 'gemini')!
 
-type ProviderProfiles = {
-  providers?: Record<
-    string,
-    { baseURL?: string; api?: string; apiKeyEnv?: string; models?: ModelDraft[] }
-  >
-}
-
-function gatewayProviderProfiles(
-  settings: ReturnType<Context['settings']['describe']> | undefined,
-) {
-  return (settings?.find((item) => item.ns === 'llm-pi-ai')?.value as ProviderProfiles | undefined)
-    ?.providers
-}
-
 function hasNativeGeminiEndpoint(api: string, baseURL?: string): boolean {
   const chat = 'openai-completions'
   const defaultURL = gatewayInferenceBaseURL(chat)
@@ -36,8 +23,8 @@ function hasNativeGeminiEndpoint(api: string, baseURL?: string): boolean {
 
 /** A custom Gemini Chat endpoint has no implied native counterpart. */
 export function gatewayGeminiNativeEndpointConfigured(ctx: Context): boolean {
-  const profile = gatewayProviderProfiles(ctx.get('settings')?.describe())?.[GEMINI_GROUP.provider]
-  return hasNativeGeminiEndpoint(profile?.api ?? GEMINI_GROUP.api, profile?.baseURL)
+  const profile = resolveGatewayChannelProfile(ctx, 'gemini')
+  return hasNativeGeminiEndpoint(profile.api ?? GEMINI_GROUP.api, profile.baseURL)
 }
 
 /**
@@ -75,22 +62,23 @@ export async function resolveGatewayExecution(
   const separator = ref.model.indexOf('::')
   const id = separator < 0 ? 'deepseek' : ref.model.slice(0, separator)
   const group = GATEWAY_GROUPS.find((item) => item.id === id)
-  if (!group || !gatewayGroupEnabled(ctx, group.id)) throw Error('此分组已停用，请在账号页激活')
+  if (!group || !gatewayGroupEnabled(ctx, group.id)) throw Error('此分组已停用，请在网关页面激活')
   const settings = ctx.get('settings')?.describe()
   const suite = settings?.find((item) => item.ns === 'opl-suite')?.value as
     { gateway?: { baseURL?: string; apiKeyEnv?: string; models?: ModelDraft[] } } | undefined
-  const providers = gatewayProviderProfiles(settings)
-  const profile = group.id === 'deepseek' ? suite?.gateway : providers?.[group.provider]
+  const channel =
+    group.id === 'deepseek' ? undefined : resolveGatewayChannelProfile(settings, group.id)
   const deepseek = group.id === 'deepseek' ? toAdapterConfig(suite?.gateway ?? {}) : undefined
-  const api = group.id === 'deepseek' ? group.api : (providers?.[group.provider]?.api ?? group.api)
-  const credential = (deepseek ? deepseek.apiKeyEnv : profile?.apiKeyEnv) ?? group.credential
+  const api = group.id === 'deepseek' ? group.api : (channel?.api ?? group.api)
+  const credential = (deepseek ? deepseek.apiKeyEnv : channel?.apiKeyEnv) ?? group.credential
   const key = resolveKey
     ? await resolveKey()
     : (await ctx.credentials.resolve(credentialRef(credential)))?.value
-  if (!key) throw Error('所选渠道凭据未就绪，请在网关账户（OPL Gateway）页面刷新账号')
-  const baseURL = (deepseek ? deepseek.baseURL : profile?.baseURL) ?? gatewayInferenceBaseURL(api)
+  if (!key) throw Error('所选渠道凭据未就绪，请在 OPL Gateway 页面刷新账号')
+  const baseURL = (deepseek ? deepseek.baseURL : channel?.baseURL) ?? gatewayInferenceBaseURL(api)
   const model = separator < 0 ? ref.model : ref.model.slice(separator + 2)
-  const configured = (profile?.models ?? (group.id === 'deepseek' ? DEFAULT_MODELS : [])).find(
+  const rawModels = group.id === 'deepseek' ? suite?.gateway?.models : channel?.models
+  const configured = (rawModels ?? (group.id === 'deepseek' ? DEFAULT_MODELS : [])).find(
     (item) => item.id === model,
   )
   const input =
@@ -105,9 +93,10 @@ export async function resolveGatewayExecution(
   const llm = ctx.get('llm')
   if (
     (!Array.isArray(input) || input.length === 0) &&
-    llm?.listProviders().some((provider) => provider.id === group.provider)
+    llm?.listProviders().some((provider) => provider.id === 'opl-gateway')
   ) {
-    const info = await llm.resolveModelInfo(group.provider, model)
+    const logicalModel = group.id === 'deepseek' ? model : `${group.id}::${model}`
+    const info = await llm.resolveModelInfo('opl-gateway', logicalModel)
     imageInput = info.inputModalities?.includes('image') ?? false
     contextWindow ??= info.context?.contextWindow
   }

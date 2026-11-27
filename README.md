@@ -50,15 +50,15 @@ node installer/install-linux.mjs "dist/OPL DSH 一键安装"
 "$HOME/.local/share/OPL DSH Suite/launch-opl-linux.sh"
 ```
 
-启动器在 `127.0.0.1:4180` 监听并打印带认证信息的地址。可用 `OPL_PROFILE_NAME` 指定另一个非 `desktop`、非 `web` 的独立 profile，用 `OPL_LINUX_PORT` 修改端口。安装仍通过官方插件管理器完成，KimiCU、DSH 会话清理 Skill 和增强层自动更新目前不提供 Linux 实现；更新时请重新构建并运行同一安装入口。
+启动器在 `127.0.0.1:4180` 监听并打印带认证信息的地址。可用 `OPL_PROFILE_NAME` 指定另一个非 `desktop`、非 `web` 的独立 profile，用 `OPL_LINUX_PORT` 修改端口。安装仍通过官方插件管理器完成，增强层自动更新目前不提供 Linux 实现；更新时请重新构建并运行同一安装入口。
 
 </details>
 
 ### 桌面版首次使用
 
-1. **安装并打开 DeepSeek Harness。** Windows 和 Mac 安装器会下载并校验官方桌面，再装入 OPL 插件和 Codex Skill，无需预装 Git、Node.js 或其他 OPL 应用。升级已有安装时先退出 DSH。安装器未签名，首次运行可能需要按系统提示允许打开。
-2. **选择模型来源。** 首次打开时可选 OPL Gateway、DeepSeek 官方或稍后登录。Gateway 用户可在「设置 → 网关账户」查看余额和可用分组，再到「模型供应商 → OPL Gateway → 选择模型」勾选要用的模型。[首次启动与登录](docs/first-run.md)
-3. **发出第一条消息。** 如果账号有 DeepSeek 分组，选一个工作区，新建对话，使用 **DeepSeek + DSH** 就能开始，无需另装执行引擎。想用 GPT、Claude 等模型时，再按需安装对应的 CLI。[模型与执行引擎图文指南](docs/model-harness-guide.md)
+1. **安装并打开 DeepSeek Harness。** Windows 和 Mac 安装器会下载并校验官方桌面，再装入单一 OPL 插件（`@one-person-lab/dsh-opl`）和 Codex Skill，无需预装 Git、Node.js 或其他 OPL 应用。升级已有安装时先退出 DSH。安装器未签名，首次运行可能需要按系统提示允许打开。
+2. **选择模型来源。** 首次打开时可选 OPL Gateway、DeepSeek 官方或稍后登录。Gateway 用户可在「设置 → OPL Gateway」一站式查看余额、管理分组开关与可用模型。[首次启动与登录](docs/first-run.md)
+3. **发出第一条消息。** 选中模型即可按开箱默认引擎开始对话（DeepSeek → DSH、GPT → Codex CLI、Claude → Claude Code、Gemini → Antigravity CLI、Grok → Grok Build）。若默认引擎尚未安装，可以在输入框的「执行引擎」面板点击一键安装或就地改用 DSH 等其他兼容引擎。[模型与执行引擎指南](docs/model-harness-guide.md)
 
 ## 与 One Person Lab 一起使用
 
@@ -70,14 +70,13 @@ One Person Lab 面向论文、基金申请、研究报告等需要多轮审阅�
 
 | 想做什么 | 从这里开始 |
 | --- | --- |
-| 换模型来源，或确认组合支持哪些权限和输入 | [OFM 免费模型](docs/model-harness-architecture.md#第三方模型插件) · [MiniMax 官方账号](docs/minimax-code.md) · [Google 账号与 Antigravity CLI](docs/model-harness-guide.md#换一种模型来源时哪些步骤会变) · [各渠道与执行引擎的适配范围](docs/harness-adaptation.md) |
-| 在 Codex 中使用 OPL Gateway 的模型 | 在 DSH 的「设置 → 网关账户 → 配置外部 Codex」中一键配置。Windows 可选原生或 WSL 环境，macOS 使用系统钥匙串。[配置步骤](docs/first-run.md#在-codex-中使用-opl-网关) |
-| 给团队成员分配不同引擎，或从仓库接收任务 | [DSH 团队与角色](docs/cross-harness-team.md) · [SuperAgent 仓库协作](docs/superagent.md) |
+| 换模型来源，或在输入框切换执行引擎 | [OFM 免费模型](docs/model-harness-architecture.md#第三方模型插件) · [MiniMax 官方账号](docs/minimax-code.md) · [各渠道与执行引擎的适配范围](docs/harness-adaptation.md) |
+| 在 Codex 中使用 OPL Gateway 的模型 | 在 DSH 的「设置 → OPL Gateway → 配置外部 Codex」中一键配置。Windows 可选原生或 WSL 环境，macOS 使用系统钥匙串。[配置步骤](docs/first-run.md#在-codex-中使用-opl-网关) |
+| 给团队成员分配不同引擎，或跨引擎委派任务 | [DSH 团队与角色](docs/cross-harness-team.md) · [从 Codex 派发任务](docs/codex-task-delegation.md) |
 | 管理长对话上下文 | DSH 引擎默认启用 [Billion Context](https://github.com/ranxianglei/billion-context)。在新会话输入 `/acp` 查看压缩状态。在「插件 → 已安装插件」停用或卸载后重启，可恢复 DSH 自带的压缩。 |
 | 在对话中搜索网页 | 登录 OPL Gateway 后，默认通过网关使用 GPT-6.1 Sol 搜索，无需另配搜索密钥。如果已配置 DeepSeek 官方 API Key，可在「设置 → 网页搜索与获取」的「搜索」中选择 **DeepSeek Search API**，直接使用 DeepSeek 官方搜索。 |
-| 将任务交给专业应用继续处理 | [Agent 应用交接与 MCP Apps 支持范围](docs/mcp-apps.md) |
-| 配置工具审批或桌面操作 | [Auto Review 审批](docs/auto-review.md) · [Computer Use](docs/computer-use.md) |
-| 对话与文件 | [不在项目中工作](docs/everyday-guide.md#在项目外聊天) · [编辑消息并重发](docs/everyday-guide.md#修改已经发出的消息) · [打开交付文件](docs/everyday-guide.md#打开回复里交付的文件) · [将指定会话移到回收站](docs/everyday-guide.md#把指定的-dsh-会话移到回收站) |
+| 桌面操作（Computer Use） | 由未修改官方 DSH 桌面的原生 `@deepseek-ai/dsh-cua-bundle` 插件直接提供，遵循官方插件启用与权限控制。 |
+| 对话与文件 | [不在项目中工作](docs/everyday-guide.md#在项目外聊天) · [编辑消息并重发](docs/everyday-guide.md#修改已经发出的消息) · [打开交付文件](docs/everyday-guide.md#打开回复里交付的文件) |
 | 任务进展与用量 | [设置无进展超时](docs/everyday-guide.md#progress-timeout) · [后台任务通知](docs/everyday-guide.md#desktop-notifications) · [选择轮次统计范围](docs/everyday-guide.md#编辑后为什么有两种轮数) · [查看 token 用量和上下文窗口](docs/everyday-guide.md#token-context) |
 | 使用习惯 | [记住权限预设](docs/everyday-guide.md#remember-permissions) · [固定 Windows 窗口标题](docs/everyday-guide.md#window-title) · [在 Windows 使用 Git Bash](docs/everyday-guide.md#git-bash) |
 
@@ -87,8 +86,7 @@ One Person Lab 面向论文、基金申请、研究报告等需要多轮审阅�
 | --- | --- |
 | 官方 DSH 桌面 | 使用 DeepSeek Harness 自带的更新入口。 |
 | OPL 增强层 | 在「通用设置 → 更新」查看可用版本。发行页提供摘要时，版本号下方会列出更新内容。兼容更新准备好后可点「立即更新」。 |
-| KimiCU 桌面操作工具 | 在同一更新页检查 KimiCU 版本，按页面提示安装或更新。[桌面操作指南](docs/computer-use.md) |
-| 执行引擎 | 在「执行与组合 → 执行引擎与网络代理 → 管理更新」选择引擎并更新。标注「单独管理」的引擎通过原安装渠道更新。[引擎更新指南](docs/model-harness-guide.md#更新引擎) |
+| 执行引擎与自定义 ACP | 在「设置 → 执行引擎与协作」选择内置引擎一键安装/更新，或添加自定义标准 ACP 引擎。标注「单独管理」的引擎通过原安装渠道更新。[引擎更新指南](docs/model-harness-guide.md#更新引擎) |
 | OFM 插件 | 在「OFM 模型服务」使用插件自己的升级入口。 |
 
 重新安装会保留登录、会话和设置。官方桌面的数据位于 `~/.dsh`，增强包及缓存保存在 OPL DSH Suite。[版本与发行说明](https://github.com/gaofeng21cn/opl-dsh/releases/latest) · [数据位置与开发说明](docs/development.md)

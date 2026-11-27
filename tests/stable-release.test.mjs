@@ -174,9 +174,9 @@ test('stable workflow makes Windows qualification and evidence mandatory', async
     "${{ steps.qualification.outcome == 'success' && 'error' || 'warn' }}",
   )
   assert.match(
-    jobs.qualify.steps.find((step) => step.name === 'Verify shared SuperAgent tests on Windows')
+    jobs.qualify.steps.find((step) => step.name === 'Verify Windows launcher and ACL regressions')
       .run,
-    /--maxWorkers=1/,
+    /windows-acl\.test\.mjs/,
   )
   assert.equal(
     jobs.publish.steps.filter((step) => step.with?.path === 'dist/evidence/windows-latest').length,

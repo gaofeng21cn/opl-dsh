@@ -47,12 +47,12 @@ it.each([null, '503', 200, 600, 500.5, { statusCode: 503 }])(
 )
 
 it('keeps RPC refusal distinct from an HTTP status', () => {
-  const error = new HarnessReportedError('zcode', {
+  const error = new HarnessReportedError('codex', {
     code: -32602,
     message: 'synthetic-private-key',
   })
-  expect(error.details).toEqual({ service: 'zcode', rpcCode: -32602 })
-  expect(failureDiagnosticSuffix(error.details)).toBe('（ZCode；RPC -32602）')
+  expect(error.details).toEqual({ service: 'codex', rpcCode: -32602 })
+  expect(failureDiagnosticSuffix(error.details)).toBe('（Codex；RPC -32602）')
 })
 
 it('does not reflect arbitrary thrown errors through the ACP bridge', () => {
@@ -62,9 +62,9 @@ it('does not reflect arbitrary thrown errors through the ACP bridge', () => {
   })
 })
 
-it('preserves bounded ZCode provider cause facts without raw messages', () => {
+it('preserves bounded provider cause facts without raw messages', () => {
   const error = new HarnessReportedError(
-    'zcode',
+    'codex',
     {
       message: 'private',
       cause: { context: { providerCode: 'NO_PROGRESS', responseStatus: 200 }, message: 'private' },
@@ -76,9 +76,9 @@ it('preserves bounded ZCode provider cause facts without raw messages', () => {
   expect(JSON.stringify(bridgeFailure(error))).not.toContain('private')
 })
 
-it('recognizes the flattened official ZCode no-progress diagnostic without echoing it', () => {
+it('recognizes the flattened no-progress diagnostic without echoing it', () => {
   const error = new HarnessReportedError(
-    'zcode',
+    'codex',
     {
       type: 'unknown_error',
       code: 'UNKNOWN_ERROR',

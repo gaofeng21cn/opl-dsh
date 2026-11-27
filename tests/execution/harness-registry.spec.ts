@@ -23,6 +23,8 @@ describe('Harness executable discovery', () => {
     vi.stubEnv('HOME', root)
     vi.stubEnv('PATH', root)
     vi.stubEnv('SHELL', join(root, 'no-login-shell'))
+    vi.stubEnv('npm_config_prefix', '')
+    vi.stubEnv('NPM_CONFIG_PREFIX', '')
     const harness = { id: 'grok-build', name: 'Grok Build', kind: 'grok-build' } as const
     const missing = await inspectHarness(harness, root)
     expect(missing.installed).toBe(false)
@@ -113,25 +115,6 @@ describe('Harness executable discovery', () => {
       installable: true,
       maintenanceAction: 'install',
     })
-  })
-
-  it('does not launch the ZCode desktop entry point during discovery', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'opl-zcode-discovery-'))
-    roots.push(root)
-    const command = join(root, process.platform === 'win32' ? 'zcode.cmd' : 'zcode')
-    const marker = join(root, 'launched')
-    await writeFile(
-      command,
-      process.platform === 'win32'
-        ? `@echo off\r\necho launched > "${marker}"\r\n`
-        : `#!/bin/sh\nprintf launched > "${marker}"\n`,
-    )
-    await chmod(command, 0o700)
-    const item = await inspectHarness({ id: 'zcode', name: 'ZCode', kind: 'acp', command }, root)
-    expect(item).toMatchObject({ installed: true, runnable: true, path: command })
-    expect(item).not.toHaveProperty('version')
-    expect(item.verification).toBe('not-probed')
-    await expect(access(marker)).rejects.toThrow()
   })
 
   it.runIf(process.platform === 'win32')(
@@ -245,6 +228,9 @@ describe('Harness executable discovery', () => {
     vi.stubEnv('USERPROFILE', root)
     vi.stubEnv('APPDATA', root)
     vi.stubEnv('MINIMAX_CODE_HOME', root)
+    vi.stubEnv('SHELL', join(root, 'no-login-shell'))
+    vi.stubEnv('npm_config_prefix', '')
+    vi.stubEnv('NPM_CONFIG_PREFIX', '')
     const path = join(root, process.platform === 'win32' ? 'mcode.cmd' : 'mcode')
     await writeFile(path, '', { mode: 0o700 })
     expect(await executablePath('mcode', 'minimax-code')).toBe(path)

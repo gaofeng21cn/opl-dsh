@@ -3,9 +3,8 @@ import { LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { GatewayGroupId } from '../contracts/groups.ts'
 import { modelDefaultEffort } from '../../shared/model-reasoning.ts'
+import { displayModelName, isRetiredModel } from '../../shared/models.ts'
 export const OPENAI_PROVIDER = 'opl-gateway-openai'
-export const AUTO_REVIEW_PROVIDER = 'opl-gateway-auto-review'
-export const AUTO_REVIEW_MODEL = 'codex-auto-review'
 export interface GatewayModelRoute {
   group: GatewayGroupId
   provider: string
@@ -15,6 +14,16 @@ export interface GatewayModelRoute {
 /** Unqualified DeepSeek ids remain stable; other groups have collision-free identities. */
 export const gatewayModelId = (group: GatewayGroupId, id: string) =>
   group === 'deepseek' ? id : `${group}::${id}`
+
+function normalizeModelName(
+  provider: string,
+  fullId: string,
+  rawName: string | undefined,
+  wireId: string,
+): string | undefined {
+  if (rawName && rawName !== wireId && rawName !== fullId) return rawName
+  return displayModelName({ provider, model: fullId }, rawName)
+}
 
 function withReasoning(model: LlmResolvedModelInfo, cli?: readonly string[]): LlmResolvedModelInfo {
   const efforts =
@@ -61,7 +70,6 @@ export class GatewayModelAdapter extends LlmAdapter {
   constructor(
     private readonly routes: readonly GatewayModelRoute[],
     private readonly onGroup: (group: GatewayGroupId) => void,
-    private readonly reviewerRoute?: GatewayModelRoute,
     private readonly codexEfforts?: () => Promise<Map<string, string[]> | undefined>,
   ) {
     super()
@@ -71,6 +79,21 @@ export class GatewayModelAdapter extends LlmAdapter {
   }
   override providerRetryPolicy(provider: string) {
     return this.routes[0]!.adapter.providerRetryPolicy(provider)
+  }
+  override imageRequestTarget(
+    provider: string,
+    model: string,
+    image: import('@deepseek-ai/dsh-attachment').ImageAttachmentRef,
+  ) {
+    const index = model.indexOf('::'),
+      group = index < 0 ? 'deepseek' : model.slice(0, index)
+    const route = this.routes.find((route) => route.group === group)
+    if (!route) return super.imageRequestTarget(provider, model, image)
+    return route.adapter.imageRequestTarget(
+      route.provider,
+      index < 0 ? model : model.slice(index + 2),
+      image,
+    )
   }
   override imageRequestPricing(_provider: string, model: string) {
     const index = model.indexOf('::'),
@@ -86,34 +109,29 @@ export class GatewayModelAdapter extends LlmAdapter {
       this.routes.map(async (route) => {
         if (!(await route.available())) return []
         const levels = route.group === 'codex' ? await this.codexEfforts?.() : undefined
-        return (await route.adapter.listModels(route.provider)).map((model) => ({
-          ...withReasoning(model, levels?.get(model.id)),
-          provider,
-          id: gatewayModelId(route.group, model.id),
-        }))
+        return (await route.adapter.listModels(route.provider)).flatMap((model) => {
+          const id = gatewayModelId(route.group, model.id)
+          if (isRetiredModel({ provider, model: id })) return []
+          const name = normalizeModelName(provider, id, model.name, model.id)
+          return [
+            {
+              ...withReasoning(model, levels?.get(model.id)),
+              provider,
+              id,
+              ...(name !== undefined ? { name } : {}),
+            },
+          ]
+        })
       }),
     )
-    const dedicatedId = gatewayModelId('codex', AUTO_REVIEW_MODEL)
-    const models = lists.flat().filter((model) => !this.reviewerRoute || model.id !== dedicatedId)
-    const reviewer = this.reviewerRoute
-    if (reviewer && (await reviewer.available())) {
-      const registered = await reviewer.adapter.listModels(reviewer.provider)
-      const dedicated = registered.find((model) => model.id === AUTO_REVIEW_MODEL)
-      if (dedicated) {
-        return [...models, { ...dedicated, provider, id: dedicatedId }]
-      }
-    }
-    return models
+    return lists.flat()
   }
   private async selection(model: string) {
     // Never infer a group from a model brand or from which request failed.
     const separator = model.indexOf('::')
     const group = separator < 0 ? 'deepseek' : model.slice(0, separator)
     const wireModel = separator < 0 ? model : model.slice(separator + 2)
-    const route =
-      group === 'codex' && wireModel === AUTO_REVIEW_MODEL && this.reviewerRoute
-        ? this.reviewerRoute
-        : this.routes.find((route) => route.group === group)
+    const route = this.routes.find((route) => route.group === group)
     if (!route) throw new LlmError('未知模型分组', 'UNKNOWN_MODEL')
     if (!(await route.available()))
       throw new LlmError(`${group} 分组凭据未就绪`, 'MISSING_CREDENTIAL')
@@ -127,18 +145,22 @@ export class GatewayModelAdapter extends LlmAdapter {
     signal?: AbortSignal,
   ): Promise<LlmResolvedModelInfo> {
     const { route, wireModel } = await this.selection(model)
+    const resolved = await route.adapter.resolveModel(route.provider, wireModel, signal)
+    const name = normalizeModelName(provider, model, resolved.name, wireModel)
     return {
       ...withReasoning(
-        await route.adapter.resolveModel(route.provider, wireModel, signal),
+        resolved,
         route.group === 'codex' ? (await this.codexEfforts?.())?.get(wireModel) : undefined,
       ),
       provider,
       id: model,
+      ...(name !== undefined ? { name } : {}),
     }
   }
   override async prepareCall(provider: string, model: string, signal?: AbortSignal) {
     const { route, wireModel } = await this.selection(model)
     const call = await route.adapter.prepareCall(route.provider, wireModel, signal)
+    const name = normalizeModelName(provider, model, call.model.name, wireModel)
     return {
       model: {
         ...withReasoning(
@@ -147,6 +169,7 @@ export class GatewayModelAdapter extends LlmAdapter {
         ),
         provider,
         id: model,
+        ...(name !== undefined ? { name } : {}),
       },
       stream: (options: GenerateOptions) => this.dispatch(route, wireModel, call.stream, options),
     }

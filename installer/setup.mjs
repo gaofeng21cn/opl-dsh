@@ -45,8 +45,7 @@ const transactionNonce =
   typeof parsedArgs.values['update-nonce'] === 'string'
     ? parsedArgs.values['update-nonce']
     : undefined
-if (suiteRoot !== resolve(root) && resolve(root) !== resolve(join(suiteRoot, 'superagent')))
-  throw new Error('桌面套件目录不匹配')
+if (suiteRoot !== resolve(root)) throw new Error('桌面套件目录不匹配')
 const isProcessAlive = (pid) => {
   if (!Number.isSafeInteger(pid) || pid <= 0) return false
   try {
@@ -161,7 +160,7 @@ async function inspectUpdate(hostPid, allowHandoff = false) {
   const control = JSON.parse(await readFile(join(home, 'profiles/desktop/control.json'), 'utf8'))
   if (control.pid !== hostPid || !alive(hostPid) || child.exitCode !== null || updateClosing)
     return { available: false }
-  for (const profileHome of [home, join(root, 'superagent', 'home')]) {
+  for (const profileHome of [home]) {
     let profiles
     try {
       profiles = await readdir(join(profileHome, 'profiles'), { withFileTypes: true })

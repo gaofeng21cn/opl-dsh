@@ -199,3 +199,55 @@ it('deduplicates shared proxy guidance across failed groups, clears stale catalo
   const recoveredText = container.textContent ?? ''
   expect(recoveredText).not.toContain('无法连接目录服务')
 })
+
+it('filters models by group tabs, exposes inline activation toggle, and flattens manual editing without nested details', async () => {
+  const data = snapshot()
+  const toggles: { id: string; enabled: boolean }[] = []
+  const call = vi.fn(async (method: string) => {
+    if (method === 'read') return structuredClone(data)
+    if (method === 'discover') return []
+    throw Error('Unexpected method')
+  })
+  const container = document.createElement('div')
+  const root = createRoot(container as unknown as HTMLElement)
+  document.body.append(container)
+  roots.push(root)
+  await act(async () =>
+    root.render(
+      <GatewayModels
+        call={call as GatewayCall}
+        groups={data.groups as any}
+        onToggleGroup={async (id, enabled) => {
+          toggles.push({ id, enabled })
+        }}
+      />,
+    ),
+  )
+
+  const tabs = walk(container as unknown as Node).filter(
+    (node) => node.nodeName === 'BUTTON' && props(node).role === 'tab',
+  )
+  expect(tabs.map((tab) => tab.textContent)).toEqual(['全部', 'OpenAI 协议', 'AWS'])
+
+  await act(async () => props(tabs.find((t) => t.textContent === 'AWS')!).onClick())
+  expect(container.textContent).toContain('aws-configured')
+  expect(container.textContent).not.toContain('codex-configured')
+
+  const toggle = walk(container as unknown as Node).find(
+    (node) => node.nodeName === 'INPUT' && props(node).role === 'switch',
+  )!
+  expect(toggle).toBeDefined()
+  await act(async () => props(toggle).onChange({ target: { checked: false } }))
+  expect(toggles).toEqual([{ id: 'aws', enabled: false }])
+
+  const details = walk(container as unknown as Node).find((node) => node.nodeName === 'DETAILS')!
+  await act(async () => {
+    ;(details as unknown as HTMLDetailsElement).open = true
+    props(details).onToggle({ target: details, currentTarget: details })
+  })
+  const allDetails = walk(container as unknown as Node).filter(
+    (node) => node.nodeName === 'DETAILS',
+  )
+  expect(allDetails).toHaveLength(1)
+  expect(container.textContent).toContain('接口协议')
+})

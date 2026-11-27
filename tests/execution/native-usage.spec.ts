@@ -4,8 +4,6 @@ import {
   nativeContextUpdate,
   normalizeClaudeTurnUsage,
   normalizeNativeUsage,
-  normalizeZcodeTurnUsage,
-  zcodeSnapshotContext,
 } from '../../src/execution/host/adapters/native-usage.ts'
 
 const codex = (
@@ -70,32 +68,7 @@ describe('native usage normalization', () => {
     ).toBeUndefined()
   })
 
-  it('normalizes ZCode aggregate usage and keeps context separate', () => {
-    expect(
-      normalizeZcodeTurnUsage({
-        payload: {
-          usage: {
-            inputTokens: 100,
-            outputTokens: 10,
-            totalTokens: 110,
-            cacheReadTokens: 25,
-            cacheWriteTokens: 0,
-            reasoningTokens: 8,
-          },
-        },
-      }),
-    ).toEqual({
-      inputTokens: 75,
-      outputTokens: 10,
-      totalTokens: 110,
-      cacheReadTokens: 25,
-      cacheWriteTokens: 0,
-      reasoningTokens: 8,
-    })
-    expect(zcodeSnapshotContext({ runtime: { contextUsage: { used: 110, size: 200 } } })).toEqual({
-      used: 110,
-      size: 200,
-    })
+  it('emits native context update only when used and size are complete', () => {
     expect(nativeContextUpdate({ used: 110, size: 200, estimated: true })).toEqual({
       sessionUpdate: 'usage_update',
       used: 110,

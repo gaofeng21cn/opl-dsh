@@ -28,12 +28,6 @@ export const OFM_HARNESS_PROTOCOLS: Readonly<Record<string, OfmWireProtocol>> = 
   claude: 'messages',
   kimi: 'messages',
   'kimi-code': 'messages',
-  mimo: 'chat',
-  'mimo-code': 'chat',
-  pool: 'chat',
-  zcode: 'chat',
-  'step-code': 'chat',
-  'muse-code': 'responses',
   opencode: 'chat',
   pi: 'chat',
   kilo: 'chat',
@@ -44,7 +38,6 @@ export const OFM_HARNESS_PROTOCOLS: Readonly<Record<string, OfmWireProtocol>> = 
 /** Harness alias so a CLI id and its adapter id resolve to one protocol. */
 const HARNESS_ALIASES: Readonly<Record<string, string>> = {
   'kimi-code': 'kimi',
-  'mimo-code': 'mimo',
 }
 
 /** Resolve the protocol a Harness declares, honouring a configured override. */
@@ -75,11 +68,6 @@ export const OFM_PINNED_HARNESS_MODELS: Readonly<Record<string, readonly string[
   claude: [],
   vibe: ['mistralai/mistral-large-4-1t-a52b'],
   kimi: ['moonshotai/kimi-k2.6', 'moonshotai/kimi-k3', 'moonshotai/kimi-k3.1-pro'],
-  mimo: ['mimo-v2.6-flash-free', 'amd/MiMo-V2.6-Flash'],
-  pool: ['poolside/laguna-s-2.1:free', 'poolside/laguna-xs-2.1:free', 'poolside/laguna-xs-2.1'],
-  zcode: ['z-ai/glm-5.3', 'z-ai/glm-5.3-flash', 'amd/GLM-5.3-Flash'],
-  'step-code': ['step-5-preview-free', 'stepfun/step-5-preview-free', 'stepfun-ai/step-5-preview'],
-  'muse-code': ['muse-spark-1.2-contributor-free', 'muse-spark-1.3-contributor-free'],
   opencode: [
     'cat-jam-free',
     'mimo-v2.6-flash-free',

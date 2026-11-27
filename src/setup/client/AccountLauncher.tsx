@@ -10,6 +10,8 @@ import type { GatewayAccountStatus } from '../../gateway/contracts/account.ts'
 import { subscribeAccountChanges } from '../../gateway/client/account-changes.ts'
 import css from './AccountLauncher.module.css'
 
+export type SettingsNavigationTarget = 'general' | 'engines' | 'gateway'
+
 /** The official settings shell owns navigation; this launcher chooses the account. */
 export function AccountLauncher({
   wide,
@@ -18,25 +20,23 @@ export function AccountLauncher({
   openSettings,
   openOnboarding,
   readAccount,
-  bindModelNavigation,
   bindSettingsNavigation,
   t,
 }: PropsRuntime<'settings.launcher'> &
   PropsLocale<'settings.oplGateway'> & {
     readAccount: () => Promise<GatewayAccountStatus>
-    bindModelNavigation: (navigate: (() => void) | undefined) => void
-    bindSettingsNavigation?: (navigate: ((section?: 'engines') => void) | undefined) => void
+    bindSettingsNavigation?: (
+      navigate: ((section?: SettingsNavigationTarget) => void) | undefined,
+    ) => void
   }) {
   useEffect(() => {
-    bindModelNavigation(() => openOnboarding('opl-model-navigation'))
-    return () => bindModelNavigation(undefined)
-  }, [bindModelNavigation, openOnboarding])
-  useEffect(() => {
     bindSettingsNavigation?.((section) =>
-      openOnboarding(section === 'engines' ? 'opl-engine-navigation' : 'opl-update-navigation'),
+      openSettings(
+        section === 'engines' ? 'opl-execution' : section === 'gateway' ? 'opl-gateway' : 'general',
+      ),
     )
     return () => bindSettingsNavigation?.(undefined)
-  }, [bindSettingsNavigation, openOnboarding])
+  }, [bindSettingsNavigation, openSettings])
   const [open, setOpen] = useState(false)
   const [account, setAccount] = useState<GatewayAccountStatus>()
   const [failed, setFailed] = useState(false)

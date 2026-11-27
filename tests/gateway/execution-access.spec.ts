@@ -18,12 +18,9 @@ function fixture(models: unknown[] = [{ id: 'custom' }]) {
     ref === 'CUSTOM_REF' ? { value: 'fixture-key' } : undefined,
   )
   const resolveModelInfo = vi.fn(async () => ({ inputModalities: ['text', 'image'] }))
-  const llm = { listProviders: () => [{ id: 'opl-gateway-aws' }], resolveModelInfo }
+  const llm = { listProviders: () => [{ id: 'opl-gateway' }], resolveModelInfo }
   const settings = {
-    describe: () => [
-      { ns: 'opl-suite', value: {} },
-      { ns: 'llm-pi-ai', value: { providers: { 'opl-gateway-aws': profile } } },
-    ],
+    describe: () => [{ ns: 'opl-suite', value: { gatewayChannels: { aws: profile } } }],
   }
   const ctx = {
     get: (name: string) => (name === 'settings' ? settings : name === 'llm' ? llm : undefined),
@@ -42,9 +39,7 @@ describe('Gateway route metadata for external engines', () => {
       models: [{ id: 'gemini-4-argon' }, { id: 'gemini-3.8-flash' }],
     }
     const settings = {
-      describe: () => [
-        { ns: 'llm-pi-ai', value: { providers: { 'opl-gateway-gemini': profile } } },
-      ],
+      describe: () => [{ ns: 'opl-suite', value: { gatewayChannels: { gemini: profile } } }],
     }
     const ctx = {
       get: (name: string) =>
@@ -133,10 +128,10 @@ describe('Gateway route metadata for external engines', () => {
           ? {
               describe: () => [
                 {
-                  ns: 'llm-pi-ai',
+                  ns: 'opl-suite',
                   value: {
-                    providers: {
-                      'opl-gateway-gemini': {
+                    gatewayChannels: {
+                      gemini: {
                         api: 'openai-completions',
                         baseURL: 'https://custom.invalid/v1',
                       },
@@ -205,7 +200,7 @@ describe('Gateway route metadata for external engines', () => {
         })
       ).imageInput,
     ).toBe(true)
-    expect(inherited.resolveModelInfo).toHaveBeenCalledExactlyOnceWith('opl-gateway-aws', 'custom')
+    expect(inherited.resolveModelInfo).toHaveBeenCalledExactlyOnceWith('opl-gateway', 'aws::custom')
   })
 
   it('resolves an empty model input through the registered adapter', async () => {
@@ -214,7 +209,7 @@ describe('Gateway route metadata for external engines', () => {
       (await resolveGatewayExecution(f.ctx, { provider: 'opl-gateway', model: 'aws::custom' }))
         .imageInput,
     ).toBe(true)
-    expect(f.resolveModelInfo).toHaveBeenCalledExactlyOnceWith('opl-gateway-aws', 'custom')
+    expect(f.resolveModelInfo).toHaveBeenCalledExactlyOnceWith('opl-gateway', 'aws::custom')
   })
 
   it('refuses execution when undeclared input metadata cannot be resolved', async () => {
@@ -224,7 +219,7 @@ describe('Gateway route metadata for external engines', () => {
     await expect(
       resolveGatewayExecution(f.ctx, { provider: 'opl-gateway', model: 'aws::custom' }),
     ).rejects.toBe(failure)
-    expect(f.resolveModelInfo).toHaveBeenCalledExactlyOnceWith('opl-gateway-aws', 'custom')
+    expect(f.resolveModelInfo).toHaveBeenCalledExactlyOnceWith('opl-gateway', 'aws::custom')
   })
 
   it.each([undefined, []])(

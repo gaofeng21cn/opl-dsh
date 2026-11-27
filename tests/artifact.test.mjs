@@ -22,30 +22,30 @@ test('tarball checksum and contents bind the installer to an external plugin', a
   assert.doesNotMatch(files, /node_modules|app\.asar|credentials|\/\.env/)
   assert.doesNotMatch(files, /(?:^|\/)\._/m, 'macOS metadata must not become plugin resources')
   assert.ok(!files.includes('package/lib/zcode-harness-bridge.mjs'))
-  const executionArchive = manifest.plugins.find(
-    (plugin) => plugin.package === '@one-person-lab/dsh-execution',
-  )
-  const executionFiles = execFileSync('tar', ['-tzf', executionArchive.name], {
-    cwd: fileURLToPath(output),
-    encoding: 'utf8',
-  })
+  assert.ok(!files.includes('package/lib/step-bridge.mjs'))
+  assert.ok(!files.includes('package/lib/zcode-ofm-bridge.mjs'))
+  assert.ok(!files.includes('package/lib/muse-bridge.mjs'))
   for (const bridge of [
     'native-harness-bridge.mjs',
-    'step-bridge.mjs',
     'pi-bridge.mjs',
-    'zcode-ofm-bridge.mjs',
-    'muse-bridge.mjs',
-    'muse-bash-mcp.mjs',
-    'muse-endpoint.mjs',
+    'kimi-error-bridge.mjs',
+    'chat-tool-bridge.mjs',
   ])
-    assert.ok(executionFiles.includes(`package/lib/${bridge}`), `missing packaged bridge ${bridge}`)
+    assert.ok(files.includes(`package/lib/${bridge}`), `missing packaged bridge ${bridge}`)
   const overlay = parse(await readFile(new URL('package/cordis.patch.yml', output), 'utf8'))
   const web = overlay.find((entry) => entry.id === 'web')
   assert.equal(web?.config?.searchProvider, 'opl-gateway')
   assert.equal(web?.config?.fetchProvider, 'http')
+  assert.equal(
+    overlay.find((entry) => entry.id === 'llm-pi-ai'),
+    undefined,
+  )
+  const overlayText = await readFile(new URL('package/cordis.patch.yml', output), 'utf8')
+  assert.doesNotMatch(overlayText, /opl-gateway-(?:openai|auto-review|grok|gemini|kiro|aws|claude)/)
   const pkg = JSON.parse(await readFile(new URL('package/package.json', output), 'utf8'))
   assert.equal(pkg.name, '@one-person-lab/dsh-opl')
   assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-llm'], '*')
+  assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-llm-pi-ai'], '*')
   const project = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
   assert.equal(pkg.dependencies.zod, project.devDependencies.zod)
   assert.equal(pkg.peerDependencies.zod, undefined)
@@ -68,35 +68,14 @@ test('tarball checksum and contents bind the installer to an external plugin', a
   assert.equal(manifest.version, manifest.officialVersion)
   assert.equal(manifest.updateProtocolVersion, 1)
   assert.equal(manifest.enhancementVersion, pkg.version)
-  const companion = manifest.superagent
-  assert.equal(companion.upstreamCommit, '6337fc823ce20251c8de8085948165c81aaa701e')
-  assert.equal(
-    createHash('sha256')
-      .update(await readFile(new URL(companion.name, output)))
-      .digest('hex'),
-    companion.sha256,
-  )
-  const original = JSON.parse(
-    await readFile(new URL('superagent-package/package/package.json', output), 'utf8'),
-  )
-  assert.equal(original.name, 'dsh-superagent')
-  assert.equal(
-    original.peerDependencies['@deepseek-ai/dsh-session'],
-    project.devDependencies['@deepseek-ai/dsh-session'],
-  )
-  assert.equal(original.dependencies['proper-lockfile'], '4.1.2')
-  assert.equal(original.dependencies.zod, '4.6.7')
-  const originalClient = await readFile(
-    new URL('superagent-package/package/lib/client.js', output),
-    'utf8',
-  )
-  assert.match(originalClient, /__ModuleLoader__/)
+  assert.equal(manifest.superagent, undefined)
+  assert.equal(manifest.plugins, undefined)
   const code = await readFile(new URL('package/lib/index.js', output), 'utf8')
   assert.doesNotMatch(code, /api\.modelarts-maas\.com|HUAWEI_MAAS_API_KEY|oplContextBudget/)
   assert.match(code, /from "@deepseek-ai\/dsh-llm-deepseek"/)
   assert.doesNotMatch(
     code,
-    /class LlmRuntime|class AgentLoop|resolveProfiles|credentialStoreFrom|authContextFrom/,
+    /class LlmRuntime|class AgentLoop|resolveProfiles|credentialStoreFrom|authContextFrom|installGatewayModelCatalogProjection/,
   )
   const client = await readFile(new URL('package/lib/client.js', output), 'utf8')
   assert.doesNotMatch(
@@ -106,49 +85,18 @@ test('tarball checksum and contents bind the installer to an external plugin', a
   )
 })
 
-test('three real packages own distinct Host and Client lifecycles', async () => {
-  const artifact = JSON.parse(await readFile(new URL('artifact.json', output), 'utf8'))
-  assert.deepEqual(
-    artifact.plugins.map((plugin) => plugin.package),
-    ['@one-person-lab/dsh-execution', '@one-person-lab/dsh-collaboration'],
-  )
-  for (const plugin of artifact.plugins) {
-    const id = plugin.package.split('dsh-')[1]
-    const bytes = await readFile(new URL(plugin.name, output))
-    assert.equal(createHash('sha256').update(bytes).digest('hex'), plugin.sha256)
-    assert.equal(artifact.payloadFiles[plugin.name], plugin.sha256)
-    const pkg = JSON.parse(
-      await readFile(new URL(`${id}-package/package/package.json`, output), 'utf8'),
-    )
-    assert.equal(pkg.name, plugin.package)
-    if (id === 'collaboration') {
-      assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-agent-preset-registry'], '*')
-      assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-skill-filesystem'], '*')
-      assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-tool-skill'], '*')
-    }
-    const client = await readFile(new URL(`${id}-package/package/lib/client.js`, output), 'utf8')
-    assert.ok(client.includes(`id:"${plugin.package}"`))
-    const metadata = JSON.parse(
-      await readFile(new URL(`${id}-package/package/locale/zh.json`, output), 'utf8'),
-    )
-    assert.match(metadata.meta.title, /^OPL /)
-    assert.ok(
-      await readFile(new URL(`${id}-package/package/${metadata.meta.detail}`, output), 'utf8'),
-    )
-  }
+test('unified plugin owns execution, collaboration, and gateway lifecycles', async () => {
+  const pkg = JSON.parse(await readFile(new URL('package/package.json', output), 'utf8'))
+  assert.equal(pkg.name, '@one-person-lab/dsh-opl')
+  assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-agent-preset-registry'], '*')
+  assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-skill-filesystem'], '*')
+  assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-tool-skill'], '*')
+  const client = await readFile(new URL('package/lib/client.js', output), 'utf8')
+  assert.ok(client.includes('id:"@one-person-lab/dsh-opl"'))
   const baseHost = await readFile(new URL('package/lib/index.js', output), 'utf8')
-  const executionHost = await readFile(
-    new URL('execution-package/package/lib/index.js', output),
-    'utf8',
-  )
-  const collaborationHost = await readFile(
-    new URL('collaboration-package/package/lib/index.js', output),
-    'utf8',
-  )
-  assert.doesNotMatch(baseHost, /class HarnessService|OfficialCollaborationBridge/)
-  assert.doesNotMatch(executionHost, /new OfficialCollaborationBridge/)
-  assert.match(collaborationHost, /OfficialCollaborationBridge/)
-  assert.match(collaborationHost, /DomainAgentPresetService/)
+  assert.match(baseHost, /(?:class HarnessService|var HarnessService = class)\b/)
+  assert.match(baseHost, /OfficialCollaborationBridge/)
+  assert.match(baseHost, /DomainAgentPresetService/)
 })
 
 test('installer directory files match artifact payloadFiles exactly', async () => {
@@ -167,7 +115,10 @@ test('installer directory files match artifact payloadFiles exactly', async () =
   actual.delete('artifact.json')
   assert.deepEqual([...actual.keys()].sort(), Object.keys(manifest.payloadFiles).sort())
   assert.ok(Object.hasOwn(manifest.payloadFiles, 'installation-paths.d.mts'))
-  assert.ok(Object.hasOwn(manifest.payloadFiles, 'cleanup-skill/quit-windows.ps1'))
+  assert.ok(Object.hasOwn(manifest.payloadFiles, 'runtime-backups.mjs'))
+  assert.equal(Object.hasOwn(manifest.payloadFiles, 'cleanup-skill/quit-windows.ps1'), false)
+  assert.equal(Object.hasOwn(manifest.payloadFiles, 'kimi-cu.mjs'), false)
+  assert.equal(Object.hasOwn(manifest.payloadFiles, 'split-plugins.cjs'), false)
   for (const [relative, expected] of Object.entries(manifest.payloadFiles)) {
     const content = actual.get(relative)
     assert.ok(content, `missing installer payload file ${relative}`)
@@ -181,7 +132,6 @@ test('standalone installer and bridge scripts contain zero unbundled npm imports
   const cjsRequire = /(?<![`'"])\b(?:__)?require\(\s*['"]([^'"]+)['"]\s*\)/g
   const roots = [
     fileURLToPath(new URL('OPL DSH 一键安装/', output)),
-    fileURLToPath(new URL('execution-package/package/lib/', output)),
     fileURLToPath(new URL('package/lib/', output)),
   ]
   const offenders = []
@@ -207,7 +157,6 @@ test('standalone installer and bridge scripts contain zero unbundled npm imports
     }
   }
   await inspectDir(roots[0], 'installer', false)
-  await inspectDir(roots[1], 'execution-lib', true)
-  await inspectDir(roots[2], 'base-lib', true)
+  await inspectDir(roots[1], 'base-lib', true)
   assert.deepEqual(offenders, [], `Found unbundled bare imports:\n${offenders.join('\n')}`)
 })

@@ -490,17 +490,62 @@ select.input {
   cursor: default;
 }
 
-[data-opl-managed-models] > .modelRows:empty {
-  display: none;
+.tabRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
-[data-opl-managed-models] > .modelRows > .modelRow:first-child {
-  padding-top: 0;
+
+.tab {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
 }
-[data-opl-managed-models] > .modelRows > .modelRow:last-child {
-  padding-bottom: 0;
+
+.tabActive {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
 }
-[data-opl-managed-models] > .error {
-  margin: 0;
+
+.tab:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.gatewayGroupBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.modelsFooterCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-top: 12px;
+  border: 0.5px solid var(--dsw-alias-settings-card-stroke);
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-settings-card-fill);
 }
 
 .taskRow {

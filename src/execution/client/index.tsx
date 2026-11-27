@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { installEffortDirectories } from './official-effort-directory.ts'
 import {
   AntigravityAccountCard,
@@ -60,18 +61,9 @@ import {
 } from './ProjectlessOfficialComposer.tsx'
 import { HARNESS_TRANSCRIPT_TOOL } from '../contracts/tool-display.ts'
 import { remoteCall } from '../../shared/client/remote-call.ts'
-import type {
-  AutoReviewClientApi,
-  AutoReviewConnectionSource,
-} from '../../auto-review/contracts/settings.ts'
-import type { AutoReviewSectionProps } from '../../auto-review/client/AutoReviewSection.tsx'
 
 export interface ClientConfig {
-  autoReview?: {
-    api: AutoReviewClientApi
-    connection?: AutoReviewConnectionSource
-    t: AutoReviewSectionProps['t']
-  }
+  renderCollaboration?: () => ReactNode
 }
 
 export const inject = [
@@ -182,7 +174,7 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
   ctx.inject(['configForms'], (settings) => {
     const executionForm = settings.configForms.get<
       PermissionMemorySettings & MiniMaxIntegrationSettings
-    >('opl-execution')
+    >('opl-suite')
     const minimaxT = ctx.locale.bind(MINIMAX_ACCOUNT_NAMESPACE)
     ctx.slots.inject('settings.models.footer', () =>
       ctx.slots.register({ name: 'settings.models.footer', id: 'opl-minimax-account' }, () => (
@@ -207,11 +199,11 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
           name: 'settings.section',
           id: 'opl-execution',
           order: SETTINGS_ORDER['opl-execution'],
-          label: () => '执行与组合',
+          label: () => '执行引擎与协作',
           inject: () => ({
             call,
             minimax: { form: executionForm, t: minimaxT },
-            ...(config.autoReview ? { autoReview: config.autoReview } : {}),
+            ...(config.renderCollaboration ? { collaboration: config.renderCollaboration() } : {}),
           }),
         },
         ExecutionSettings,

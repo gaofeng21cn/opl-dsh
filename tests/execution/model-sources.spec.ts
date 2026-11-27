@@ -117,9 +117,9 @@ describe('external model-source ownership', () => {
           ? {
               describe: () => [
                 {
-                  ns: 'llm-pi-ai',
+                  ns: 'opl-suite',
                   value: {
-                    providers: { 'opl-gateway-openai': { api: 'openai-completions' } },
+                    gatewayChannels: { codex: { api: 'openai-completions' } },
                   },
                 },
               ],

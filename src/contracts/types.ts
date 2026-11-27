@@ -15,8 +15,6 @@ export type * from '../execution/contracts/antigravity-account.ts'
 export type * from '../execution/contracts/engine-updates.ts'
 export type * from '../collaboration/host/feedback/types.ts'
 export type * from '../setup/contracts.ts'
-export type * from '../credentials/contracts/windows-keyring.ts'
-export type * from '../auto-review/contracts/settings.ts'
 export interface GatewayModelEdit {
   group: string
   revision: number
@@ -41,6 +39,12 @@ export interface HarnessReasoningPreflight {
 }
 export interface SessionRequest {
   sessionId: string
+}
+export interface SelectModelHarnessRequest {
+  sessionId: string
+  modelRef: import('../execution/contracts/catalog.ts').ModelRef
+  harnessRef: string
+  setAsDefault?: boolean
 }
 export interface HarnessStartRequest {
   combination: string
@@ -111,17 +115,9 @@ export interface CoordinationStatus extends WakeSettings {
   autoStart: boolean
   version: string
   enhancementVersion: string
-  sessionRecycleSupported?: boolean
-  superagentSupported?: boolean
   update: { state?: string; checkedAt?: string; message?: string; checkTrigger: string }
   paths: { suiteRoot: string; profileHome: string; skillDir: string }
 }
-export type {
-  MiniMaxCandidateRequest,
-  MiniMaxCandidateResult,
-} from '../execution/contracts/candidate.ts'
-
-export type * from '../execution/contracts/codex-runtime.ts'
 export type * from '../execution/contracts/capabilities.ts'
 export type { RoleExecutionCatalog } from '../collaboration/contracts/roles.ts'
 export type { NativeShellStatus } from '../shell/contracts/selection.ts'

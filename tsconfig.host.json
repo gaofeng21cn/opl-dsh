@@ -17,8 +17,6 @@
     "src/*/host/**/*.ts",
     "src/*/contracts/**/*.ts",
     "src/contracts/**/*.ts",
-    "src/shared/models.ts",
-    "src/suite/execution-plugin.ts",
-    "src/suite/collaboration-plugin.ts"
+    "src/shared/models.ts"
   ]
 }

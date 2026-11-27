@@ -5,10 +5,10 @@ import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environ
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Gateway from '../../src/gateway/host/index.ts'
 
-const restore = vi.hoisted(() => ({ migrate: vi.fn(), reviewer: vi.fn() }))
+const restore = vi.hoisted(() => ({ migrate: vi.fn() }))
 vi.mock('../../src/gateway/host/model-settings.ts', () => ({
+  migrateLegacyGatewaySettings: restore.migrate,
   migrateGatewayProtocolDefaults: restore.migrate,
-  ensureAutoReviewProvider: restore.reviewer,
   syncGatewayModels: vi.fn(),
 }))
 
@@ -17,7 +17,6 @@ const nextTurn = () => new Promise<void>((resolve) => setImmediate(resolve))
 
 beforeEach(() => {
   restore.migrate.mockReset().mockResolvedValue(undefined)
-  restore.reviewer.mockReset().mockResolvedValue(undefined)
   vi.stubGlobal(
     'fetch',
     vi.fn(() => {
@@ -42,7 +41,7 @@ async function mount() {
     configure: () => () => {},
     describe: () =>
       native.ctx.fiber.state === 2
-        ? [{ ns: 'llm-pi-ai', value: { providers: {} }, revision: 0 }]
+        ? [{ ns: 'opl-suite', value: { gatewayChannels: {} }, revision: 0 }]
         : [],
   })
   await ctx.plugin(Gateway, { baseURL: 'https://fixture.invalid/v1' })
@@ -55,26 +54,23 @@ describe('Gateway startup restoration', () => {
     restore.migrate.mockRejectedValueOnce(Error('Provider is restarting'))
     const { native } = await mount()
     expect(restore.migrate).toHaveBeenCalledTimes(1)
-    expect(restore.reviewer).not.toHaveBeenCalled()
 
     await native.ctx.fiber.restart()
     await nextTurn()
     expect(restore.migrate).toHaveBeenCalledTimes(2)
-    expect(restore.reviewer).toHaveBeenCalledTimes(1)
 
     await native.ctx.fiber.restart()
     await nextTurn()
     expect(restore.migrate).toHaveBeenCalledTimes(2)
   })
 
-  it('retries a failed reviewer restore after a relevant settings revision', async () => {
-    restore.reviewer.mockRejectedValueOnce(Error('Settings changed'))
+  it('retries migration after a relevant settings revision', async () => {
+    restore.migrate.mockRejectedValueOnce(Error('Settings changed'))
     const { ctx } = await mount()
-    expect(restore.reviewer).toHaveBeenCalledTimes(1)
-    ctx.emit('settings/document-updated', 'llm-pi-ai', 1)
+    expect(restore.migrate).toHaveBeenCalledTimes(1)
+    ctx.emit('settings/document-updated', 'opl-suite', 1)
     await nextTurn()
     expect(restore.migrate).toHaveBeenCalledTimes(2)
-    expect(restore.reviewer).toHaveBeenCalledTimes(2)
   })
 
   it('coalesces provider transitions while a failed migration is still pending', async () => {
@@ -88,7 +84,6 @@ describe('Gateway startup restoration', () => {
       first.reject(Error('Provider changed during the write'))
       await nextTurn()
       expect(restore.migrate).toHaveBeenCalledTimes(2)
-      expect(restore.reviewer).toHaveBeenCalledTimes(1)
     } finally {
       first.resolve()
     }
@@ -109,7 +104,7 @@ describe('Gateway startup restoration', () => {
     expect(restore.migrate).toHaveBeenCalledTimes(2)
   })
 
-  it('awaits pending restoration on disposal and skips the reviewer and queued retry', async () => {
+  it('awaits pending restoration on disposal and skips queued retry', async () => {
     const first = Promise.withResolvers<void>()
     restore.migrate.mockImplementationOnce(() => first.promise)
     const { ctx, native } = await mount()
@@ -124,7 +119,6 @@ describe('Gateway startup restoration', () => {
       first.resolve()
       await disposal
       expect(restore.migrate).toHaveBeenCalledTimes(1)
-      expect(restore.reviewer).not.toHaveBeenCalled()
     } finally {
       first.resolve()
     }

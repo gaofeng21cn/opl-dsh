@@ -173,10 +173,6 @@ ELECTRON_RUN_AS_NODE=1 '<配置中的 executable>' '<本 Skill>/control.mjs' rep
 
 已明确授权的旧完整访问任务若显示 `custom`，先确认对应普通 DSH 会话已空闲，再执行 `permissions --session <nativeSessionId> --preset danger-full-access`；随后读取 `permissions --session <nativeSessionId>`，核对 preset、sandbox、approval 分别为 `danger-full-access`、`danger-full-access`、`never`。该操作不发送模型 prompt，不批准挂起的工具请求，也不改动其他会话。
 
-MiniMax 候选的 Host 选择命令为 `minimax-candidate-select --version <候选版本> [--source <候选目录>]`。它通过公开 `oplExecution/select-minimax-candidate` 检查同一 Host 所有项目活动并持有维护互斥，把已校验启动器写入实际执行组合；不读取离线 `selection.json` 作为当前选择。省略来源可切回已导入版本，不覆盖已有版本或改官方账号。返回 `validation: static` 仅代表文件校验，仍须核对真实 ACP Shell、模型和 Bash。生产安装前按当前全局任务重新核验空闲；不能凭上一次审计或回执断言可切换。
-
-DSH 原生 Auto Review 由官方插件负责。新安装默认不启用它；需要时在 profile 插件管理中启用，再在会话中显式选择 Auto。OPL 路线适配也默认关闭；开启后 DSH 原生和 ZCode 使用独立注册的 codex-auto-review 或显式选择的 reviewer，关闭后官方 Auto 使用当前会话模型。OPL 不注册第二套原生 gate、preset 或卸载逻辑。Codex、Claude 使用各自官方审核接口；其他未验证的外部 Auto 模式拒绝启动。审查模型只使用 Host 注册并广告的无工具 LLM 路线，不从外部 CLI 执行组合拼装。已有完整访问授权的协作任务继续显式使用 danger-full-access/never，不为测试改变活动任务权限。保存回执未知时先读取生效状态；关闭 OPL 适配不修改会话权限。官方插件自身的卸载权限行为以官方说明和实际会话读回为准，不代答人工审批。
-
 Todo 面板只读取官方记录的 todos 投影。停止后未完成项静态显示，不能把会话或子会话结束解释为项目已完成；父与子会话活动独立，读不到状态时保留未知。不从正文解析清单，不按项目文字关联子会话，不为展示修改历史或发送模型请求。
 
 ## 可选的事件驱动项目续作
@@ -192,9 +188,5 @@ Todo 面板只读取官方记录的 todos 投影。停止后未完成项静态�
 `inspect --project <id>` 读取计划、验收与 checkpoint；`status` 只读元数据；`pause`、`resume`、`reconcile`、`start-watch`、`stop-watch` 管理暂停和文件事件监听。默认状态在 `CODEX_HOME/opl-dsh-coordinator`。watcher 是自有独立 Node 进程，不是模型 heartbeat；进程监听支持 Windows 和 Apple Silicon macOS，协调器识别 Codex 0.167.0、0.169.0 和 0.169.1，未知版本保持 unknown。它不自动重派 worker、不代答审批，也不把通知 consumed 当作项目验收完成。
 
 真实领取须先 `receive` 并确认 review/resume，随后经 `apply --project <id> --file <event.json>` 登记 `review.started` 和 checkpoint。外部验收及通知消费经 `review-action --project <id> --file <request.json>` 校验 authorityEpoch、run/turn、consumerId 和 claimEpoch；未知、旧身份或重复动作不执行。原主审退出后，旧审查的 fenced 状态保留。接手的主审核对 checkpoint 和当前领取身份，用自己的 runId、一个新的 reviewRunId 登记 review.started，完成 review.finished 后消费同一 delivery。已验收未消费时只补 consume，不重跑 worker 或验收。完整计划、命令与限制见仓库 `docs/project-coordinator.md`。
-
-## Codex Git Bash 运行时交付
-
-Windows 自建候选使用 `codex-runtime-select --mode git-bash --version 0.169.0-opl-gitbash.20261116.1 --source <便携目录绝对路径>` 导入并选择；省略 source 重新选择已导入版本。`codex-runtime-select --mode official` 恢复原命令。先全项目空闲核验，候选仅接受已有完全访问权限，不提升受限任务权限。导入失败保留原选择，实际 Bash 与 Auto Review 由 CLI 回读验收。不要修改官方 Codex 程序或日常配置。
 
 短通知仅包含状态与一次 deliveryId。收到 `control CLI: receive --delivery <deliveryId> --consumer <stable-id>` 时，CLI 从公开 outbox 精确找到所属 task，再执行原领取协议；不能据通知直接宣布通过。只在 review/resume 时读取返回的 reviewInstructions 并验收，busy/skip 停止；consume 仍使用返回的 taskId、deliveryId、consumerId 与 claimEpoch。旧双位置参数及 request-file 继续兼容。

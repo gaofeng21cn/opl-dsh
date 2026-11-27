@@ -1,11 +1,4 @@
-import type {
-  AutoReviewClientApi,
-  AutoReviewConnectionSource,
-} from '../../auto-review/contracts/settings.ts'
-import {
-  AutoReviewSection,
-  type AutoReviewSectionProps,
-} from '../../auto-review/client/AutoReviewSection.tsx'
+import type { ReactNode } from 'react'
 import { ExecutionCatalogSection } from './ExecutionCatalogSection.tsx'
 import { HarnessSettings } from './HarnessSettings.tsx'
 import { ExecutionLimitsSection } from './ExecutionLimitsSection.tsx'
@@ -17,62 +10,50 @@ import {
 import css from '../../shared/client/SettingsSection.module.css'
 import type { ExecutionCall as Call } from '../../shared/client/remote-call.ts'
 
-export interface AutoReviewSettingsSeat {
-  api: AutoReviewClientApi
-  connection?: AutoReviewConnectionSource
-  t: AutoReviewSectionProps['t']
-}
-
 /**
- * One user-facing execution page. The common task is choosing a combination;
- * low-frequency program, proxy and approval controls stay in existing rows
- * inside this page instead of consuming separate settings navigation entries.
+ * One user-facing execution & collaboration page. Common tasks (detecting local engines,
+ * one-click install/update, per-harness proxies, and custom standard ACP engines) sit flat at the
+ * top, while default overrides, turn limits, and cross-harness collaboration sit inside
+ * collapsible panels below.
  */
 export function ExecutionSettings({
   call,
-  autoReview,
   minimax,
+  collaboration,
 }: {
   call: Call
-  autoReview?: AutoReviewSettingsSeat
   minimax: MiniMaxIntegrationSeat
+  collaboration?: ReactNode
 }) {
   const minimaxSnapshot = useMiniMaxIntegrationSnapshot(minimax.form)
   return (
     <div className={css.section} data-opl-panel="execution">
-      <h2 className={css.title}>执行与组合</h2>
+      <h2 className={css.title}>执行引擎与协作</h2>
       <p className={css.intro}>
-        为模型绑定 Harness
-        与权限，并在同一页维护执行程序、独立网络代理和工具审批。已启用的组合显示在官方会话输入框中；模型与账号仍在对应来源页面管理。
+        日常对话会自动按推荐策略匹配引擎，也可在聊天框「执行引擎」里为任意模型随时自由切换；本页用于管理本机执行引擎、网络代理、可选默认预设及跨引擎协作。
       </p>
-      <ExecutionCatalogSection
-        call={call}
-        embedded
-        refreshKey={miniMaxIntegrationEnabled(minimaxSnapshot)}
-      />
-      <ExecutionLimitsSection call={call} />
-      <details className={css.details} data-opl-panel="execution-settings">
-        <summary>执行引擎与网络代理</summary>
+      <HarnessSettings call={call} embedded />
+      <details className={css.details}>
+        <summary>自定义默认规则与快捷预设</summary>
         <div className={css.detailsBody}>
-          <HarnessSettings call={call} embedded />
+          <ExecutionCatalogSection
+            call={call}
+            embedded
+            refreshKey={miniMaxIntegrationEnabled(minimaxSnapshot)}
+          />
         </div>
       </details>
-      {autoReview ? (
-        <details className={css.details} data-opl-panel="auto-review">
-          <summary>工具审批（Auto Review）</summary>
-          <div className={css.detailsBody}>
-            <AutoReviewSection
-              api={autoReview.api}
-              {...(autoReview.connection ? { connection: autoReview.connection } : {})}
-              embedded
-              t={autoReview.t}
-            />
-          </div>
+      <details className={css.details}>
+        <summary>运行超时与队列限制</summary>
+        <div className={css.detailsBody}>
+          <ExecutionLimitsSection call={call} />
+        </div>
+      </details>
+      {collaboration && (
+        <details className={css.details}>
+          <summary>跨引擎协作与外部 Codex 委派</summary>
+          <div className={css.detailsBody}>{collaboration}</div>
         </details>
-      ) : (
-        <p className={css.muted} data-opl-panel="auto-review">
-          工具审批服务未就绪。
-        </p>
       )}
     </div>
   )

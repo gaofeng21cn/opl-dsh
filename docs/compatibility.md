@@ -4,7 +4,7 @@
 
 Linux CI 继续运行 Host / Client 类型检查、构建与全部自动测试。官方桌面兼容工作流在 macOS arm64 与 Windows 上下载并运行未修改的官方桌面，用独立数据目录验证增强包；它不需要模型账号，不访问实际用户 profile。
 
-Linux x64 另有 `installer/install-linux.mjs` 的 CLI/Web 迁移入口。它使用独立自定义 profile、官方插件管理器和本机浏览器，必须通过实际 Host、控制 RPC、执行组合和 SuperAgent 状态回读验收；这些结果不属于官方 Electron Desktop 资格，也不能据此宣称 Linux Desktop 已发布。
+Linux x64 另有 `installer/install-linux.mjs` 的 CLI/Web 迁移入口。它使用独立自定义 profile、官方插件管理器和本机浏览器，必须通过实际 Host、控制 RPC 与执行组合回读验收；这些结果不属于官方 Electron Desktop 资格，也不能据此宣称 Linux Desktop 已发布。
 
 当前兼容目标是官方 DSH `0.2.3-alpha.2` 的 Node/API cohort；实际 npm 版本以 `package.json` 与锁文件为准，升级依赖前必须通过新版编译和资格检查。官方桌面以两个安装 feed 的实时版本为准；稳定 Release 要求 macOS arm64 与 Windows x64 feed 版本相同，并在同一冻结版本上完成双平台隔离资格验收。官方版本带 `-alpha` 或 `-rc` 时仍属于上游候选阶段。任一平台资格失败或证据缺失都会阻断 Release。
 
@@ -38,11 +38,9 @@ runner 实际执行以下链路，任一步失败均返回非零退出码：
 - 官方 Host 启动、控制绑定、认证后的 RPC、模型设置写入及官方模型目录回读。
 - 官方能力清单读取 Team、Auto Review（挂载状态、默认关闭、不可默认直接选用）及官方一次性 Subagent provider 的版本、安装来源、启用状态和错误；启用的 Team 工具应由官方 Agent scope 提供，已被 Team 替代的顶层 `subagent`、`subagent_fork` 工具保持关闭。
 - 在隔离项目中执行官方 Team lead → teammate 的真实父子任务，并通过官方 Session Controller 等待 lead 与 child；这只证明官方团队生命周期可用，不证明跨 Harness 交付验收已完成。
-- 通过仅连接自有 Electron 的调试管道验证 OPL Client 挂载、首启与官方设置导航，打开执行与组合、协作和模型页面；在同一执行页验证程序代理与工具审批折叠区；检查可见错误及运行异常，并保存截图。
+- 通过仅连接自有 Electron 的调试管道验证 OPL Client 挂载、首启与官方设置导航，打开「OPL Gateway」与「执行引擎与协作」页面（含默认规则与跨引擎协作折叠区）及模型页面；检查可见错误及运行异常，并保存截图。
 - 本地模型 fixture 分别输出 DeepSeek messages 和 OpenAI completions 流；实际官方 Agent 执行工具并完成两次会话。外部 Harness 结束后，验收脚本继续轮询官方会话记录直至出现本轮 `turn/end`（上限 30 秒，超时失败），不把外部进程终态当作官方消息流已经落盘。
-- 原生模型工具链调用 `inspect_mcp_app_host` 并回读真实诊断，记录 `checks.mcpAppHost`；这只证明无 UI 交接工具可用，不证明标准 MCP Apps 渲染。
 - 停止自有桌面并重新启动，回读已保存的组合选择与权限预设。
-- macOS 通过交付包的 SuperAgent 准备入口安装独立 profile，启动第二个受验收器管理的官方桌面，验证原版侧栏、管理面板和未配置仓库的等待设置状态。账号与外部来源不在该验收中启用。
 
 模型 fixture 证明协议、官方工具执行与本地持久化的兼容性；它不证明外部模型服务的网络、凭据或质量。API/RPC 通过不等于页面可见性验收通过，页面截图与可见性检查可定位加载回归；复杂布局、交互体验仍需结合截图审阅。`status: passed` 只表示 JSON 中列出的检查通过，不把跳过、排队或构建成功写成桌面通过。
 

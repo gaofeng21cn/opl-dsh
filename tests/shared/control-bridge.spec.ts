@@ -84,20 +84,13 @@ it('routes candidate selection to the execution owner without granting arbitrary
     const binding = readBinding(join(dir, 'control.json'))
     const args = { version: '0.6.3-opl-bash.20261010.2' }
     expect(
-      await rpc(binding, { namespace: 'harness', method: 'select-minimax-candidate', args }),
-    ).toMatchObject({ status: 200, json: { ok: true } })
-    expect(invoke).toHaveBeenCalledWith(
-      expect.objectContaining({
-        namespace: 'harness',
-        method: 'select-minimax-candidate',
-        args,
-        signal: expect.any(AbortSignal),
-      }),
-    )
+      (await rpc(binding, { namespace: 'harness', method: 'select-minimax-candidate', args }))
+        .status,
+    ).toBe(403)
     expect(
       (await rpc(binding, { namespace: 'harness', method: 'delete-candidate', args })).status,
     ).toBe(403)
-    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(invoke).toHaveBeenCalledTimes(0)
   } finally {
     await stop()
     rmSync(dir, { recursive: true, force: true })
@@ -166,21 +159,13 @@ it('routes Codex selection and rollback through the authenticated execution owne
       { mode: 'official' },
     ]) {
       expect(
-        await rpc(binding, { namespace: 'harness', method: 'select-codex-runtime', args }),
-      ).toMatchObject({ status: 200, json: { ok: true } })
-      expect(invoke).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          namespace: 'harness',
-          method: 'select-codex-runtime',
-          args,
-          signal: expect.any(AbortSignal),
-        }),
-      )
+        (await rpc(binding, { namespace: 'harness', method: 'select-codex-runtime', args })).status,
+      ).toBe(403)
     }
     expect(
       (await rpc(binding, { namespace: 'harness', method: 'execute-candidate', args: {} })).status,
     ).toBe(403)
-    expect(invoke).toHaveBeenCalledTimes(2)
+    expect(invoke).toHaveBeenCalledTimes(0)
   } finally {
     await stop()
     rmSync(dir, { recursive: true, force: true })

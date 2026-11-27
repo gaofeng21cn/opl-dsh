@@ -5,10 +5,6 @@ import { HarnessService } from '../../src/execution/host/harness.ts'
 import { adapterFor } from '../../src/execution/host/adapters/index.ts'
 import { startControlBridge } from '../../src/shared/host/control-bridge.ts'
 import { HarnessConfigurationError, HarnessRequestError } from '../../src/execution/host/acp.ts'
-import {
-  MINIMAX_EDIT_ERRORS,
-  MinimaxEditError,
-} from '../../src/execution/host/message-edit-minimax.ts'
 import type { HarnessAdapter } from '../../src/execution/host/adapters/types.ts'
 import type { HarnessSession } from '../../src/execution/contracts/sessions.ts'
 import type { ExternalEditHistory } from '../../src/execution/host/message-edit-driver.ts'
@@ -216,10 +212,6 @@ describe('owned bridge cleanup', () => {
 
 describe('message edit history diagnostics', () => {
   it.each<[Error, string]>([
-    [
-      new MinimaxEditError(MINIMAX_EDIT_ERRORS.vendorUncertain),
-      MINIMAX_EDIT_ERRORS.vendorUncertain,
-    ],
     [new HarnessConfigurationError('PRIVATE_PROVIDER_TEXT'), 'configuration'],
     [new HarnessRequestError('PRIVATE_PROVIDER_TEXT', 'session/new', -32603), 'acp-request'],
     [

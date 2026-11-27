@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { Config } from '../../src/execution/host/plugin-config.ts'
+import { Config } from '../../src/suite/config.ts'
 import { HarnessService } from '../../src/execution/host/harness.ts'
 
 it('saves execution deadlines through official volatile-field validation and reloads the persisted choice', async () => {
@@ -24,8 +24,8 @@ it('saves execution deadlines through official volatile-field validation and rel
       options: { id: string; config: Record<string, unknown> }
       fiber: Fiber
     } = {
-      id: 'fixture:opl-execution',
-      options: { id: 'opl-execution', config: raw },
+      id: 'fixture:opl-suite',
+      options: { id: 'opl-suite', config: raw },
       fiber: owner.ctx.fiber,
     }
     let user: Record<string, unknown> = {}
@@ -40,7 +40,7 @@ it('saves execution deadlines through official volatile-field validation and rel
         ) => Record<string, unknown>,
       ) => {
         const next = change(structuredClone(entry.options.config), raw)
-        await writeFile(document, JSON.stringify({ 'opl-execution': next }))
+        await writeFile(document, JSON.stringify({ 'opl-suite': next }))
         user = structuredClone(next)
         entry.options.config = next
         await entry.fiber.update(next, true)
@@ -52,10 +52,10 @@ it('saves execution deadlines through official volatile-field validation and rel
     const enabled = { enabled: true, firstProgressMs: 120_000, idleProgressMs: 180_000 }
     expect(await harness.saveExecutionLimits(enabled)).toEqual(enabled)
     expect(harness.executionLimits()).toEqual(enabled)
-    expect(
-      root.settings.describe().find((item) => item.ns === 'opl-execution')?.value,
-    ).toMatchObject({ executionLimits: enabled })
-    const saved = JSON.parse(await readFile(document, 'utf8'))['opl-execution']
+    expect(root.settings.describe().find((item) => item.ns === 'opl-suite')?.value).toMatchObject({
+      executionLimits: enabled,
+    })
+    const saved = JSON.parse(await readFile(document, 'utf8'))['opl-suite']
     expect(saved.executionLimits).toEqual(enabled)
     expect(saved.rememberPermissionPreset).toBe(true)
     await owner.dispose()
@@ -67,9 +67,9 @@ it('saves execution deadlines through official volatile-field validation and rel
       ...enabled,
       enabled: false,
     })
-    expect(
-      JSON.parse(await readFile(document, 'utf8'))['opl-execution'].executionLimits.enabled,
-    ).toBe(false)
+    expect(JSON.parse(await readFile(document, 'utf8'))['opl-suite'].executionLimits.enabled).toBe(
+      false,
+    )
   } finally {
     await harness?.dispose()
     await root.fiber.dispose()

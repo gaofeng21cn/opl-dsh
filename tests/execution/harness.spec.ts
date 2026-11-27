@@ -36,7 +36,7 @@ import { resolveGatewayExecution } from '../../src/gateway/host/execution-access
 import { GROK_API_KEY_REF } from '../../src/gateway/host/config.ts'
 import { testPeerConnection } from '../test-peer.ts'
 import { AcpProcess, HarnessConfigurationError } from '../../src/execution/host/acp.ts'
-import { createGrokMessageEditDriver } from '../../src/execution/host/message-edit-grok.ts'
+import { createCodexMessageEditDriver } from '../../src/execution/host/message-edit-codex.ts'
 import type {
   ExternalEditContext,
   ExternalEditHistory,
@@ -187,6 +187,68 @@ it('returns the persisted catalog while a live catalog refresh is pending', asyn
   })
 })
 
+it('excludes virtual OFM combos from persistence and filters hidden rows in fast fallback', async () => {
+  const { service, options, ctx } = await nativeSetup()
+  const initial = await service.executionCatalog()
+  await service.saveExecutionCatalog({
+    ...initial,
+    combinations: [
+      ...initial.combinations,
+      {
+        id: 'manual-ofm-model',
+        name: 'Manual OFM',
+        modelRef: { provider: 'our-free-model', model: 'opl-qualification-free' },
+        harnessRef: 'dsh',
+        permissionPolicy: 'workspace',
+        isDefault: true,
+        enabled: true,
+      },
+      {
+        id: 'manual-virtual-combo',
+        name: 'Virtual Combo',
+        modelRef: { provider: 'our-free-model', model: 'combo:qualification-route' },
+        harnessRef: 'dsh',
+        permissionPolicy: 'workspace',
+        isDefault: true,
+        enabled: true,
+      },
+    ],
+  })
+
+  const fastAfterSave = await service.executionCatalog({ fast: true })
+  expect(fastAfterSave.combinations.some((item) => item.id === 'manual-ofm-model')).toBe(true)
+  expect(fastAfterSave.combinations.some((item) => item.id === 'manual-virtual-combo')).toBe(false)
+
+  const store = new ExecutionCatalogStore(options.home)
+  const persisted = await store.get()
+  expect(persisted.combinations.some((item) => item.id === 'manual-virtual-combo')).toBe(false)
+
+  await store.set({
+    ...persisted,
+    combinations: [
+      ...persisted.combinations,
+      {
+        id: 'legacy-virtual-combo',
+        name: 'Legacy Virtual Combo',
+        modelRef: { provider: 'our-free-model', model: 'combo:legacy-route' },
+        harnessRef: 'dsh',
+        permissionPolicy: 'workspace',
+        isDefault: true,
+        enabled: true,
+      },
+    ],
+  })
+  const restarted = new HarnessService(ctx, options)
+  try {
+    const fastRestarted = await restarted.executionCatalog({ fast: true })
+    expect(fastRestarted.combinations.some((item) => item.id === 'legacy-virtual-combo')).toBe(
+      false,
+    )
+  } finally {
+    await restarted.dispose()
+  }
+})
+
 it('shares overlapping availability probes but refreshes completed and changed results', async () => {
   const { service } = await nativeSetup([{ id: 'deepseek-flash', name: 'DeepSeek' }])
   const snapshot = await service.executionCatalog()
@@ -250,40 +312,6 @@ describe('external completion observations', () => {
       owner.active.set(session.id, original)
     }
   })
-
-  it.each(['opencode', 'kilo'])(
-    'persists %s result input identity even when final history is unavailable',
-    async (harness) => {
-      const { service, root, options } = await setup()
-      const session = await start(service, root)
-      const owner = service as unknown as {
-        records: Map<string, HarnessSession>
-        active: Map<string, { acp: AcpProcess }>
-        pinSession(): Promise<void>
-        observeEditHistory(): Promise<ExternalEditHistory | undefined>
-        connectAdmitted(): Promise<void>
-      }
-      owner.records.get(session.id)!.harnessRef = harness
-      vi.spyOn(owner, 'pinSession').mockResolvedValue()
-      vi.spyOn(owner, 'observeEditHistory').mockResolvedValue(undefined)
-      vi.spyOn(owner, 'connectAdmitted').mockResolvedValue()
-      const acp = owner.active.get(session.id)!.acp
-      const request = acp.request.bind(acp)
-      vi.spyOn(acp, 'request').mockImplementation((method, ...args) =>
-        method === 'session/prompt'
-          ? Promise.resolve({ stopReason: 'refusal', userMessageId: 'exact-provider-input' })
-          : request(method, ...args),
-      )
-      await service.prompt({ sessionId: session.id, text: 'one', operationId: 'one' })
-      const settled = await wait(service, session.id)
-      expect(settled.turns[0]?.native?.userMessageId).toBe('exact-provider-input')
-      await service.dispose()
-      const stored = await new HarnessSessionStore(options.home).load()
-      expect(stored.find((row) => row.id === session.id)?.turns[0]?.native?.userMessageId).toBe(
-        'exact-provider-input',
-      )
-    },
-  )
 
   it.each([false, true])(
     'finishes history reconnection before completion (history read fails=%s)',
@@ -1092,10 +1120,10 @@ it('reads saved edit choices while the original model is absent without launchin
     { surfaceOp: 'append' },
   )
   const record = {
-    id: 'saved-pi-record',
+    id: 'saved-codex-record',
     nativeSessionId: real.id,
     acpSessionId: 'vendor-exact',
-    harnessRef: 'pi',
+    harnessRef: 'codex',
     turns: [{ operationId: 'original', native: { userMessageId: 'vendor-input', officialSeq: 0 } }],
   } as HarnessSession
   const owner = f.service as unknown as {
@@ -1103,7 +1131,7 @@ it('reads saved edit choices while the original model is absent without launchin
     connectAdmitted(): Promise<void>
   }
   Object.assign(f.ctx, { sessions: { get: () => real }, agents: { get: () => undefined } })
-  vi.spyOn(owner, 'stopEditTarget').mockReturnValue({ record, harness: 'pi' })
+  vi.spyOn(owner, 'stopEditTarget').mockReturnValue({ record, harness: 'codex' })
   const connect = vi.spyOn(owner, 'connectAdmitted').mockRejectedValue(Error('catalog removed'))
   expect(await f.service.messageEditState({ sessionId: real.id })).toMatchObject({
     supported: true,
@@ -2283,12 +2311,12 @@ describe('native conversation combinations', () => {
     const { service, ctx } = await nativeSetup([])
     const settings = {
       describe: () => [
-        { ns: 'opl-suite', value: { gatewayGroups: { gemini: true } }, revision: 1 },
         {
-          ns: 'llm-pi-ai',
+          ns: 'opl-suite',
           value: {
-            providers: {
-              'opl-gateway-gemini': {
+            gatewayGroups: { gemini: true },
+            gatewayChannels: {
+              gemini: {
                 models: [
                   { id: 'gemini-4-carbon', name: 'Gemini 4 Carbon' },
                   { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen' },
@@ -3385,11 +3413,11 @@ it.each([
     const quota = mode === 'quota' || mode === 'quota-restart'
     const rejected = quota || prepared || mode === 'unsent' || mode === 'ephemeral-unsent'
     const { Session, SessionId } = await import('@deepseek-ai/dsh-session')
-    const ref = { provider: 'opl-gateway', model: 'grok::grok-4.7' }
-    const f = await nativeSetup([{ id: ref.model, name: 'Grok' }])
+    const ref = { provider: 'opl-gateway', model: 'codex::gpt-test-model' }
+    const f = await nativeSetup([{ id: ref.model, name: 'Codex' }])
     const seed = Session.create(SessionId('native-session'))
     const real = Session.create(seed.id, undefined, { ...seed.header, cwd: f.root })
-    const adapter = adapterFor('grok-build', ref)!
+    const adapter = adapterFor('codex', ref)!
     vi.spyOn(adapter, 'available').mockResolvedValue({ available: true })
     vi.spyOn(adapter, 'prepare').mockResolvedValue({
       home: f.root,
@@ -3397,6 +3425,7 @@ it.each([
       args: [resolve('tests/fixtures/acp-agent.mjs')],
       env: {
         ...systemEnvironment(),
+        OPL_FIXTURE_MODEL: 'gpt-test-model',
         OPL_FIXTURE_EDIT: '1',
         OPL_FIXTURE_EDIT_PERSIST: '1',
         ...(['legacy-unbound-first', 'quota'].includes(String(mode))
@@ -3481,7 +3510,11 @@ it.each([
         },
       },
     })
-    await f.service.selectCombination({ sessionId: real.id, combination: GROK_COMBINATION })
+    const catalog = await f.service.executionCatalog()
+    const codexCombination = catalog.combinations.find(
+      (item) => item.harnessRef === 'codex' && item.modelRef.model === ref.model,
+    )!
+    await f.service.selectCombination({ sessionId: real.id, combination: codexCombination.id })
     const initialRequests = mode === 'legacy-ready-restart' ? ['first'] : ['first', 'second']
     for (const requestId of initialRequests) {
       number++
@@ -3562,7 +3595,7 @@ it.each([
       },
     }
     if (ephemeral) {
-      const driver = createGrokMessageEditDriver()
+      const driver = createCodexMessageEditDriver()
       const owner = f.service as unknown as { externalDriver(): ExternalMessageEditDriver }
       vi.spyOn(owner, 'externalDriver').mockReturnValue({
         read: driver.read,
@@ -3574,7 +3607,7 @@ it.each([
       })
     }
     if (mode === 'driver-disconnect') {
-      const driver = createGrokMessageEditDriver()
+      const driver = createCodexMessageEditDriver()
       const owner = f.service as unknown as { externalDriver(): ExternalMessageEditDriver }
       vi.spyOn(owner, 'externalDriver').mockReturnValue({
         read: driver.read,

@@ -57,10 +57,9 @@ test('an unversioned product fix gets the next stable patch', async (t) => {
   })
 })
 
-test('a split-plugin packaging fix prepares the next stable patch', async (t) => {
+test('a packaging fix prepares the next stable patch', async (t) => {
   const { root, latest, commit } = await fixture(t)
-  await mkdir(join(root, 'scripts'))
-  await writeFile(join(root, 'scripts/build-feature-plugins.mjs'), 'export const fixed = true\n')
+  await writeFile(join(root, 'build.mjs'), 'export const fixed = true\n')
   commit()
   assert.deepEqual(await planDailyRelease(root, latest), {
     action: 'prepare',

@@ -69,7 +69,7 @@ export interface HarnessDelegationHost {
 
 export function cooperationSettings(ctx: Context) {
   const value = (
-    featureSettings(ctx, 'opl-collaboration')?.value as
+    featureSettings(ctx, 'opl-suite')?.value as
       | { cooperation?: { autoReview?: boolean; maxRevisions?: number; externalCodex?: boolean } }
       | undefined
   )?.cooperation
@@ -90,7 +90,7 @@ export async function saveCooperationSettings(ctx: Context, input: unknown) {
     p.maxRevisions > 5
   )
     throw Error('协作设置无效')
-  const descriptor = featureSettings(ctx, 'opl-collaboration')!
+  const descriptor = featureSettings(ctx, 'opl-suite')!
   await ctx.settings.mutate(
     descriptor.ns,
     [

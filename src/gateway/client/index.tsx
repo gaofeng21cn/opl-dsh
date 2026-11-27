@@ -1,16 +1,16 @@
 import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
-/** Gateway account and model settings mount independently of execution. */
+/** Gateway account and model settings mount into one unified OPL Gateway page. */
 import type { Context } from '@deepseek-ai/cordis'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-models/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { internalGatewayProvider } from '../contracts/groups.ts'
-import { GatewayModels } from './GatewayModels.tsx'
 import { OplGatewaySection, type OplGatewaySectionInjected } from './OplGatewaySection.tsx'
 import { en, zh, type OplGatewayLocaleKey } from './locales.ts'
 import { remoteCall, optionalRemote } from '../../shared/client/remote-call.ts'
-import { installGatewayModelPresentation } from '../../compat/client/gateway-models.ts'
+import settingsCss from '../../shared/client/SettingsSection.module.css'
 export type { OplGatewaySectionInjected, OplGatewaySectionProps } from './OplGatewaySection.tsx'
 export type { OplGatewayLocaleKey } from './locales.ts'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -20,44 +20,52 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 const NS = 'settings.oplGateway'
 export const inject = ['slots', 'locale', 'remote']
-export function apply(ctx: Context, navigation: { openModels?: () => void } = {}): void {
+
+function OplGatewayModelsFooter({
+  t,
+  openGateway,
+}: PropsLocale<'settings.oplGateway'> & { openGateway?: () => void }) {
+  return (
+    <div className={settingsCss.modelsFooterCard} data-opl-panel="gateway-models-footer">
+      <div className={settingsCss.identity}>
+        <strong>{t('modelsFooterTitle')}</strong>
+        <p className={settingsCss.muted}>{t('modelsFooterHint')}</p>
+      </div>
+      {openGateway && (
+        <Button variant="outline" onClick={openGateway}>
+          {t('openGateway')}
+        </Button>
+      )}
+    </div>
+  )
+}
+
+export function apply(ctx: Context, navigation: { openGateway?: () => void } = {}): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-opl-gateway: dictionaries')
-  ctx.inject(['remote.oplGatewayModels'], (ctx) => {
-    const call = remoteCall(ctx.remote.oplGatewayModels)
-    ctx.effect(installGatewayModelPresentation)
-    ctx.slots.inject('settings.models.provider-card', () =>
-      ctx.slots.register(
-        {
-          name: 'settings.models.provider-card',
-          key: 'llm-pi-ai',
-        },
-        ({ provider }) =>
-          internalGatewayProvider(provider.provider) ? (
-            <span hidden data-opl-internal-provider />
-          ) : null,
-      ),
-    )
-    ctx.slots.inject('settings.models.provider-card', () =>
-      ctx.slots.register(
-        {
-          name: 'settings.models.provider-card',
-          key: 'opl-suite',
-        },
-        ({ provider }) =>
-          provider.provider === 'opl-gateway' ? <GatewayModels call={call} /> : null,
-      ),
-    )
-  })
+  ctx.slots.inject('settings.models.footer', () =>
+    ctx.slots.register(
+      {
+        name: 'settings.models.footer',
+        id: 'opl-gateway-models-entry',
+        locale: NS,
+        inject: () => ({
+          ...(navigation.openGateway ? { openGateway: navigation.openGateway } : {}),
+        }),
+      },
+      OplGatewayModelsFooter,
+    ),
+  )
   ctx.inject(['remote.oplGatewayAccount'], (ctx) => {
     const call = remoteCall(ctx.remote.oplGatewayAccount)
     const injected = (): OplGatewaySectionInjected => {
       const models = optionalRemote(ctx, 'oplGatewayModels')
+      const modelsCall = models ? remoteCall(models) : undefined
       return {
-        ...(navigation.openModels ? { openModels: navigation.openModels } : {}),
-        ...(models
+        ...(modelsCall
           ? {
+              modelsCall,
               setGroupActive: (id: string, enabled: boolean) =>
-                remoteCall(models)('activate', { id, enabled }),
+                modelsCall('activate', { id, enabled }),
             }
           : {}),
         codexTargets: () => call('codexTargets'),

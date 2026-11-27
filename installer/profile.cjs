@@ -9,14 +9,14 @@ const { officialPnpm } = require('./official-pnpm.cjs')
 const parsedArgs = parseArgs({
   args: process.argv.slice(2),
   options: {
-    plugin: { type: 'string', multiple: true, default: [] },
     'ofm-upgrade': { type: 'boolean', default: false },
+    'default-context': { type: 'boolean', default: false },
   },
   allowPositionals: true,
   strict: false,
 })
 const [application, home, archive, companion] = parsedArgs.positionals
-const plugins = (parsedArgs.values.plugin ?? []).map((item) => resolve(String(item)))
+const installDefaultContext = Boolean(parsedArgs.values['default-context'])
 const ofmUpgradeMode = Boolean(parsedArgs.values['ofm-upgrade'])
 const teamBundle = '@deepseek-ai/dsh-experimental-agent-team-profile'
 const computerUseBundle = '@deepseek-ai/dsh-cua-bundle'
@@ -119,43 +119,54 @@ async function main() {
     process.stdout.write(JSON.stringify(result) + '\n')
     return
   }
-  const { disabledOplPackages, migrateSplitSettings } = require('./split-plugins.cjs')
-  const names = [
-    '@one-person-lab/dsh-opl',
-    ...plugins.map((_, index) =>
-      index === 0 ? '@one-person-lab/dsh-execution' : '@one-person-lab/dsh-collaboration',
-    ),
+  const suitePackage = '@one-person-lab/dsh-opl'
+  const legacyOplPackages = [
+    '@one-person-lab/dsh-execution',
+    '@one-person-lab/dsh-collaboration',
   ]
-  if (plugins.length && plugins.length !== 2) throw Error('OPL 多插件安装清单不完整')
   const manifestBefore = boot.readProfileManifest('dsh', dir)
-  const disabled = disabledOplPackages(manifestBefore, names)
-  await preserveModelPlugins({ dir, install: () => install(['add', resolve(archive), ...plugins]) })
-  if (disabled.length) {
-    const manifest = boot.readProfileManifest('dsh', dir)
-    await restoreBundles(
-      (manifest.dsh?.profile?.bundles ?? []).filter((name) => !disabled.includes(name)),
-    )
-  }
-  const orderedManifest = boot.readProfileManifest('dsh', dir)
-  const currentBundles = orderedManifest.dsh?.profile?.bundles ?? []
-  const oplOrder = names.filter((name) => currentBundles.includes(name))
-  if (oplOrder.length > 1) {
-    const first = currentBundles.findIndex((name) => names.includes(name))
-    const remaining = currentBundles.filter((name) => !names.includes(name))
-    const next = [...remaining.slice(0, first), ...oplOrder, ...remaining.slice(first)]
-    if (JSON.stringify(next) !== JSON.stringify(currentBundles))
-      boot.writeProfileBundles(dir, orderedManifest, next)
-  }
-  if (plugins.length) {
-    const { withFileLock, writeFileAtomic } = await load('@deepseek-ai/dsh-atomic-write')
-    await migrateSplitSettings({
-      dir,
-      yaml: requireRuntime('yaml'),
-      withFileLock,
-      writeFileAtomic,
-      stopped: require('./ofm-owner.cjs').stopped,
-    })
-  }
+  const hadSuiteInstalled = Object.hasOwn(manifestBefore.dependencies ?? {}, suitePackage)
+  const suiteWasDisabled =
+    hadSuiteInstalled && !(manifestBefore.dsh?.profile?.bundles ?? []).includes(suitePackage)
+  await preserveModelPlugins({ dir, install: () => install(['add', resolve(archive)]) })
+  const { withFileLock: lockManifest, writeFileAtomic: writeAtomic } = await load(
+    '@deepseek-ai/dsh-atomic-write',
+  )
+  await lockManifest(
+    join(dir, 'package.json'),
+    async () => {
+      await require('./ofm-owner.cjs').stopped(dir)
+      const manifest = boot.readProfileManifest('dsh', dir)
+      let manifestChanged = false
+      if (manifest.dependencies) {
+        for (const legacy of legacyOplPackages) {
+          if (Object.hasOwn(manifest.dependencies, legacy)) {
+            delete manifest.dependencies[legacy]
+            manifestChanged = true
+          }
+        }
+      }
+      const currentBundles = manifest.dsh?.profile?.bundles ?? []
+      let nextBundles = currentBundles.filter((name) => !legacyOplPackages.includes(name))
+      if (suiteWasDisabled) nextBundles = nextBundles.filter((name) => name !== suitePackage)
+      if (manifestChanged || JSON.stringify(nextBundles) !== JSON.stringify(currentBundles)) {
+        manifest.dsh ??= {}
+        manifest.dsh.profile ??= {}
+        manifest.dsh.profile.bundles = nextBundles
+        await writeAtomic(join(dir, 'package.json'), JSON.stringify(manifest, null, 2) + '\n', {
+          mode: 0o600,
+        })
+      }
+    },
+    { waitMs: 1000 },
+  )
+  await migrateUnifiedPatchSettings({
+    dir,
+    yaml: requireRuntime('yaml'),
+    withFileLock: lockManifest,
+    writeFileAtomic: writeAtomic,
+    stopped: require('./ofm-owner.cjs').stopped,
+  })
   await installModelPlugins({ dir, install, restoreBundles })
   const { releaseOfmManaged } = require('./ofm-owner.cjs')
   await releaseOfmManaged({
@@ -250,7 +261,7 @@ async function main() {
   const contextReceipt = join(dir, 'opl-billion-context-default')
   const contextProfile = boot.readProfileManifest('dsh', dir)
   if (
-    plugins.length &&
+    installDefaultContext &&
     !existsSync(contextReceipt) &&
     contextProfile.dsh?.profile?.bundles?.includes('@deepseek-ai/dsh-base') &&
     !contextProfile.dsh.profile.bundles.includes('billion-context-dsh')
@@ -266,6 +277,61 @@ async function main() {
     writeFileSync(contextReceipt, '1\n', { mode: 0o600 })
   }
 }
+
+async function migrateUnifiedPatchSettings({ dir, yaml, withFileLock, writeFileAtomic, stopped }) {
+  const file = join(dir, 'cordis.patch.yml')
+  if (!existsSync(file)) return
+  await withFileLock(
+    file,
+    async () => {
+      await stopped(dir)
+      const original = readFileSync(file, 'utf8')
+      const document = yaml.parseDocument(original, { logLevel: 'silent' })
+      if (document.errors.length || !yaml.isSeq(document.contents))
+        throw new Error('OPL 插件设置合并迁移无法读取现有配置，已保留原文件')
+      const rows = document.contents.items
+      const legacyIds = new Set(['opl-execution', 'opl-collaboration'])
+      const legacyRows = rows.filter((row) => yaml.isMap(row) && legacyIds.has(row.get('id')))
+      if (!legacyRows.length) return
+      let suiteRow = rows.find((row) => yaml.isMap(row) && row.get('id') === 'opl-suite')
+      if (!suiteRow) {
+        suiteRow = document.createNode({ id: 'opl-suite', config: {} })
+        document.contents.add(suiteRow)
+      }
+      let suiteConfig = suiteRow.get('config', true)
+      if (!suiteConfig) {
+        suiteConfig = document.createNode({})
+        suiteRow.set('config', suiteConfig)
+      }
+      if (!yaml.isMap(suiteConfig))
+        throw new Error('opl-suite 配置不是映射结构，已保留现有配置文件')
+      for (const row of legacyRows) {
+        const legacyConfig = row.get('config', true)
+        if (yaml.isMap(legacyConfig)) {
+          for (const pair of legacyConfig.items) {
+            const key = pair.key?.value ?? pair.key
+            if (typeof key !== 'string' || key === 'toolAutoReview') continue
+            if (yaml.isScalar(pair.value) && (pair.value.value === null || pair.value.value === undefined))
+              continue
+            if (pair.value === null || pair.value === undefined) continue
+            if (!suiteConfig.has(key)) {
+              suiteConfig.set(key, pair.value?.clone ? pair.value.clone() : pair.value)
+            }
+          }
+        }
+      }
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const row = rows[i]
+        if (yaml.isMap(row) && legacyIds.has(row.get('id'))) rows.splice(i, 1)
+      }
+      const backup = join(dir, 'cordis.patch.before-v2-merge.yml')
+      if (!existsSync(backup)) writeFileSync(backup, original, { mode: 0o600, flag: 'wx' })
+      await writeFileAtomic(file, document.toString(), { mode: 0o600 })
+    },
+    { waitMs: 1000 },
+  )
+}
+
 main().catch((error) => {
   console.error(error.message)
   process.exitCode = 1

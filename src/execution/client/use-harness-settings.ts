@@ -10,7 +10,7 @@ import {
 } from './proxy-draft.ts'
 /** Detection, maintenance polling and catalog edits share one busy/error owner. */
 export function useHarnessSettings(call: ExecutionCall) {
-  const [draft, setDraft] = useState({ name: '', command: '' })
+  const [draft, setDraft] = useState({ name: '', command: '', args: '' })
   const [items, setItems] = useState<HarnessInstallation[]>([])
   const [proxyDrafts, setProxyDrafts] = useState<Record<string, ProxyDraft>>({})
   const [proxyErrors, setProxyErrors] = useState<Record<string, string>>({})
@@ -76,6 +76,7 @@ export function useHarnessSettings(call: ExecutionCall) {
     })
   const register = async () => {
     let saved = false
+    const prefix = draft.args.trim() ? draft.args.trim().split(/\s+/) : undefined
     await act(async () => {
       const catalog = await call('catalog')
       await call('save-catalog', {
@@ -88,6 +89,8 @@ export function useHarnessSettings(call: ExecutionCall) {
               name: draft.name.trim(),
               kind: 'acp',
               command: draft.command.trim(),
+              adapter: 'acp-custom',
+              ...(prefix ? { prefix } : {}),
             },
           ],
         },
@@ -97,7 +100,7 @@ export function useHarnessSettings(call: ExecutionCall) {
         throw new Error('Harness 已登记；检测状态未刷新，请重新检测。')
       })
     })
-    if (saved && mounted.current) setDraft({ name: '', command: '' })
+    if (saved && mounted.current) setDraft({ name: '', command: '', args: '' })
   }
   useEffect(() => {
     setProxyDrafts((current) => {

@@ -14,7 +14,6 @@ const vibe: ModelRef = {
   provider: 'our-free-model',
   model: 'mistralai/mistral-large-4-1t-a52b',
 }
-const step: ModelRef = { provider: 'our-free-model', model: 'step-5-preview-free' }
 const flash: ModelRef = { provider: 'minimax-official', model: 'MiniMax-M3.1-Flash' }
 const m3: ModelRef = { provider: 'minimax-official', model: 'MiniMax-M3' }
 const deepseek: ModelRef = { provider: 'deepseek', model: 'deepseek-chat' }
@@ -45,12 +44,7 @@ function reading(
 ): HarnessContextReading {
   return {
     ...model,
-    harness:
-      model.model === vibe.model
-        ? 'vibe'
-        : model.model === step.model
-          ? 'step-code'
-          : 'minimax-code',
+    harness: model.model === vibe.model ? 'vibe' : 'minimax-code',
     operationId: 'completed-operation',
     contextUsage,
   }
@@ -233,7 +227,7 @@ describe('official Harness context meter projection', () => {
     }
   })
 
-  it.each([vibe, step, flash, m3])(
+  it.each([vibe, flash, m3])(
     'uses $model occupancy in the resident official composer',
     async (model) => {
       const f = await mount(model)
@@ -307,7 +301,7 @@ describe('official Harness context meter projection', () => {
       await f.reject(1)
       expect(f.observed.pressure).toBeUndefined()
       await f.changed()
-      await f.resolve(2, { ...reading(vibe, { used: 100, size: 1000 }), harness: 'step-code' })
+      await f.resolve(2, { ...reading(vibe, { used: 100, size: 1000 }), harness: 'minimax-code' })
       expect(f.observed.pressure).toBeUndefined()
     } finally {
       await f.dispose()
@@ -337,18 +331,18 @@ describe('official Harness context meter projection', () => {
   it('clears switched models and sessions before accepting their own completed context', async () => {
     const f = await mount()
     try {
-      await f.change({ selection: { next: step } })
+      await f.change({ selection: { next: flash } })
       expect(f.observed.pressure).toBeUndefined()
       await f.resolve(0, reading(vibe, { used: 900, size: 1000 }))
       expect(f.observed.pressure).toBeUndefined()
-      await f.resolve(1, reading(step, { used: 20, size: 2000 }))
+      await f.resolve(1, reading(flash, { used: 20, size: 2000 }))
       expect(f.observed.pressure).toMatchObject({ projectedTokens: 20, contextWindow: 2000 })
       await f.changed()
       await f.session('session-b')
       expect(f.observed.pressure).toBeUndefined()
-      await f.resolve(2, reading(step, { used: 800, size: 2000 }))
+      await f.resolve(2, reading(flash, { used: 800, size: 2000 }))
       expect(f.observed.pressure).toBeUndefined()
-      await f.resolve(3, reading(step, { used: 40, size: 2000 }))
+      await f.resolve(3, reading(flash, { used: 40, size: 2000 }))
       expect(f.observed.pressure).toMatchObject({ projectedTokens: 40, contextWindow: 2000 })
       expect(f.contextUsage.mock.calls.map(([sessionId]) => sessionId)).toEqual([
         'session-a',

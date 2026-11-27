@@ -1,6 +1,4 @@
-import { readFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { parse } from 'yaml'
 import { openaiProvider } from '@earendil-works/pi-ai/providers/openai'
 import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic'
 import { xaiProvider } from '@earendil-works/pi-ai/providers/xai'
@@ -15,6 +13,8 @@ import LlmRuntime from '@deepseek-ai/dsh-llm'
 import * as PiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { GATEWAY_GROUPS, type GatewayGroupId } from '../../src/gateway/contracts/groups.ts'
+import { DEFAULT_GATEWAY_CHANNELS } from '../../src/gateway/host/channel-defaults.ts'
+import * as OplGateway from '../../src/gateway/host/index.ts'
 import {
   GATEWAY_MODEL_INPUT_DEFAULTS,
   withGatewayModelInputDefaults,
@@ -24,10 +24,6 @@ import { resolveGatewayExecution } from '../../src/gateway/host/execution-access
 import type { ModelDraft } from '../../src/gateway/contracts/models.ts'
 
 afterEach(() => vi.unstubAllGlobals())
-const patch = parse(await readFile(new URL('../../cordis.patch.yml', import.meta.url), 'utf8'), {
-  customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: (value: string) => value }],
-})
-const profiles = patch.find((entry: { id?: string }) => entry.id === 'llm-pi-ai').config.providers
 function connection(group: GatewayGroupId) {
   const definition = GATEWAY_GROUPS.find((entry) => entry.id === group)!
   return {
@@ -74,10 +70,9 @@ describe('exact Gateway input defaults', () => {
       const model = catalogModel(entry)
       expect(model, `${entry.group}/${entry.id}`).toBeDefined()
       expect(entry.input).toEqual(model!.input)
-      const definition = GATEWAY_GROUPS.find((group) => group.id === entry.group)!
-      const seed = profiles[definition.provider]?.models.find(
-        (model: ModelDraft) => model.id === entry.id,
-      )
+      const seed = DEFAULT_GATEWAY_CHANNELS[
+        entry.group as keyof typeof DEFAULT_GATEWAY_CHANNELS
+      ]?.models?.find((model: ModelDraft) => model.id === entry.id)
       if (seed) expect(seed.input).toEqual(model!.input)
       else
         expect([
@@ -240,10 +235,9 @@ describe('exact Gateway input defaults', () => {
   ])(
     'uses effective route inputs for execution when a model input is empty: $defaultInput',
     async ({ defaultInput, imageInput }) => {
-      const provider = 'opl-gateway-openai'
       const model = 'gpt-6.1-sol'
-      const providers = {
-        [provider]: {
+      const gatewayChannels = {
+        codex: {
           ...connection('codex'),
           defaultInput,
           models: [{ id: model, input: [] }],
@@ -252,9 +246,7 @@ describe('exact Gateway input defaults', () => {
       const fetch = vi.fn(async () => {
         throw Error('Metadata test forbids network')
       })
-      const resolve = vi.fn(async () => {
-        throw Error('Metadata test forbids credential reads')
-      })
+      const resolve = vi.fn(async () => ({ value: 'fixture-key' }))
       vi.stubGlobal('fetch', fetch)
       const ctx = new Context()
       ctx.provide(
@@ -263,17 +255,15 @@ describe('exact Gateway input defaults', () => {
       )
       ctx.provide('credentials', { resolve })
       ctx.provide('settings', {
-        describe: () => [
-          { ns: 'opl-suite', value: {} },
-          { ns: 'llm-pi-ai', value: { providers } },
-        ],
+        configure: () => () => {},
+        describe: () => [{ ns: 'opl-suite', value: { gatewayChannels } }],
       })
       try {
         await ctx.plugin(LlmRuntime)
-        await ctx.plugin(PiAi, { providers })
-        expect((await ctx.llm.resolveModelInfo(provider, model)).inputModalities).toEqual(
-          defaultInput,
-        )
+        await ctx.plugin(OplGateway, {})
+        expect(
+          (await ctx.llm.resolveModelInfo('opl-gateway', `codex::${model}`)).inputModalities,
+        ).toEqual(defaultInput)
         expect(
           (
             await resolveGatewayExecution(
@@ -283,22 +273,19 @@ describe('exact Gateway input defaults', () => {
             )
           ).imageInput,
         ).toBe(imageInput)
-        expect(providers[provider].models[0]!.input).toEqual([])
+        expect(gatewayChannels.codex.models[0]!.input).toEqual([])
         expect(fetch).not.toHaveBeenCalled()
-        expect(resolve).not.toHaveBeenCalled()
       } finally {
         await ctx.fiber.dispose()
       }
     },
   )
 
-  it('exposes seeded image metadata through the actual adapter and external route without auth or network', async () => {
+  it('exposes seeded image metadata through the actual adapter and external route without network', async () => {
     const fetch = vi.fn(async () => {
       throw Error('Metadata test forbids network')
     })
-    const resolve = vi.fn(async () => {
-      throw Error('Metadata test forbids credential reads')
-    })
+    const resolve = vi.fn(async () => ({ value: 'fixture-key' }))
     vi.stubGlobal('fetch', fetch)
     const ctx = new Context()
     ctx.provide(
@@ -307,22 +294,19 @@ describe('exact Gateway input defaults', () => {
     )
     ctx.provide('credentials', { resolve })
     ctx.provide('settings', {
-      describe: () => [
-        { ns: 'opl-suite', value: { gatewayGroups: { kiro: true } } },
-        { ns: 'llm-pi-ai', value: { providers: profiles } },
-      ],
+      configure: () => () => {},
+      describe: () => [{ ns: 'opl-suite', value: { gatewayGroups: { kiro: true } } }],
     })
     try {
       await ctx.plugin(LlmRuntime)
-      await ctx.plugin(PiAi, { providers: profiles })
+      await ctx.plugin(OplGateway, {})
       for (const entry of GATEWAY_MODEL_INPUT_DEFAULTS) {
-        const definition = GATEWAY_GROUPS.find((group) => group.id === entry.group)!
-        if (
-          !profiles[definition.provider]?.models.some((model: ModelDraft) => model.id === entry.id)
-        )
-          continue
+        const channel =
+          DEFAULT_GATEWAY_CHANNELS[entry.group as keyof typeof DEFAULT_GATEWAY_CHANNELS]
+        if (!channel?.models?.some((model: ModelDraft) => model.id === entry.id)) continue
         expect(
-          (await ctx.llm.resolveModelInfo(definition.provider, entry.id)).inputModalities,
+          (await ctx.llm.resolveModelInfo('opl-gateway', `${entry.group}::${entry.id}`))
+            .inputModalities,
         ).toEqual(entry.input)
         expect(
           (
@@ -335,7 +319,6 @@ describe('exact Gateway input defaults', () => {
         ).toBe(true)
       }
       expect(fetch).not.toHaveBeenCalled()
-      expect(resolve).not.toHaveBeenCalled()
     } finally {
       await ctx.fiber.dispose()
     }

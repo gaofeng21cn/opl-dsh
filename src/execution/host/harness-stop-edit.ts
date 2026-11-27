@@ -29,18 +29,16 @@ import {
 } from './message-edit.ts'
 import { claudeMessageEditDriver } from './message-edit-claude.ts'
 import { codexMessageEditDriver } from './message-edit-codex.ts'
-import type {
-  ExternalEditContext,
-  ExternalEditHistory,
-  ExternalMessageEditDriver,
+import {
+  ExternalMessageEditError,
+  type ExternalEditContext,
+  type ExternalEditHistory,
+  type ExternalMessageEditDriver,
 } from './message-edit-driver.ts'
 import {
   ExternalMessageEditTransactions,
   externalEditRecordFingerprint,
 } from './message-edit-external.ts'
-import { grokMessageEditDriver } from './message-edit-grok.ts'
-import { createKiloMessageEditDriver, readStoredKiloHistory } from './message-edit-kilo.ts'
-import { kimiMessageEditDriver } from './message-edit-kimi.ts'
 import {
   externalEditChoices,
   externalEditedRecord,
@@ -54,13 +52,6 @@ import {
   externalUnsentEmptyChoice,
   externalUnsentNativeRecovery,
 } from './message-edit-mapping.ts'
-import { minimaxMessageEditDriver, MinimaxEditError } from './message-edit-minimax.ts'
-import { createOpenCodeMessageEditDriver } from './message-edit-opencode.ts'
-import { ExternalMessageEditError } from './message-edit-opencode-common.ts'
-import { piMessageEditDriver } from './message-edit-pi.ts'
-import { poolMessageEditDriver } from './message-edit-pool.ts'
-import { stepMessageEditDriver } from './message-edit-step.ts'
-import { zcodeMessageEditDriver } from './message-edit-zcode.ts'
 import { resolvePromptContent } from './multimodal-prompt.ts'
 import { harnessPermissionPreset } from './permissions.ts'
 import type { RuntimeMaintenance } from './runtime-maintenance.ts'
@@ -74,19 +65,13 @@ import {
 } from './stop-edit.ts'
 import type { StopEditIntentStore } from './stop-edit-intent.ts'
 import {
-  HISTORY_LIST,
-  HISTORY_REWIND,
-  minimaxStopEditRuntime,
-  readMinimaxCapability,
-  type MinimaxHistorySource,
-  type MinimaxReview,
-} from './stop-edit-minimax.ts'
-import {
   nativeStopEditRuntime,
   readNativeUserMessages,
   type NativeReviewFacts,
   type NativeSessionSource,
 } from './stop-edit-native.ts'
+
+export type StopEditReview = NativeReviewFacts
 import { parseMiniMaxTurnUsage } from './usage-account.ts'
 import { asSessionId, hash, now, required, type Active } from './harness-types.ts'
 
@@ -124,7 +109,6 @@ export interface HarnessStopEditContext {
   externalContext(record: HarnessSession, signal: AbortSignal): ExternalEditContext
   disconnectIdleConnection(record: HarnessSession, expected?: Active): Promise<void>
   externalHistory(record: HarnessSession): Promise<ExternalEditHistory>
-  storedKiloHistory(record: HarnessSession): Promise<ExternalEditHistory>
   externalRecoveryHistory(
     record: HarnessSession,
     intent: ReturnType<ExternalMessageEditTransactions['intent']>,
@@ -133,7 +117,7 @@ export interface HarnessStopEditContext {
   stopEditTarget(sessionId: string): StopEditTarget | undefined
   stopEditBlocked(sessionId: string): string | undefined
   stopEditRuntime(target: StopEditTarget): StopEditRuntime | undefined
-  stopEditReviewBySession(sessionId: string): MinimaxReview
+  stopEditReviewBySession(sessionId: string): StopEditReview
   stopEditBusy(target: StopEditTarget): boolean
   stopEditSettle(target: StopEditTarget): Promise<void>
   commitStopEdit(input: {
@@ -157,24 +141,6 @@ export function externalDriver(record: HarnessSession): ExternalMessageEditDrive
       return codexMessageEditDriver
     case 'claude':
       return claudeMessageEditDriver
-    case 'grok-build':
-      return grokMessageEditDriver
-    case 'minimax-code':
-      return minimaxMessageEditDriver
-    case 'zcode':
-      return zcodeMessageEditDriver
-    case 'opencode':
-      return createOpenCodeMessageEditDriver()
-    case 'kilo':
-      return createKiloMessageEditDriver()
-    case 'pi':
-      return piMessageEditDriver()
-    case 'kimi-code':
-      return kimiMessageEditDriver()
-    case 'pool':
-      return poolMessageEditDriver()
-    case 'step-code':
-      return stepMessageEditDriver()
     default:
       return undefined
   }
@@ -218,31 +184,6 @@ export function externalContext(
       if (id !== record.acpSessionId) throw Error('新会话身份必须先持久保存')
       await host.connectAdmitted(record)
     },
-    replayHistory: async () => {
-      const current = host.active.get(record.id)
-      if (!current?.acp || current.turn || current.editReplay) throw Error('外部会话暂时无法回读')
-      const replay = { text: '', boundaries: [] as { id: string; text: string }[] }
-      current.editReplay = replay
-      try {
-        await current.acp.request(
-          'session/load',
-          {
-            sessionId: record.acpSessionId,
-            cwd: current.editLaunch?.acpCwd ?? record.cwd,
-            mcpServers: current.mcpServers ?? [],
-          },
-          30_000,
-        )
-        if (signal.aborted || replay.text) throw Error('外部历史回读未确认')
-        return {
-          sessionId: record.acpSessionId,
-          token: hash(replay.boundaries),
-          boundaries: replay.boundaries,
-        }
-      } finally {
-        delete current.editReplay
-      }
-    },
   }
 }
 
@@ -267,10 +208,7 @@ export async function externalHistory(
   host: HarnessStopEditContext,
   record: HarnessSession,
 ): Promise<ExternalEditHistory> {
-  const active = host.active.get(record.id)
-  const stored = record.harnessRef === 'kilo' && (!active?.acp || active.acp.closed)
-  if (stored && active) await host.disconnectIdleConnection(record, active)
-  if (!stored) await host.connectAdmitted(record)
+  await host.connectAdmitted(record)
   const fingerprint = externalEditRecordFingerprint(record)
   const cached = host.externalHistories.get(record.id)
   if (cached?.fingerprint === fingerprint) return cached.history
@@ -287,12 +225,10 @@ export async function externalHistory(
     !last.native?.userMessageId
       ? { ...record, turns: record.turns.slice(0, -1) }
       : record
-  const history = stored
-    ? await host.storedKiloHistory(readRecord)
-    : await driver.read({
-        ...host.externalContext(record, new AbortController().signal),
-        record: readRecord,
-      })
+  const history = await driver.read({
+    ...host.externalContext(record, new AbortController().signal),
+    record: readRecord,
+  })
   if (
     externalEditRecordFingerprint(record) !== fingerprint ||
     history.sessionId !== record.acpSessionId
@@ -302,23 +238,6 @@ export async function externalHistory(
   const current = host.active.get(record.id)
   if (current) current.editHistory = history
   return history
-}
-
-/** Read persisted Kilo identities without preparing a route to a possibly retired model. */
-export async function storedKiloHistory(
-  host: HarnessStopEditContext,
-  record: HarnessSession,
-): Promise<ExternalEditHistory> {
-  const harness = (await host.catalogStore.get()).harnesses.find((h) => h.id === 'kilo')
-  return readStoredKiloHistory(
-    record,
-    {
-      home: host.directory,
-      ...(harness?.command ? { command: harness.command } : {}),
-      ...(harness?.prefix ? { prefix: harness.prefix } : {}),
-    },
-    new AbortController().signal,
-  )
 }
 
 /** Read a vendor prefix for a terminal replacement failure without mapping the failed input. */
@@ -339,11 +258,6 @@ export async function externalRecoveryHistory(
     return host.externalHistory(record)
   const driver = host.externalDriver(record)
   if (!driver) throw Error('此执行引擎尚不支持编辑消息')
-  const active = host.active.get(record.id)
-  if (record.harnessRef === 'kilo' && (!active?.acp || active.acp.closed)) {
-    if (active) await host.disconnectIdleConnection(record, active)
-    return host.storedKiloHistory({ ...record, turns: record.turns.slice(0, -1) })
-  }
   await host.connectAdmitted(record)
   return driver.read({
     ...host.externalContext(record, new AbortController().signal),
@@ -422,12 +336,7 @@ export async function messageEditState(
       return { ...base, supported: true, choices: [] }
     const intent = host.externalMessageEdits.intent(session.id)
     const lastTurn = record.turns.at(-1)
-    const terminalEdit = Boolean(
-      ['opencode', 'kilo'].includes(record.harnessRef) &&
-      ['settled', 'uncertain'].includes(intent?.phase ?? '') &&
-      lastTurn?.state === 'failed' &&
-      lastTurn.operationId === 'message-edit:' + intent?.requestId,
-    )
+    const terminalEdit = false
     const preparedChoice = externalPreparedChoice(
       record,
       intent,
@@ -575,7 +484,7 @@ export async function messageEditState(
       }
     } catch (error) {
       const code =
-        error instanceof MinimaxEditError || error instanceof ExternalMessageEditError
+        error instanceof ExternalMessageEditError
           ? error.code
           : error instanceof HarnessConfigurationError
             ? 'configuration'
@@ -1036,42 +945,9 @@ export function stopEditRuntime(
   target: StopEditTarget,
 ): StopEditRuntime | undefined {
   const record = target.record
-  if (record && record.harnessRef !== 'dsh' && record.harnessRef !== MINIMAX_CODE_HARNESS)
-    return undefined
+  if (record && record.harnessRef !== 'dsh') return undefined
   if (target.harness === 'dsh') return nativeStopEditRuntime(nativeStopEditSource(host))
-  const acp = record ? host.active.get(record.id)?.acp : undefined
-  if (!record || !acp) return undefined
-  const source: MinimaxHistorySource = {
-    capability: () => readMinimaxCapability(host.active.get(record.id)?.agentInfo),
-    list: (sessionId) => minimaxHistory(host, record, HISTORY_LIST, { sessionId }),
-    rewind: (sessionId, userMessageId, clientRequestId) =>
-      minimaxHistory(host, record, HISTORY_REWIND, {
-        sessionId,
-        userMessageId,
-        clientRequestId,
-        rewindTurnDiff: false,
-      }),
-    deletedMessageIds: (value) =>
-      Array.isArray((value as any)?.deletedMessageIds)
-        ? ((value as any).deletedMessageIds as unknown[]).filter(
-            (item): item is string => typeof item === 'string',
-          )
-        : [],
-    review: () => host.stopEditReviewBySession(record.nativeSessionId ?? record.acpSessionId),
-  }
-  return minimaxStopEditRuntime(source, nativeStopEditSource(host))
-}
-
-async function minimaxHistory(
-  host: HarnessStopEditContext,
-  record: HarnessSession,
-  method: string,
-  params: object,
-): Promise<unknown> {
-  const acp = host.active.get(record.id)?.acp
-  if (!acp || acp.closed)
-    throw new StopEditError('capability-missing', 'Harness 连接未就绪，无法读取或回退会话历史')
-  return acp.request(method, params, 60_000)
+  return undefined
 }
 
 function nativeStopEditSource(host: HarnessStopEditContext): NativeSessionSource {
@@ -1116,7 +992,7 @@ function nativeStopEditSource(host: HarnessStopEditContext): NativeSessionSource
 export function stopEditReviewBySession(
   host: HarnessStopEditContext,
   sessionId: string,
-): MinimaxReview {
+): StopEditReview {
   const session = host.ctx.sessions.get(asSessionId<SessionId>(sessionId))
   const record = [...host.records.values()].find(
     (item) => item.acpSessionId === sessionId || item.nativeSessionId === sessionId,
@@ -1305,6 +1181,8 @@ export async function recordMiniMaxUsage(
   await host.save(record)
 }
 
+export const HISTORY_BOUNDARY = 'opl/session/history/boundary'
+
 export async function recordNativeBoundary(
   host: HarnessStopEditContext,
   record: HarnessSession,
@@ -1316,7 +1194,7 @@ export async function recordNativeBoundary(
   const userMessageId = typeof data.userMessageId === 'string' ? data.userMessageId : ''
   if (!clientRequestId || !userMessageId) return
   const turn = record.turns.find((item) => item.operationId === clientRequestId)
-  if (!turn || turn.native?.userMessageId === userMessageId) return
+  if (!turn || turn.native?.turnId) return
   turn.native = {
     ...turn.native,
     userMessageId,

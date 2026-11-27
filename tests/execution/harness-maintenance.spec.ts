@@ -71,8 +71,6 @@ it('provides fixed official install plans for missing CLIs', () => {
       | 'antigravity'
       | 'qwen-code'
       | 'minimax-code'
-      | 'mimo-code'
-      | 'step-code'
       | 'opencode'
       | 'kilo'
       | 'pi'
@@ -98,8 +96,6 @@ it('provides fixed official install plans for missing CLIs', () => {
     ['antigravity', 'antigravity.google/cli/install.'],
     ['qwen-code', '@qwen-code/qwen-code@0.27.3'],
     ['minimax-code', 'filecdn.minimax.chat/public/install.'],
-    ['mimo-code', 'mimo.xiaomi.com/install'],
-    ['step-code', 'static-openapi.stepfun.com/stepcode/install.'],
     ['opencode', 'opencode-ai@1.19.0'],
     ['kilo', '@kilocode/cli@7.8.8'],
     ['pi', '@earendil-works/pi-coding-agent'],

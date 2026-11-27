@@ -333,33 +333,3 @@ export function claudeContextCapacity(
   const capacity = object(models[model]).contextWindow
   return normalizeNativeContextUsage({ ...(capacity === undefined ? {} : { size: capacity }) })
 }
-
-/** ZCode turn.completed.payload.usage is a full turn aggregate with inclusive input. */
-export function normalizeZcodeTurnUsage(value: unknown): NativeTokenUsage | undefined {
-  const usage = object(object(value).payload).usage
-  const normalized = normalizeNativeUsage(usage, 'input-inclusive-cache')
-  if (!normalized) return undefined
-  const summary = object(usage)
-  const summaryFields = [
-    ['totalTokens', summary.totalTokens],
-    ['cacheReadTokens', summary.cacheReadTokens],
-    ['cacheWriteTokens', summary.cacheWriteTokens],
-    ['reasoningTokens', summary.reasoningTokens],
-  ] as const
-  for (const [key, raw] of summaryFields) {
-    if (raw === undefined) continue
-    const count = integer(raw)
-    if (count === undefined) return undefined
-    if (key === 'totalTokens' && count !== normalized.totalTokens) return undefined
-    if (key === 'cacheReadTokens' && count !== normalized.cacheReadTokens) return undefined
-    if (key === 'cacheWriteTokens' && count !== normalized.cacheWriteTokens) return undefined
-    if (key === 'reasoningTokens' && count !== normalized.reasoningTokens) return undefined
-  }
-  return normalized
-}
-
-/** ZCode snapshots carry active context independently of cumulative projection tokenCount. */
-export function zcodeSnapshotContext(value: unknown): NativeContextUsage | undefined {
-  const context = object(object(value).runtime).contextUsage
-  return normalizeNativeContextUsage(context)
-}

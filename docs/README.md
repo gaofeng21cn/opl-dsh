@@ -7,24 +7,19 @@
 | 文档 | 职责 |
 | --- | --- |
 | [首次启动与登录](first-run.md) | 桌面/Linux 首启、登录路径（含 Windows 记住密码）、官方欢迎窗口衔接，以及[在 Codex 中使用 OPL 网关](first-run.md#在-codex-中使用-opl-网关) |
-| [日常使用指南](everyday-guide.md) | 无项目聊天、会话清理、编辑与轮次统计、通用设置、文件交付、系统通知、更新、超时与用量 |
-| [模型与执行组合指南](model-harness-guide.md) | 用户侧模型来源、执行引擎检测/更新与执行组合上手指南 |
+| [日常使用指南](everyday-guide.md) | 无项目聊天、编辑与轮次统计、通用设置、文件交付、系统通知、更新、超时与用量 |
+| [模型与执行组合指南](model-harness-guide.md) | 用户侧模型来源、执行引擎检测/更新、自定义标准 ACP 与聊天框就地切换 |
 | [官方 MiniMax 账号与 mcode](minimax-code.md) | MiniMax 官方账号与 `mcode` 集成、登录、代理、权限与 Skill 委派 |
-| [MiniMax Bash 候选版](minimax-bash-candidate.md) | Windows `mcode` 候选版构建、安全闸门与 Host 选择契约 |
 | [从 Codex 委派任务给 DSH](codex-task-delegation.md) | 从 Codex 委派任务给 DSH 的配置、回执与核对指南 |
-| [桌面观察与操作（Computer Use）](computer-use.md) | macOS KimiCU / Windows WinCU 桌面观察与操作指南 |
 
-## 协作、审批与功能契约
+## 协作与功能契约
 
 | 文档 | 职责 |
 | --- | --- |
 | [事件驱动的项目续作](project-coordinator.md) | 项目协调器计划、Hook、Watcher、审查回执与恢复边界 |
 | [跨 Harness 团队接入](cross-harness-team.md) | 跨 Harness 团队接入与 OPL 领域智能体预设 |
-| [Auto Review 工具审批](auto-review.md) | 原生 Auto Review 边界、OPL 路线与 StartLux/Jev 决策模型 |
 | [编辑消息](stop-edit.md) | 停止后编辑重发与外部 CLI 分支/恢复技术契约 |
-| [Agent 原生应用与 MCP Apps](mcp-apps.md) | 无 UI 应用交接诊断与当前官方 MCP Apps 公开接口缺口 |
 | [并行写入与工作树](parallel-writes.md) | 并行写入、官方 worktree 与窄 `writeScope` 长期约束（`AGENTS.md` 引用） |
-| [SuperAgent 仓库协作](superagent.md) | SuperAgent 仓库协作原型接入与独立实例边界 |
 
 ## 架构、开发、验证与发布
 
@@ -40,5 +35,5 @@
 
 ## 机器消费与静态资产
 
-- `docs/plugins/*.md`（6 份）：由 `scripts/build-feature-plugins.mjs` 打包为三个拆包插件的离线中英文详情说明，勿按普通说明删改文件名。
+- `docs/plugins/opl-dsh.{zh,en}.md`：打包为单一插件 `@one-person-lab/dsh-opl` 离线中英文说明的源文件（由 `build.mjs` 复制）。
 - `docs/images/guides/`：用户指南嵌入截图资源。

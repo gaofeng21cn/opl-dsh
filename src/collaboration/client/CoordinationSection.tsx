@@ -12,10 +12,12 @@ export function CoordinationSection({
   call,
   executionCall,
   roleCall,
+  embedded = false,
 }: {
   call: CoordinationCall
   executionCall?: ExecutionCall
   roleCall?: RoleExecutionCall
+  embedded?: boolean
 }) {
   const {
     cooperation,
@@ -60,7 +62,7 @@ export function CoordinationSection({
       data-opl-panel="collaboration"
       aria-busy={busy || cooperationBusy || cooperationLoading || (!status && !notice)}
     >
-      <h2 className={css.title}>协作与自动化</h2>
+      {embedded ? null : <h2 className={css.title}>协作与自动化</h2>}
       <section className={css.collaborationGroup}>
         <h3 className={css.name}>DSH 内协作</h3>
         {!executionCall && (
@@ -289,40 +291,6 @@ export function CoordinationSection({
             <CoordinatorHooks {...hooks} />
           </details>
         </div>
-      </section>
-      {status?.sessionRecycleSupported && (
-        <section className={css.collaborationGroup}>
-          <h3 className={css.name}>清理 DSH 会话</h3>
-          <p className={css.muted}>
-            打开 Codex，输入“使用 $opl-dsh-session-cleanup，把 DSH
-            已归档的会话移到回收站，保留未归档会话”。也可以指定某个会话。
-          </p>
-        </section>
-      )}
-      <section className={css.collaborationGroup}>
-        <div className={css.row}>
-          <h3 className={css.name}>仓库自动化 · SuperAgent</h3>
-          {status?.superagentSupported ? (
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() =>
-                void act(async () => {
-                  const result = await call('superagent-open')
-                  if (result.state === 'running')
-                    throw new Error('SuperAgent 正在启动，请稍后重试。')
-                }, '已打开 SuperAgent 独立页面。')
-              }
-            >
-              打开 SuperAgent
-            </Button>
-          ) : (
-            <span className={css.muted}>{status ? '当前平台不支持' : '正在检查…'}</span>
-          )}
-        </div>
-        {status?.superagentSupported && (
-          <p className={css.muted}>在独立窗口管理 GitHub 仓库、飞书机器人和授权名单。</p>
-        )}
       </section>
     </div>
   )

@@ -34,7 +34,7 @@
  * wire value instead of refusing it. The id and attribution stay OFM's.
  */
 import { EAC_OPENCODE_NAMES, GATEWAY_ANTIGRAVITY_GEMINI_MODELS } from '../../../../shared/models.ts'
-import type { ModelRef } from '../../../contracts/catalog.ts'
+import { isRetiredModel, type ModelRef } from '../../../contracts/catalog.ts'
 
 /** Harness id; the adapter's `id`, and the key a source registers `supports` against. */
 export const OPENCODE_HARNESS = 'opencode'
@@ -130,10 +130,27 @@ export const isOpenCodeGatewayGeminiModel = (ref: ModelRef): boolean =>
   ref.model.startsWith('gemini::') &&
   OPENCODE_GATEWAY_GEMINI_MODELS.includes(ref.model.slice('gemini::'.length))
 
+/**
+ * Match Gateway Chat models usable via OpenCode's OpenAI-compatible provider adapter.
+ * DeepSeek bare / `deepseek::*` and `grok::*` share Gateway Chat alongside declared Gemini lanes;
+ * `codex::*` (Responses) and `aws::`/`kiro::`/`claude::` (Messages) remain excluded.
+ */
+export const isOpenCodeGatewayChatModel = (ref: ModelRef): boolean => {
+  if (ref.provider !== OPENCODE_GATEWAY_PROVIDER || isRetiredModel(ref)) return false
+  if (isOpenCodeGatewayGeminiModel(ref)) return true
+  const separator = ref.model.indexOf('::')
+  if (separator < 0) return ref.model.trim().length > 0
+  const group = ref.model.slice(0, separator)
+  return ['deepseek', 'grok'].includes(group) && ref.model.slice(separator + 2).trim().length > 0
+}
+
 /** The model id OpenCode must send for an exact supported reference. */
 export const openCodeWireModel = (ref: ModelRef): string | undefined => {
   if (isOpenCodeModel(ref)) return ref.model
-  if (isOpenCodeGatewayGeminiModel(ref)) return ref.model.slice('gemini::'.length)
+  if (isOpenCodeGatewayChatModel(ref)) {
+    const separator = ref.model.indexOf('::')
+    return separator >= 0 ? ref.model.slice(separator + 2) : ref.model
+  }
   return undefined
 }
 

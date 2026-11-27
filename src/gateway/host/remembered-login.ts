@@ -1,8 +1,5 @@
 /** Optional Gateway password storage; secrets stay in the Windows credential store and Host. */
-import {
-  gatewayLoginKeyring,
-  type SuiteKeyringCredential,
-} from '../../credentials/host/windows-keyring.ts'
+import { gatewayLoginKeyring, type SuiteKeyringCredential } from './windows-keyring.ts'
 import type { GatewayRememberedLogin } from '../contracts/account.ts'
 
 export class GatewayPasswordStore {

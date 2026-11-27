@@ -9,7 +9,10 @@ import { DSH_COMBINATION } from '../contracts/sessions.ts'
 import { harnessAllowsFullAccess } from './permissions.ts'
 import { validPromptContent } from './multimodal-prompt.ts'
 
-function parseRecord(raw: unknown): HarnessSession {
+function parseRecord(
+  raw: unknown,
+  harnesses?: readonly { id: string; kind: string }[],
+): HarnessSession {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw))
     throw Error('组合会话记录损坏，原文件已保留')
   const item = raw as Record<string, any>
@@ -56,7 +59,7 @@ function parseRecord(raw: unknown): HarnessSession {
     throw Error('官方审核模式记录无效，原文件已保留')
   if (item.zcodeMode !== undefined && !['build', 'yolo'].includes(item.zcodeMode))
     throw Error('ZCode 审批模式记录无效，原文件已保留')
-  if (item.sandbox === 'full-access' && !harnessAllowsFullAccess(item.harnessRef))
+  if (item.sandbox === 'full-access' && !harnessAllowsFullAccess(item.harnessRef, harnesses))
     throw Error('组合会话权限与 Harness 不一致，原文件已保留')
   if (
     item.origin !== undefined &&
@@ -257,14 +260,17 @@ export class HarnessSessionStore {
     await mkdir(this.directory, { recursive: true, mode: 0o700 })
     await writeFileAtomic(filename, bytes, { mode: 0o600 })
   }
-  async load(): Promise<HarnessSession[]> {
+  async load(harnesses?: readonly { id: string; kind: string }[]): Promise<HarnessSession[]> {
     const records = new Map<string, HarnessSession>()
     const names = await readdir(this.directory).catch((error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return []
       throw error
     })
     for (const name of names.filter((name) => /^[a-f0-9]{64}\.json$/.test(name))) {
-      const record = parseRecord(JSON.parse(await readFile(join(this.directory, name), 'utf8')))
+      const record = parseRecord(
+        JSON.parse(await readFile(join(this.directory, name), 'utf8')),
+        harnesses,
+      )
       if (this.filename(record.id) !== join(this.directory, name) || records.has(record.id))
         throw Error('组合会话身份冲突，原文件已保留')
       records.set(record.id, record)
@@ -288,7 +294,7 @@ export class HarnessSessionStore {
       }
       if (legacy !== undefined) {
         if (!Array.isArray(legacy)) throw Error('组合会话记录格式无效，原文件已保留')
-        const originals = legacy.map(parseRecord)
+        const originals = legacy.map((raw) => parseRecord(raw, harnesses))
         if (new Set(originals.map((record) => record.id)).size !== originals.length)
           throw Error('旧组合会话身份重复，原文件已保留')
         // An interrupted migration may already have durable newer session files.

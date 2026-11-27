@@ -120,11 +120,10 @@ describe('official Harness adapter registry', () => {
       { provider: 'huawei-maas', model: 'deepseek-v4-flash' },
     ]) {
       expect(officialHarnessFor(ref)).toBeUndefined()
-      expect(adapterFor('zcode', ref)).toBeUndefined()
       expect(adapterFor('kimi-code', ref)).toBeUndefined()
     }
-    expect(adapterFor('zcode', { provider: 'our-free-model', model: 'z-ai/glm-5.3' })?.id).toBe(
-      'zcode',
+    expect(adapterFor('opencode', { provider: 'our-free-model', model: 'cat-jam-free' })?.id).toBe(
+      'opencode',
     )
   })
 })

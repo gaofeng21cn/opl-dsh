@@ -2,8 +2,6 @@
   "extends": "../../../tsconfig.host.json",
   "include": [
     "../../../src/suite/host.ts",
-    "../../../src/execution/host/adapters/mimo/**/*.ts",
-    "../../../src/execution/host/adapters/zcode-ofm/**/*.ts",
     "../../../src/execution/host/adapters/dsh.ts",
     "../../../src/execution/host/adapters/index.ts",
     "../../../tests/execution/ofm-amd-vendor/**/*.ts",

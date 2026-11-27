@@ -690,11 +690,6 @@ try {
   )
   if (!modelPluginFixture.requests.some((request) => request.usedTool))
     throw new Error('原版模型插件未完成官方工具调用后的模型回复')
-  const mcpAppHost = modelPluginFixture.requests.find(
-    (request) => request.hostDiagnostic,
-  )?.hostDiagnostic
-  if (!mcpAppHost) throw new Error('原版桌面未回读 MCP Apps 宿主诊断结果')
-  evidence.checks.mcpAppHost = mcpAppHost
   evidence.checks.modelPluginRequests = modelPluginFixture.requests
   if (evidence.checks.runtime.harnessTranscript)
     evidence.checks.transcriptClient = await verifyHarnessTranscriptClient(
@@ -746,23 +741,6 @@ try {
     )
   }
   await stopDesktop()
-  if (process.platform === 'darwin' && artifact.superagent) {
-    const { verifySuperagent } = await import('./qualification-superagent.mjs')
-    const { openSuperagent } = await import(join(payload, 'superagent.mjs'))
-    const installed = JSON.parse(await readFile(join(suite, 'installation.json'), 'utf8'))
-    const opened = await openSuperagent(installed, {
-      start: async ({ home, root: instanceRoot }) => {
-        await startDesktop(home, instanceRoot)
-        return { pid: desktop.pid }
-      },
-    })
-    if (opened.state !== 'opened') throw new Error('SuperAgent 未完成独立启动')
-    evidence.checks.superagent = await verifySuperagent(
-      desktopPipe,
-      evidenceFile.replace(/\.json$/, '-client-superagent.png'),
-    )
-    await stopDesktop()
-  }
   const originalHash = evidence.officialAppSha256
   await verifyOfficial()
   if (evidence.officialAppSha256 !== originalHash) throw new Error('官方应用内容在验收期间发生变化')

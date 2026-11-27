@@ -19,13 +19,15 @@ import { gatewayGroupNotGranted } from '../contracts/account.ts'
 import { splitProxyHint, summarizeDiscoveryErrors } from './discovery-errors.ts'
 import settingsCss from '../../shared/client/SettingsSection.module.css'
 import { CodexKeyringSetup, type CodexKeyringSetupProps } from './CodexKeyringSetup.tsx'
+import { GatewayModels } from './GatewayModels.tsx'
 import loginCss from './LoginForm.module.css'
 import setupCss from '../../setup/client/SetupScreen.module.css'
+import type { GatewayCall } from '../../shared/client/remote-call.ts'
 const css = settingsCss
 
 /** Registration-side face the section drives. */
 export interface OplGatewaySectionInjected {
-  openModels?: () => void
+  modelsCall?: GatewayCall
   codexTargets?: CodexKeyringSetupProps['targets']
   configureCodex?: CodexKeyringSetupProps['configure']
   setGroupActive?: (id: string, enabled: boolean) => Promise<GatewayAccountStatus>
@@ -406,18 +408,6 @@ export function OplGatewaySection(
           )}
           {!props.onboarding && connected && (
             <div className={css.detailsBody}>
-              <div className={css.header}>
-                <h3>可用分组</h3>
-                {props.openModels && (
-                  <Button variant="outline" onClick={props.openModels}>
-                    选择模型
-                  </Button>
-                )}
-              </div>
-              <p className={css.muted}>
-                选择在此 DSH
-                中使用的分组。密钥自动管理，模型在“模型”页选择。停用会保留模型配置和已有对话。分组倍率相同不代表模型单价相同。
-              </p>
               {state.modelSyncError && (
                 <p className={css.error} role="alert">
                   {state.modelSyncError.message}
@@ -435,65 +425,89 @@ export function OplGatewaySection(
                     .filter((group) => group.enabled !== false && group.catalog?.diagnostic)
                     .map((group) => group.catalog!.diagnostic!.message),
                 ).hints.filter((hint) => hint !== syncHint)
+                const toggleGroup = props.setGroupActive
+                  ? async (id: string, enabled: boolean) => {
+                      setBusy('loading')
+                      setError(null)
+                      try {
+                        setState(await props.setGroupActive!(id, enabled))
+                      } catch (e) {
+                        setError(e instanceof Error ? e.message : '分组设置失败')
+                      } finally {
+                        setBusy('idle')
+                      }
+                    }
+                  : undefined
                 return (
                   <>
-                    <div className={css.modelRows}>
-                      {visibleGroups.map((group) => (
-                        <div key={group.id} className={css.modelRow}>
-                          <div>
-                            <strong>{group.name}</strong>
-                            <p className={css.muted}>
-                              {group.authorized === false || group.state === 'unauthorized'
-                                ? '账号未开放'
-                                : group.authorized === true
-                                  ? '账号可用'
-                                  : '权限待刷新'}
-                              {group.rateMultiplier !== undefined
-                                ? ` · 分组倍率 ${group.rateMultiplier}×`
-                                : ''}
-                              {group.enabled !== false && group.state === 'ready'
-                                ? ' · 凭据已同步'
-                                : ''}
-                            </p>
-                            {group.error && group.state === 'error' && (
-                              <p className={css.error}>{group.error}</p>
-                            )}
-                            {group.enabled !== false && group.catalog?.diagnostic && (
-                              <p className={css.error}>
-                                {splitProxyHint(group.catalog.diagnostic.message).core}
-                              </p>
-                            )}
-                          </div>
-                          <label className={css.switchControl}>
-                            <input
-                              type="checkbox"
-                              role="switch"
-                              aria-label={`在此 DSH 激活 ${group.name}`}
-                              checked={group.enabled !== false}
-                              disabled={
-                                busy !== 'idle' ||
-                                group.authorized === false ||
-                                group.state === 'unauthorized' ||
-                                !props.setGroupActive
-                              }
-                              onChange={(event) => {
-                                const enabled = event.target.checked
-                                setBusy('loading')
-                                setError(null)
-                                void props
-                                  .setGroupActive?.(group.id, enabled)
-                                  .then(setState)
-                                  .catch((e) =>
-                                    setError(e instanceof Error ? e.message : '分组设置失败'),
-                                  )
-                                  .finally(() => setBusy('idle'))
-                              }}
-                            />
-                            {group.enabled !== false ? '已激活' : '未激活'}
-                          </label>
+                    {props.modelsCall ? (
+                      <GatewayModels
+                        call={props.modelsCall}
+                        groups={visibleGroups}
+                        {...(toggleGroup ? { onToggleGroup: toggleGroup } : {})}
+                        accountBusy={busy !== 'idle'}
+                      />
+                    ) : (
+                      <>
+                        <div className={css.header}>
+                          <h3>可用分组</h3>
                         </div>
-                      ))}
-                    </div>
+                        <p className={css.muted}>{t('managedHint')}</p>
+                        <div className={css.modelRows}>
+                          {visibleGroups.map((group) => (
+                            <div key={group.id} className={css.modelRow}>
+                              <div>
+                                <strong>{group.name}</strong>
+                                <p className={css.muted}>
+                                  {group.authorized === false || group.state === 'unauthorized'
+                                    ? '账号未开放'
+                                    : group.authorized === true
+                                      ? '账号可用'
+                                      : '权限待刷新'}
+                                  {group.rateMultiplier !== undefined
+                                    ? ` · 分组倍率 ${group.rateMultiplier}×`
+                                    : ''}
+                                  {group.enabled !== false && group.state === 'ready'
+                                    ? ' · 凭据已同步'
+                                    : ''}
+                                </p>
+                                {group.error && group.state === 'error' && (
+                                  <p className={css.error}>{group.error}</p>
+                                )}
+                                {group.enabled !== false && group.catalog?.diagnostic && (
+                                  <p className={css.error}>
+                                    {splitProxyHint(group.catalog.diagnostic.message).core}
+                                  </p>
+                                )}
+                              </div>
+                              <label className={css.switchControl}>
+                                <input
+                                  type="checkbox"
+                                  role="switch"
+                                  aria-label={`在此 DSH 激活 ${group.name}`}
+                                  checked={group.enabled !== false}
+                                  disabled={
+                                    busy !== 'idle' ||
+                                    group.authorized === false ||
+                                    group.state === 'unauthorized' ||
+                                    !toggleGroup
+                                  }
+                                  onChange={(event) => {
+                                    void toggleGroup?.(group.id, event.target.checked)
+                                  }}
+                                />
+                                {group.enabled !== false ? '已激活' : '未激活'}
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                        {groupHints.map((hint) => (
+                          <p key={hint} className={css.muted}>
+                            {hint}
+                          </p>
+                        ))}
+                      </>
+                    )}
                     {state.source === 'session' &&
                       visibleGroups.some(
                         (g) =>
@@ -508,11 +522,6 @@ export function OplGatewaySection(
                           configure={props.configureCodex}
                         />
                       )}
-                    {groupHints.map((hint) => (
-                      <p key={hint} className={css.muted}>
-                        {hint}
-                      </p>
-                    ))}
                   </>
                 )
               })()}

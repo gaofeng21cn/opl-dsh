@@ -74,18 +74,8 @@ export interface OplUpdateFailure {
   systemCode?: string
 }
 
-/** Status of the Computer Use component installed for this DSH host. */
-export interface KimiCuUpdateStatus {
-  installedVersion: string | null
-  latestVersion: string | null
-  available: boolean
-  error?: string
-  updating?: boolean
-}
-
 /** Last successful discovery survives a failed or cancelled check. */
 export interface OplUpdateStatus {
-  kimiCu?: KimiCuUpdateStatus
   installedVersion: string
   officialVersion: string
   localCandidate: boolean
@@ -106,7 +96,6 @@ export interface OplUpdateStatus {
 export interface OplUpdateApi {
   status(): Promise<OplUpdateStatus>
   check(): Promise<OplUpdateStatus>
-  updateKimiCu?(): Promise<OplUpdateStatus>
   setAutomatic(enabled: boolean): Promise<OplUpdateStatus>
   prepare(): Promise<OplUpdateStatus>
   applyNow(): Promise<OplUpdateStatus>

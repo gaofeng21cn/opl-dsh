@@ -51,7 +51,6 @@
  * key is never written to a file, an argument vector, or a log line, and error text is
  * scrubbed against it before anything returns to the host.
  */
-import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { commandLaunch } from '../../harness-registry.ts'
@@ -558,205 +557,7 @@ async function replayHistory(): Promise<void> {
   }
 }
 
-// ── Private edit protocol over the official RPC ────────────────────────────────────
-// The host's Pi driver calls these two ACP extension methods. Both answer a structured
-// `{ok:false, code}` for an expected refusal and throw only for a transport failure, so
-// the driver never parses bridge text. No method here sends a replacement prompt, writes a
-// HarnessSession, edits a DSH log, reverts files or deletes an old branch.
-
-class EditRefusal extends Error {
-  constructor(readonly code: string) {
-    super(code)
-  }
-}
-
-const refuse = (code: string): never => {
-  throw new EditRefusal(code)
-}
-
-const object = (value: unknown): Record<string, any> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, any>)
-    : {}
-
-function canonical(value: unknown): string {
-  const sort = (input: unknown): unknown => {
-    if (Array.isArray(input)) return input.map(sort)
-    if (input && typeof input === 'object') {
-      const result: Record<string, unknown> = {}
-      for (const key of Object.keys(input as Record<string, unknown>).sort()) {
-        const next = (input as Record<string, unknown>)[key]
-        if (next !== undefined) result[key] = sort(next)
-      }
-      return result
-    }
-    return input
-  }
-  return JSON.stringify(sort(value))
-}
-
-/** Exact user text from one persisted message; never a summary or a synthesized label. */
-function userText(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return ''
-  return content
-    .filter((part) => object(part).type === 'text' && typeof object(part).text === 'string')
-    .map((part) => String(object(part).text))
-    .join('')
-}
-
-/**
- * The active branch, root → leaf. `get_entries` returns the whole append-ordered tree, so
- * the active history must be reconstructed from `leafId`/`parentId`; a global fork list is
- * never used as a conversation order.
- */
-function activeEntries(entries: readonly any[], leafId: string | null): any[] {
-  const byId = new Map<string, any>()
-  for (const entry of entries) {
-    const id = typeof entry?.id === 'string' ? entry.id : ''
-    if (id) byId.set(id, entry)
-  }
-  const chain: any[] = []
-  const seen = new Set<string>()
-  let current: string | undefined = leafId ?? undefined
-  while (current !== undefined) {
-    if (seen.has(current)) refuse('protocol')
-    seen.add(current)
-    const entry = byId.get(current)
-    if (!entry) refuse('protocol')
-    chain.push(entry)
-    const parent = entry.parentId
-    if (parent === undefined || parent === null) current = undefined
-    else if (typeof parent === 'string' && parent) current = parent
-    else refuse('protocol')
-  }
-  chain.reverse()
-  return chain
-}
-
-interface PiEditHistory {
-  sessionId: string
-  token: string
-  boundaries: { id: string; text?: string }[]
-  ephemeral: boolean
-  settledInputId?: string
-}
-
-/**
- * Observe the live active history. The token covers the exact facts a fork depends on:
- * session identity, active leaf, boundary ids/text, pinned model/effort and the session
- * file. A tool result or compaction that moves the leaf changes the token.
- */
-async function editHistory(): Promise<PiEditHistory> {
-  const state = await readState()
-  const id = typeof state?.sessionId === 'string' ? state.sessionId : ''
-  if (!id) refuse('protocol')
-  const response = await piRequest('get_entries')
-  if (response?.success !== true) refuse('protocol')
-  const entries = Array.isArray(response.data?.entries) ? response.data.entries : undefined
-  const leafId = response.data?.leafId
-  if (!entries || (leafId !== null && (typeof leafId !== 'string' || !leafId))) refuse('protocol')
-  const branch = activeEntries(entries, leafId)
-  const boundaries: { id: string; text?: string }[] = []
-  for (const entry of branch) {
-    if (entry?.type !== 'message' || entry.message?.role !== 'user') continue
-    const text = userText(entry.message.content)
-    boundaries.push({ id: entry.id, ...(text.length > 0 ? { text } : {}) })
-  }
-  const file = typeof state?.sessionFile === 'string' ? state.sessionFile : ''
-  const ephemeral = !file || !existsSync(file)
-  // A non-empty history without a file cannot be restored; refuse it rather than report a
-  // boundary set the shared owner could persist as loadable.
-  if (ephemeral && boundaries.length > 0) refuse('stale')
-  const token = `sha256:${createHash('sha256')
-    .update(
-      canonical({
-        version: 1,
-        sessionId: id,
-        leafId,
-        boundaries,
-        model: typeof state?.model?.id === 'string' ? state.model.id : '',
-        thinking: typeof state?.thinkingLevel === 'string' ? state.thinkingLevel : '',
-        file,
-        ephemeral,
-      }),
-    )
-    .digest('hex')}`
-  const leaf = branch.at(-1)
-  const settledInputId =
-    state.isStreaming === false &&
-    state.isCompacting === false &&
-    leaf?.type === 'message' &&
-    leaf.message?.role === 'assistant' &&
-    ['stop', 'error', 'aborted', 'length'].includes(leaf.message.stopReason)
-      ? boundaries.at(-1)?.id
-      : undefined
-  return {
-    sessionId: id,
-    token,
-    boundaries,
-    ephemeral,
-    ...(settledInputId ? { settledInputId } : {}),
-  }
-}
-
-/**
- * Fork before `targetId`, re-pin the original model/effort and prove the retained prefix.
- *
- * A successful fork already changed vendor history, so any later failure is `uncertain`:
- * the caller must not retry automatically and must block sends until it re-reads history.
- */
-async function editRewind(
-  targetId: string,
-  expectedToken: string,
-): Promise<{
-  ok: true
-  sessionId: string
-  retained: { previousId: string; nextId: string }[]
-  ephemeral: boolean
-}> {
-  if (!targetId || !expectedToken) refuse('target-unknown')
-  if (resolveTurn !== undefined || asks.size > 0) refuse('busy')
-  const before = await editHistory()
-  if (before.token !== expectedToken) refuse('history-changed')
-  const targetIndex = before.boundaries.findIndex((boundary) => boundary.id === targetId)
-  if (targetIndex < 0) refuse('target-unknown')
-
-  const fork = await piRequest('fork', { entryId: targetId })
-  if (fork?.success !== true || fork.data?.cancelled === true) refuse('fork-rejected')
-  const state = await readState()
-  const newId = typeof state?.sessionId === 'string' ? state.sessionId : ''
-  if (!newId || newId === before.sessionId) refuse('uncertain')
-  // From this point the bridge is on the new identity even if a later read-back fails.
-  sessionId = newId
-  const newFile = typeof state?.sessionFile === 'string' ? state.sessionFile : ''
-  try {
-    // Pi does not carry a model/thinking entry that sits after the fork boundary.
-    await piCommand('set_model', { provider, modelId: model })
-    await assertModel()
-    if (thinking) await applyThinking(thinking)
-  } catch {
-    refuse('uncertain')
-  }
-  const after = await editHistory()
-  if (after.sessionId !== newId) refuse('uncertain')
-  const retained: { previousId: string; nextId: string }[] = []
-  for (const boundary of before.boundaries.slice(0, targetIndex)) {
-    const next = after.boundaries.find((item) => item.id === boundary.id)
-    if (!next) throw new EditRefusal('uncertain')
-    if ((boundary.text ?? '') !== (next.text ?? '')) refuse('uncertain')
-    retained.push({ previousId: boundary.id, nextId: next.id })
-  }
-  // The target and every later boundary must be gone; a longer prefix means the fork kept
-  // history it promised to exclude.
-  if (after.boundaries.length !== targetIndex) refuse('uncertain')
-  const ephemeral = !newFile || !existsSync(newFile)
-  if (ephemeral) ephemeralFile = newFile
-  else rememberSessionFile(newFile)
-  return { ok: true, sessionId: newId, retained, ephemeral }
-}
-
-/** Serialize prompts, history edits and configuration writes. */
+/** Serialize prompts and configuration writes. */
 let lifecycle: Promise<unknown> = Promise.resolve()
 function serialize<T>(run: () => Promise<T>): Promise<T> {
   const next = lifecycle.then(run, run)
@@ -781,14 +582,6 @@ async function invoke(method: string, params: any): Promise<unknown> {
       protocolVersion: 1,
       agentCapabilities: {
         loadSession: true,
-        // Advertised only because the bridge itself implements both methods below.
-        _meta: {
-          'opl/message-edit': {
-            version: 1,
-            methods: ['opl/edit/read', 'opl/edit/rewind'],
-            ephemeralFirstFork: true,
-          },
-        },
       },
       agentInfo: { name: 'pi-coding-agent', version: `pi-rpc ${api}`, model, provider },
     }
@@ -852,41 +645,6 @@ async function invoke(method: string, params: any): Promise<unknown> {
       models: { currentModelId: model },
       configOptions: await configOptions(pinned),
     }
-  }
-
-  if (method === 'opl/edit/read') {
-    return serialize(async () => {
-      try {
-        const requested = typeof params?.sessionId === 'string' ? params.sessionId : ''
-        if (requested && requested !== sessionId) refuse('stale')
-        const history = await editHistory()
-        return {
-          ok: true,
-          sessionId: history.sessionId,
-          token: history.token,
-          boundaries: history.boundaries,
-          ...(history.settledInputId ? { settledInputId: history.settledInputId } : {}),
-        }
-      } catch (error) {
-        if (error instanceof EditRefusal) return { ok: false, code: error.code }
-        throw error
-      }
-    })
-  }
-
-  if (method === 'opl/edit/rewind') {
-    return serialize(async () => {
-      try {
-        const requested = typeof params?.sessionId === 'string' ? params.sessionId : ''
-        if (!requested || requested !== sessionId) refuse('stale')
-        const targetId = typeof params?.targetId === 'string' ? params.targetId : ''
-        const expectedToken = typeof params?.expectedToken === 'string' ? params.expectedToken : ''
-        return await editRewind(targetId, expectedToken)
-      } catch (error) {
-        if (error instanceof EditRefusal) return { ok: false, code: error.code }
-        throw error
-      }
-    })
   }
 
   if (method === 'session/cancel') {

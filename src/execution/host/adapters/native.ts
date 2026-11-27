@@ -6,16 +6,8 @@ import type { HarnessSession } from '../../contracts/sessions.ts'
 import type { AdapterOptions, AdapterLaunch } from './types.ts'
 import { systemEnvironment } from './environment.ts'
 import { codexGitBashOptIn, resolveNativeGitBash } from './native-bash.ts'
-import { verifySelectedCodexRuntime } from '../codex-runtime.ts'
 import { ExternalModelSources } from '../model-sources.ts'
 export async function nativeAvailable(name: string, id: string, options: AdapterOptions) {
-  if (id === 'codex' && options.codexRuntime) {
-    try {
-      verifySelectedCodexRuntime(options.home, options.codexRuntime, options.command ?? '')
-    } catch {
-      return { available: false, reason: 'Codex Git Bash 候选文件校验失败，请重新选择运行时' }
-    }
-  }
   return (await executablePath(options.command || id))
     ? { available: true }
     : { available: false, reason: `未找到官方 ${name}，请在 Harness 页检查安装` }
@@ -49,11 +41,6 @@ export async function prepareNative(
   options: AdapterOptions,
   environment: (home: string, base: string, key: string) => NodeJS.ProcessEnv,
 ): Promise<AdapterLaunch> {
-  if (record.harnessRef === 'codex' && options.codexRuntime) {
-    if (record.sandbox !== 'full-access')
-      throw Error('Codex Git Bash 候选仅支持已授权的 full-access；未改变权限')
-    verifySelectedCodexRuntime(options.home, options.codexRuntime, options.command ?? '')
-  }
   const route = await (options.modelSources ?? new ExternalModelSources(ctx)).resolve(
     record.harnessRef,
     record.modelRef,
@@ -93,9 +80,7 @@ export async function prepareNative(
       ...(gitBash ? { OPL_NATIVE_GIT_BASH: gitBash } : {}),
       // Codex has no upstream Git Bash interface, so the opt-in is carried explicitly and the
       // bridge verifies the real shell instead of assuming the request took effect.
-      ...((record.harnessRef === 'codex' && options.codexRuntime) || codexGitBashOptIn()
-        ? { OPL_NATIVE_CODEX_GIT_BASH: '1' }
-        : {}),
+      ...(codexGitBashOptIn() ? { OPL_NATIVE_CODEX_GIT_BASH: '1' } : {}),
       // Only an explicit Auto record sets this. The bridge owns the per-Harness evidence
       // that the installed CLI really reports its official auto reviewer, and refuses the
       // session when it cannot. It is never derived from the sandbox profile.

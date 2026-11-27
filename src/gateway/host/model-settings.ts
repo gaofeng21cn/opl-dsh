@@ -1,13 +1,19 @@
+import { createHash } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import { contextOwner } from '../../compat/host/context-owner.ts'
 import { gatewayModelChoices } from '../shared/model-choices.ts'
 import { gatewayGroupEnabled } from './group-settings.ts'
-import { createHash } from 'node:crypto'
-import { isDeepStrictEqual } from 'node:util'
-/** Models page operations. DSH profile settings are the only writable model catalog. */
+/** Models page operations. DSH `opl-suite` profile settings are the single writable catalog. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
-import { GATEWAY_GROUPS } from '../contracts/groups.ts'
+import { GATEWAY_GROUPS, LEGACY_GATEWAY_PI_AI_PROVIDERS } from '../contracts/groups.ts'
 import { gatewayGroupNotGranted } from '../contracts/account.ts'
+import {
+  DEFAULT_GATEWAY_CHANNELS,
+  resolveGatewayChannelProfile,
+  type GatewayChannelProfile,
+  type GatewayPiAiGroupId,
+} from './channel-defaults.ts'
 import { DEFAULT_MODELS, toAdapterConfig } from './config.ts'
 import type { ModelDraft, GatewayModelSettings } from '../contracts/models.ts'
 import {
@@ -22,6 +28,7 @@ import {
   gatewayInferenceBaseURL,
   isDefaultGatewayBaseURL,
 } from './protocol.ts'
+import { gatewayPiAiDiscover } from './pi-ai-bridge.ts'
 import {
   clearGatewayCatalogStatus,
   diagnoseGatewayModelFailure,
@@ -36,6 +43,8 @@ const MAX_DISCOVERY_ATTEMPTS = 3
 const DISCOVERY_TOTAL_BUDGET_MS = 20_000
 const DISCOVERY_ATTEMPT_TIMEOUT_MS = 10_000
 const DISCOVERY_RETRY_DELAYS_MS = [150, 350] as const
+const SUITE_NS = 'opl-suite'
+
 const record = (value: unknown): Record<string, any> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : {}
 
@@ -47,37 +56,52 @@ function modelSettingsService(ctx: Context): Context['settings'] {
   return settings
 }
 
-/** Preserve saved model key order for catalog hashes; settings redaction rebuilds object fields. */
+function cleanUserChannelModels(models: readonly unknown[]): ModelDraft[] {
+  return models.map((model) => {
+    const item = record(model)
+    if (!Array.isArray(item.input) || item.input.length !== 0)
+      return structuredClone(item) as ModelDraft
+    const { input: _implicitInput, ...declared } = item
+    return structuredClone(declared) as ModelDraft
+  })
+}
+
+function cleanLegacyChannelProfile(raw: Record<string, any>): GatewayChannelProfile {
+  const { defaultInput, models, ...rest } = raw
+  return {
+    ...structuredClone(rest),
+    ...(Array.isArray(defaultInput) ? { defaultInput: [...defaultInput] } : {}),
+    ...(Array.isArray(models) ? { models: structuredClone(models) as ModelDraft[] } : {}),
+  }
+}
+
+/** Preserve saved user-layer model arrays so catalog hashes reflect explicit edits only. */
 function savedModelCatalogs(settings: Context['settings']): Record<string, unknown> {
-  const descriptors = settings.describe()
+  const suite = settings.describe().find((item) => item.ns === SUITE_NS)
+  const user = record(suite?.user)
+  const channels = record(user.gatewayChannels)
   return Object.fromEntries(
     GATEWAY_GROUPS.map((group) => {
-      const descriptor = descriptors.find(
-        (item) => item.ns === (group.id === 'deepseek' ? 'opl-suite' : 'llm-pi-ai'),
-      )
-      const user = record(descriptor?.user)
-      const profile =
-        group.id === 'deepseek'
-          ? record(user.gateway)
-          : record(record(user.providers)[group.provider])
-      return [group.id, profile.models]
+      const models =
+        group.id === 'deepseek' ? record(user.gateway).models : record(channels[group.id]).models
+      return [group.id, models]
     }),
   )
 }
 
 const copiedCatalogs = new WeakMap<object, Map<string, { fingerprint: string; revision: number }>>()
 
-/** Keep inherited catalogs copied by our Settings writes eligible until another write changes their revision. */
+/** Track automatic catalogs written to `opl-suite` so untouched imports keep auto-syncing. */
 function modelCatalogState(ctx: Context, settings: Context['settings']) {
   const descriptors = settings.describe()
   const catalogs = savedModelCatalogs(settings)
   const owner = contextOwner(ctx)
   let copied = copiedCatalogs.get(owner)
   if (!copied) copiedCatalogs.set(owner, (copied = new Map()))
+  const revision = descriptors.find((item) => item.ns === SUITE_NS)?.revision
   for (const [id, previous] of copied) {
-    const namespace = id === 'deepseek' ? 'opl-suite' : 'llm-pi-ai'
     if (
-      descriptors.find((item) => item.ns === namespace)?.revision !== previous.revision ||
+      revision !== previous.revision ||
       catalogs[id] === undefined ||
       catalogFingerprint(catalogs[id]) !== previous.fingerprint
     )
@@ -86,91 +110,74 @@ function modelCatalogState(ctx: Context, settings: Context['settings']) {
   return { descriptors, catalogs, copied }
 }
 
-/** Track only inherited catalogs materialized by this revision-checked write. */
-async function mutateModelSettings(
+async function mutateSuiteSettings(
   ctx: Context,
-  namespace: string,
   ops: readonly SettingsPathOp[],
   revision: number,
   editedGroup?: string,
 ): Promise<void> {
   const settings = modelSettingsService(ctx)
   const before = modelCatalogState(ctx, settings)
+  const beforeSuite = readSuiteDescriptor(before.descriptors)
+  const beforeValue = record(beforeSuite?.value)
   const inherited = GATEWAY_GROUPS.filter(
     (group) =>
-      (group.id === 'deepseek' ? 'opl-suite' : 'llm-pi-ai') === namespace &&
       group.id !== editedGroup &&
       (before.catalogs[group.id] === undefined || before.copied.has(group.id)),
-  ).map((group) => {
-    const descriptor = before.descriptors.find((item) => item.ns === namespace)
-    const value = record(descriptor?.value)
-    const prefix = group.id === 'deepseek' ? ['gateway'] : ['providers', group.provider]
-    const profile = {
-      ...record(group.id === 'deepseek' ? value.gateway : record(value.providers)[group.provider]),
-    }
+  ).flatMap((group) => {
+    const prefix = group.id === 'deepseek' ? ['gateway'] : ['gatewayChannels', group.id]
+    if (
+      ops.some(
+        (op) =>
+          op.path.length === prefix.length &&
+          prefix.every((part, index) => op.path[index] === part),
+      )
+    )
+      return []
+    const rawProfile =
+      group.id === 'deepseek' ? beforeValue.gateway : record(beforeValue.gatewayChannels)[group.id]
+    if (!rawProfile || typeof rawProfile !== 'object' || Array.isArray(rawProfile)) return []
+    const expected = { ...record(rawProfile) }
     for (const op of ops) {
       if (
         op.op === 'set' &&
         op.path.length === prefix.length + 1 &&
         prefix.every((part, index) => op.path[index] === part)
       )
-        profile[String(op.path.at(-1))] = op.value
+        expected[String(op.path.at(-1))] = op.value
     }
-    return { group, expected: profile }
+    return [{ group, expected }]
   })
-  await settings.mutate(namespace, ops, revision)
+  await settings.mutate(SUITE_NS, ops, revision)
   if (editedGroup) before.copied.delete(editedGroup)
   const after = modelCatalogState(ctx, settings)
-  const current = after.descriptors.find((item) => item.ns === namespace)?.revision
-  if (current === undefined) return
+  const afterSuite = readSuiteDescriptor(after.descriptors)
+  if (afterSuite?.revision === undefined) return
+  const afterValue = record(afterSuite.value)
+  const afterUser = record(afterSuite.user)
   for (const { group, expected } of inherited) {
-    const descriptor = after.descriptors.find((item) => item.ns === namespace)
-    const value = record(descriptor?.value)
-    const profile =
-      group.id === 'deepseek' ? value.gateway : record(value.providers)[group.provider]
-    const user = record(record(record(descriptor?.user).providers)[group.provider])
-    // Only the fields in this write may change an inherited configuration.
-    // A saved defaultInput is an explicit policy even when it equals a schema default.
+    const afterProfile =
+      group.id === 'deepseek' ? afterValue.gateway : record(afterValue.gatewayChannels)[group.id]
+    const userProfile =
+      group.id === 'deepseek'
+        ? record(afterUser.gateway)
+        : record(record(afterUser.gatewayChannels)[group.id])
     if (
       after.catalogs[group.id] !== undefined &&
-      isDeepStrictEqual(profile, expected) &&
-      user.defaultInput === undefined
+      isDeepStrictEqual(afterProfile, expected) &&
+      userProfile.defaultInput === undefined
     )
       after.copied.set(group.id, {
         fingerprint: catalogFingerprint(after.catalogs[group.id]),
-        revision: current,
+        revision: afterSuite.revision,
       })
   }
 }
 
-/** Read saved model declarations without treating the official schema's input defaults as user choices. */
-function providerSettings(
-  descriptor: Pick<SettingsDescriptor, 'value' | 'user'> | undefined,
-  provider: string,
-): Record<string, any> | undefined {
-  const effective = record(record(descriptor?.value).providers)[provider]
-  if (!effective) return undefined
-  const user = record(record(record(descriptor?.user).providers)[provider])
-  const { defaultInput, models: resolvedModels, ...profile } = record(effective)
-  const models = Array.isArray(user.models)
-    ? user.models
-    : Array.isArray(resolvedModels)
-      ? resolvedModels.map((model: ModelDraft) => {
-          if (!Array.isArray(model.input) || model.input.length !== 0) return model
-          const { input: _implicitInput, ...declared } = model
-          return declared
-        })
-      : resolvedModels
-  const policy =
-    user.defaultInput ??
-    (Array.isArray(defaultInput) && defaultInput.length === 1 && defaultInput[0] === 'text'
-      ? undefined
-      : defaultInput)
-  return {
-    ...profile,
-    ...(models === undefined ? {} : { models }),
-    ...(policy === undefined ? {} : { defaultInput: policy }),
-  }
+function readSuiteDescriptor(
+  descriptors: readonly SettingsDescriptor[],
+): SettingsDescriptor | undefined {
+  return descriptors.find((item) => item.ns === SUITE_NS)
 }
 
 const LEGACY_CANONICAL_GEMINI_SETS: readonly (readonly string[])[] = [
@@ -214,70 +221,103 @@ function addGeminiBundleModels(
   ).map((id) => models.find((model) => model.id === id) ?? geminiBundleModel(id))
 }
 
-/** Add the OPL-owned reviewer without replacing any existing chat provider. */
-export async function ensureAutoReviewProvider(ctx: Context): Promise<void> {
-  const settings = modelSettingsService(ctx)
-  const descriptor = settings
-    .describe({ redactSecrets: true })
-    .find((item) => item.ns === 'llm-pi-ai')
-  if (!descriptor) throw Error('Auto Review requires the official pi-ai settings instance')
-  const provider = record(record(descriptor.value).providers)['opl-gateway-auto-review']
-  if (provider) return
-  const base = record(record(descriptor.base).providers)['opl-gateway-auto-review']
-  if (!base) throw Error('Auto Review provider is absent from the installed bundle')
-  await mutateModelSettings(
-    ctx,
-    'llm-pi-ai',
-    [{ op: 'set', path: ['providers', 'opl-gateway-auto-review'], value: base }],
-    descriptor.revision,
-  )
-}
-
 const migrations = new WeakMap<object, Promise<void>>()
 
 /**
- * Repair bundle-owned endpoints, exact model inputs, and Opus adaptive metadata.
- * A matching saved catalog hash permits refreshing automatic text defaults.
- * Custom connections and explicit user input/compat choices win.
+ * Migrate legacy `llm-pi-ai` `opl-gateway-*` overrides into `opl-suite.gatewayChannels`,
+ * remove retired hidden providers from `llm-pi-ai`, and normalize bundled defaults idempotently.
  */
-export function migrateGatewayProtocolDefaults(ctx: Context): Promise<void> {
+export function migrateLegacyGatewaySettings(ctx: Context): Promise<void> {
   const owner = contextOwner(ctx)
   let pending = migrations.get(owner)
   if (!pending) {
-    pending = migrateProtocolDefaults(ctx).finally(() => migrations.delete(owner))
+    pending = runGatewaySettingsMigration(ctx).finally(() => migrations.delete(owner))
     migrations.set(owner, pending)
   }
   return pending
 }
 
-async function migrateProtocolDefaults(ctx: Context): Promise<void> {
+/** @deprecated Kept as alias for existing internal callers during transition. */
+export const migrateGatewayProtocolDefaults = migrateLegacyGatewaySettings
+
+async function runGatewaySettingsMigration(ctx: Context): Promise<void> {
   const service = modelSettingsService(ctx)
-  const settings = service.describe({ redactSecrets: true })
-  const descriptor = settings.find((item) => item.ns === 'llm-pi-ai')
-  if (!descriptor) return
+  let descriptors = service.describe({ redactSecrets: true })
+  let suite = readSuiteDescriptor(descriptors)
+  if (!suite) return
+
+  // Step 1: Migrate user-owned legacy providers from `llm-pi-ai` into `opl-suite.gatewayChannels`,
+  // then unset all `LEGACY_GATEWAY_PI_AI_PROVIDERS` keys (including `opl-gateway-auto-review`)
+  // from `llm-pi-ai` so zero hidden Gateway cards survive on upgrade.
+  const piAi = descriptors.find((item) => item.ns === 'llm-pi-ai')
+  if (piAi) {
+    const piAiUserProviders = record(record(piAi.user).providers)
+    const piAiValueProviders = record(record(piAi.value).providers)
+    const suiteUserChannels = record(record(suite.user).gatewayChannels)
+    const migrateOps: SettingsPathOp[] = []
+
+    for (const group of GATEWAY_GROUPS) {
+      if (group.id === 'deepseek') continue
+      if (!Object.hasOwn(piAiUserProviders, group.provider)) continue
+      if (Object.hasOwn(suiteUserChannels, group.id)) continue
+      const migrated = cleanLegacyChannelProfile(record(piAiUserProviders[group.provider]))
+      migrateOps.push({
+        op: 'set',
+        path: ['gatewayChannels', group.id],
+        value: migrated,
+      })
+    }
+
+    if (migrateOps.length > 0) {
+      await mutateSuiteSettings(ctx, migrateOps, suite.revision)
+    }
+
+    const legacyKeysToUnset = LEGACY_GATEWAY_PI_AI_PROVIDERS.filter(
+      (key) => Object.hasOwn(piAiUserProviders, key) || Object.hasOwn(piAiValueProviders, key),
+    )
+    if (legacyKeysToUnset.length > 0) {
+      await service.mutate(
+        'llm-pi-ai',
+        legacyKeysToUnset.map((key) => ({ op: 'unset' as const, path: ['providers', key] })),
+        piAi.revision,
+      )
+    }
+
+    descriptors = service.describe({ redactSecrets: true })
+    suite = readSuiteDescriptor(descriptors)
+    if (!suite) return
+  }
+
+  // Step 2: Normalize bundled defaults on saved user channels in `opl-suite.gatewayChannels`.
+  const suiteUserChannels = record(record(suite.user).gatewayChannels)
   const savedCatalogs = savedModelCatalogs(service)
-  const ops: import('@deepseek-ai/dsh-settings').SettingsPathOp[] = []
+  const hashes = record(record(suite.value).gatewayCatalogHashes)
+  const ops: SettingsPathOp[] = []
   const ownedHashes: { group: string; models: unknown; previous: string }[] = []
-  const suite = settings.find((item) => item.ns === 'opl-suite')
-  const hashes = record(record(suite?.value).gatewayCatalogHashes)
+
   for (const group of GATEWAY_GROUPS) {
     if (group.id === 'deepseek') continue
-    const profile = providerSettings(descriptor, group.provider)
+    if (!Object.hasOwn(suiteUserChannels, group.id)) continue
+    const saved = record(suiteUserChannels[group.id])
+    const profile = resolveGatewayChannelProfile(descriptors, group.id)
     if (
-      !profile ||
       profile.api !== group.api ||
       profile.apiKeyEnv !== group.credential ||
       !isDefaultGatewayBaseURL(profile.baseURL)
     )
       continue
-    const baseURL = gatewayInferenceBaseURL(profile.api)
-    if (group.api === 'anthropic-messages' && profile.baseURL !== baseURL)
-      ops.push({ op: 'set', path: ['providers', group.provider, 'baseURL'], value: baseURL })
-    if (!Array.isArray(profile.models)) continue
-    const savedModels = savedCatalogs[group.id]
+
+    const baseURL = gatewayInferenceBaseURL(group.api)
+    if (group.api === 'anthropic-messages' && profile.baseURL !== baseURL) {
+      ops.push({ op: 'set', path: ['gatewayChannels', group.id, 'baseURL'], value: baseURL })
+    }
+
+    if (!Array.isArray(saved.models)) continue
+    const rawSavedModels = savedModelsList(savedModelsForHash(savedCatalogs[group.id]))
     const automaticCatalog =
-      Array.isArray(savedModels) && hashes[group.id] === catalogFingerprint(savedModels)
-    const adaptiveModels = profile.models.map((entry: ModelDraft) => {
+      Array.isArray(rawSavedModels) && hashes[group.id] === catalogFingerprint(rawSavedModels)
+    const cleanedSavedModels = cleanUserChannelModels(saved.models)
+    const adaptiveModels = cleanedSavedModels.map((entry: ModelDraft) => {
       if (
         group.api !== 'anthropic-messages' ||
         !['claude-opus-5-5', 'claude-fable-5-2'].includes(entry.id) ||
@@ -291,54 +331,54 @@ async function migrateProtocolDefaults(ctx: Context): Promise<void> {
     const models = withGatewayModelInputDefaults(group.id, profile, bundledModels, {
       refreshAutomaticInputs: automaticCatalog,
     })
-    if (
-      models.length === profile.models.length &&
-      models.every((entry, index) => entry === profile.models[index])
-    )
-      continue
-    ops.push({ op: 'set', path: ['providers', group.provider, 'models'], value: models })
+    if (isDeepStrictEqual(models, saved.models)) continue
+    ops.push({ op: 'set', path: ['gatewayChannels', group.id, 'models'], value: models })
     if (automaticCatalog) ownedHashes.push({ group: group.id, models, previous: hashes[group.id] })
   }
+
   if (!ops.length) return
-  await mutateModelSettings(ctx, 'llm-pi-ai', ops, descriptor.revision)
-  if (!ownedHashes.length || !suite) return
-  const updated = service.describe({ redactSecrets: true }).find((item) => item.ns === 'opl-suite')
-  if (!updated) return
-  const currentHashes = record(record(updated.value).gatewayCatalogHashes)
-  const stillOwned = ownedHashes.filter(({ group, previous }) => currentHashes[group] === previous)
-  if (!stillOwned.length) return
-  await mutateModelSettings(
-    ctx,
-    'opl-suite',
-    stillOwned.map(({ group, models }) => ({
-      op: 'set' as const,
+  for (const { group, models } of ownedHashes) {
+    ops.push({
+      op: 'set',
       path: ['gatewayCatalogHashes', group],
       value: catalogFingerprint(models),
-    })),
-    updated.revision,
-  )
+    })
+  }
+  await mutateSuiteSettings(ctx, ops, suite.revision)
+}
+
+function savedModelsForHash(value: unknown): unknown {
+  return Array.isArray(value) ? value : undefined
+}
+
+function savedModelsList(value: unknown): readonly unknown[] | undefined {
+  return Array.isArray(value) ? value : undefined
 }
 
 export async function gatewayModelSettings(ctx: Context): Promise<GatewayModelSettings> {
   const settings = modelSettingsService(ctx).describe({ redactSecrets: true })
+  const suite = readSuiteDescriptor(settings)
+  const suiteValue = record(suite?.value)
   const account = await ctx.get('oplGatewayAccount')?.status()
   return {
     groups: GATEWAY_GROUPS.filter(
       (group) => !gatewayGroupNotGranted(account?.groups?.find((item) => item.id === group.id)),
     ).map((group) => {
-      const descriptor = settings.find(
-        (item) => item.ns === (group.id === 'deepseek' ? 'opl-suite' : 'llm-pi-ai'),
-      )
-      const value = record(descriptor?.value)
       const profile =
         group.id === 'deepseek'
-          ? record(value.gateway)
-          : (providerSettings(descriptor, group.provider) ?? {})
-      const provider = group.id === 'deepseek' ? 'opl-gateway' : group.provider
+          ? record(suiteValue.gateway)
+          : resolveGatewayChannelProfile(settings, group.id)
       const rawModels = profile.models ?? (group.id === 'deepseek' ? DEFAULT_MODELS : [])
       const models = Array.isArray(rawModels)
         ? rawModels.filter(
-            (model: any) => !isRetiredModel({ provider, model: String(model?.id ?? '') }),
+            (model: any) =>
+              !isRetiredModel({
+                provider: 'opl-gateway',
+                model:
+                  group.id === 'deepseek'
+                    ? String(model?.id ?? '')
+                    : `${group.id}::${String(model?.id ?? '')}`,
+              }),
           )
         : []
       const status = account?.groups?.find((item) => item.id === group.id)
@@ -355,11 +395,12 @@ export async function gatewayModelSettings(ctx: Context): Promise<GatewayModelSe
           gatewayGroupEnabled(ctx, group.id) &&
           (account?.groups?.some((item) => item.id === group.id && item.state === 'ready') ??
             false),
-        revision: descriptor?.revision ?? 0,
+        revision: suite?.revision ?? 0,
       }
     }),
   }
 }
+
 export async function editGatewayModels(
   ctx: Context,
   input: unknown,
@@ -390,14 +431,13 @@ export async function editGatewayModels(
   const activeModels = models.filter(
     (model) =>
       !isRetiredModel({
-        provider: group.id === 'deepseek' ? 'opl-gateway' : group.provider,
-        model: String(model.id),
+        provider: 'opl-gateway',
+        model: group.id === 'deepseek' ? String(model.id) : `${group.id}::${String(model.id)}`,
       }),
   )
   if (group.id === 'deepseek') {
-    await mutateModelSettings(
+    await mutateSuiteSettings(
       ctx,
-      'opl-suite',
       [{ op: 'set', path: ['gateway', 'models'], value: activeModels }],
       args.revision,
       group.id,
@@ -405,57 +445,42 @@ export async function editGatewayModels(
   } else {
     if (!['openai-completions', 'openai-responses', 'anthropic-messages'].includes(args.api))
       throw Error('不支持的模型协议')
-    const descriptor = settings.describe().find((item) => item.ns === 'llm-pi-ai')
-    const profile = providerSettings(descriptor, group.provider)
+    const descriptors = settings.describe({ redactSecrets: true })
+    const suite = readSuiteDescriptor(descriptors)
+    const userChannel = record(record(record(suite?.user).gatewayChannels)[group.id])
+    const resolved = resolveGatewayChannelProfile(descriptors, group.id)
+    const defaultChannel = DEFAULT_GATEWAY_CHANNELS[group.id]
     const updateBaseURL =
-      profile &&
-      (profile.baseURL === undefined ||
-        (profile.apiKeyEnv === group.credential && isDefaultGatewayBaseURL(profile.baseURL)))
+      userChannel.baseURL === undefined ||
+      (resolved.apiKeyEnv === group.credential && isDefaultGatewayBaseURL(resolved.baseURL))
+    const targetBaseURL = updateBaseURL
+      ? gatewayInferenceBaseURL(args.api)
+      : (resolved.baseURL ?? defaultChannel.baseURL)
+    const nextChannel: GatewayChannelProfile = {
+      ...resolved,
+      displayName: resolved.displayName ?? `OPL Gateway · ${group.name}`,
+      api: args.api,
+      ...(targetBaseURL !== undefined ? { baseURL: targetBaseURL } : {}),
+      apiKeyEnv: resolved.apiKeyEnv ?? group.credential,
+    }
     const completeModels = withGatewayModelInputDefaults(
       group.id,
-      profile
-        ? {
-            ...profile,
-            api: args.api,
-            ...(updateBaseURL ? { baseURL: gatewayInferenceBaseURL(args.api) } : {}),
-          }
-        : {
-            api: args.api,
-            baseURL: gatewayInferenceBaseURL(args.api),
-            apiKeyEnv: group.credential,
-          },
+      nextChannel,
       activeModels as ModelDraft[],
     )
-    const ops: import('@deepseek-ai/dsh-settings').SettingsPathOp[] = profile
-      ? [
-          { op: 'set', path: ['providers', group.provider, 'models'], value: completeModels },
-          { op: 'set', path: ['providers', group.provider, 'api'], value: args.api },
-        ]
-      : [
-          {
-            op: 'set',
-            path: ['providers', group.provider],
-            value: {
-              displayName: `OPL Gateway · ${group.name}`,
-              api: args.api,
-              baseURL: gatewayInferenceBaseURL(args.api),
-              apiKeyEnv: group.credential,
-              models: completeModels,
-            },
-          },
-        ]
-    if (updateBaseURL)
-      ops.push({
-        op: 'set',
-        path: ['providers', group.provider, 'baseURL'],
-        value: gatewayInferenceBaseURL(args.api),
-      })
-    await mutateModelSettings(ctx, 'llm-pi-ai', ops, args.revision, group.id)
+    nextChannel.models = completeModels
+    await mutateSuiteSettings(
+      ctx,
+      [{ op: 'set', path: ['gatewayChannels', group.id], value: nextChannel }],
+      args.revision,
+      group.id,
+    )
   }
   if (gatewayCatalogStatus(ctx, group.id).state === 'error')
     clearGatewayCatalogStatus(ctx, group.id)
   return gatewayModelSettings(ctx)
 }
+
 /** List candidates using the configured endpoint and credential reference, without saving models. */
 export async function discoverGatewayModels(ctx: Context, input: unknown): Promise<ModelDraft[]> {
   const group = GATEWAY_GROUPS.find((item) => item.id === record(input).group)
@@ -470,26 +495,20 @@ export async function discoverGatewayModels(ctx: Context, input: unknown): Promi
     if (!gatewayGroupEnabled(ctx, group.id)) fail('disabled')
     const settings = modelSettingsService(ctx)
     const credentials = ctx.get('credentials')
+    const isolatedDiscover = gatewayPiAiDiscover(ctx)
     const llm = ctx.get('llm')
-    if (!credentials || !llm) fail('service_unavailable')
+    if (!credentials || (!isolatedDiscover && !llm)) fail('service_unavailable')
     const descriptors = settings.describe({ redactSecrets: true })
-    const descriptor = descriptors.find(
-      (item) => item.ns === (group.id === 'deepseek' ? 'opl-suite' : 'llm-pi-ai'),
-    )
-    if (!descriptor) fail('service_unavailable')
-    const configuredProfile =
+    const suite = readSuiteDescriptor(descriptors)
+    if (!suite) fail('service_unavailable')
+    const suiteValue = record(suite.value)
+    const profile: Record<string, any> =
       group.id === 'deepseek'
-        ? record(descriptor.value).gateway
-        : providerSettings(descriptor, group.provider)
-    const profile = record(configuredProfile)
+        ? record(suiteValue.gateway)
+        : resolveGatewayChannelProfile(descriptors, group.id)
     const deepseek = group.id === 'deepseek' ? toAdapterConfig(profile) : undefined
-    const api =
-      group.id === 'deepseek'
-        ? group.api
-        : (profile.api ?? (!configuredProfile ? group.api : undefined))
-    const ref =
-      (deepseek ? deepseek.apiKeyEnv : profile.apiKeyEnv) ??
-      (group.id === 'deepseek' || !configuredProfile ? group.credential : undefined)
+    const api = group.id === 'deepseek' ? group.api : (profile.api ?? group.api)
+    const ref = (deepseek ? deepseek.apiKeyEnv : profile.apiKeyEnv) ?? group.credential
     if (typeof api !== 'string' || typeof ref !== 'string' || !ref.trim()) fail('configuration')
     let baseURL: string
     try {
@@ -519,16 +538,15 @@ export async function discoverGatewayModels(ctx: Context, input: unknown): Promi
       const remaining = deadline - Date.now()
       signal = AbortSignal.timeout(Math.max(1, Math.min(DISCOVERY_ATTEMPT_TIMEOUT_MS, remaining)))
       try {
-        models = await llm.discoverModels(
-          'llm-pi-ai',
-          {
-            ...(group.id === 'deepseek' ? {} : { provider: group.provider }),
-            baseURL,
-            api: 'openai-completions',
-            apiKey: key,
-          },
-          signal,
-        )
+        const discoveryRequest = {
+          ...(group.id === 'deepseek' ? {} : { provider: group.provider }),
+          baseURL,
+          api: 'openai-completions',
+          apiKey: key,
+        }
+        models = isolatedDiscover
+          ? await isolatedDiscover(discoveryRequest, signal)
+          : await llm!.discoverModels('llm-pi-ai', discoveryRequest, signal)
         break
       } catch (error) {
         const diagnostic = diagnoseGatewayModelFailure(error, signal)
@@ -554,7 +572,11 @@ export async function discoverGatewayModels(ctx: Context, input: unknown): Promi
       configured,
     ).filter(
       (model) =>
-        offered.has(model.id) && !isRetiredModel({ provider: group.provider, model: model.id }),
+        offered.has(model.id) &&
+        !isRetiredModel({
+          provider: 'opl-gateway',
+          model: group.id === 'deepseek' ? model.id : `${group.id}::${model.id}`,
+        }),
     )
     const candidates = withGatewayModelInputDefaults(
       group.id,
@@ -575,7 +597,7 @@ export async function discoverGatewayModels(ctx: Context, input: unknown): Promi
 
 /** Refresh only catalogs whose user layer still equals the last automatic import. */
 export async function syncGatewayModels(ctx: Context): Promise<void> {
-  await migrateGatewayProtocolDefaults(ctx)
+  await migrateLegacyGatewaySettings(ctx)
   const service = modelSettingsService(ctx)
   const account = await ctx.get('oplGatewayAccount')?.status()
   for (const group of GATEWAY_GROUPS) {
@@ -585,10 +607,9 @@ export async function syncGatewayModels(ctx: Context): Promise<void> {
     }
     if (!gatewayGroupEnabled(ctx, group.id)) continue
     try {
-      const settings = service.describe({ redactSecrets: true })
-      const suite = settings.find((item) => item.ns === 'opl-suite')
-      const ns = group.id === 'deepseek' ? suite : settings.find((item) => item.ns === 'llm-pi-ai')
-      if (!suite || !ns)
+      const descriptors = service.describe({ redactSecrets: true })
+      const suite = readSuiteDescriptor(descriptors)
+      if (!suite)
         throw new GatewayModelDiscoveryError(
           group.id,
           group.name,
@@ -612,8 +633,8 @@ export async function syncGatewayModels(ctx: Context): Promise<void> {
       )
       // Do not make the default DeepSeek Flash route depend on the optional
       // OpenAI-protocol group. A user can still explicitly add this channel
-      // from the model page, which is the durable opt-in boundary.
-      if (group.id === 'codex' && savedModels === undefined)
+      // from the Gateway page, which is the durable opt-in boundary.
+      if (group.id === 'codex' && (savedModels === undefined || copied.has(group.id)))
         candidates = candidates.filter((model) => model.id !== 'deepseek-flash')
       if (!candidates.length) continue
       const snapshot = await gatewayModelSettings(ctx),
@@ -627,14 +648,11 @@ export async function syncGatewayModels(ctx: Context): Promise<void> {
         group: group.id,
         models,
         api: current.api,
-        revision: ns.revision,
+        revision: suite.revision,
       })
-      const updated = service
-        .describe({ redactSecrets: true })
-        .find((item) => item.ns === 'opl-suite')!
-      await mutateModelSettings(
+      const updated = readSuiteDescriptor(service.describe({ redactSecrets: true }))!
+      await mutateSuiteSettings(
         ctx,
-        'opl-suite',
         [
           {
             op: 'set',
@@ -652,6 +670,9 @@ export async function syncGatewayModels(ctx: Context): Promise<void> {
     }
   }
 }
-function catalogFingerprint(value: unknown): string {
+
+export function catalogFingerprint(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
+
+export type { GatewayPiAiGroupId }

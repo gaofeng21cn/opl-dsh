@@ -38,7 +38,15 @@ export async function verifyRoleClient(pipe, screenshot) {
       )
       await waitFor(click(['设置', 'Settings']), '设置入口未找到')
     }
-    await waitFor(click(['协作与自动化', 'Collaboration']), '协作设置入口未显示')
+    await waitFor(click(['执行引擎与协作', 'Engines & Collaboration']), '执行引擎与协作入口未显示')
+    await waitFor(
+      'Boolean(document.querySelector(\'[data-opl-panel="execution"]\'))',
+      '执行引擎与协作设置页未加载',
+    )
+    await pipe.evaluate(
+      sessionId,
+      `(() => {for (const d of document.querySelectorAll('[data-opl-panel="execution"] > details, [data-opl-panel="collaboration"] details')) if (d.querySelector('[data-opl-panel="collaboration"], [data-opl-role-executions]')) d.open = true})()`,
+    )
     const selector =
       "Array.from(document.querySelectorAll('[data-opl-role-executions] label')).find(node=>node.textContent.includes('OPL Codex 验证成员'))?.querySelector('select')"
     const original = await waitFor(

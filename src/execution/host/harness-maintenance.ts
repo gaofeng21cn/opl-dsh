@@ -174,19 +174,6 @@ export function maintenancePlan(item: HarnessInstallation): MaintenancePlan {
         ? 'https://filecdn.minimax.chat/public/install.ps1'
         : 'https://filecdn.minimax.chat/public/install.sh',
     )
-  if (['install', 'update'].includes(item.maintenanceAction) && item.id === 'mimo-code')
-    return downloadAndRun(
-      process.platform === 'win32'
-        ? 'https://mimo.xiaomi.com/install.ps1'
-        : 'https://mimo.xiaomi.com/install',
-      process.platform === 'win32' ? [] : ['--no-modify-path'],
-    )
-  if (['install', 'update'].includes(item.maintenanceAction) && item.id === 'step-code')
-    return downloadAndRun(
-      process.platform === 'win32'
-        ? 'https://static-openapi.stepfun.com/stepcode/install.ps1'
-        : 'https://static-openapi.stepfun.com/stepcode/install.sh',
-    )
   if (['install', 'update'].includes(item.maintenanceAction) && item.id === 'opencode')
     return npmGlobalInstall(
       `opencode-ai@${PINNED_COMPATIBLE_RELEASES.opencode}`,
@@ -240,9 +227,6 @@ export async function maintainHarness(
     if (!/^\d+\.\d+\.\d+$/.test(targetVersion)) throw Error('更新目标版本无效')
     if (item.id === 'kimi-code')
       plan.environment = { ...plan.environment, KIMI_VERSION: targetVersion }
-    if (item.id === 'step-code')
-      plan.environment = { ...plan.environment, STEP_VERSION: targetVersion }
-    if (item.id === 'mimo-code') plan.environment = { ...plan.environment, VERSION: targetVersion }
     plan.expectedVersion = targetVersion
   }
   const installerEnv = maintenanceEnvironment()

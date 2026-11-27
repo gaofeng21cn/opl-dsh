@@ -67,6 +67,11 @@ export const GATEWAY_GROUPS = [
 ] as const
 export type GatewayGroupId = (typeof GATEWAY_GROUPS)[number]['id']
 export type GatewayGroupName = (typeof GATEWAY_GROUPS)[number]['name']
+/** Legacy `llm-pi-ai` provider keys removed in v2 (retained only for migration & compatibility checks). */
+export const LEGACY_GATEWAY_PI_AI_PROVIDERS: readonly string[] = [
+  'opl-gateway-auto-review',
+  ...GATEWAY_GROUPS.filter((group) => group.id !== 'deepseek').map((group) => group.provider),
+]
 export const internalGatewayProvider = (id: string) =>
   id === 'opl-gateway-auto-review' ||
   GATEWAY_GROUPS.some((group) => group.id !== 'deepseek' && group.provider === id)

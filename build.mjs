@@ -1,8 +1,3 @@
-import {
-  buildFeaturePlugins,
-  hostContract,
-  pluginNamespaces,
-} from './scripts/build-feature-plugins.mjs'
 /** Build a self-contained enhancement tarball; DSH services stay runtime peers. */
 import { mkdir, readdir, readFile, writeFile, cp, rm } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
@@ -11,7 +6,6 @@ import { build } from 'esbuild'
 import { execFileSync } from 'node:child_process'
 import { generateRpc } from './scripts/generate-rpc.mjs'
 import { buildNativeBridge } from './scripts/build-native-bridge.mjs'
-import { buildSuperagent } from './scripts/build-superagent.mjs'
 const root = import.meta.dirname
 const output = process.env.OPL_DIST_DIR ? resolve(process.env.OPL_DIST_DIR) : join(root, 'dist')
 const project = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
@@ -75,10 +69,8 @@ for (const [entry, name] of [
   })
 }
 for (const [directory, name] of [
-  ['step', 'step-bridge'],
   ['pi', 'pi-bridge'],
   ['kimi', 'kimi-error-bridge'],
-  ['zcode-ofm', 'zcode-ofm-bridge'],
   ['.', 'chat-tool-bridge'],
 ]) {
   await bundle({
@@ -89,18 +81,6 @@ for (const [directory, name] of [
     target: 'node24',
     banner: esmRequireBanner,
     outfile: join(output, `package/lib/${name}.mjs`),
-  })
-}
-for (const name of ['muse-bridge.mjs', 'muse-bash-mcp.mjs', 'muse-endpoint.mjs']) {
-  await bundle({
-    entryPoints: [join(root, 'src/execution/host/adapters/muse', name)],
-    bundle: true,
-    platform: 'node',
-    format: 'esm',
-    target: 'node24',
-    external: ['./muse-bash-mcp.mjs', './muse-endpoint.mjs'],
-    banner: esmRequireBanner,
-    outfile: join(output, 'package/lib', name),
   })
 }
 /** The official client loader materializes the protocol root, not its pure remote-info leaf. */
@@ -147,6 +127,29 @@ const peers = Object.fromEntries(
     .sort()
     .map((name) => [name, '*']),
 )
+for (const dep of [
+  '@deepseek-ai/dsh-agent-instructions',
+  '@deepseek-ai/dsh-agent-preset-registry',
+  '@deepseek-ai/dsh-command-compact',
+  '@deepseek-ai/dsh-compaction-basic',
+  '@deepseek-ai/dsh-compaction-tool-result-pruner',
+  '@deepseek-ai/dsh-persona',
+  '@deepseek-ai/dsh-skill-filesystem',
+  '@deepseek-ai/dsh-time-context',
+  '@deepseek-ai/dsh-tool-ask-user',
+  '@deepseek-ai/dsh-tool-bash',
+  '@deepseek-ai/dsh-tool-fs',
+  '@deepseek-ai/dsh-tool-fs-search',
+  '@deepseek-ai/dsh-tool-jobs',
+  '@deepseek-ai/dsh-tool-office',
+  '@deepseek-ai/dsh-tool-present',
+  '@deepseek-ai/dsh-tool-pwsh',
+  '@deepseek-ai/dsh-tool-skill',
+  '@deepseek-ai/dsh-tool-todo',
+  '@deepseek-ai/dsh-tool-web',
+]) {
+  peers[dep] = '*'
+}
 await writeFile(
   join(output, 'package/package.json'),
   JSON.stringify(
@@ -214,16 +217,10 @@ const tar =
   process.platform === 'win32'
     ? join(process.env.SystemRoot ?? 'C:/Windows', 'System32', 'tar.exe')
     : 'tar'
-const plugins = await buildFeaturePlugins({ root, output, project, tar, officialClientRuntime })
 await writeFile(
   join(output, 'package/lib/typert.host.js'),
-  hostContract(
-    await readFile(join(root, 'src/generated/host.mjs'), 'utf8'),
-    project.name,
-    pluginNamespaces.base,
-  ),
+  await readFile(join(root, 'src/generated/host.mjs'), 'utf8'),
 )
-const superagent = await buildSuperagent(root, output, tar)
 execFileSync(
   tar,
   ['-czf', join(output, `opl-dsh-enhancements-${version}.tgz`), '-C', output, 'package'],
@@ -257,10 +254,7 @@ for (const entry of [
   'skill/harness-mcp.mjs',
   'skill/control.mjs',
   'skill/coordinator/cli.mjs',
-  'cleanup-skill/cleanup.mjs',
-  'kimi-cu.mjs',
   'desktop-update.mjs',
-  'superagent.mjs',
   'update.mjs',
   'update-transaction.mjs',
 ]) {
@@ -292,8 +286,6 @@ for (const entry of [
   })
 }
 await cp(join(output, name), join(installer, name))
-for (const plugin of plugins) await cp(join(output, plugin.name), join(installer, plugin.name))
-await cp(join(output, superagent.name), join(installer, superagent.name))
 // Git may materialize text files with CRLF on Windows. Normalize the POSIX
 // bootstrap files before hashing the installer payload so a Mac build made on
 // Windows remains executable and its manifest still matches the shipped bytes.
@@ -330,20 +322,14 @@ for (const file of [
   'install-linux.mjs',
   'profile.cjs',
   'model-plugins.cjs',
-  'split-plugins.cjs',
   'queue-onboarding.cjs',
   'ofm-upgrade.cjs',
   'ofm-desktop-admission.cjs',
   'ofm-owner.cjs',
-  'kimi-cu.mjs',
-  'kimi-cu-component.mjs',
-  'kimi-cu-windows.mjs',
-  'kimi-cu-windows.d.mts',
   'official-pnpm.cjs',
   'migrate.cjs',
   'setup.mjs',
   'native-shell-pending.cjs',
-  'superagent.mjs',
   'desktop-platform.mjs',
   'update.mjs',
   'update-discovery.mjs',
@@ -370,22 +356,9 @@ for (const file of [
   ...(process.platform === 'darwin' ? [macProcess] : []),
   'skill/coordinator/runtime.mjs',
   'skill/coordinator/state.mjs',
-  'cleanup-skill/SKILL.md',
-  'cleanup-skill/cleanup.mjs',
-  'cleanup-skill/snapshot.mjs',
-  'cleanup-skill/sqlite-store.mjs',
-  'cleanup-skill/restore-files.mjs',
-  'cleanup-skill/windows-io.mjs',
-  'cleanup-skill/macos-io.mjs',
-  'cleanup-skill/quit-windows.ps1',
-  'cleanup-skill/agents/openai.yaml',
-  'cleanup-skill/references/windows-recycling.md',
-  'cleanup-skill/references/provider-contract.md',
   'windows-lifecycle.mjs',
   'runtime-backups.mjs',
   name,
-  superagent.name,
-  ...plugins.map((plugin) => plugin.name),
 ]) {
   payloadFiles[file] = createHash('sha256')
     .update(await readFile(join(installer, file)))
@@ -441,8 +414,6 @@ const artifact = {
   officialVersion,
   updateProtocolVersion: 1,
   unattendedUpdateProtocolVersion: 1,
-  superagent,
-  plugins,
   enhancementVersion: version,
   sourceCommit,
   sourceDirty,

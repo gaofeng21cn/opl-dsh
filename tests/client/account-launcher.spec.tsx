@@ -38,8 +38,10 @@ async function mount(readAccount: () => Promise<GatewayAccountStatus>, wide = tr
     wide,
     settingsOpen: false,
     readAccount,
-    bindModelNavigation: vi.fn(),
-    bindSettingsNavigation: vi.fn<(navigate: (() => void) | undefined) => void>(),
+    bindSettingsNavigation:
+      vi.fn<
+        (navigate: ((section?: 'general' | 'engines' | 'gateway') => void) | undefined) => void
+      >(),
     openSettings,
     openOnboarding,
     t: (key: keyof typeof zh) => zh[key],
@@ -64,12 +66,17 @@ it('does not infer a login from ready model credentials', async () => {
   expect(view.container.textContent).toBe('未登录')
 })
 
-it('opens update notices through General settings and releases the navigation callback', async () => {
+it('routes settings navigation directly through official openSettings and releases on unmount', async () => {
   const view = await mount(async () => status())
   const navigate = view.props.bindSettingsNavigation.mock.calls.at(-1)?.[0]
   expect(navigate).toBeTypeOf('function')
   navigate!()
-  expect(view.openOnboarding).toHaveBeenCalledWith('opl-update-navigation')
+  expect(view.openSettings).toHaveBeenCalledWith('general')
+  navigate!('engines')
+  expect(view.openSettings).toHaveBeenCalledWith('opl-execution')
+  navigate!('gateway')
+  expect(view.openSettings).toHaveBeenCalledWith('opl-gateway')
+  expect(view.openOnboarding).not.toHaveBeenCalled()
   await act(async () => view.root.unmount())
   expect(view.props.bindSettingsNavigation).toHaveBeenLastCalledWith(undefined)
 })

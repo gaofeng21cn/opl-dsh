@@ -3,6 +3,7 @@ import { withoutRememberingPermission } from '../../compat/host/permission-memor
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-permission-presets'
+import { isCustomAcpHarness } from '../contracts/harness-groups.ts'
 import type { HarnessSession } from '../contracts/sessions.ts'
 
 /**
@@ -26,12 +27,7 @@ const FULL_ACCESS_HARNESSES: ReadonlySet<string> = new Set([
   'grok-build',
   'antigravity',
   'qwen-code',
-  'zcode',
   'kimi-code',
-  'mimo-code',
-  'pool',
-  'step-code',
-  'muse-code',
   'opencode',
   'pi',
   'kilo',
@@ -44,10 +40,19 @@ const FULL_ACCESS_HARNESSES: ReadonlySet<string> = new Set([
  * A harness outside this set keeps the previous behaviour: a requested full-access task
  * is reported as unsupported rather than silently downgraded or silently widened.
  * @param harnessRef - harness reference from the catalog.
- * @returns true only for harnesses with a verified official full-access path.
+ * @param harnesses - catalog harness definitions used to recognize registered custom ACP engines.
+ * @param adapter - resolved adapter carrying verified runtime permission capabilities.
+ * @returns true only for harnesses with a verified official full-access path or registered custom ACP.
  */
-export function harnessAllowsFullAccess(harnessRef: string): boolean {
-  return FULL_ACCESS_HARNESSES.has(harnessRef)
+export function harnessAllowsFullAccess(
+  harnessRef: string,
+  harnesses?: readonly { id: string; kind: string }[],
+  adapter?: { capabilities: { permissions: readonly string[] } },
+): boolean {
+  if (adapter) return adapter.capabilities.permissions.includes('full-access')
+  if (FULL_ACCESS_HARNESSES.has(harnessRef)) return true
+  const custom = harnesses?.find((item) => item.id === harnessRef)
+  return isCustomAcpHarness(custom)
 }
 
 /** Return the built-in preset matching the task's authorized filesystem access. */

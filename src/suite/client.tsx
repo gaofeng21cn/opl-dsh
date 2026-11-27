@@ -6,12 +6,13 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import './Conversation.module.css'
 import * as gateway from '../gateway/client/index.tsx'
 import * as setup from '../setup/client/index.tsx'
+import type { SettingsNavigationTarget } from '../setup/client/AccountLauncher.tsx'
 import * as notifications from '../notifications/client/index.tsx'
 import * as conversationStats from '../conversation-stats/client/index.tsx'
-import * as settingsNavigation from '../compat/client/settings-navigation.ts'
+import * as execution from '../execution/client/index.tsx'
+import * as collaboration from '../collaboration/client/index.tsx'
 import * as updates from '../updates/client/index.tsx'
 import * as windowTitle from '../window-title/client/index.tsx'
 import { subscribeUpdateWatch } from '../updates/client/watch.ts'
@@ -23,9 +24,18 @@ import {
 } from '../shared/client/FeaturePreferences.tsx'
 import { optionalRemote, remoteCall } from '../shared/client/remote-call.ts'
 import { NativeShellPreference, nativeShellLabels, type NativeShellApi } from '../shell/client.tsx'
-export const inject = ['remote', 'slots', 'locale']
+export const inject = ['remote', 'slots', 'locale', 'sessions', 'uiConversation', 'uiWorkspace']
 export async function apply(ctx: Context): Promise<void> {
-  await mountRemotes(ctx, ['oplSetup', 'oplGatewayAccount', 'oplGatewayModels', 'oplUpdates'])
+  await mountRemotes(ctx, [
+    'oplSetup',
+    'oplGatewayAccount',
+    'oplGatewayModels',
+    'oplUpdates',
+    'oplExecution',
+    'oplCoordination',
+    'oplRoleExecution',
+    'taskFeedback',
+  ])
   const setupRemote = optionalRemote(ctx, 'oplSetup')
   if (setupRemote && isWindowsDesktop()) {
     ctx.effect(() => ctx.locale.register('settings.oplNativeShell', nativeShellLabels))
@@ -47,10 +57,33 @@ export async function apply(ctx: Context): Promise<void> {
       ),
     )
   }
-  ctx.plugin(settingsNavigation)
-  let openModels: (() => void) | undefined
-  let openSettings: ((section?: 'engines') => void) | undefined
-  ctx.plugin(gateway, { openModels: () => openModels?.() })
+  let openSettings: ((section?: SettingsNavigationTarget) => void) | undefined
+  ctx.plugin(gateway, { openGateway: () => openSettings?.('gateway') })
+  const executionRemote = optionalRemote(ctx, 'oplExecution')
+  const coordinationRemote = optionalRemote(ctx, 'oplCoordination')
+  if (executionRemote) {
+    const executionCall = remoteCall(executionRemote)
+    const coordinationCall = coordinationRemote ? remoteCall(coordinationRemote) : undefined
+    const roleRemote = optionalRemote(ctx, 'oplRoleExecution')
+    const roleCall = roleRemote ? remoteCall(roleRemote) : undefined
+    ctx.plugin(
+      execution,
+      coordinationCall
+        ? {
+            renderCollaboration: () => (
+              <collaboration.CoordinationSection
+                embedded
+                call={coordinationCall}
+                executionCall={executionCall}
+                {...(roleCall ? { roleCall } : {})}
+              />
+            ),
+          }
+        : {},
+    )
+  } else if (coordinationRemote) {
+    ctx.plugin(collaboration)
+  }
   ctx.plugin(notifications)
   ctx.effect(() => ctx.locale.register(SUITE_FEATURE_NAMESPACE, labels))
   ctx.plugin(conversationStats)
@@ -87,7 +120,6 @@ export async function apply(ctx: Context): Promise<void> {
         setAutomatic: (enabled: boolean) => call('automatic', enabled),
         prepare: () => call('prepare'),
         applyNow: () => call('applyNow'),
-        updateKimiCu: () => call('updateKimiCu'),
         cancel: () => call('cancel'),
         setPolicy: (policy) => call('policy', policy),
         postpone: () => call('postpone'),
@@ -106,10 +138,9 @@ export async function apply(ctx: Context): Promise<void> {
     })
   }
   ctx.plugin(setup, {
-    bindModelNavigation: (navigate: (() => void) | undefined) => {
-      openModels = navigate
-    },
-    bindSettingsNavigation: (navigate: ((section?: 'engines') => void) | undefined) => {
+    bindSettingsNavigation: (
+      navigate: ((section?: SettingsNavigationTarget) => void) | undefined,
+    ) => {
       openSettings = navigate
     },
   })

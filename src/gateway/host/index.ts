@@ -1,14 +1,11 @@
 import { LlmError } from '../../shared/llm-error.ts'
 import { gatewayGroupEnabled } from './group-settings.ts'
-import {
-  ensureAutoReviewProvider,
-  migrateGatewayProtocolDefaults,
-  syncGatewayModels,
-} from './model-settings.ts'
+import { migrateLegacyGatewaySettings, syncGatewayModels } from './model-settings.ts'
+import { mountGatewayPiAiBridge } from './pi-ai-bridge.ts'
 /** OPL-owned credentials and model-group routing over official DSH adapters. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { LlmAdapter, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
+import { resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
 import type { LlmProviderInfo } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-attachment'
 import {
@@ -24,7 +21,7 @@ import type { ResolvedDeepSeekOptions } from '@deepseek-ai/dsh-llm-deepseek-api-
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/dsh-settings'
 import { OplGatewayAccountService } from './account-service.ts'
-import { GatewayModelAdapter, OPENAI_PROVIDER, AUTO_REVIEW_PROVIDER } from './model-router.ts'
+import { GatewayModelAdapter } from './model-router.ts'
 import { GATEWAY_GROUPS, type GatewayGroupId } from '../contracts/groups.ts'
 import { Config, CODEX_API_KEY_REF, DEFAULT_API_KEY_REF, toAdapterConfig } from './config.ts'
 import { OPL_GATEWAY_INFERENCE_BASE_URL } from './opl-credentials.ts'
@@ -132,7 +129,7 @@ class OplGatewayAdapter extends DeepSeekAdapter<ResolvedDeepSeekOptions> {
   }
 }
 
-export function apply(ctx: Context, config: Config): void {
+export async function apply(ctx: Context, config: Config): Promise<void> {
   const current = (): Config =>
     (
       ctx
@@ -228,46 +225,15 @@ export function apply(ctx: Context, config: Config): void {
       )
     },
   })
-  ctx.llm.registerConfigurableProviders([
-    {
-      provider: PROVIDER,
-      displayName: DISPLAY_NAME,
-      settingsNs: 'opl-suite',
-      settingsPath: ['gateway'],
-    },
-  ])
+  const piAiBridge = await mountGatewayPiAiBridge(ctx)
   let activeChannel: GatewayGroupId | undefined
-  const delegated = new (class extends LlmAdapter {
-    override imageRequestPricing(provider: string, model: string) {
-      return ctx.llm.imageRequestPricing(provider, model)
-    }
-    override listModels(provider: string) {
-      return ctx.llm.listProviders().some((item) => item.id === provider)
-        ? ctx.llm.listModels(provider)
-        : Promise.resolve([])
-    }
-    override resolveModel(provider: string, model: string, signal?: AbortSignal) {
-      return ctx.llm.resolveModelInfo(provider, model, signal)
-    }
-    override async prepareCall(provider: string, model: string, signal?: AbortSignal) {
-      const info = await this.resolveModel(provider, model, signal)
-      return {
-        model: info,
-        stream: (request: import('@deepseek-ai/dsh-llm').GenerateOptions) =>
-          ctx.llm.stream({ ...request, provider }),
-      }
-    }
-    stream(request: import('@deepseek-ai/dsh-llm').GenerateOptions) {
-      return ctx.llm.stream(request)
-    }
-  })()
   ctx.llm.registerAdapter(
     [PROVIDER],
     new GatewayModelAdapter(
       GATEWAY_GROUPS.map((group) => ({
         group: group.id,
         provider: group.provider,
-        adapter: group.id === 'deepseek' ? adapter : delegated,
+        adapter: group.id === 'deepseek' ? adapter : piAiBridge.adapter,
         available: async () => {
           if (!gatewayGroupEnabled(ctx, group.id)) return false
           const ref =
@@ -277,14 +243,6 @@ export function apply(ctx: Context, config: Config): void {
       })),
       (group) => {
         activeChannel = group
-      },
-      {
-        group: 'codex',
-        provider: AUTO_REVIEW_PROVIDER,
-        adapter: delegated,
-        available: async () =>
-          gatewayGroupEnabled(ctx, 'codex') &&
-          !!(await ctx.get('credentials')?.resolve(credentialRef(CODEX_API_KEY_REF)))?.value,
       },
       async () => ctx.get('oplHarness')?.codexModelEfforts(),
     ),
@@ -333,19 +291,28 @@ export function apply(ctx: Context, config: Config): void {
     let closed = false
     let pending: Promise<void> | undefined
     let requested = false
+    let migrating = false
+    let lastPiAiSeen = false
     child.effect(() => () => {
       closed = true
       return pending
     })
     const restore = () => {
+      const descriptors = child.settings.describe()
+      const hasPiAi = descriptors.some((item) => item.ns === 'llm-pi-ai')
+      if (hasPiAi && !lastPiAiSeen) restored = false
+      lastPiAiSeen = hasPiAi
       if (closed || restored) return
       requested = true
-      if (pending || !child.settings.describe().some((item) => item.ns === 'llm-pi-ai')) return
+      if (pending || !descriptors.some((item) => item.ns === 'opl-suite')) return
       requested = false
       pending = (async () => {
-        await migrateGatewayProtocolDefaults(child)
-        if (closed) return
-        await ensureAutoReviewProvider(child)
+        migrating = true
+        try {
+          await migrateLegacyGatewaySettings(child)
+        } finally {
+          migrating = false
+        }
         if (!closed) restored = true
       })()
         .catch(() => {
@@ -363,7 +330,10 @@ export function apply(ctx: Context, config: Config): void {
       if (fiber.runtime?.name === 'llm-pi-ai') queueMicrotask(restore)
     })
     child.on('settings/document-updated', (ns) => {
-      if (ns === 'llm-pi-ai' || ns === 'opl-suite') queueMicrotask(restore)
+      if (!migrating && (ns === 'llm-pi-ai' || ns === 'opl-suite')) {
+        restored = false
+        queueMicrotask(restore)
+      }
     })
     queueMicrotask(restore)
   })

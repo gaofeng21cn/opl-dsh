@@ -1,7 +1,5 @@
-import { installCleanupSkill, installSkill, verifySkill } from './skill-install.mjs'
+import { installSkill, verifySkill } from './skill-install.mjs'
 import { isLocalCandidateInstall } from './update.mjs'
-import { installKimiCu } from './kimi-cu.mjs'
-import { installWindowsKimiCu } from './kimi-cu-windows.mjs'
 /** Install OPL-owned files into the official DSH profile, then launch the official app. */
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync } from 'node:fs'
@@ -147,28 +145,9 @@ if (!existsSync(patch))
     '- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n    compression: gzip\n    compressionLevel: 1\n    compressionThresholdBytes: 1024\n',
     { mode: 0o600, flag: 'wx' },
   )
-const featurePlugins = artifact.plugins ?? []
-if (
-  featurePlugins.length &&
-  (featurePlugins.length !== 2 ||
-    featurePlugins.some(
-      (plugin, index) =>
-        plugin.package !==
-          ['@one-person-lab/dsh-execution', '@one-person-lab/dsh-collaboration'][index] ||
-        !/^opl-dsh-(execution|collaboration)-[a-zA-Z0-9.-]+\.tgz$/.test(plugin.name) ||
-        artifact.payloadFiles[plugin.name] !== plugin.sha256,
-    ))
-)
-  throw Error('OPL 功能插件清单无效')
 run(
   executable,
-  [
-    join(release, 'profile.cjs'),
-    app,
-    home,
-    join(release, artifact.name),
-    ...featurePlugins.map((plugin) => '--plugin=' + join(release, plugin.name)),
-  ],
+  [join(release, 'profile.cjs'), app, home, join(release, artifact.name), '--default-context'],
   {
     ELECTRON_RUN_AS_NODE: '1',
   },
@@ -232,11 +211,6 @@ foreach ($folder in @('Programs', 'Desktop')) {
   }
 }
 const skillDir = installSkill({ executable, home, launcher, root, release, codexHome })
-const cleanupSkillDir = installCleanupSkill({ release, codexHome })
-const computerUse = await (process.platform === 'win32' ? installWindowsKimiCu : installKimiCu)({
-  suiteRoot: root,
-  log: (message) => process.stdout.write(`${message}\n`),
-})
 const resources = join(app, process.platform === 'win32' ? 'resources' : 'Contents/Resources')
 const manifestPath = join(resources, 'app.asar/package.json')
 const manifest = spawnSync(
@@ -268,8 +242,6 @@ const installation = {
   launcher,
   compatibilityLauncher,
   skillDir,
-  cleanupSkillDir,
-  computerUse,
   installedAt: new Date().toISOString(),
 }
 mkdirSync(join(home, 'opl-dsh'), { recursive: true, mode: 0o700 })
@@ -303,10 +275,6 @@ try {
   console.warn(`过期官方安装包缓存清理失败，已保留当前安装：${error.message}`)
 }
 console.log('官方桌面和 OPL 增强已安装。Codex Skill：opl-dsh-official。')
-if (process.platform === 'darwin' && computerUse.state === 'installed')
-  console.log('KimiCU Computer Use 已安装；首次使用请在系统设置中授予辅助功能和屏幕录制权限。')
-else if (process.platform === 'darwin' && computerUse.state === 'deferred')
-  console.log('KimiCU Computer Use 未完成安装；DSH 其他功能可继续使用，详情见安装回执。')
 if (!flags.includes('--no-launch')) {
   // Same entry point as the desktop shortcut and the Skill: launch.vbs sets
   // ELECTRON_RUN_AS_NODE and setup.mjs receives home/root/app as argv, so the
