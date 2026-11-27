@@ -6,9 +6,10 @@ OPL DSH 使用一个联合稳定版本表示一套可安装组合。macOS arm64 
 
 ## 每日自动发布
 
-根目录 `product-release.json` 把本流程登记为 OPL 统一产品巡检的 `owner_schedule`。
-统一任务回读本仓最近的定时发布结果；版本准备、官方 feed 比较与发布继续由下述
-唯一 workflow 执行。
+根目录 `product-release.json` 把本流程登记为 OPL 统一产品巡检的 `owner_schedule`，
+并声明可接收 `opl-release` 的每日派发。接收端校验中央定时运行、派发 GitHub App
+身份和控制运行 ID，版本准备、官方 feed 比较与发布均由本仓 Stable 工作流执行。
+迁移期间，统一任务回读本仓发布结果，本仓定时入口继续负责触发。
 
 OPL DSH 是官方桌面的打包增强层，采用与 OPL 智能体相同的每日云端巡检发布策略。用户持续授权 GitHub Actions 在 `gaofeng21cn/opl-dsh` 内自动准备版本、提交主线、创建发布 tag、运行既有稳定发布工作流并公开合格资产，无需用户逐次手动触发或批准。
 

@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import YAML from 'yaml'
 import {
@@ -200,6 +201,69 @@ test('stable workflow makes Windows qualification and evidence mandatory', async
   )
   assert.doesNotMatch(publisher, /status: 'unavailable'|status: 'failed'/)
   assert.match(publisher, /OPL_PREPARED_OFFICIAL_WINDOWS_VERSION/)
+})
+
+test('central daily dispatch verifies the parent run and rejects duplicate or mixed requests', async () => {
+  const workflow = YAML.parse(
+    await readFile(new URL('../.github/workflows/stable-release.yml', import.meta.url), 'utf8'),
+  )
+  const step = workflow.jobs.prepare.steps.find(
+    ({ name }) => name === 'Verify central schedule invocation',
+  )
+  assert.equal(step.if, "inputs.opl_release_control_run_id != ''")
+  assert.equal(workflow.on.schedule[0].cron, '37 18 * * *')
+  const controller = {
+    id: 100,
+    repository: { full_name: 'gaofeng21cn/opl-release' },
+    head_repository: { full_name: 'gaofeng21cn/opl-release' },
+    path: '.github/workflows/control-daily-releases.yml',
+    event: 'schedule',
+    head_branch: 'main',
+    run_attempt: 1,
+    status: 'in_progress',
+  }
+  const earlierDispatch = {
+    id: 200,
+    actor: { id: 173561466 },
+    display_title: 'Stable release [opl-release:100]',
+  }
+  const run = ({ parent = controller, dispatches = [], overrides = {} } = {}) =>
+    spawnSync(
+      'bash',
+      [
+        '-c',
+        `
+      curl() { printf '%s' "$PARENT_RUN"; }
+      gh() { printf '%s' "$DISPATCH_RUNS"; }
+      ${step.run}
+    `,
+      ],
+      {
+        env: {
+          ...process.env,
+          CONTROL_RUN_ID: '100',
+          CASK_ONLY: 'false',
+          REBUILD: 'false',
+          GITHUB_EVENT_NAME: 'workflow_dispatch',
+          GITHUB_REF: 'refs/heads/main',
+          GITHUB_ACTOR_ID: '173561466',
+          GITHUB_REPOSITORY: 'gaofeng21cn/opl-dsh',
+          GITHUB_RUN_ID: '201',
+          PARENT_RUN: JSON.stringify(parent),
+          DISPATCH_RUNS: JSON.stringify({ workflow_runs: dispatches }),
+          ...overrides,
+        },
+        encoding: 'utf8',
+      },
+    )
+  const accepted = run({ dispatches: [{ ...earlierDispatch, actor: { id: 987 } }] })
+  assert.equal(accepted.status, 0, accepted.stderr)
+  assert.equal(run({ dispatches: [{ ...earlierDispatch, id: 202 }] }).status, 0)
+  assert.equal(run({ dispatches: [earlierDispatch] }).status, 1)
+  assert.equal(run({ parent: { ...controller, event: 'workflow_dispatch' } }).status, 1)
+  assert.equal(run({ overrides: { GITHUB_ACTOR_ID: '987' } }).status, 1)
+  assert.equal(run({ overrides: { CASK_ONLY: 'true' } }).status, 1)
+  assert.equal(run({ overrides: { REBUILD: 'true' } }).status, 1)
 })
 
 test('compatibility retains qualification failures without secondary missing-artifact errors', async () => {
