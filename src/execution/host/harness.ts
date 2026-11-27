@@ -24,6 +24,7 @@ import type { HarnessInstallation } from '../contracts/installations.ts'
 import {
   executionModelRefKey,
   isRemovableCombination,
+  isRetiredModel,
   modelRefKey,
   type CombinationDefinition,
   type HarnessDefinition,
@@ -126,7 +127,8 @@ import {
 import { ExternalEffortStore } from './external-effort-store.ts'
 import { ExecutionModelResolver } from './execution-models.ts'
 import { assertOfmModelAvailable } from './model-admission.ts'
-import { OFM_PROVIDERS } from './ofm-source/provider.ts'
+import { OFM_PROVIDERS, isOfmVirtualRef } from './ofm-source/provider.ts'
+import { isHiddenOfmSelection } from './ofm-source/selection-policy.ts'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import { adapterFor, defaultHarness } from './adapters/index.ts'
 import { connectDsh } from './adapters/dsh.ts'
@@ -1295,7 +1297,16 @@ export class HarnessService {
         return structuredClone(snapshot.catalog)
       const persisted = await this.catalogStore.get()
       this.knownHarnesses = persisted.harnesses
-      return { ...persisted, minimaxCodeEnabled }
+      return {
+        ...persisted,
+        combinations: persisted.combinations.filter(
+          (item) =>
+            !isHiddenOfmSelection(item.modelRef) &&
+            !isRetiredModel(item.modelRef) &&
+            (minimaxCodeEnabled || !isMiniMaxCodeRoute(item)),
+        ),
+        minimaxCodeEnabled,
+      }
     }
     return this.executionCatalogAfter(pending, minimaxCodeEnabled)
   }
@@ -1361,7 +1372,13 @@ export class HarnessService {
     this.runtimeMaintenance.assertAvailable()
     const previous = await this.catalogStore.get()
     this.runtimeMaintenance.assertAvailable()
-    const supplied = normalizeCatalog(value)
+    const rawSupplied = normalizeCatalog(value)
+    const supplied = rawSupplied.combinations.some((item) => isOfmVirtualRef(item.modelRef))
+      ? normalizeCatalog({
+          ...rawSupplied,
+          combinations: rawSupplied.combinations.filter((item) => !isOfmVirtualRef(item.modelRef)),
+        })
+      : rawSupplied
     // Hidden integration rows are not editable in this projection. Restore their
     // persisted values so an unrelated catalog save cannot delete or replace them.
     const next = !preserveMiniMaxRows

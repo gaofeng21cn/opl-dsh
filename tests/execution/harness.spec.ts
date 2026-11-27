@@ -187,6 +187,68 @@ it('returns the persisted catalog while a live catalog refresh is pending', asyn
   })
 })
 
+it('excludes virtual OFM combos from persistence and filters hidden rows in fast fallback', async () => {
+  const { service, options, ctx } = await nativeSetup()
+  const initial = await service.executionCatalog()
+  await service.saveExecutionCatalog({
+    ...initial,
+    combinations: [
+      ...initial.combinations,
+      {
+        id: 'manual-ofm-model',
+        name: 'Manual OFM',
+        modelRef: { provider: 'our-free-model', model: 'opl-qualification-free' },
+        harnessRef: 'dsh',
+        permissionPolicy: 'workspace',
+        isDefault: true,
+        enabled: true,
+      },
+      {
+        id: 'manual-virtual-combo',
+        name: 'Virtual Combo',
+        modelRef: { provider: 'our-free-model', model: 'combo:qualification-route' },
+        harnessRef: 'dsh',
+        permissionPolicy: 'workspace',
+        isDefault: true,
+        enabled: true,
+      },
+    ],
+  })
+
+  const fastAfterSave = await service.executionCatalog({ fast: true })
+  expect(fastAfterSave.combinations.some((item) => item.id === 'manual-ofm-model')).toBe(true)
+  expect(fastAfterSave.combinations.some((item) => item.id === 'manual-virtual-combo')).toBe(false)
+
+  const store = new ExecutionCatalogStore(options.home)
+  const persisted = await store.get()
+  expect(persisted.combinations.some((item) => item.id === 'manual-virtual-combo')).toBe(false)
+
+  await store.set({
+    ...persisted,
+    combinations: [
+      ...persisted.combinations,
+      {
+        id: 'legacy-virtual-combo',
+        name: 'Legacy Virtual Combo',
+        modelRef: { provider: 'our-free-model', model: 'combo:legacy-route' },
+        harnessRef: 'dsh',
+        permissionPolicy: 'workspace',
+        isDefault: true,
+        enabled: true,
+      },
+    ],
+  })
+  const restarted = new HarnessService(ctx, options)
+  try {
+    const fastRestarted = await restarted.executionCatalog({ fast: true })
+    expect(fastRestarted.combinations.some((item) => item.id === 'legacy-virtual-combo')).toBe(
+      false,
+    )
+  } finally {
+    await restarted.dispose()
+  }
+})
+
 it('shares overlapping availability probes but refreshes completed and changed results', async () => {
   const { service } = await nativeSetup([{ id: 'deepseek-flash', name: 'DeepSeek' }])
   const snapshot = await service.executionCatalog()
