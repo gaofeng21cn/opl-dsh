@@ -161,7 +161,7 @@ export function releaseForInstallation(current, metadata) {
     url: metadata.url,
     publishedAt: metadata.publishedAt,
     compatibility:
-      manifest.enhancement.updateProtocolVersion === 1 &&
+      manifest.enhancement.updateProtocolVersion === 2 &&
       manifest.enhancement.unattendedUpdateProtocolVersion === 1 &&
       current.officialVersion === officialVersion &&
       compatiblePlatform(current.platform ?? process.platform, current.arch ?? process.arch)

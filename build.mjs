@@ -412,7 +412,7 @@ const officialVersion =
 const artifact = {
   version: officialVersion,
   officialVersion,
-  updateProtocolVersion: 1,
+  updateProtocolVersion: 2,
   unattendedUpdateProtocolVersion: 1,
   enhancementVersion: version,
   sourceCommit,

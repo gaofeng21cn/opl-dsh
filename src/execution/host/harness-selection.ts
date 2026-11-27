@@ -702,60 +702,65 @@ export async function selectModelHarness(
         item.harnessRef === harnessRef,
     )
     if (!definition || (input.setAsDefault === true && !definition.isDefault)) {
-      const persisted = await host.catalogStore.get()
-      const hasExistingDefault =
-        catalog.combinations.some(
-          (item) =>
-            item.enabled && item.isDefault && executionModelRefKey(item.modelRef) === requestedKey,
-        ) ||
-        persisted.combinations.some(
-          (item) =>
-            item.enabled && item.isDefault && executionModelRefKey(item.modelRef) === requestedKey,
-        )
-      const makeDefault = input.setAsDefault === true || !hasExistingDefault
-      const persistedMatches = (item: CombinationDefinition) =>
-        executionModelRefKey(item.modelRef) === requestedKey && item.harnessRef === harnessRef
-      const existingIndex = persisted.combinations.findIndex(persistedMatches)
-      const updated = persisted.combinations.map((item) => {
-        if (executionModelRefKey(item.modelRef) !== requestedKey) return item
-        if (makeDefault) return { ...item, isDefault: false, defaultDisabled: true }
-        return item
-      })
-      if (existingIndex >= 0) {
-        const target = updated[existingIndex]!
-        updated[existingIndex] = {
-          ...target,
-          enabled: true,
-          autoEnabledDisabled: false,
-          ...(makeDefault ? { isDefault: true, defaultDisabled: false } : {}),
-        }
-      } else {
-        const rawBaseId = `custom:${harnessRef}:${model.ref.provider}:${model.ref.model}`
-        const baseId =
-          rawBaseId.length <= 480
-            ? rawBaseId
-            : `custom:${harnessRef}:${createHash('sha256').update(rawBaseId).digest('hex').slice(0, 24)}`
-        const id = updated.some((item) => item.id === baseId)
-          ? `${baseId}:${randomUUID().slice(0, 8)}`
-          : baseId
-        const permissionPolicy = adapter.capabilities.permissions.includes('workspace')
-          ? 'workspace'
-          : adapter.capabilities.permissions.includes('read-only')
-            ? 'read-only'
-            : 'full-access'
-        updated.push({
-          id,
-          name: `${displayModelName(model.ref, model.name)} + ${harness.name}`,
-          modelRef: model.ref,
-          harnessRef,
-          permissionPolicy,
-          isDefault: makeDefault,
-          enabled: true,
-          generated: false,
-          autoEnabled: false,
+      await host.catalogStore.update((persisted) => {
+        const hasExistingDefault =
+          catalog.combinations.some(
+            (item) =>
+              item.enabled &&
+              item.isDefault &&
+              executionModelRefKey(item.modelRef) === requestedKey,
+          ) ||
+          persisted.combinations.some(
+            (item) =>
+              item.enabled &&
+              item.isDefault &&
+              executionModelRefKey(item.modelRef) === requestedKey,
+          )
+        const makeDefault = input.setAsDefault === true || !hasExistingDefault
+        const persistedMatches = (item: CombinationDefinition) =>
+          executionModelRefKey(item.modelRef) === requestedKey && item.harnessRef === harnessRef
+        const existingIndex = persisted.combinations.findIndex(persistedMatches)
+        const updated = persisted.combinations.map((item) => {
+          if (executionModelRefKey(item.modelRef) !== requestedKey) return item
+          if (makeDefault) return { ...item, isDefault: false, defaultDisabled: true }
+          return item
         })
-      }
-      await host.catalogStore.set({ ...persisted, combinations: updated })
+        if (existingIndex >= 0) {
+          const target = updated[existingIndex]!
+          updated[existingIndex] = {
+            ...target,
+            enabled: true,
+            autoEnabledDisabled: false,
+            ...(makeDefault ? { isDefault: true, defaultDisabled: false } : {}),
+          }
+        } else {
+          const rawBaseId = `custom:${harnessRef}:${model.ref.provider}:${model.ref.model}`
+          const baseId =
+            rawBaseId.length <= 480
+              ? rawBaseId
+              : `custom:${harnessRef}:${createHash('sha256').update(rawBaseId).digest('hex').slice(0, 24)}`
+          const id = updated.some((item) => item.id === baseId)
+            ? `${baseId}:${randomUUID().slice(0, 8)}`
+            : baseId
+          const permissionPolicy = adapter.capabilities.permissions.includes('workspace')
+            ? 'workspace'
+            : adapter.capabilities.permissions.includes('read-only')
+              ? 'read-only'
+              : 'full-access'
+          updated.push({
+            id,
+            name: `${displayModelName(model.ref, model.name)} + ${harness.name}`,
+            modelRef: model.ref,
+            harnessRef,
+            permissionPolicy,
+            isDefault: makeDefault,
+            enabled: true,
+            generated: false,
+            autoEnabled: false,
+          })
+        }
+        return { catalog: { ...persisted, combinations: updated }, result: undefined }
+      })
       host.notifyCatalogChanged()
       catalog = await host.executionCatalog()
       definition = catalog.combinations.find(

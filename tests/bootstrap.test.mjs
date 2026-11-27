@@ -120,6 +120,7 @@ fi
             PATH: bin + ':' + process.env.PATH,
             OPL_SUITE_ROOT: join(root, 'suite'),
             OPL_APPLICATIONS_DIR: join(root, 'apps'),
+            OPL_OFFICIAL_MIN_VERSION: '',
           },
         },
       )

@@ -126,8 +126,20 @@ const feed = (version) =>
   `version: ${version}\npath: https://download.deepseek.com/desktop\nsha512: ${Buffer.alloc(64, 1).toString('base64')}\n`
 
 test('upstream detection retries transient feed errors and requires one platform version', async () => {
-  const feeds = await readOfficialDesktopFeeds(async () => new Response(feed('0.2.2-rc.1')))
+  const feeds = await readOfficialDesktopFeeds(async () => new Response(feed('0.2.2-rc.1')), {
+    minOfficialVersion: '',
+  })
   assert.equal(feeds['mac-arm64'].version, '0.2.2-rc.1')
+  const floored = await readOfficialDesktopFeeds(async () => new Response(feed('0.2.2-rc.5')), {
+    minOfficialVersion: '0.2.3-alpha.2',
+  })
+  assert.equal(floored['mac-arm64'].version, '0.2.3-alpha.2')
+  assert.equal(floored['win-x64'].version, '0.2.3-alpha.2')
+  const newerUpstream = await readOfficialDesktopFeeds(
+    async () => new Response(feed('0.2.3-alpha.3')),
+    { minOfficialVersion: '0.2.3-alpha.2' },
+  )
+  assert.equal(newerUpstream['mac-arm64'].version, '0.2.3-alpha.3')
   await assert.rejects(
     readOfficialDesktopFeeds(
       async (url) => new Response(feed(url.includes('mac-arm64') ? '0.2.2-rc.2' : '0.2.2-rc.1')),
@@ -142,7 +154,7 @@ test('upstream detection retries transient feed errors and requires one platform
       if (count === 1) throw Error('temporary socket reset')
       return new Response(feed('0.2.2-rc.1'))
     },
-    { retryDelayMs: 0 },
+    { retryDelayMs: 0, minOfficialVersion: '' },
   )
   assert.equal(retried['win-x64'].version, '0.2.2-rc.1')
   assert.deepEqual([...attempts.values()], [2, 2])
@@ -602,6 +614,7 @@ for (const { prepared, upstreamOnly } of [
         GITHUB_SHA: preparedCommit,
         GITHUB_OUTPUT: output,
         GITHUB_STEP_SUMMARY: join(external, 'summary'),
+        OPL_OFFICIAL_MIN_VERSION: '',
       }
       delete env.OPL_RELEASE_NOTES_CODEX_API_KEY
       delete env.GITHUB_TOKEN

@@ -1055,13 +1055,17 @@ export class HarnessService {
           definition.command ===
             defaultExecutionCatalog().harnesses.find((entry) => entry.id === id)?.command
         if (managedCommand && !item.installed && fresh.path) {
-          const latest = await this.catalogStore.get()
-          latest.harnesses = latest.harnesses.map((h) =>
-            h.id === id && h.command === definition.command && fresh.path
-              ? { ...h, command: fresh.path }
-              : h,
-          )
-          const saved = await this.catalogStore.set(latest)
+          const { catalog: saved } = await this.catalogStore.update((latest) => ({
+            catalog: {
+              ...latest,
+              harnesses: latest.harnesses.map((h) =>
+                h.id === id && h.command === definition.command && fresh.path
+                  ? { ...h, command: fresh.path }
+                  : h,
+              ),
+            },
+            result: undefined,
+          }))
           if (id === 'antigravity')
             this.antigravityAccount.updateRoute(saved.harnesses.find((item) => item.id === id))
         }

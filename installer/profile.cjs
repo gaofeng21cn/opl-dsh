@@ -125,13 +125,31 @@ async function main() {
     '@one-person-lab/dsh-collaboration',
   ]
   const manifestBefore = boot.readProfileManifest('dsh', dir)
-  const hadSuiteInstalled = Object.hasOwn(manifestBefore.dependencies ?? {}, suitePackage)
-  const suiteWasDisabled =
-    hadSuiteInstalled && !(manifestBefore.dsh?.profile?.bundles ?? []).includes(suitePackage)
-  await preserveModelPlugins({ dir, install: () => install(['add', resolve(archive)]) })
+  const depsBefore = manifestBefore.dependencies ?? {}
+  const bundlesBefore = manifestBefore.dsh?.profile?.bundles ?? []
+  const hadSuiteInstalled = Object.hasOwn(depsBefore, suitePackage)
+  const suiteWasDisabled = hadSuiteInstalled && !bundlesBefore.includes(suitePackage)
+  const executionWasDisabled =
+    Object.hasOwn(depsBefore, '@one-person-lab/dsh-execution') &&
+    !bundlesBefore.includes('@one-person-lab/dsh-execution')
+  const collaborationWasDisabled =
+    Object.hasOwn(depsBefore, '@one-person-lab/dsh-collaboration') &&
+    !bundlesBefore.includes('@one-person-lab/dsh-collaboration')
   const { withFileLock: lockManifest, writeFileAtomic: writeAtomic } = await load(
     '@deepseek-ai/dsh-atomic-write',
   )
+  await migrateUnifiedPatchSettings({
+    dir,
+    yaml: requireRuntime('yaml'),
+    withFileLock: lockManifest,
+    writeFileAtomic: writeAtomic,
+    stopped: require('./ofm-owner.cjs').stopped,
+    disabledModules: {
+      execution: executionWasDisabled,
+      collaboration: collaborationWasDisabled,
+    },
+  })
+  await preserveModelPlugins({ dir, install: () => install(['add', resolve(archive)]) })
   await lockManifest(
     join(dir, 'package.json'),
     async () => {
@@ -160,13 +178,6 @@ async function main() {
     },
     { waitMs: 1000 },
   )
-  await migrateUnifiedPatchSettings({
-    dir,
-    yaml: requireRuntime('yaml'),
-    withFileLock: lockManifest,
-    writeFileAtomic: writeAtomic,
-    stopped: require('./ofm-owner.cjs').stopped,
-  })
   await installModelPlugins({ dir, install, restoreBundles })
   const { releaseOfmManaged } = require('./ofm-owner.cjs')
   await releaseOfmManaged({
@@ -278,21 +289,77 @@ async function main() {
   }
 }
 
-async function migrateUnifiedPatchSettings({ dir, yaml, withFileLock, writeFileAtomic, stopped }) {
+function collectYamlAnchors(node, yaml, into) {
+  if (!node || typeof node !== 'object') return
+  if (typeof node.anchor === 'string' && node.anchor) into.add(node.anchor)
+  if (yaml.isMap(node)) {
+    for (const pair of node.items) {
+      collectYamlAnchors(pair.key, yaml, into)
+      collectYamlAnchors(pair.value, yaml, into)
+    }
+  } else if (yaml.isSeq(node)) {
+    for (const item of node.items) collectYamlAnchors(item, yaml, into)
+  }
+}
+
+function hasYamlAnchorOrAlias(node, yaml) {
+  if (!node || typeof node !== 'object') return false
+  if (yaml.isAlias(node) || (typeof node.anchor === 'string' && node.anchor)) return true
+  if (yaml.isMap(node))
+    return node.items.some(
+      (pair) =>
+        hasYamlAnchorOrAlias(pair.key, yaml) || hasYamlAnchorOrAlias(pair.value, yaml),
+    )
+  if (yaml.isSeq(node)) return node.items.some((item) => hasYamlAnchorOrAlias(item, yaml))
+  return false
+}
+
+function materializeAliasesForAnchors(node, document, yaml, anchors) {
+  if (!node || typeof node !== 'object') return
+  if (yaml.isMap(node)) {
+    for (const pair of node.items) {
+      if (yaml.isAlias(pair.value) && anchors.has(pair.value.source)) {
+        pair.value = document.createNode(pair.value.toJS(document))
+      } else {
+        materializeAliasesForAnchors(pair.value, document, yaml, anchors)
+      }
+    }
+  } else if (yaml.isSeq(node)) {
+    for (let i = 0; i < node.items.length; i++) {
+      const item = node.items[i]
+      if (yaml.isAlias(item) && anchors.has(item.source)) {
+        node.items[i] = document.createNode(item.toJS(document))
+      } else {
+        materializeAliasesForAnchors(item, document, yaml, anchors)
+      }
+    }
+  }
+}
+
+async function migrateUnifiedPatchSettings({
+  dir,
+  yaml,
+  withFileLock,
+  writeFileAtomic,
+  stopped,
+  disabledModules = { execution: false, collaboration: false },
+}) {
   const file = join(dir, 'cordis.patch.yml')
-  if (!existsSync(file)) return
+  const hasDisabledModule = Boolean(disabledModules.execution || disabledModules.collaboration)
+  if (!existsSync(file) && !hasDisabledModule) return
   await withFileLock(
     file,
     async () => {
       await stopped(dir)
-      const original = readFileSync(file, 'utf8')
+      const hadFile = existsSync(file)
+      const original = hadFile ? readFileSync(file, 'utf8') : '[]\n'
       const document = yaml.parseDocument(original, { logLevel: 'silent' })
       if (document.errors.length || !yaml.isSeq(document.contents))
         throw new Error('OPL 插件设置合并迁移无法读取现有配置，已保留原文件')
       const rows = document.contents.items
       const legacyIds = new Set(['opl-execution', 'opl-collaboration'])
       const legacyRows = rows.filter((row) => yaml.isMap(row) && legacyIds.has(row.get('id')))
-      if (!legacyRows.length) return
+      if (!legacyRows.length && !hasDisabledModule) return
       let suiteRow = rows.find((row) => yaml.isMap(row) && row.get('id') === 'opl-suite')
       if (!suiteRow) {
         suiteRow = document.createNode({ id: 'opl-suite', config: {} })
@@ -303,20 +370,48 @@ async function migrateUnifiedPatchSettings({ dir, yaml, withFileLock, writeFileA
         suiteConfig = document.createNode({})
         suiteRow.set('config', suiteConfig)
       }
+      if (yaml.isAlias(suiteConfig)) {
+        suiteConfig = document.createNode(suiteConfig.toJS(document) ?? {})
+        suiteRow.set('config', suiteConfig)
+      }
       if (!yaml.isMap(suiteConfig))
         throw new Error('opl-suite 配置不是映射结构，已保留现有配置文件')
+      const legacyAnchors = new Set()
+      for (const row of legacyRows) collectYamlAnchors(row, yaml, legacyAnchors)
       for (const row of legacyRows) {
-        const legacyConfig = row.get('config', true)
+        const rawConfig = row.get('config', true)
+        const legacyConfig = yaml.isAlias(rawConfig) ? rawConfig.resolve(document) : rawConfig
         if (yaml.isMap(legacyConfig)) {
           for (const pair of legacyConfig.items) {
             const key = pair.key?.value ?? pair.key
             if (typeof key !== 'string' || key === 'toolAutoReview') continue
-            if (yaml.isScalar(pair.value) && (pair.value.value === null || pair.value.value === undefined))
+            if (
+              yaml.isScalar(pair.value) &&
+              (pair.value.value === null || pair.value.value === undefined)
+            )
               continue
             if (pair.value === null || pair.value === undefined) continue
             if (!suiteConfig.has(key)) {
-              suiteConfig.set(key, pair.value?.clone ? pair.value.clone() : pair.value)
+              const cloned = hasYamlAnchorOrAlias(pair.value, yaml)
+                ? document.createNode(pair.value.toJS(document))
+                : pair.value?.clone
+                  ? pair.value.clone()
+                  : pair.value
+              suiteConfig.set(key, cloned)
             }
+          }
+        }
+      }
+      if (disabledModules.execution && !suiteConfig.has('executionEnabled')) {
+        suiteConfig.set('executionEnabled', false)
+      }
+      if (disabledModules.collaboration && !suiteConfig.has('collaborationEnabled')) {
+        suiteConfig.set('collaborationEnabled', false)
+      }
+      if (legacyAnchors.size > 0) {
+        for (const row of rows) {
+          if (!legacyRows.includes(row)) {
+            materializeAliasesForAnchors(row, document, yaml, legacyAnchors)
           }
         }
       }
@@ -324,9 +419,16 @@ async function migrateUnifiedPatchSettings({ dir, yaml, withFileLock, writeFileA
         const row = rows[i]
         if (yaml.isMap(row) && legacyIds.has(row.get('id'))) rows.splice(i, 1)
       }
-      const backup = join(dir, 'cordis.patch.before-v2-merge.yml')
-      if (!existsSync(backup)) writeFileSync(backup, original, { mode: 0o600, flag: 'wx' })
-      await writeFileAtomic(file, document.toString(), { mode: 0o600 })
+      const rendered = document.toString()
+      const checkDoc = yaml.parseDocument(rendered, { logLevel: 'silent' })
+      if (checkDoc.errors.length) {
+        throw new Error('OPL 插件设置合并迁移校验失败，已保留原文件')
+      }
+      if (hadFile) {
+        const backup = join(dir, 'cordis.patch.before-v2-merge.yml')
+        if (!existsSync(backup)) writeFileSync(backup, original, { mode: 0o600, flag: 'wx' })
+      }
+      await writeFileAtomic(file, rendered, { mode: 0o600 })
     },
     { waitMs: 1000 },
   )

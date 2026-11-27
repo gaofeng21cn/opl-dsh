@@ -36,7 +36,7 @@ ${limitations.map((value) => '- ' + value).join('\n')}
 
 ### 升级
 
-退出 DeepSeek Harness 后运行最新安装器，或使用 OPL 维护启动入口。更新失败保留当前安装，不替换运行中的 profile；官方桌面由 DeepSeek 原生机制更新。
+升级官方桌面版本或从 v0.2.82 及更早版本升级到 v2 单插件架构时，请退出 DeepSeek Harness 后运行最新完整安装器；同官方桌面基线下的 v2 后续更新（支持 updateProtocolVersion 2 起）可使用 OPL 维护启动入口。更新失败保留当前安装，不替换运行中的 profile。
 
 <!-- OPL_DSH_RELEASE_NOTES:${mode}${mode === 'online-ai' ? ':' + model : ''} -->
 `

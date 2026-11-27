@@ -207,6 +207,22 @@ describe('explicit group routing', () => {
     expect(await adapter.listModels('opl-gateway')).toEqual([])
     await expect(collect(adapter)).rejects.toMatchObject({ code: 'MISSING_CREDENTIAL' })
   })
+
+  it('provides a fallback gateway retry policy with STREAM_CLOSED when routes omit one', async () => {
+    const { adapter, codex } = setup()
+    const policy = adapter.providerRetryPolicy('opl-gateway')
+    expect(policy.mode).toBe('normal')
+    expect(policy.retryableCodes).toContain('STREAM_CLOSED')
+
+    codex.mockImplementation(async function* () {
+      throw new LlmError('stream closed early', 'STREAM_CLOSED')
+    })
+    await expect(collect(adapter, { ...request, model: 'codex::gpt-6-sol' })).rejects.toMatchObject(
+      {
+        code: 'STREAM_CLOSED',
+      },
+    )
+  })
 })
 
 describe('canonical presentation and retired model filtering', () => {

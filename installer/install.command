@@ -36,8 +36,55 @@ OFFICIAL_VERSION="$(printf '%s\n' "$FIELDS" | sed -n '1p')"
 URL="$(printf '%s\n' "$FIELDS" | sed -n '2p')"
 SHA512="$(printf '%s\n' "$FIELDS" | sed -n '3p')"
 [[ "$OFFICIAL_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo '官方版本信息无效。'; exit 1; }
-[[ "$URL" == "https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-$OFFICIAL_VERSION-mac-arm64.zip" ]] || { echo '官方更新地址无效。'; exit 1; }
+[[ "$URL" == "https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-$OFFICIAL_VERSION-mac-arm64.zip" || \
+   "$URL" == "https://download.deepseek.com/dsh-desk/bin/mac-arm64/stable/deepseek-harness-$OFFICIAL_VERSION-mac-arm64.zip" || \
+   "$URL" == "https://download.deepseek.com/dsh-desk/bin/mac-arm64/nightly/deepseek-harness-$OFFICIAL_VERSION-mac-arm64.zip" ]] || { echo '官方更新地址无效。'; exit 1; }
 [[ "$SHA512" =~ ^[A-Za-z0-9+/]{86}==$ ]] || { echo '官方校验信息无效。'; exit 1; }
+semver_lt() {
+  awk -v a="$1" -v b="$2" '
+    function split_ver(v, out,   dash, core, pre) {
+      dash = index(v, "-")
+      if (dash > 0) { core = substr(v, 1, dash - 1); pre = substr(v, dash + 1) }
+      else { core = v; pre = "" }
+      split(core, cparts, ".")
+      out[1] = cparts[1] + 0; out[2] = cparts[2] + 0; out[3] = cparts[3] + 0
+      out["has_pre"] = (pre != "") ? 1 : 0
+      out["pre"] = pre
+    }
+    function cmp_pre(pa, pb,   aa, ab, na, nb, len, i, ia, ib, numa, numb) {
+      na = split(pa, aa, ".")
+      nb = split(pb, ab, ".")
+      len = (na < nb ? na : nb)
+      for (i = 1; i <= len; i++) {
+        ia = aa[i]; ib = ab[i]
+        numa = (ia ~ /^[0-9]+$/); numb = (ib ~ /^[0-9]+$/)
+        if (numa && numb) {
+          if (ia + 0 != ib + 0) return (ia + 0 < ib + 0) ? -1 : 1
+        } else if (numa != numb) {
+          return numa ? -1 : 1
+        } else if (ia != ib) {
+          return (ia < ib) ? -1 : 1
+        }
+      }
+      return (na == nb) ? 0 : (na < nb ? -1 : 1)
+    }
+    BEGIN {
+      split_ver(a, va); split_ver(b, vb)
+      for (i = 1; i <= 3; i++) {
+        if (va[i] != vb[i]) exit !(va[i] < vb[i])
+      }
+      if (va["has_pre"] != vb["has_pre"]) exit !(va["has_pre"] == 1)
+      if (va["has_pre"]) exit !(cmp_pre(va["pre"], vb["pre"]) < 0)
+      exit 1
+    }
+  '
+}
+MIN_OFFICIAL_VERSION="${OPL_OFFICIAL_MIN_VERSION-0.2.3-alpha.2}"
+if [[ "$MIN_OFFICIAL_VERSION" == "0.2.3-alpha.2" ]] && semver_lt "$OFFICIAL_VERSION" "0.2.3-alpha.2"; then
+  OFFICIAL_VERSION="0.2.3-alpha.2"
+  URL="https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-0.2.3-alpha.2-mac-arm64.zip"
+  SHA512="bqSJCFTUwpq8+PK6H0KKLaculWQfdzR2R0MJWvGnsnpTxn3AZjWcvnhuFqLn2lWEBg1FdWOLroOgOwQeDKfHuw=="
+fi
 NEED_INSTALL=1
 backup_target() {
   local prefix="$1"

@@ -92,4 +92,28 @@ describe('Unified suite startup under Cordis Loader', () => {
       await ctx.fiber.dispose()
     }
   })
+
+  it('respects executionEnabled and collaborationEnabled module switches', async () => {
+    const ctx = new Context()
+    ready.registered = false
+    await ctx.plugin(Loader)
+    for (const name of suite.inject) {
+      if (name === 'loader') continue
+      ctx.provide(name, name === 'settings' ? { configure: () => () => {} } : {})
+    }
+    ctx.loader.builtins['qualification-suite'] = suite
+    try {
+      const starting = ctx.loader.create({
+        id: 'opl-suite',
+        name: 'cordis:qualification-suite',
+        config: { executionEnabled: false, collaborationEnabled: true },
+      })
+      await starting
+      await ctx.loader.await()
+      expect(ctx.get('oplHarness')).toBeUndefined()
+      expect(ready.registered).toBe(false)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
 })

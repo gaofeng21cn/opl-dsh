@@ -318,6 +318,15 @@ export function HarnessSettings({
               onChange={(e) => setDraft({ ...draft, args: e.target.value })}
             />
           </label>
+          <label className={css.field}>
+            {t('customAcpFixedModel')}
+            <input
+              className={css.input}
+              value={draft.fixedModel}
+              placeholder={t('customAcpFixedModelPlaceholder')}
+              onChange={(e) => setDraft({ ...draft, fixedModel: e.target.value })}
+            />
+          </label>
           <p className={css.muted}>{t('customAcpNote')}</p>
           <Button
             disabled={busy || !draft.name.trim() || !draft.command.trim()}

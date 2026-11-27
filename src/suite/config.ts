@@ -25,6 +25,8 @@ export interface Config {
   gateway: Volatile<import('../gateway/host/config.ts').Config>
   loginChoice: Volatile<LoginChoice>
   setupCompleted: Volatile<boolean>
+  executionEnabled: Volatile<boolean>
+  collaborationEnabled: Volatile<boolean>
   executionLimits: Volatile<ExecutionLimits>
   /** Persist explicit native permission choices as the official future-session default. */
   rememberPermissionPreset: Volatile<boolean>
@@ -64,6 +66,8 @@ export const Config = z.object({
     .union(['undecided', 'gateway', 'official', 'later'])
     .default('undecided')
     .volatile(),
+  executionEnabled: z.boolean().default(true).volatile(),
+  collaborationEnabled: z.boolean().default(true).volatile(),
   executionLimits: executionLimitsSchema.volatile(),
   rememberPermissionPreset: z.boolean().default(false).volatile(),
   minimaxCodeEnabled: z.boolean().default(true).volatile(),

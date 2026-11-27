@@ -1,9 +1,10 @@
 import { LlmError } from '../../shared/llm-error.ts' /** A logical source over explicit, independently credentialed model routes. */
-import { LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, ReasoningEffortId, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { GatewayGroupId } from '../contracts/groups.ts'
 import { modelDefaultEffort } from '../../shared/model-reasoning.ts'
 import { displayModelName, isRetiredModel } from '../../shared/models.ts'
+import { DEFAULT_GATEWAY_RETRY_POLICY } from './config.ts'
 export const OPENAI_PROVIDER = 'opl-gateway-openai'
 export interface GatewayModelRoute {
   group: GatewayGroupId
@@ -78,7 +79,10 @@ export class GatewayModelAdapter extends LlmAdapter {
     return { id: provider, name: 'OPL Gateway' }
   }
   override providerRetryPolicy(provider: string) {
-    return this.routes[0]!.adapter.providerRetryPolicy(provider)
+    return (
+      this.routes[0]?.adapter.providerRetryPolicy(provider) ??
+      resolveRetryPolicy(DEFAULT_GATEWAY_RETRY_POLICY, 'llm-opl-gateway')
+    )
   }
   override imageRequestTarget(
     provider: string,

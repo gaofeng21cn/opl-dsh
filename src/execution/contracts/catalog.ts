@@ -19,6 +19,7 @@ export interface HarnessDefinition {
   /** Arguments preceding the official CLI subcommand, such as its installed bundle path. */
   prefix?: string[]
   adapter?: string
+  fixedModel?: string
   proxy?: HarnessProxy
 }
 export interface CombinationDefinition {

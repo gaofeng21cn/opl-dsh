@@ -108,6 +108,7 @@ export function normalizeCatalog(value: unknown): ExecutionCatalog {
         ...(x.command ? { command: text(x.command, '可执行文件') } : {}),
         ...(x.prefix !== undefined ? { prefix: [...x.prefix] as string[] } : {}),
         ...(x.adapter ? { adapter: text(x.adapter, '适配器') } : {}),
+        ...(x.fixedModel ? { fixedModel: text(x.fixedModel, '固定模型') } : {}),
         ...(proxy ? { proxy } : {}),
       }
     })
@@ -253,6 +254,26 @@ export class ExecutionCatalogStore {
     this.queue = write.catch(() => {})
     await write
     return structuredClone(value)
+  }
+  /** Apply a queued read-modify-write update against the latest committed catalog. */
+  async update<T = void>(
+    mutate: (
+      current: ExecutionCatalog,
+    ) => { catalog: unknown; result: T } | Promise<{ catalog: unknown; result: T }>,
+  ): Promise<{ catalog: ExecutionCatalog; result: T }> {
+    await this.ready
+    const write = this.queue.then(async () => {
+      const { catalog: next, result } = await mutate(structuredClone(this.value))
+      const value = normalizeCatalog(next)
+      await this.persist(value)
+      this.value = value
+      return { catalog: structuredClone(value), result }
+    })
+    this.queue = write.then(
+      () => {},
+      () => {},
+    )
+    return write
   }
   async dispose() {
     await this.queue

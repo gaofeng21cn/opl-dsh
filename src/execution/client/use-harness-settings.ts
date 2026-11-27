@@ -11,7 +11,7 @@ import {
 } from './proxy-draft.ts'
 /** Detection, maintenance polling and catalog edits share one busy/error owner. */
 export function useHarnessSettings(call: ExecutionCall, t: ExecutionSettingsT = defaultExecutionT) {
-  const [draft, setDraft] = useState({ name: '', command: '', args: '' })
+  const [draft, setDraft] = useState({ name: '', command: '', args: '', fixedModel: '' })
   const [items, setItems] = useState<HarnessInstallation[]>([])
   const [proxyDrafts, setProxyDrafts] = useState<Record<string, ProxyDraft>>({})
   const [proxyErrors, setProxyErrors] = useState<Record<string, string>>({})
@@ -80,6 +80,7 @@ export function useHarnessSettings(call: ExecutionCall, t: ExecutionSettingsT = 
   const register = async () => {
     let saved = false
     const prefix = draft.args.trim() ? draft.args.trim().split(/\s+/) : undefined
+    const fixedModel = draft.fixedModel.trim() || undefined
     await act(async () => {
       const catalog = await call('catalog')
       await call('save-catalog', {
@@ -94,6 +95,7 @@ export function useHarnessSettings(call: ExecutionCall, t: ExecutionSettingsT = 
               command: draft.command.trim(),
               adapter: 'acp-custom',
               ...(prefix ? { prefix } : {}),
+              ...(fixedModel ? { fixedModel } : {}),
             },
           ],
         },
@@ -103,7 +105,7 @@ export function useHarnessSettings(call: ExecutionCall, t: ExecutionSettingsT = 
         throw new Error(tRef.current('customAcpRefreshWarning'))
       })
     })
-    if (saved && mounted.current) setDraft({ name: '', command: '', args: '' })
+    if (saved && mounted.current) setDraft({ name: '', command: '', args: '', fixedModel: '' })
   }
   useEffect(() => {
     setProxyDrafts((current) => {

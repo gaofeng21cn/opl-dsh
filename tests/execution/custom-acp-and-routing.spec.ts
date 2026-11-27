@@ -274,4 +274,246 @@ describe('custom standard ACP engines and flexible routing', () => {
       }),
     ).rejects.toThrow('尚无兼容适配器')
   })
+
+  it('preserves both newly added combinations when two sessions call selectModelHarness concurrently', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'opl-concurrent-select-'))
+    cleanups.push(() => rm(root, { recursive: true, force: true }))
+    const script = await writeVersionScript(root, 'concurrent-acp.cjs', '1.0.0')
+    const sessions = {
+      a: {
+        id: 'concurrent-session-a',
+        header: { cwd: root },
+        append: vi.fn(),
+        snapshotEvents: () => [],
+      },
+      b: {
+        id: 'concurrent-session-b',
+        header: { cwd: root },
+        append: vi.fn(),
+        snapshotEvents: () => [],
+      },
+    }
+    const selections: Record<string, { provider: string; model: string }> = {
+      'concurrent-session-a': { provider: 'opl-gateway', model: 'deepseek-flash' },
+      'concurrent-session-b': { provider: 'opl-gateway', model: 'deepseek-flash' },
+    }
+    const ctx = {
+      connection: testPeerConnection,
+      get: () => undefined,
+      agents: { get: () => undefined, list: () => [] },
+      waterfall: async (_event: string, _req: unknown, next: () => Promise<unknown>) => next(),
+      sessions: {
+        list: () => [],
+        get: (id: string) =>
+          id === 'concurrent-session-a'
+            ? sessions.a
+            : id === 'concurrent-session-b'
+              ? sessions.b
+              : undefined,
+      },
+      permissionPresets: { current: () => 'workspace-write' },
+      llm: {
+        listProviders: () => [{ id: 'opl-gateway', name: 'OPL Gateway' }],
+        listConfigurableProviders: () => [],
+        listModels: async () => [{ id: 'deepseek-flash', name: 'DeepSeek Flash' }],
+        resolveModelInfo: async (provider: string, id: string) => ({
+          id,
+          name: 'DeepSeek Flash',
+          provider,
+        }),
+      },
+      sessionProjections: {
+        snapshot: (target: { id: string }) => ({
+          values: { modelSelection: { next: selections[target.id] } },
+        }),
+      },
+      typertGateway: {
+        invoke: async ({ method, args }: { method: string; args?: any }) => {
+          if (method === 'modelCatalog')
+            return { default: { provider: 'opl-gateway', model: 'deepseek-flash' }, groups: [] }
+          if (method === 'selectModel' && args?.request?.sessionId) {
+            selections[args.request.sessionId] = {
+              provider: args.request.provider,
+              model: args.request.model,
+            }
+          }
+          return undefined
+        },
+      },
+    } as unknown as Context
+    const service = new HarnessService(ctx, { home: root })
+    cleanups.push(() => service.dispose())
+
+    const base = await service.executionCatalog()
+    await service.saveExecutionCatalog({
+      ...base,
+      harnesses: [
+        ...base.harnesses,
+        {
+          id: 'custom-one',
+          name: 'Custom One',
+          kind: 'acp',
+          command: process.execPath,
+          prefix: [script],
+        },
+        {
+          id: 'custom-two',
+          name: 'Custom Two',
+          kind: 'acp',
+          command: process.execPath,
+          prefix: [script],
+        },
+      ],
+    })
+
+    const [first, second] = await Promise.all([
+      service.selectModelHarness({
+        sessionId: 'concurrent-session-a',
+        modelRef: { provider: 'opl-gateway', model: 'deepseek-flash' },
+        harnessRef: 'custom-one',
+      }),
+      service.selectModelHarness({
+        sessionId: 'concurrent-session-b',
+        modelRef: { provider: 'opl-gateway', model: 'deepseek-flash' },
+        harnessRef: 'custom-two',
+      }),
+    ])
+
+    expect(first.combination).toBe('custom:custom-one:opl-gateway:deepseek-flash')
+    expect(second.combination).toBe('custom:custom-two:opl-gateway:deepseek-flash')
+    const finalCatalog = await service.executionCatalog()
+    expect(finalCatalog.combinations.find((c) => c.id === first.combination)?.enabled).toBe(true)
+    expect(finalCatalog.combinations.find((c) => c.id === second.combination)?.enabled).toBe(true)
+    expect(
+      service.combinationFor(
+        'concurrent-session-a',
+        finalCatalog,
+        selections['concurrent-session-a'],
+      )?.id,
+    ).toBe(first.combination)
+    expect(
+      service.combinationFor(
+        'concurrent-session-b',
+        finalCatalog,
+        selections['concurrent-session-b'],
+      )?.id,
+    ).toBe(second.combination)
+  })
+
+  it('negotiates or enforces exact models in custom ACP configureSession and verifySession', async () => {
+    const { createCustomAcpAdapter } =
+      await import('../../src/execution/host/adapters/custom-acp.ts')
+    const baseRecord = {
+      id: 'rec-negotiate',
+      combination: 'custom:custom-cli:opl-gateway:codex::gpt-5.4',
+      harnessRef: 'custom-cli',
+      modelRef: { provider: 'opl-gateway', model: 'codex::gpt-5.4' },
+      cwd: '/tmp',
+      sandbox: 'full-access',
+      origin: { kind: 'desktop', sessionId: 's1' },
+      acpSessionId: 'acp-sess-1',
+      title: 'Test',
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      turns: [],
+    } as HarnessSession
+
+    // 1. Omitted model advertisement without fixedModel fails closed.
+    const unpinned = createCustomAcpAdapter({
+      id: 'custom-cli',
+      name: 'Custom',
+      kind: 'acp',
+      command: 'custom-cli',
+    })
+    await expect(
+      unpinned.configureSession!({ request: vi.fn() }, baseRecord, {
+        agent: {},
+        session: { sessionId: 'acp-sess-1' },
+        configOptions: undefined,
+      }),
+    ).rejects.toThrow(/固定模型/)
+
+    // 2. Omitted advertisement with matching fixedModel succeeds and passes verifySession.
+    const pinned = createCustomAcpAdapter({
+      id: 'custom-pinned',
+      name: 'Pinned',
+      kind: 'acp',
+      command: 'custom-pinned',
+      fixedModel: 'gpt-5.4',
+    })
+    const pinnedResult = await pinned.configureSession!({ request: vi.fn() }, baseRecord, {
+      agent: {},
+      session: { sessionId: 'acp-sess-1' },
+      configOptions: undefined,
+    })
+    expect(pinnedResult?.modelId).toBe('gpt-5.4')
+    expect(() =>
+      pinned.verifySession!(baseRecord, {
+        agent: {},
+        session: { sessionId: 'acp-sess-1' },
+        configOptions: undefined,
+      }),
+    ).not.toThrow()
+
+    // 3. Available models switches via session/set_model.
+    const setModelReq = vi.fn(async () => ({ currentModelId: 'gpt-5.4' }))
+    const switched = await unpinned.configureSession!({ request: setModelReq }, baseRecord, {
+      agent: {},
+      session: {
+        sessionId: 'acp-sess-1',
+        models: {
+          currentModelId: 'default-other',
+          availableModels: [{ modelId: 'gpt-5.4' }],
+        },
+      },
+      configOptions: undefined,
+    })
+    expect(setModelReq).toHaveBeenCalledWith('session/set_model', {
+      sessionId: 'acp-sess-1',
+      modelId: 'gpt-5.4',
+    })
+    expect(switched?.modelId).toBe('gpt-5.4')
+
+    // 4. Model configOption switches via session/set_config_option and verifies readback.
+    const setConfigReq = vi.fn(async () => ({
+      configOptions: [{ id: 'model', type: 'select', currentValue: 'gpt-5.4', options: [] }],
+    }))
+    const configuredOpt = await unpinned.configureSession!({ request: setConfigReq }, baseRecord, {
+      agent: {},
+      session: { sessionId: 'acp-sess-1' },
+      configOptions: [
+        {
+          id: 'model',
+          type: 'select',
+          currentValue: 'other-model',
+          options: [{ value: 'gpt-5.4' }],
+        },
+      ],
+    })
+    expect(setConfigReq).toHaveBeenCalledWith('session/set_config_option', {
+      sessionId: 'acp-sess-1',
+      configId: 'model',
+      value: 'gpt-5.4',
+    })
+    expect(configuredOpt?.modelId).toBe('gpt-5.4')
+
+    // 5. Unsupported advertised model rejects cleanly, and drifted verifySession rejects.
+    await expect(
+      unpinned.configureSession!({ request: vi.fn() }, baseRecord, {
+        agent: {},
+        session: {
+          sessionId: 'acp-sess-1',
+          models: { currentModelId: 'other', availableModels: [{ modelId: 'other' }] },
+        },
+        configOptions: undefined,
+      }),
+    ).rejects.toThrow(/不包含所选模型/)
+    expect(() =>
+      unpinned.verifySession!(baseRecord, {
+        agent: {},
+        session: { sessionId: 'acp-sess-1', models: { currentModelId: 'drifted-model' } },
+        configOptions: undefined,
+      }),
+    ).toThrow(/不符/)
+  })
 })

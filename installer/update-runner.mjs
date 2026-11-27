@@ -75,7 +75,7 @@ async function verifyArtifact(path) {
   const artifactBytes = await bytes(join(path, 'artifact.json'))
   const artifact = JSON.parse(artifactBytes.toString('utf8'))
   if (
-    artifact.updateProtocolVersion !== 1 ||
+    artifact.updateProtocolVersion !== 2 ||
     artifact.unattendedUpdateProtocolVersion !== 1 ||
     artifact.sourceDirty === true ||
     !artifact.payloadFiles ||
@@ -193,7 +193,7 @@ async function updateInputs(root, application, profileHome, options = {}) {
     process.arch,
   )
   if (
-    metadata.manifest.enhancement.updateProtocolVersion !== 1 ||
+    metadata.manifest.enhancement.updateProtocolVersion !== 2 ||
     metadata.manifest.enhancement.unattendedUpdateProtocolVersion !== 1 ||
     metadata.manifest.enhancement.version !== pending.version ||
     platformOfficialVersion !== pending.officialVersion

@@ -56,56 +56,74 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     child.provide('oplUpdateRuntime', installUpdateRuntime(child))
   })
   await ctx.plugin(UpdateService)
-  const minimaxCodeEnabled = () => config.minimaxCodeEnabled.get()
-  const syncMiniMaxCodeModels = createMiniMaxCodeModelRegistration(ctx, minimaxCodeEnabled)
-  const runtime = await ctx.plugin(execution, {
-    executionLimits: config.executionLimits.get(),
-    rememberPermissionPreset: config.rememberPermissionPreset.get(),
-    minimaxCodeEnabled: minimaxCodeEnabled(),
-  })
-  const harness = runtime.ctx.get('oplHarness')
-  if (!harness) throw new Error('执行服务未提供 oplHarness')
-  harness.configureMiniMaxCodeIntegration(minimaxCodeEnabled)
-  const syncMiniMaxCodeIntegration = () => {
-    syncMiniMaxCodeModels()
-    void harness.synchronizeMiniMaxCodeIntegration().catch((error) => {
-      ctx.logger.warn(`MiniMax 集成停用后的登录清理未完成：${String(error)}`)
+  const executionEnabled = config.executionEnabled?.get() !== false
+  const collaborationEnabled = config.collaborationEnabled?.get() !== false
+  if (executionEnabled) {
+    const minimaxCodeEnabled = () => config.minimaxCodeEnabled.get()
+    const syncMiniMaxCodeModels = createMiniMaxCodeModelRegistration(ctx, minimaxCodeEnabled)
+    const runtime = await ctx.plugin(execution, {
+      executionLimits: config.executionLimits.get(),
+      rememberPermissionPreset: config.rememberPermissionPreset.get(),
+      minimaxCodeEnabled: minimaxCodeEnabled(),
     })
-  }
-  ctx.on('loader/volatile-update', (paths) => {
-    if (minimaxCodeConfigChanged(paths)) syncMiniMaxCodeIntegration()
-  })
-  syncMiniMaxCodeIntegration()
-  ctx.inject(
-    [
-      'oplHarness',
-      'settings',
-      'agents',
-      'typertGateway',
-      'connection',
-      'webServer',
-      'permissionPresets',
-      'workspaceRegistry',
-      'sessionController',
-      'sandboxPolicy',
-      'approval',
-      'agentPresets',
-    ],
-    (collab) => {
-      collab.provide('oplOfficialCollaboration', new OfficialCollaborationBridge(collab))
-      installCollaborationTools(collab, collab.oplHarness)
-      installExternalCodex(collab, collab.oplHarness)
-      collab.plugin(CoordinationService)
-      collab.plugin(DomainAgentPresetService)
-      collab.plugin(RoleExecutionService)
-      collab.plugin(TaskFeedbackService, {
-        wakeTransport: config.wakeTransport.get(),
-        wakeExecutable: config.wakeExecutable.get(),
-        wakeExecution: config.wakeExecution.get(),
-        wakeDistro: config.wakeDistro.get(),
+    const harness = runtime.ctx.get('oplHarness')
+    if (!harness) throw new Error('执行服务未提供 oplHarness')
+    harness.configureMiniMaxCodeIntegration(minimaxCodeEnabled)
+    const syncMiniMaxCodeIntegration = () => {
+      syncMiniMaxCodeModels()
+      void harness.synchronizeMiniMaxCodeIntegration().catch((error) => {
+        ctx.logger.warn(`MiniMax 集成停用后的登录清理未完成：${String(error)}`)
       })
-    },
-  )
+    }
+    ctx.on('loader/volatile-update', (paths) => {
+      if (minimaxCodeConfigChanged(paths)) syncMiniMaxCodeIntegration()
+    })
+    syncMiniMaxCodeIntegration()
+  }
+  if (collaborationEnabled) {
+    if (executionEnabled) {
+      ctx.inject(
+        [
+          'oplHarness',
+          'settings',
+          'agents',
+          'typertGateway',
+          'connection',
+          'webServer',
+          'permissionPresets',
+          'workspaceRegistry',
+          'sessionController',
+          'sandboxPolicy',
+          'approval',
+          'agentPresets',
+        ],
+        (collab) => {
+          collab.provide('oplOfficialCollaboration', new OfficialCollaborationBridge(collab))
+          installCollaborationTools(collab, collab.oplHarness)
+          installExternalCodex(collab, collab.oplHarness)
+          collab.plugin(CoordinationService)
+          collab.plugin(DomainAgentPresetService)
+          collab.plugin(RoleExecutionService)
+          collab.plugin(TaskFeedbackService, {
+            wakeTransport: config.wakeTransport.get(),
+            wakeExecutable: config.wakeExecutable.get(),
+            wakeExecution: config.wakeExecution.get(),
+            wakeDistro: config.wakeDistro.get(),
+          })
+        },
+      )
+    } else {
+      ctx.inject(['settings', 'agents', 'typertGateway', 'connection', 'webServer'], (collab) => {
+        collab.plugin(CoordinationService)
+        collab.plugin(TaskFeedbackService, {
+          wakeTransport: config.wakeTransport.get(),
+          wakeExecutable: config.wakeExecutable.get(),
+          wakeExecution: config.wakeExecution.get(),
+          wakeDistro: config.wakeDistro.get(),
+        })
+      })
+    }
+  }
   ctx.inject(['settings'], (child) => {
     child.effect(() => child.settings.configure({ auto: false }, ctx.fiber))
   })

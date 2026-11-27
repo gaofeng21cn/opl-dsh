@@ -11,7 +11,7 @@ const project = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
 const asset = 'OPL-DSH-Enhancements.zip'
 const bytes = await readFile(join(dist, asset))
 const enhancementVersion = artifact.enhancementVersion ?? project.version
-if (artifact.updateProtocolVersion !== 1) throw new Error('构建包未声明安全的延后更新协议')
+if (artifact.updateProtocolVersion !== 2) throw new Error('构建包未声明安全的延后更新协议')
 const officialVersion = artifact.officialVersion
 const officialFeeds = await readOfficialDesktopFeeds()
 if (officialFeeds['mac-arm64'].version !== officialVersion)

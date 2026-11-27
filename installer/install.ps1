@@ -58,7 +58,47 @@ try {
   $url = Feed-Scalar $feed 'path'
   $sha512 = Feed-Scalar $feed 'sha512'
   if ($officialVersion -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$' -or $sha512 -notmatch '^[A-Za-z0-9+/]{86}==$') { throw '官方版本或校验信息无效。' }
-  if ($url -cne ('https://download.deepseek.com/dsh-desk/bin/win-x64/deepseek-harness-' + $officialVersion + '-win-x64.exe')) { throw '官方更新地址无效。' }
+  if ($url -cnotmatch ('^https://download\.deepseek\.com/dsh-desk/bin/win-x64/(?:(?:stable|nightly)/)?deepseek-harness-' + [regex]::Escape($officialVersion) + '-win-x64\.exe$')) { throw '官方更新地址无效。' }
+  function Test-SemVerLessThan([string]$Left, [string]$Right) {
+    $parse = {
+      param([string]$v)
+      $idx = $v.IndexOf('-')
+      $core = if ($idx -ge 0) { $v.Substring(0, $idx) } else { $v }
+      $pre = if ($idx -ge 0) { $v.Substring($idx + 1) } else { '' }
+      $nums = $core.Split('.') | ForEach-Object { [int]$_ }
+      return @{ Nums = $nums; HasPre = ($pre -ne ''); Pre = $pre }
+    }
+    $a = & $parse $Left
+    $b = & $parse $Right
+    for ($i = 0; $i -lt 3; $i++) {
+      if ($a.Nums[$i] -ne $b.Nums[$i]) { return $a.Nums[$i] -lt $b.Nums[$i] }
+    }
+    if ($a.HasPre -ne $b.HasPre) { return $a.HasPre }
+    if (-not $a.HasPre) { return $false }
+    $pa = $a.Pre.Split('.')
+    $pb = $b.Pre.Split('.')
+    $len = [Math]::Min($pa.Count, $pb.Count)
+    for ($i = 0; $i -lt $len; $i++) {
+      $ia = $pa[$i]
+      $ib = $pb[$i]
+      $numa = $ia -match '^[0-9]+$'
+      $numb = $ib -match '^[0-9]+$'
+      if ($numa -and $numb) {
+        if ([int]$ia -ne [int]$ib) { return [int]$ia -lt [int]$ib }
+      } elseif ($numa -ne $numb) {
+        return $numa
+      } elseif ($ia -cne $ib) {
+        return ([string]::CompareOrdinal($ia, $ib) -lt 0)
+      }
+    }
+    return $pa.Count -lt $pb.Count
+  }
+  $minOfficialVersion = if ($null -ne $env:OPL_OFFICIAL_MIN_VERSION) { $env:OPL_OFFICIAL_MIN_VERSION } else { '0.2.3-alpha.2' }
+  if ($minOfficialVersion -eq '0.2.3-alpha.2' -and (Test-SemVerLessThan $officialVersion '0.2.3-alpha.2')) {
+    $officialVersion = '0.2.3-alpha.2'
+    $url = 'https://download.deepseek.com/dsh-desk/bin/win-x64/deepseek-harness-0.2.3-alpha.2-win-x64.exe'
+    $sha512 = 'yqZzRFswb79QuYJUkq2dVGWTUjurcabYDuu+zGvOUNX4PNKhPNMEqj6isMuBaNCTOB2IdB2TTR+kCUY7oghhQQ=='
+  }
   $app = $null
   $needsInstall = $true
   $previous = Join-Path $Root 'installation.json'

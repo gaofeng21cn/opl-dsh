@@ -327,6 +327,54 @@ test('unified installation installs @one-person-lab/dsh-opl, billion-context, an
   assert.equal(await result.readProfileFile('cordis.patch.before-v2-merge.yml'), cordisPatch)
 })
 
+test('unified migration preserves individually disabled submodules, materializes YAML anchors, and keeps manifest intact on parse failure', async (t) => {
+  // 1. Disabled execution + YAML anchor defined on legacy row referenced by retained row + alias config
+  const disabledExisting = {
+    dependencies: {
+      '@one-person-lab/dsh-opl': 'file:old.tgz',
+      '@one-person-lab/dsh-execution': 'file:exec.tgz',
+      '@one-person-lab/dsh-collaboration': 'file:collab.tgz',
+    },
+    dsh: {
+      profile: {
+        bundles: [...bundles, '@one-person-lab/dsh-opl', '@one-person-lab/dsh-collaboration'],
+      },
+    },
+  }
+  const anchoredPatch = [
+    '- id: shared-defs',
+    '  config:',
+    '    wakeExecutable: &shared_bin /usr/local/bin/codex',
+    '- id: opl-execution',
+    '  config:',
+    '    sharedLimits: &legacy_limits',
+    '      enabled: true',
+    '      firstProgressMs: 45000',
+    '    executionLimits: *legacy_limits',
+    '- id: opl-collaboration',
+    '  config:',
+    '    wakeExecutable: *shared_bin',
+    '- id: third-party',
+    '  config:',
+    '    copiedLimits: *legacy_limits',
+    '',
+  ].join('\n')
+  const okResult = await runtime(t, 'app-boot', disabledExisting, { cordisPatch: anchoredPatch })
+  const migratedYml = await okResult.readProfileFile('cordis.patch.yml')
+  assert.ok(migratedYml.includes('executionEnabled: false'))
+  assert.ok(!migratedYml.includes('collaborationEnabled: false'))
+  assert.ok(migratedYml.includes('firstProgressMs: 45000'))
+  assert.ok(migratedYml.includes('/usr/local/bin/codex'))
+  assert.ok(!migratedYml.includes('id: opl-execution'))
+  assert.ok(!migratedYml.includes('*legacy_limits'))
+
+  // 2. Broken YAML aborts before touching package.json dependencies or bundles
+  await assert.rejects(
+    runtime(t, 'app-boot', disabledExisting, { cordisPatch: 'not-a-seq: true\n' }),
+    /合并迁移无法读取现有配置/,
+  )
+})
+
 test('suite update preserves an already installed but disabled Billion Context', async (t) => {
   const existing = {
     dependencies: { 'billion-context': '0.1.216' },

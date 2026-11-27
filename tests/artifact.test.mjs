@@ -66,7 +66,7 @@ test('tarball checksum and contents bind the installer to an external plugin', a
     assert.ok(await readFile(new URL('package/' + meta.detail, output), 'utf8'))
   }
   assert.equal(manifest.version, manifest.officialVersion)
-  assert.equal(manifest.updateProtocolVersion, 1)
+  assert.equal(manifest.updateProtocolVersion, 2)
   assert.equal(manifest.enhancementVersion, pkg.version)
   assert.equal(manifest.superagent, undefined)
   assert.equal(manifest.plugins, undefined)

@@ -390,26 +390,26 @@ export async function verifyDesktopClient(
   ]
   const screenshots = result.screenshots
   const expectedNavigation = [
-    [
+    ...['插件管理', '内置插件'].map((plugins) => [
       '通用设置',
       '模型',
       'OPL Gateway',
-      '内置插件',
+      plugins,
       'Agent 预设',
       'Our Free Model',
       '执行引擎与协作',
       ...(billionContextEnabled ? ['bili设置'] : []),
-    ],
-    [
+    ]),
+    ...['Plugins', 'Built-in plugins'].map((plugins) => [
       'General',
       'Models',
       'OPL Gateway',
-      'Built-in plugins',
+      plugins,
       'Agent presets',
       'Our Free Model',
       'Engines & Team',
       ...(billionContextEnabled ? ['bili'] : []),
-    ],
+    ]),
   ]
   await waitFor(
     `(() => {const labels=Array.from(${settingsNav}.querySelectorAll('button')).map(x=>x.textContent.trim());return ${JSON.stringify(expectedNavigation)}.some(expected=>JSON.stringify(labels)===JSON.stringify(expected))})()`,

@@ -3,10 +3,65 @@ export const officialFeedUrls = {
   'mac-arm64': 'https://download.deepseek.com/dsh-desk/feeds/mac-arm64/nightly-mac.yml',
   'win-x64': 'https://download.deepseek.com/dsh-desk/feeds/win-x64/nightly.yml',
 }
+/** Verified official 0.2.3-alpha.2 desktop assets (enables native Computer Use on both macOS and Windows). */
+export const officialAlphaFloor = {
+  version: '0.2.3-alpha.2',
+  feeds: {
+    'mac-arm64': {
+      url: officialFeedUrls['mac-arm64'],
+      version: '0.2.3-alpha.2',
+      path: 'https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-0.2.3-alpha.2-mac-arm64.zip',
+      sha512:
+        'bqSJCFTUwpq8+PK6H0KKLaculWQfdzR2R0MJWvGnsnpTxn3AZjWcvnhuFqLn2lWEBg1FdWOLroOgOwQeDKfHuw==',
+    },
+    'win-x64': {
+      url: officialFeedUrls['win-x64'],
+      version: '0.2.3-alpha.2',
+      path: 'https://download.deepseek.com/dsh-desk/bin/win-x64/deepseek-harness-0.2.3-alpha.2-win-x64.exe',
+      sha512:
+        'yqZzRFswb79QuYJUkq2dVGWTUjurcabYDuu+zGvOUNX4PNKhPNMEqj6isMuBaNCTOB2IdB2TTR+kCUY7oghhQQ==',
+    },
+  },
+}
 const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
 const defaultMaxAttempts = 3
 const defaultRetryDelayMs = 250
 const transientStatus = (status) => status === 408 || status === 429 || status >= 500
+
+function parseSemverParts(version) {
+  const clean = version.split('+', 1)[0]
+  const dash = clean.indexOf('-')
+  const coreStr = dash === -1 ? clean : clean.slice(0, dash)
+  const preStr = dash === -1 ? '' : clean.slice(dash + 1)
+  return {
+    core: coreStr.split('.').map((part) => Number.parseInt(part, 10)),
+    pre: preStr ? preStr.split('.') : [],
+  }
+}
+
+/** Pure SemVer 2.0 `<` comparison without npm dependencies (scripts must run standalone in isolated CI/test sandboxes). */
+function semverLt(left, right) {
+  const a = parseSemverParts(left)
+  const b = parseSemverParts(right)
+  for (let i = 0; i < 3; i++) {
+    if (a.core[i] !== b.core[i]) return a.core[i] < b.core[i]
+  }
+  if (a.pre.length === 0 && b.pre.length === 0) return false
+  if (a.pre.length === 0) return false
+  if (b.pre.length === 0) return true
+  const max = Math.min(a.pre.length, b.pre.length)
+  for (let i = 0; i < max; i++) {
+    const ai = a.pre[i]
+    const bi = b.pre[i]
+    if (ai === bi) continue
+    const aNum = /^\d+$/.test(ai)
+    const bNum = /^\d+$/.test(bi)
+    if (aNum && bNum) return Number.parseInt(ai, 10) < Number.parseInt(bi, 10)
+    if (aNum !== bNum) return aNum
+    return ai < bi
+  }
+  return a.pre.length < b.pre.length
+}
 
 const wait = (milliseconds) =>
   milliseconds > 0 ? new Promise((resolve) => setTimeout(resolve, milliseconds)) : undefined
@@ -78,7 +133,12 @@ async function readFeed(platform, url, request, { maxAttempts, retryDelayMs, tim
  */
 export async function readOfficialDesktopFeeds(
   request = fetch,
-  { maxAttempts = defaultMaxAttempts, retryDelayMs = defaultRetryDelayMs, timeoutMs = 30000 } = {},
+  {
+    maxAttempts = defaultMaxAttempts,
+    retryDelayMs = defaultRetryDelayMs,
+    timeoutMs = 30000,
+    minOfficialVersion = process.env.OPL_OFFICIAL_MIN_VERSION ?? officialAlphaFloor.version,
+  } = {},
 ) {
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1)
     throw Error('官方更新清单读取重试次数必须是正整数')
@@ -123,5 +183,14 @@ export async function readOfficialDesktopFeeds(
     throw Error(
       `官方 mac-arm64 与 win-x64 清单版本不一致：mac-arm64=${macVersion}，win-x64=${windowsVersion}`,
     )
+  if (
+    minOfficialVersion === officialAlphaFloor.version &&
+    semverLt(macVersion, officialAlphaFloor.version)
+  ) {
+    return {
+      'mac-arm64': { ...officialAlphaFloor.feeds['mac-arm64'] },
+      'win-x64': { ...officialAlphaFloor.feeds['win-x64'] },
+    }
+  }
   return feeds
 }

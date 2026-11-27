@@ -31,7 +31,7 @@ function fixture({
       asset: 'OPL-DSH-Enhancements.zip',
       sha256: hash(payload),
       size: payload.length,
-      updateProtocolVersion: 1,
+      updateProtocolVersion: 2,
       unattendedUpdateProtocolVersion: 1,
     },
     ...manifestPatch,
@@ -143,6 +143,14 @@ test('official version and supported platform determine enhancement compatibilit
   legacy.release.assets[1].size = legacy.manifestBytes.length
   legacy.release.assets[1].digest = hash(legacy.manifestBytes)
   remote(t, legacy)
+  assert.equal((await checkRelease(current)).release.compatibility, 'full-suite')
+
+  const v1Protocol = fixture()
+  v1Protocol.manifest.enhancement.updateProtocolVersion = 1
+  v1Protocol.manifestBytes = Buffer.from(JSON.stringify(v1Protocol.manifest))
+  v1Protocol.release.assets[1].size = v1Protocol.manifestBytes.length
+  v1Protocol.release.assets[1].digest = hash(v1Protocol.manifestBytes)
+  remote(t, v1Protocol)
   assert.equal((await checkRelease(current)).release.compatibility, 'full-suite')
 })
 

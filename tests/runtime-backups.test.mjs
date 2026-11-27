@@ -398,6 +398,7 @@ test(
       OPL_SUITE_ROOT: suite,
       OPL_APPLICATIONS_DIR: apps,
       OPL_OFFICIAL_ARCHIVE: archive,
+      OPL_OFFICIAL_MIN_VERSION: '',
       OPL_INSTALL_NO_LAUNCH: '1',
     }
     const upgradeRun = spawnSync('/bin/bash', [join(payload, 'install.command')], {
@@ -480,6 +481,7 @@ test(
         OPL_SUITE_ROOT: suite,
         OPL_APPLICATIONS_DIR: apps,
         OPL_OFFICIAL_ARCHIVE: archive,
+        OPL_OFFICIAL_MIN_VERSION: '',
         OPL_INSTALL_NO_LAUNCH: '1',
       },
     })
@@ -511,6 +513,7 @@ test(
         OPL_SUITE_ROOT: suite,
         OPL_APPLICATIONS_DIR: apps,
         OPL_OFFICIAL_ARCHIVE: archive,
+        OPL_OFFICIAL_MIN_VERSION: '',
         OPL_INSTALL_NO_LAUNCH: '1',
       },
     })
@@ -547,6 +550,7 @@ test(
         OPL_SUITE_ROOT: suite,
         OPL_APPLICATIONS_DIR: apps,
         OPL_OFFICIAL_ARCHIVE: archive,
+        OPL_OFFICIAL_MIN_VERSION: '',
         OPL_INSTALL_NO_LAUNCH: '1',
       },
     })
@@ -560,6 +564,48 @@ test(
       { encoding: 'utf8' },
     ).trim()
     assert.equal(installedVersion, nextVersion)
+  },
+)
+
+test(
+  'install.command accepts /stable/ feed paths and promotes feeds below 0.2.3-alpha.2 to verified 0.2.3-alpha.2 floor',
+  { skip: macArm64IntegrationMissing },
+  (t) => {
+    const { scratch, payload, bin, suite, apps } = buildInstallCommandFixture(t, {
+      nextVersion: '0.2.2-rc.5',
+    })
+    const stableFeedStub = `cat <<'EOF'\n# dsh-feed-origin: stable\nversion: 0.2.2-rc.5\npath: https://download.deepseek.com/dsh-desk/bin/mac-arm64/stable/deepseek-harness-0.2.2-rc.5-mac-arm64.zip\nsha512: ${Buffer.alloc(64, 9).toString('base64')}\nEOF\n`
+    writeFileSync(join(bin, 'curl'), '#!/bin/bash\nset -eu\n' + stableFeedStub, { mode: 0o700 })
+    const wrongFloorArchive = join(scratch, 'wrong-floor.zip')
+    writeFileSync(wrongFloorArchive, 'not-official-alpha-2')
+    createFakeApp(join(apps, 'DeepSeek Harness.app'), '0.2.2-rc.5')
+    const failedFloor = spawnSync('/bin/bash', [join(payload, 'install.command')], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: bin + ':' + process.env.PATH,
+        OPL_SUITE_ROOT: suite,
+        OPL_APPLICATIONS_DIR: apps,
+        OPL_OFFICIAL_ARCHIVE: wrongFloorArchive,
+        OPL_INSTALL_NO_LAUNCH: '1',
+      },
+    })
+    assert.notEqual(failedFloor.status, 0)
+    assert.match(failedFloor.stdout + failedFloor.stderr, /官方安装包校验失败/)
+
+    // Disable floor: /stable/ feed URL must be accepted cleanly and fail on archive hash only if wrong.
+    const validStable = spawnSync('/bin/bash', [join(payload, 'install.command')], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: bin + ':' + process.env.PATH,
+        OPL_SUITE_ROOT: suite,
+        OPL_APPLICATIONS_DIR: apps,
+        OPL_OFFICIAL_MIN_VERSION: '',
+        OPL_INSTALL_NO_LAUNCH: '1',
+      },
+    })
+    assert.equal(validStable.status, 0, validStable.stderr)
   },
 )
 

@@ -53,6 +53,8 @@ export const executionSettingsZh = {
   customAcpExecutable: '可执行文件',
   customAcpArgs: '启动参数（可选）',
   customAcpArgsPlaceholder: '例如 acp 或 --acp，留空则直接启动',
+  customAcpFixedModel: '固定模型（可选）',
+  customAcpFixedModelPlaceholder: '若 CLI 不支持 ACP 模型切换，可填写其固定模型 ID',
   customAcpNote:
     '支持标准 ACP（Agent Client Protocol）的 CLI 登记并验证通过后，即可直接在聊天框中为任意模型选择使用；自定义 ACP 引擎使用 CLI 自身登录态与完全访问权限。',
   customAcpSubmit: '添加自定义 ACP 引擎',
@@ -240,6 +242,8 @@ export const executionSettingsEn: Record<ExecutionSettingsLocaleKey, string> = {
   customAcpExecutable: 'Executable',
   customAcpArgs: 'Arguments (optional)',
   customAcpArgsPlaceholder: 'e.g. acp or --acp; leave empty if none',
+  customAcpFixedModel: 'Fixed model (optional)',
+  customAcpFixedModelPlaceholder: 'Set exact model ID when CLI omits ACP model selection',
   customAcpNote:
     'Once a standard ACP (Agent Client Protocol) CLI is registered and verified, it can be paired with any model in the composer selector. Custom ACP engines use their own CLI sign-in and full access.',
   customAcpSubmit: 'Add custom ACP engine',

@@ -447,7 +447,7 @@ export async function prepareUpdate(root, application, { signal, expectedVersion
         officialVersion,
         allowOfficialVersionMismatch: true,
       })
-      if (previous.artifact.updateProtocolVersion !== 1)
+      if (previous.artifact.updateProtocolVersion !== 2)
         throw Error('原安装需要重新安装完整套件以启用安全更新')
       if (
         current.suiteSha256 !== previous.artifact.suiteSha256 ||
@@ -465,7 +465,7 @@ export async function prepareUpdate(root, application, { signal, expectedVersion
         ...release,
         artifactOfficialVersion: metadata.manifest.official.version,
       })
-      if (artifact.updateProtocolVersion !== 1)
+      if (artifact.updateProtocolVersion !== 2)
         throw Error('增强包不支持安全更新协议，请安装完整套件')
     } catch (error) {
       throw updateFailureError(error, 'verify', 'integrity')
@@ -684,7 +684,7 @@ export async function refreshEnhancements(
         officialVersion: current.officialVersion,
         allowOfficialVersionMismatch: true,
       })
-      if (previous.artifact.updateProtocolVersion !== 1) throw Error('原安装不支持安全更新协议')
+      if (previous.artifact.updateProtocolVersion !== 2) throw Error('原安装不支持安全更新协议')
       if (
         previous.artifactSha256 !== plan.originalArtifactSha256 ||
         previous.artifact.suiteSha256 !== current.suiteSha256 ||
@@ -711,7 +711,7 @@ export async function refreshEnhancements(
         officialVersion: plan.officialVersion,
         artifactOfficialVersion: plan.metadata.manifest.official.version,
       })
-      if (artifact.updateProtocolVersion !== 1) throw Error('待安装文件不支持安全更新协议')
+      if (artifact.updateProtocolVersion !== 2) throw Error('待安装文件不支持安全更新协议')
       if (
         digest(entries.get('artifact.json')) !== plan.artifactSha256 ||
         artifact.suiteSha256 !== plan.suiteSha256
