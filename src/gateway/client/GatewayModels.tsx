@@ -331,7 +331,6 @@ export function GatewayModels({
                   }}
                 >
                   {group.name}
-                  {group.rateMultiplier !== undefined ? ` ${group.rateMultiplier}×` : ''}
                 </button>
               ))}
             </div>
@@ -350,9 +349,6 @@ export function GatewayModels({
                       : activeAccountGroup?.authorized === true
                         ? '账号可用'
                         : '权限待刷新'}
-                  {activeGroupEntry.rateMultiplier !== undefined
-                    ? ` · 分组倍率 ${activeGroupEntry.rateMultiplier}×`
-                    : ''}
                 </p>
                 {activeAccountGroup?.error && activeGroupEntry.state === 'error' && (
                   <p className={css.error}>{activeAccountGroup.error}</p>

@@ -28,7 +28,7 @@ import { createParser } from 'eventsource-parser'
 export const OPL_GATEWAY_SEARCH_PROVIDER_ID = 'opl-gateway'
 
 /** Internal auxiliary search model, independent of the conversation model. */
-export const OPL_GATEWAY_SEARCH_DEFAULT_MODEL = 'gpt-6.1-sol'
+export const OPL_GATEWAY_SEARCH_DEFAULT_MODEL = 'gpt-6.2-sol'
 
 /** Search failures stay on the selected auxiliary model without switching models. */
 export const OPL_GATEWAY_SEARCH_FALLBACK_MODELS = [] as const

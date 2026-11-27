@@ -101,7 +101,7 @@ describe('OPL Gateway composition', () => {
       )
       const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
       expect(url).toBe('https://gateway.medopl.com/v1/responses')
-      expect(JSON.parse(String(init.body)).model).toBe('gpt-6.1-sol')
+      expect(JSON.parse(String(init.body)).model).toBe('gpt-6.2-sol')
       expect(new Headers(init.headers).get('authorization')).toBe('Bearer search-group-key')
       expect((await ctx.web.fetch({ url: 'https://example.org' })).body).toEqual({
         kind: 'text',

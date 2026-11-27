@@ -85,7 +85,7 @@ export function CodexKeyringSetup({ targets, configure }: CodexKeyringSetupProps
         ) : (
           <>
             <p className={css.muted}>
-              使用 OPL 网关连接 Codex，初始模型为 gpt-6.1-sol，可在 Codex 中切换。
+              使用 OPL 网关连接 Codex，初始模型为 gpt-6.2-sol，可在 Codex 中切换。
             </p>
             {options.platform === 'win32' && (
               <label className={css.field}>

@@ -464,9 +464,6 @@ export function OplGatewaySection(
                                     : group.authorized === true
                                       ? '账号可用'
                                       : '权限待刷新'}
-                                  {group.rateMultiplier !== undefined
-                                    ? ` · 分组倍率 ${group.rateMultiplier}×`
-                                    : ''}
                                   {group.enabled !== false && group.state === 'ready'
                                     ? ' · 凭据已同步'
                                     : ''}

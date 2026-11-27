@@ -202,6 +202,7 @@ it('deduplicates shared proxy guidance across failed groups, clears stale catalo
 
 it('filters models by group tabs, exposes inline activation toggle, and flattens manual editing without nested details', async () => {
   const data = snapshot()
+  data.groups = data.groups.map((group) => ({ ...group, rateMultiplier: 1 }))
   const toggles: { id: string; enabled: boolean }[] = []
   const call = vi.fn(async (method: string) => {
     if (method === 'read') return structuredClone(data)
@@ -228,6 +229,8 @@ it('filters models by group tabs, exposes inline activation toggle, and flattens
     (node) => node.nodeName === 'BUTTON' && props(node).role === 'tab',
   )
   expect(tabs.map((tab) => tab.textContent)).toEqual(['全部', 'OpenAI 协议', 'AWS'])
+  expect(container.textContent).not.toContain('分组倍率')
+  expect(container.textContent).not.toContain('1×')
 
   await act(async () => props(tabs.find((t) => t.textContent === 'AWS')!).onClick())
   expect(container.textContent).toContain('aws-configured')

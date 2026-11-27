@@ -982,4 +982,74 @@ describe('per-group catalog observations', () => {
       state: 'unverified',
     })
   })
+
+  it('upgrades uncustomized legacy GPT-6/6.1 Codex defaults once and preserves user choices afterwards', async () => {
+    const f = fixture({ officialRedaction: true })
+    const legacyCodex = {
+      displayName: 'OPL Gateway · Codex',
+      api: 'openai-responses',
+      baseURL: 'https://gateway.medopl.com/v1',
+      apiKeyEnv: 'OPL_GATEWAY_CODEX_API_KEY',
+      models: [
+        {
+          id: 'deepseek-flash',
+          name: 'DeepSeek-V4.1-Flash',
+          compat: { chatTemplateKwargs: {}, chatTemplateArgs: {} },
+        },
+        {
+          id: 'gpt-6-astra',
+          name: 'GPT-6 Astra',
+          input: ['text', 'image'],
+          compat: { chatTemplateKwargs: {}, chatTemplateArgs: {} },
+        },
+        {
+          id: 'gpt-6-luna',
+          name: 'GPT-6 Luna',
+          input: ['text', 'image'],
+        },
+        {
+          id: 'gpt-6.1-sol',
+          name: 'GPT-6.1 Sol',
+          input: ['text', 'image'],
+        },
+        {
+          id: 'gpt-6.1-terra',
+          name: 'GPT-6.1 Terra',
+          input: ['text', 'image'],
+        },
+      ],
+    }
+    f.users['opl-suite'].gatewayChannels = { codex: structuredClone(legacyCodex) }
+    f.state['opl-suite'].gatewayChannels = { codex: structuredClone(legacyCodex) }
+
+    await migrateLegacyGatewaySettings(f.ctx)
+
+    expect(f.state['opl-suite'].gatewayCodexModelMigration).toBe('gpt-6.2')
+    const migratedIds = f.state['opl-suite'].gatewayChannels.codex.models.map(
+      (model: { id: string }) => model.id,
+    )
+    expect(migratedIds).toEqual([
+      'deepseek-flash',
+      'gpt-6.2-astra',
+      'gpt-6-luna',
+      'gpt-6.2-sol',
+      'gpt-6.1-terra',
+    ])
+    const mutateCount = f.settings.mutate.mock.calls.length
+
+    await editGatewayModels(f.ctx, {
+      group: 'codex',
+      api: 'openai-responses',
+      revision: f.revisions['opl-suite']!,
+      models: [{ id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', input: ['text', 'image'] }],
+    })
+    const callsAfterManualEdit = f.settings.mutate.mock.calls.length
+    expect(callsAfterManualEdit).toBeGreaterThan(mutateCount)
+
+    await migrateLegacyGatewaySettings(f.ctx)
+    expect(f.settings.mutate).toHaveBeenCalledTimes(callsAfterManualEdit)
+    expect(f.state['opl-suite'].gatewayChannels.codex.models).toEqual([
+      { id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', input: ['text', 'image'] },
+    ])
+  })
 })

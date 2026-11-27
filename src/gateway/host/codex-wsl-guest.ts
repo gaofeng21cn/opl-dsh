@@ -149,7 +149,7 @@ if had_login:
     check(matches(), 12)
     sys.exit(0)
 values = {
-    'model_provider':'opl_gateway', 'cli_auth_credentials_store':'keyring', 'model':'gpt-6.1-sol',
+    'model_provider':'opl_gateway', 'cli_auth_credentials_store':'keyring', 'model':'gpt-6.2-sol',
     'model_providers.opl_gateway':{'name':'OPL Gateway','base_url':base,
                                   'wire_api':'responses','requires_openai_auth':True}}
 written = None

@@ -9,7 +9,7 @@ import { OPL_GATEWAY_INFERENCE_BASE_URL } from './opl-credentials.ts'
 
 export class CodexNativeSetupError extends Error {}
 
-const model = 'gpt-6.1-sol'
+const model = 'gpt-6.2-sol'
 const provider = {
   name: 'OPL Gateway',
   base_url: OPL_GATEWAY_INFERENCE_BASE_URL,

@@ -21,6 +21,7 @@ export interface Config {
   fixedWindowTitle: Volatile<boolean>
   gatewayGroups: Volatile<Record<string, boolean>>
   gatewayCatalogHashes: Volatile<Record<string, string>>
+  gatewayCodexModelMigration: Volatile<string>
   gatewayChannels: Volatile<Record<string, GatewayChannelProfile>>
   gateway: Volatile<import('../gateway/host/config.ts').Config>
   loginChoice: Volatile<LoginChoice>
@@ -59,6 +60,7 @@ export const Config = z.object({
   fixedWindowTitle: z.boolean().default(true).volatile(),
   gatewayGroups: z.dict(z.boolean()).default({}).volatile(),
   gatewayCatalogHashes: z.dict(z.string()).default({}).volatile(),
+  gatewayCodexModelMigration: z.string().default('').volatile(),
   gatewayChannels: z.dict(z.any()).default({}).volatile(),
   gateway: GatewayConfig.default({}).volatile(),
   setupCompleted: z.boolean().default(false).volatile(),

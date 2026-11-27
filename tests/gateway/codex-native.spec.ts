@@ -32,7 +32,7 @@ test.skipIf(!executable || !['win32', 'darwin'].includes(process.platform))(
       await configureNativeCodex(issuer, options)
       const text = await readFile(config, 'utf8')
       expect(text).toContain('# keep this setting')
-      expect(text).toContain('gpt-6.1-sol')
+      expect(text).toContain('gpt-6.2-sol')
       expect(text).toContain('cli_auth_credentials_store = "keyring"')
       expect(text).not.toContain(key)
       expect(existsSync(auth)).toBe(false)

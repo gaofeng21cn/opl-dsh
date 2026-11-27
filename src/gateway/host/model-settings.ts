@@ -221,6 +221,92 @@ function addGeminiBundleModels(
   ).map((id) => models.find((model) => model.id === id) ?? geminiBundleModel(id))
 }
 
+const CODEX_6_2_MIGRATION_TAG = 'gpt-6.2'
+
+const SUPERSEDED_CODEX_MODELS: Readonly<
+  Record<string, { legacyNames: readonly string[]; targetId: 'gpt-6.2-astra' | 'gpt-6.2-sol' }>
+> = {
+  'gpt-6-astra': { legacyNames: ['GPT-6 Astra'], targetId: 'gpt-6.2-astra' },
+  'gpt-6.1-sol': { legacyNames: ['GPT-6.1 Sol'], targetId: 'gpt-6.2-sol' },
+  'gpt-6-sol': { legacyNames: ['GPT-6 Sol'], targetId: 'gpt-6.2-sol' },
+}
+
+function isPlainEmptyRecord(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  return Object.values(value).every(
+    (item) =>
+      item !== null &&
+      typeof item === 'object' &&
+      !Array.isArray(item) &&
+      Object.keys(item).length === 0,
+  )
+}
+
+function isUncustomizedLegacyCodexEntry(
+  model: ModelDraft,
+  legacyNames: readonly string[],
+): boolean {
+  const row = model as Record<string, any>
+  if (row.custom !== undefined || row.inputModalities !== undefined) return false
+  if (typeof row.name !== 'string' || !legacyNames.includes(row.name)) return false
+  if (
+    row.input !== undefined &&
+    !(
+      Array.isArray(row.input) &&
+      row.input.length === 2 &&
+      row.input[0] === 'text' &&
+      row.input[1] === 'image'
+    )
+  )
+    return false
+  if (row.compat !== undefined && !isPlainEmptyRecord(row.compat)) return false
+  return true
+}
+
+/**
+ * Upgrade uncustomized legacy GPT-6 / GPT-6.1 entries in a default OPL Gateway
+ * Codex profile to their canonical GPT-6.2 replacements once.
+ */
+function upgradeSupersededCodexModels(
+  profile: Record<string, any>,
+  models: readonly ModelDraft[],
+): ModelDraft[] {
+  if (
+    profile.api !== 'openai-responses' ||
+    profile.apiKeyEnv !== 'OPL_GATEWAY_CODEX_API_KEY' ||
+    profile.defaultInput !== undefined ||
+    !isDefaultGatewayBaseURL(profile.baseURL)
+  )
+    return [...models]
+  const existingIds = new Set(models.map((item) => item.id))
+  const emitted = new Set<string>()
+  const upgraded: ModelDraft[] = []
+  for (const model of models) {
+    const rule = SUPERSEDED_CODEX_MODELS[model.id]
+    if (!rule || !isUncustomizedLegacyCodexEntry(model, rule.legacyNames)) {
+      emitted.add(model.id)
+      upgraded.push(model)
+      continue
+    }
+    const replacement = DEFAULT_GATEWAY_CHANNELS.codex.models?.find(
+      (candidate) => candidate.id === rule.targetId,
+    )
+    if (!replacement) {
+      emitted.add(model.id)
+      upgraded.push(model)
+      continue
+    }
+    if (
+      emitted.has(rule.targetId) ||
+      (existingIds.has(rule.targetId) && model.id !== rule.targetId)
+    )
+      continue
+    emitted.add(rule.targetId)
+    upgraded.push(structuredClone(replacement))
+  }
+  return upgraded
+}
+
 const migrations = new WeakMap<object, Promise<void>>()
 
 /**
@@ -292,6 +378,8 @@ async function runGatewaySettingsMigration(ctx: Context): Promise<void> {
   const suiteUserChannels = record(record(suite.user).gatewayChannels)
   const savedCatalogs = savedModelCatalogs(service)
   const hashes = record(record(suite.value).gatewayCatalogHashes)
+  const codexAlreadyMigrated =
+    record(suite.value).gatewayCodexModelMigration === CODEX_6_2_MIGRATION_TAG
   const ops: SettingsPathOp[] = []
   const ownedHashes: { group: string; models: unknown; previous: string }[] = []
 
@@ -326,8 +414,19 @@ async function runGatewaySettingsMigration(ctx: Context): Promise<void> {
         return entry
       return { ...entry, compat: { ...record(entry.compat), forceAdaptiveThinking: true } }
     })
-    const bundledModels =
+    let bundledModels =
       group.id === 'gemini' ? addGeminiBundleModels(profile, adaptiveModels) : adaptiveModels
+    if (group.id === 'codex' && !codexAlreadyMigrated) {
+      const nextCodexModels = upgradeSupersededCodexModels(profile, bundledModels)
+      if (!isDeepStrictEqual(nextCodexModels, bundledModels)) {
+        bundledModels = nextCodexModels
+        ops.push({
+          op: 'set',
+          path: ['gatewayCodexModelMigration'],
+          value: CODEX_6_2_MIGRATION_TAG,
+        })
+      }
+    }
     const models = withGatewayModelInputDefaults(group.id, profile, bundledModels, {
       refreshAutomaticInputs: automaticCatalog,
     })

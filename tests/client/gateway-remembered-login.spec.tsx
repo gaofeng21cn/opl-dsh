@@ -200,6 +200,8 @@ it('keeps group activation switches non-wrapping and deduplicates shared proxy h
   const text = (container as unknown as { textContent: string }).textContent
   expect(text).toContain('无法连接目录服务，请检查网络和推理地址。')
   expect(text.split('HTTPS_PROXY/HTTP_PROXY')).toHaveLength(2)
+  expect(text).not.toContain('分组倍率')
+  expect(text).not.toContain('1×')
 })
 
 it.each([
