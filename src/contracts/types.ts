@@ -40,6 +40,12 @@ export interface HarnessReasoningPreflight {
 export interface SessionRequest {
   sessionId: string
 }
+export interface SelectModelHarnessRequest {
+  sessionId: string
+  modelRef: import('../execution/contracts/catalog.ts').ModelRef
+  harnessRef: string
+  setAsDefault?: boolean
+}
 export interface HarnessStartRequest {
   combination: string
   cwd: string

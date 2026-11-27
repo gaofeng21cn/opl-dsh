@@ -21,9 +21,18 @@ import { gatewayGroupEnabled } from '../../gateway/host/group-settings.ts'
 import { inspectHarness, inspectInstalledHarness } from './harness-registry.ts'
 import { maintainHarness } from './harness-maintenance.ts'
 import type { HarnessInstallation } from '../contracts/installations.ts'
-import { executionModelRefKey, isRemovableCombination, modelRefKey } from '../contracts/catalog.ts'
+import {
+  executionModelRefKey,
+  isRemovableCombination,
+  modelRefKey,
+  type CombinationDefinition,
+  type HarnessDefinition,
+  type ModelRef,
+} from '../contracts/catalog.ts'
+import { isCustomAcpHarness } from '../contracts/harness-groups.ts'
 import { RuntimeMaintenance } from './runtime-maintenance.ts'
 import { ExternalModelSources } from './model-sources.ts'
+import { CUSTOM_ACP_CAPABILITIES } from './adapters/custom-acp.ts'
 import { harnessAdapters } from './adapters/index.ts'
 import { acceptVisibleCliResult } from './adapters/visible-result.ts'
 import { GATEWAY_GROUPS } from '../../gateway/contracts/groups.ts'
@@ -63,7 +72,11 @@ import {
   type TokenUsage,
 } from '@deepseek-ai/dsh-llm'
 import type { Context } from '@deepseek-ai/cordis'
-import type { HarnessReasoningPreflight, HarnessStartRequest } from '../../contracts/types.ts'
+import type {
+  HarnessReasoningPreflight,
+  HarnessStartRequest,
+  SelectModelHarnessRequest,
+} from '../../contracts/types.ts'
 import { projectlessSessionCwd } from './projectless-path.ts'
 import { canonicalHarnessContext, canonicalHarnessUsage, latestHarnessContext } from './usage.ts'
 import { VibeTurnUsageTracker } from './usage-vibe.ts'
@@ -115,7 +128,6 @@ import { ExecutionModelResolver } from './execution-models.ts'
 import { assertOfmModelAvailable } from './model-admission.ts'
 import { OFM_PROVIDERS } from './ofm-source/provider.ts'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
-import type { CombinationDefinition, ModelRef } from '../contracts/catalog.ts'
 import { adapterFor, defaultHarness } from './adapters/index.ts'
 import { connectDsh } from './adapters/dsh.ts'
 import {
@@ -169,6 +181,7 @@ import {
   replacementFor,
   selectCombination,
   selectEffort,
+  selectModelHarness,
   selectionForModel,
   unavailableConversationSelection,
   type HarnessSelectionHost,
@@ -554,6 +567,7 @@ export class HarnessService {
   /** Monotonic source of {@link Active.generation}; never reused within a process. */
   private connectionGeneration = 0
   private readonly catalogStore: ExecutionCatalogStore
+  private knownHarnesses: readonly HarnessDefinition[] = defaultExecutionCatalog().harnesses
   private readonly modelResolver: ExecutionModelResolver
   /** Share one catalog build among the parallel catalog/combination/selection reads. */
   private executionCatalogPending:
@@ -846,10 +860,17 @@ export class HarnessService {
     const policy = this.ctx.agents.get(session.id)?.ctx.get('sandboxPolicy')?.resolve({ session })
     const preset = this.ctx.permissionPresets.current(session)
     const mode = policy?.mode ?? preset
+    const adapter = adapterFor(
+      definition.harnessRef,
+      definition.modelRef,
+      this.modelSources,
+      this.knownHarnesses,
+    )
     const sandbox =
       mode === 'read-only'
         ? 'read-only'
-        : mode === 'danger-full-access' && harnessAllowsFullAccess(definition.harnessRef)
+        : mode === 'danger-full-access' &&
+            harnessAllowsFullAccess(definition.harnessRef, this.knownHarnesses, adapter)
           ? 'full-access'
           : 'workspace'
     return {
@@ -859,7 +880,9 @@ export class HarnessService {
     } as const
   }
   private async load() {
-    for (const record of await this.sessionStore.load()) {
+    const persistedCatalog = await this.catalogStore.get()
+    this.knownHarnesses = persistedCatalog.harnesses
+    for (const record of await this.sessionStore.load(persistedCatalog.harnesses)) {
       for (const turn of record.turns) {
         if (
           ['queued', 'running', 'waiting_child', 'waiting_approval', 'waiting_input'].includes(
@@ -960,13 +983,14 @@ export class HarnessService {
   }
   async installations() {
     const catalog = await this.catalogStore.get()
+    this.knownHarnesses = catalog.harnesses
     return Promise.all(
       catalog.harnesses.map(async (harness) => {
         const item = await inspectHarness(harness, this.directory, this.command()),
           maintenance = this.maintenance.get(harness.id)
-        const capabilities = harnessAdapters.find(
-          (adapter) => adapter.id === harness.id,
-        )?.capabilities
+        const capabilities =
+          harnessAdapters.find((adapter) => adapter.id === harness.id)?.capabilities ??
+          (isCustomAcpHarness(harness) ? CUSTOM_ACP_CAPABILITIES : undefined)
         const result: HarnessInstallation = {
           ...item,
           definition: harness,
@@ -1078,14 +1102,19 @@ export class HarnessService {
   /** Concurrent readers of the same snapshot share only unfinished CLI checks. */
   private async probeCatalogAvailability(catalog: ExecutionCatalog) {
     const availability = new Map<string, { available: boolean; reason?: string }>()
-    const probes = new Map<HarnessAdapter, Promise<{ available: boolean; reason?: string }>>()
+    const probes = new Map<string, Promise<{ available: boolean; reason?: string }>>()
     const pending = new Map<string, Promise<{ available: boolean; reason?: string }>>()
     for (const combination of catalog.combinations) {
       const model = catalog.models.find(
         (item) => modelRefKey(item.ref) === modelRefKey(combination.modelRef),
       )
       const harness = catalog.harnesses.find((item) => item.id === combination.harnessRef)
-      const adapter = adapterFor(combination.harnessRef, combination.modelRef, this.modelSources)
+      const adapter = adapterFor(
+        combination.harnessRef,
+        combination.modelRef,
+        this.modelSources,
+        catalog.harnesses,
+      )
       if (!model?.available)
         availability.set(combination.id, {
           available: false,
@@ -1097,14 +1126,14 @@ export class HarnessService {
           reason: '该模型与 Harness 尚无兼容适配器',
         })
       else {
-        if (!probes.has(adapter))
+        if (!probes.has(harness.id))
           probes.set(
-            adapter,
+            harness.id,
             Promise.resolve().then(() =>
               adapter.available(this.ctx, this.adapterOptions(harness.command, harness.prefix)),
             ),
           )
-        pending.set(combination.id, probes.get(adapter)!)
+        pending.set(combination.id, probes.get(harness.id)!)
       }
     }
     await Promise.all(
@@ -1223,7 +1252,7 @@ export class HarnessService {
         ...catalog,
         supportedPairings: catalog.models.map((model) => {
           const supported = catalog.harnesses.flatMap((harness) => {
-            const adapter = adapterFor(harness.id, model.ref, this.modelSources)
+            const adapter = adapterFor(harness.id, model.ref, this.modelSources, catalog.harnesses)
             return adapter
               ? [
                   {
@@ -1245,6 +1274,7 @@ export class HarnessService {
       this.executionCatalogPending = { minimaxCodeEnabled, promise: pending }
       void pending.then(
         (catalog) => {
+          this.knownHarnesses = catalog.harnesses
           if (
             this.executionCatalogPending?.promise === pending &&
             this.isMinimaxCodeEnabled() === minimaxCodeEnabled
@@ -1264,6 +1294,7 @@ export class HarnessService {
       if (snapshot?.minimaxCodeEnabled === minimaxCodeEnabled)
         return structuredClone(snapshot.catalog)
       const persisted = await this.catalogStore.get()
+      this.knownHarnesses = persisted.harnesses
       return { ...persisted, minimaxCodeEnabled }
     }
     return this.executionCatalogAfter(pending, minimaxCodeEnabled)
@@ -1305,12 +1336,11 @@ export class HarnessService {
   private async probeExternalModel(
     ref: ModelRef,
   ): Promise<{ available: boolean; reason?: string }> {
-    const adapter = adapterFor(defaultHarness(ref), ref, this.modelSources)
+    const harnesses = (await this.catalogStore.get()).harnesses
+    const adapter = adapterFor(defaultHarness(ref), ref, this.modelSources, harnesses)
     if (!adapter) return { available: false, reason: '该模型尚无兼容的官方 CLI 适配器' }
     try {
-      const harness = (await this.catalogStore.get()).harnesses.find(
-        (item) => item.id === adapter.id,
-      )
+      const harness = harnesses.find((item) => item.id === adapter.id)
       return await adapter.available(
         this.ctx,
         this.adapterOptions(harness?.command, harness?.prefix),
@@ -1352,14 +1382,19 @@ export class HarnessService {
       const unchanged = samePairing && (!combination.enabled || old.enabled)
       if (
         !unchanged &&
-        !adapterFor(combination.harnessRef, combination.modelRef, this.modelSources)
+        !adapterFor(combination.harnessRef, combination.modelRef, this.modelSources, next.harnesses)
       )
         throw Error('该模型与 Harness 尚无兼容适配器，未保存组合')
       if (
         combination.harnessRef === 'pi' &&
         (!samePairing || old.permissionPolicy !== combination.permissionPolicy)
       ) {
-        const adapter = adapterFor(combination.harnessRef, combination.modelRef, this.modelSources)
+        const adapter = adapterFor(
+          combination.harnessRef,
+          combination.modelRef,
+          this.modelSources,
+          next.harnesses,
+        )
         if (adapter && !adapter.capabilities.permissions.includes(combination.permissionPolicy))
           throw Error('所选 Harness 不支持此权限档位，未保存组合')
       }
@@ -1370,6 +1405,7 @@ export class HarnessService {
     const publish = async () => {
       if (changed) await this.assertNoGlobalActivity()
       const saved = await this.catalogStore.set(next)
+      this.knownHarnesses = saved.harnesses
       this.antigravityAccount.updateRoute(saved.harnesses.find((item) => item.id === 'antigravity'))
       this.events.emit('catalog')
       return this.executionCatalog()
@@ -1517,8 +1553,10 @@ export class HarnessService {
     if (!definition) throw Error('未知或已停用的模型 + Harness 组合')
     this.assertMiniMaxCodeRouteEnabled(definition)
     const harness = catalog.harnesses.find((item) => item.id === definition.harnessRef)
-    if (!harness || !adapterFor(harness.id, definition.modelRef, this.modelSources))
-      throw Error('该组合已保存，但尚未安装对应 Harness 适配器')
+    const resolvedAdapter = harness
+      ? adapterFor(harness.id, definition.modelRef, this.modelSources, catalog.harnesses)
+      : undefined
+    if (!harness || !resolvedAdapter) throw Error('该组合已保存，但尚未安装对应 Harness 适配器')
     const supplied = required(input.cwd, 'cwd')
     if (!isAbsolute(supplied) || supplied.includes('\0')) throw Error('工作目录必须为绝对路径')
     const cwd = await realpath(supplied)
@@ -1585,7 +1623,10 @@ export class HarnessService {
     // An explicitly requested full-access task is never quietly downgraded. A harness without a
     // verified official full-access path is refused before any session or model request exists,
     // so the caller learns the task cannot run instead of running with weaker permissions.
-    if (requestedSandbox === 'full-access' && !harnessAllowsFullAccess(definition.harnessRef))
+    if (
+      requestedSandbox === 'full-access' &&
+      !harnessAllowsFullAccess(definition.harnessRef, catalog.harnesses, resolvedAdapter)
+    )
       throw new HarnessConfigurationError(
         `Harness ${definition.harnessRef} 没有经过验证的官方 full-access 路径，已拒绝启动该受限任务；不会自动降级为工作区权限。`,
       )
@@ -1656,9 +1697,9 @@ export class HarnessService {
   }
   private async openConnection(record: HarnessSession, provisional = false) {
     this.assertMiniMaxCodeRouteEnabled(record)
-    const chosenHarness = (await this.catalogStore.get()).harnesses.find(
-      (h) => h.id === record.harnessRef,
-    )
+    const currentCatalog = await this.catalogStore.get()
+    this.knownHarnesses = currentCatalog.harnesses
+    const chosenHarness = currentCatalog.harnesses.find((h) => h.id === record.harnessRef)
     const launchSettings = hash([
       chosenHarness?.command,
       chosenHarness?.prefix,
@@ -1686,7 +1727,12 @@ export class HarnessService {
       await existing.bridgeStop?.()
       this.active.delete(record.id)
     }
-    const adapter = adapterFor(record.harnessRef, record.modelRef, this.modelSources)
+    const adapter = adapterFor(
+      record.harnessRef,
+      record.modelRef,
+      this.modelSources,
+      currentCatalog.harnesses,
+    )
     if (!adapter) throw Error('此组合没有兼容的 Harness 适配器')
     if (adapter.transport === 'dsh') {
       await connectDsh(this.ctx, record, () => this.save(record))
@@ -2346,7 +2392,12 @@ export class HarnessService {
    * with parameters the combination did not ask for.
    */
   private async pinSession(record: HarnessSession, active: Active, effort?: string) {
-    const adapter = adapterFor(record.harnessRef, record.modelRef, this.modelSources)
+    const adapter = adapterFor(
+      record.harnessRef,
+      record.modelRef,
+      this.modelSources,
+      this.knownHarnesses,
+    )
     if (!adapter || (!adapter.configureSession && !adapter.verifySession)) return
     const acp = active.acp
     if (!acp) throw Error('Harness 连接已关闭，无法在发送任务前确认固定模型')
@@ -2418,7 +2469,12 @@ export class HarnessService {
           (active.createdSession && record.turns.length === 1
             ? { sessionId: record.acpSessionId, boundaries: [] }
             : await this.observeEditHistory(record))
-        const adapter = adapterFor(record.harnessRef, record.modelRef, this.modelSources)
+        const adapter = adapterFor(
+          record.harnessRef,
+          record.modelRef,
+          this.modelSources,
+          this.knownHarnesses,
+        )
         const edit = record.nativeSessionId
           ? this.externalMessageEdits.intent(record.nativeSessionId)
           : undefined
@@ -2976,6 +3032,12 @@ export class HarnessService {
       get catalogEpoch() {
         return self.catalogEpoch
       },
+      get knownHarnesses() {
+        return self.knownHarnesses
+      },
+      notifyCatalogChanged: () => {
+        this.events.emit('catalog')
+      },
       executionCatalog: (options) => this.executionCatalog(options),
       adapterOptions: (command, prefix) => this.adapterOptions(command, prefix),
       conversationBinding: (session, definition, cwd) =>
@@ -2984,7 +3046,7 @@ export class HarnessService {
       runSelectionChange: (sessionId, operation) => this.runSelectionChange(sessionId, operation),
       native: (method, request) => this.native(method, request),
       assertMiniMaxCodeRouteEnabled: (route) => this.assertMiniMaxCodeRouteEnabled(route),
-      cliOwnsEffort: (definition) => this.cliOwnsEffort(definition),
+      cliOwnsEffort: (definition, harnesses) => this.cliOwnsEffort(definition, harnesses),
       normalizeConversationSelection: (selection, definition, signal) =>
         this.normalizeConversationSelection(selection, definition, signal),
       modelSelection: (sessionId) => this.modelSelection(sessionId),
@@ -3380,8 +3442,11 @@ export class HarnessService {
     return modelSelection(this.selectionHost(), sessionId)
   }
   /** CLI-advertised controls for third-party sources are not native provider effort IDs. */
-  private cliOwnsEffort(definition: CombinationDefinition): boolean {
-    return cliOwnsEffort(definition, this.modelSources)
+  private cliOwnsEffort(
+    definition: CombinationDefinition,
+    harnesses: readonly HarnessDefinition[] = this.knownHarnesses,
+  ): boolean {
+    return cliOwnsEffort(definition, this.modelSources, harnesses)
   }
   private selectEffort(input: ModelSelection & { sessionId: string }): Promise<unknown> {
     return selectEffort(this.selectionHost(), input)
@@ -3431,6 +3496,9 @@ export class HarnessService {
   }
   async selectCombination(input: { sessionId: string; combination: string }) {
     return selectCombination(this.selectionHost(), input)
+  }
+  async selectModelHarness(input: SelectModelHarnessRequest) {
+    return selectModelHarness(this.selectionHost(), input)
   }
   /** Bind a new official role without changing deployment defaults or an existing conversation. */
   async bindRoleCombination(agent: Agent, combination: string): Promise<void> {
@@ -3669,7 +3737,7 @@ export class HarnessService {
     // external session (for example, Kimi may not advertise `high`).
     const requestEffort = admitted
       ? admitted.reasoningEffort
-      : this.cliOwnsEffort(definition)
+      : this.cliOwnsEffort(definition, catalog?.harnesses)
         ? (this.conversationEffort(session.id, definition, catalog!) ?? undefined)
         : ['codex', 'claude'].includes(definition.harnessRef) ||
             definition.modelRef.provider === MINIMAX_CODE_PROVIDER
@@ -3816,6 +3884,8 @@ export class HarnessService {
         return this.updateHarness(required(p.id, 'Harness ID'))
       case 'select-combination':
         return this.selectCombination(p as { sessionId: string; combination: string })
+      case 'select-model-harness':
+        return this.selectModelHarness(p as SelectModelHarnessRequest)
       case 'model-selection':
         return this.modelSelection(p.sessionId)
       case 'reasoning-preflight':

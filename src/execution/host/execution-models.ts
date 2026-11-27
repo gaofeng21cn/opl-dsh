@@ -650,7 +650,7 @@ export class ExecutionModelResolver {
         official === 'antigravity' &&
         nativeGemini &&
         pi &&
-        adapterFor(pi.id, model.ref)
+        adapterFor(pi.id, model.ref, undefined, catalog.harnesses)
       ) {
         recommendations.push({
           modelRef: model.ref,
@@ -679,13 +679,17 @@ export class ExecutionModelResolver {
         !officialOpenCodeModel(model.ref) &&
         catalog.harnesses.some(
           (harness) =>
-            harness.id === declaredOfficial && adapterFor(harness.id, model.ref) !== undefined,
+            harness.id === declaredOfficial &&
+            adapterFor(harness.id, model.ref, undefined, catalog.harnesses) !== undefined,
         )
           ? declaredOfficial
           : undefined
       const automatic = automaticHarness(model.ref)
       const harnesses = catalog.harnesses
-        .filter((harness) => adapterFor(harness.id, model.ref) !== undefined)
+        .filter(
+          (harness) =>
+            adapterFor(harness.id, model.ref, undefined, catalog.harnesses) !== undefined,
+        )
         .map((harness) => harness.id)
       const status = isExcludedOfmModel(model.ref.model)
         ? {

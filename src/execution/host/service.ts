@@ -37,6 +37,7 @@ import type {
   DelegateRequest,
   ReviewRequest,
   ReportRequest,
+  SelectModelHarnessRequest,
 } from '../../contracts/types.ts'
 import type { ExecutionLimits } from '../contracts/limits.ts'
 import type { HarnessContextReading } from '../contracts/usage.ts'
@@ -251,6 +252,12 @@ export class ExecutionService extends TypertRemoteService {
     combination: string
   }): Promise<{ kind: string; sessionId: string }> {
     return this.execution.selectCombination(request)
+  }
+  @Remote('select-model-harness')
+  selectModelHarness(
+    request: SelectModelHarnessRequest,
+  ): Promise<{ kind: string; sessionId: string; combination: string }> {
+    return this.execution.selectModelHarness(request)
   }
   @Remote('select-effort')
   async selectEffort(request: {

@@ -15,7 +15,9 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ExecutionCatalog, CombinationDefinition } from '../contracts/catalog.ts'
 import type { HarnessCatalog } from '../contracts/sessions.ts'
-import type { HarnessReasoningPreflight } from '../../contracts/types.ts'
+import type { HarnessInstallation, HarnessReasoningPreflight } from '../../contracts/types.ts'
+import { harnessDirectoryOrder } from '../contracts/harness-groups.ts'
+import { isOfficialPairing, officialHarnessFor } from '../contracts/official-harnesses.ts'
 import type { PendingCombination } from './pending-combination.ts'
 import { useModelSelection } from './use-model-selection.ts'
 import type { SelectionSource } from './use-model-selection.ts'
@@ -30,6 +32,18 @@ type Choice = {
   harnessName: string
   source: string
   available: boolean
+}
+type EngineChoice = {
+  harnessRef: string
+  harnessName: string
+  existingChoice?: Choice
+  available: boolean
+  installable: boolean
+  installing: boolean
+  isRecommended: boolean
+  isDefault: boolean
+  isSelected: boolean
+  statusText?: string
 }
 
 /** Controls supplied by the official model-menu extension points. */
@@ -159,6 +173,9 @@ export function CombinationSelect({
   const [availabilityLoading, setAvailabilityLoading] = useState(true)
   const [loadingSelection, setLoadingSelection] = useState(true)
   const [availability, setAvailability] = useState<HarnessCatalog['combinations']>([])
+  const [installations, setInstallations] = useState<HarnessInstallation[]>([])
+  const [installationsLoaded, setInstallationsLoaded] = useState(!inOfficialPane)
+  const [installingHarness, setInstallingHarness] = useState<string>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [preflightRevision, setPreflightRevision] = useState(0)
@@ -208,6 +225,7 @@ export function CombinationSelect({
       setLoadingCatalog(true)
       setAvailabilityLoading(true)
       setLoadingSelection(true)
+      if (inOfficialPane) setInstallationsLoaded(false)
       void call('catalog')
         .then((nextCatalog) => {
           if (!current()) return
@@ -233,6 +251,16 @@ export function CombinationSelect({
         .finally(() => {
           if (current()) setAvailabilityLoading(false)
         })
+      if (inOfficialPane) {
+        void call('harness-installations')
+          .then((nextInstallations) => {
+            if (current()) setInstallations(nextInstallations)
+          })
+          .catch(() => {})
+          .finally(() => {
+            if (current()) setInstallationsLoaded(true)
+          })
+      }
       try {
         return await call('model-selection', { sessionId: id })
       } finally {
@@ -286,6 +314,97 @@ export function CombinationSelect({
         : visibleChoices,
     [inOfficialPane, selection.current, visibleChoices],
   )
+
+  const engineChoices = useMemo<EngineChoice[]>(() => {
+    if (!inOfficialPane || !catalog || !selection.current) return []
+    const currentModelRef = {
+      provider: selection.current.provider,
+      model: selection.current.model,
+    }
+    const pairingRefs =
+      catalog.supportedPairings?.find((item) => sameModel(item.modelRef, currentModelRef))
+        ?.harnessRefs ?? []
+    const enabledForModel = choices.filter((choice) =>
+      sameModel(choice.combination.modelRef, currentModelRef),
+    )
+    const candidateIds = new Set<string>([
+      ...pairingRefs,
+      ...enabledForModel.map((choice) => choice.combination.harnessRef),
+    ])
+    const recommendedId =
+      officialHarnessFor(currentModelRef) ??
+      catalog.recommendations?.find((item) => sameModel(item.modelRef, currentModelRef))?.harnessRef
+    return [...candidateIds]
+      .map((harnessRef) => {
+        const harness = catalog.harnesses.find((item) => item.id === harnessRef)
+        const harnessName = harness?.name ?? harnessRef
+        const existingChoice = enabledForModel.find(
+          (choice) => choice.combination.harnessRef === harnessRef,
+        )
+        const availEntry = existingChoice
+          ? availability.find((item) => item.id === existingChoice.combination.id)
+          : undefined
+        const installation = installations.find((item) => item.id === harnessRef)
+        const available =
+          availEntry !== undefined
+            ? availEntry.available
+            : harnessRef === 'dsh'
+              ? true
+              : installation !== undefined
+                ? installation.installed && installation.runnable
+                : existingChoice !== undefined
+                  ? existingChoice.available
+                  : installationsLoaded && installations.length === 0
+        const installing =
+          installingHarness === harnessRef || installation?.maintenance?.state === 'running'
+        const isRecommended =
+          harnessRef === recommendedId ||
+          isOfficialPairing(harnessRef, currentModelRef) ||
+          (catalog.recommendations?.some(
+            (item) => sameModel(item.modelRef, currentModelRef) && item.harnessRef === harnessRef,
+          ) ??
+            false)
+        const statusText = !available
+          ? installing
+            ? '安装中…'
+            : installation?.installed && installation.verification === 'failed'
+              ? '需要处理'
+              : '未安装'
+          : undefined
+        return {
+          harnessRef,
+          harnessName,
+          ...(existingChoice ? { existingChoice } : {}),
+          available,
+          installable: installation?.maintenanceAction === 'install',
+          installing,
+          isRecommended,
+          isDefault: existingChoice?.combination.isDefault === true,
+          isSelected:
+            existingChoice !== undefined && existingChoice.combination.id === selection.combination,
+          ...(statusText ? { statusText } : {}),
+        }
+      })
+      .sort(
+        (left, right) =>
+          Number(right.available) - Number(left.available) ||
+          Number(right.isSelected) - Number(left.isSelected) ||
+          Number(right.isDefault) - Number(left.isDefault) ||
+          Number(right.isRecommended) - Number(left.isRecommended) ||
+          Number(right.harnessRef === 'dsh') - Number(left.harnessRef === 'dsh') ||
+          harnessDirectoryOrder(left.harnessRef, right.harnessRef),
+      )
+  }, [
+    availability,
+    catalog,
+    choices,
+    inOfficialPane,
+    installations,
+    installationsLoaded,
+    installingHarness,
+    selection.combination,
+    selection.current,
+  ])
 
   const selected = choices.find(
     (choice) =>
@@ -489,6 +608,40 @@ export function CombinationSelect({
     setPane('root')
   }
 
+  useEffect(() => {
+    if (!inOfficialPane) return
+    if (!installingHarness && !installations.some((item) => item.maintenance?.state === 'running'))
+      return
+    let active = true
+    const timer = setTimeout(() => {
+      void call('harness-installations')
+        .then((next) => {
+          if (!active) return
+          setInstallations(next)
+          setInstallationsLoaded(true)
+          const stillRunning = next.some((item) => item.maintenance?.state === 'running')
+          if (!stillRunning) {
+            const failed = installingHarness
+              ? next.find((item) => item.id === installingHarness)
+              : undefined
+            setInstallingHarness(undefined)
+            if (failed?.maintenance?.state === 'failed') {
+              setError(
+                failed.maintenance.message.split('\n')[0] || '安装未完成，请打开设置检查路径',
+              )
+            } else {
+              void reload(sessionId)
+            }
+          }
+        })
+        .catch(() => {})
+    }, 1500)
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [call, inOfficialPane, installations, installingHarness, reload, sessionId])
+
   const selectChoice = async (choice: Choice) => {
     if (busy || availabilityLoading || !choice.available) return
     if (
@@ -512,6 +665,88 @@ export function CombinationSelect({
     } finally {
       setBusy(false)
       setPendingChoice(undefined)
+    }
+  }
+
+  const selectEngine = async (engine: EngineChoice) => {
+    if (busy || !engine.available || !selection.current) return
+    if (engine.isSelected && !pendingCombination?.needsConfirmation(sessionId)) {
+      close(true)
+      return
+    }
+    if (engine.existingChoice) {
+      await selectChoice(engine.existingChoice)
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      const currentRef = {
+        provider: selection.current.provider,
+        model: selection.current.model,
+      }
+      const write = () =>
+        call('select-model-harness', {
+          sessionId,
+          modelRef: currentRef,
+          harnessRef: engine.harnessRef,
+        })
+      await (pendingCombination ? pendingCombination.select(sessionId, write) : write())
+      await reload(sessionId)
+      close(true)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '切换执行引擎失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const setDefaultEngine = async (engine: EngineChoice) => {
+    if (busy || !engine.available || !selection.current) return
+    setBusy(true)
+    setError('')
+    try {
+      await call('select-model-harness', {
+        sessionId,
+        modelRef: {
+          provider: selection.current.provider,
+          model: selection.current.model,
+        },
+        harnessRef: engine.harnessRef,
+        setAsDefault: true,
+      })
+      await reload(sessionId)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '设为默认引擎失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const installEngine = async (harnessRef: string) => {
+    if (busy || installingHarness) return
+    setInstallingHarness(harnessRef)
+    setError('')
+    try {
+      await call('harness-update', { id: harnessRef })
+      const [nextInstallations, nextAvailability] = await Promise.all([
+        call('harness-installations').catch(() => installations),
+        call('combinations', {}).catch(() => availability),
+      ])
+      setInstallations(nextInstallations)
+      setInstallationsLoaded(true)
+      setAvailability(nextAvailability)
+      const updated = nextInstallations.find((item) => item.id === harnessRef)
+      if (updated?.maintenance?.state === 'failed') {
+        setError(updated.maintenance.message.split('\n')[0] || '安装未完成，请打开设置检查路径')
+        setInstallingHarness(undefined)
+      } else if (updated?.maintenance?.state !== 'running') {
+        setInstallingHarness(undefined)
+        await reload(sessionId)
+      }
+    } catch (cause) {
+      setInstallingHarness(undefined)
+      setError(cause instanceof Error ? cause.message : '启动安装器失败')
     }
   }
   const selectEffort = async (effort: string | undefined) => {
@@ -725,50 +960,158 @@ export function CombinationSelect({
               {error}
             </div>
           )}
-          <div className={inOfficialPane ? undefined : `${css.groups} scrollable`}>
-            {[...grouped].map(([source, choices]) => (
-              <MenuGroup key={source} label={source}>
-                {choices.map((choice) => {
-                  const selectedChoice = selected?.combination.id === choice.combination.id
-                  return (
-                    <button
-                      key={choice.combination.id}
-                      ref={itemRef()}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={selectedChoice}
-                      className={`${css.option} ${selectedChoice ? css.selected : ''}`}
-                      disabled={busy}
-                      title={`${source} · ${choiceLabel(choice)}`}
-                      onClick={() => void selectChoice(choice)}
+          {inOfficialPane ? (
+            (() => {
+              const availableEngines = engineChoices.filter((item) => item.available)
+              const unavailableEngines = engineChoices.filter((item) => !item.available)
+              const selectedEngine = availableEngines.find((item) => item.isSelected)
+              const missingRecommended = unavailableEngines.find((item) => item.isRecommended)
+              const dshAvailable = availableEngines.some((item) => item.harnessRef === 'dsh')
+              const canSetDefault =
+                selectedEngine !== undefined &&
+                !selectedEngine.isDefault &&
+                engineChoices.length >= 2
+              return (
+                <>
+                  {missingRecommended && dshAvailable && (
+                    <div
+                      className={css.hint}
+                      data-opl-missing-default-hint={missingRecommended.harnessRef}
                     >
-                      <span className={css.optionCopy}>
-                        <span className={css.modelName}>
-                          {inOfficialPane ? choice.harnessName : choiceLabel(choice)}
+                      默认引擎 {missingRecommended.harnessName} 尚未安装，可一键安装或先使用内置 DSH
+                      对话。
+                    </div>
+                  )}
+                  <div className={css.pane}>
+                    {availableEngines.length > 0 && (
+                      <MenuGroup label="可用执行引擎">
+                        {availableEngines.map((engine) => (
+                          <button
+                            key={engine.harnessRef}
+                            ref={itemRef()}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={engine.isSelected}
+                            className={`${css.option} ${engine.isSelected ? css.selected : ''}`}
+                            disabled={busy}
+                            onClick={() => void selectEngine(engine)}
+                          >
+                            <span className={css.optionCopy}>
+                              <span className={css.optionRow}>
+                                <span className={css.modelName}>{engine.harnessName}</span>
+                                {engine.isDefault && <span className={css.badge}>默认</span>}
+                                {!engine.isDefault && engine.isRecommended && (
+                                  <span className={css.badge}>推荐</span>
+                                )}
+                                {engine.harnessRef === 'dsh' && (
+                                  <span className={css.badge}>内置</span>
+                                )}
+                              </span>
+                            </span>
+                            <span className={css.check}>
+                              {engine.isSelected ? <IconCheckOutlineRegular /> : null}
+                            </span>
+                          </button>
+                        ))}
+                      </MenuGroup>
+                    )}
+                    {unavailableEngines.length > 0 && (
+                      <MenuGroup label="未安装引擎">
+                        {unavailableEngines.map((engine) => (
+                          <div
+                            key={engine.harnessRef}
+                            className={css.unavailableRow}
+                            data-opl-unavailable-harness={engine.harnessRef}
+                          >
+                            <span className={css.optionCopy}>
+                              <span className={css.optionRow}>
+                                <span className={css.modelName}>{engine.harnessName}</span>
+                                {engine.isRecommended && <span className={css.badge}>推荐</span>}
+                              </span>
+                              <span className={css.unavailableReason}>{engine.statusText}</span>
+                            </span>
+                            {engine.installable && (
+                              <button
+                                type="button"
+                                className={css.installAction}
+                                data-opl-install-harness={engine.harnessRef}
+                                disabled={busy || engine.installing || !!installingHarness}
+                                onClick={() => void installEngine(engine.harnessRef)}
+                              >
+                                {engine.installing ? '安装中…' : '一键安装'}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </MenuGroup>
+                    )}
+                    {engineChoices.length === 0 && (
+                      <div
+                        className={css.empty}
+                        role={loadingCatalog || !installationsLoaded ? 'status' : undefined}
+                      >
+                        {loadingCatalog || !installationsLoaded
+                          ? loadingLabel
+                          : '当前模型没有可用的执行引擎'}
+                      </div>
+                    )}
+                    {canSetDefault && (
+                      <div className={css.paneFooter}>
+                        <button
+                          type="button"
+                          className={css.defaultAction}
+                          data-opl-set-default-harness={selectedEngine.harnessRef}
+                          disabled={busy}
+                          onClick={() => void setDefaultEngine(selectedEngine)}
+                        >
+                          设为该模型默认
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )
+            })()
+          ) : (
+            <div className={`${css.groups} scrollable`}>
+              {[...grouped].map(([source, choices]) => (
+                <MenuGroup key={source} label={source}>
+                  {choices.map((choice) => {
+                    const selectedChoice = selected?.combination.id === choice.combination.id
+                    return (
+                      <button
+                        key={choice.combination.id}
+                        ref={itemRef()}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={selectedChoice}
+                        className={`${css.option} ${selectedChoice ? css.selected : ''}`}
+                        disabled={busy}
+                        title={`${source} · ${choiceLabel(choice)}`}
+                        onClick={() => void selectChoice(choice)}
+                      >
+                        <span className={css.optionCopy}>
+                          <span className={css.modelName}>{choiceLabel(choice)}</span>
                         </span>
-                      </span>
-                      <span className={css.check}>
-                        {busy && pendingChoice?.combination.id === choice.combination.id ? (
-                          <StateDot state="ongoing" />
-                        ) : selectedChoice ? (
-                          <IconCheckOutlineRegular />
-                        ) : null}
-                      </span>
-                    </button>
-                  )
-                })}
-              </MenuGroup>
-            ))}
-            {paneChoices.length === 0 && (
-              <div className={css.empty} role={loadingCatalog ? 'status' : undefined}>
-                {loadingCatalog
-                  ? loadingLabel
-                  : inOfficialPane
-                    ? '当前模型没有可用的执行引擎'
-                    : '当前没有可用的模型组合'}
-              </div>
-            )}
-          </div>
+                        <span className={css.check}>
+                          {busy && pendingChoice?.combination.id === choice.combination.id ? (
+                            <StateDot state="ongoing" />
+                          ) : selectedChoice ? (
+                            <IconCheckOutlineRegular />
+                          ) : null}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </MenuGroup>
+              ))}
+              {paneChoices.length === 0 && (
+                <div className={css.empty} role={loadingCatalog ? 'status' : undefined}>
+                  {loadingCatalog ? loadingLabel : '当前没有可用的模型组合'}
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
       {renderPane === 'effort' && (
@@ -914,22 +1257,25 @@ export function OfficialCombinationOption({
   })
   const currentChoices = useMemo(() => {
     if (!catalog || !selection.current) return []
-    return catalog.combinations
-      .filter(
-        (combination) => combination.enabled && sameModel(combination.modelRef, selection.current),
-      )
-      .filter(
-        (combination) =>
-          availability.length === 0 ||
-          availability.find((item) => item.id === combination.id)?.available,
-      )
-  }, [availability, catalog, selection.current])
+    return catalog.combinations.filter(
+      (combination) => combination.enabled && sameModel(combination.modelRef, selection.current),
+    )
+  }, [catalog, selection.current])
+  const compatibleHarnessIds = useMemo(() => {
+    if (!catalog || !selection.current) return []
+    const pairing = catalog.supportedPairings?.find((item) =>
+      sameModel(item.modelRef, selection.current),
+    )
+    return [
+      ...new Set([...(pairing?.harnessRefs ?? []), ...currentChoices.map((c) => c.harnessRef)]),
+    ]
+  }, [catalog, currentChoices, selection.current])
   if (!available) return null
   // Keep the row mounted while the per-session selection and catalog are being
   // read. The official menu opens before those RPCs settle, and returning null
   // here made the OPL entry disappear permanently on a slow or cold session.
   const loading = catalog === undefined || selection.current === null
-  if (!loading && currentChoices.length === 0) return null
+  if (!loading && compatibleHarnessIds.length === 0) return null
   if (loading) {
     return (
       <button
@@ -946,10 +1292,42 @@ export function OfficialCombinationOption({
       </button>
     )
   }
+  const currentSelection = selection.current
+  if (!currentSelection) return null
+  const isChoiceAvailable = (combinationId: string) =>
+    availability.length === 0 ||
+    availability.find((item) => item.id === combinationId)?.available === true
   const selected = currentChoices.find((choice) => choice.id === selection.combination)
   const selectedHarness = selected === undefined ? undefined : harnessFor(catalog, selected)
+  const selectedAvailable = selected !== undefined && isChoiceAvailable(selected.id)
+  const availableChoices = currentChoices.filter((choice) => isChoiceAvailable(choice.id))
   const onlyHarness =
-    currentChoices.length === 1 ? harnessFor(catalog, currentChoices[0]) : undefined
+    availableChoices.length === 1 ? harnessFor(catalog, availableChoices[0]) : undefined
+  const recommendedId =
+    officialHarnessFor(currentSelection) ??
+    catalog.recommendations?.find((item) => sameModel(item.modelRef, currentSelection))?.harnessRef
+  const recommendedHarness = recommendedId
+    ? catalog.harnesses.find((item) => item.id === recommendedId)
+    : undefined
+  const recommendedChoice = recommendedId
+    ? currentChoices.find((choice) => choice.harnessRef === recommendedId)
+    : undefined
+  const recommendedUnavailable =
+    recommendedId !== undefined &&
+    compatibleHarnessIds.includes(recommendedId) &&
+    ((recommendedChoice !== undefined && !isChoiceAvailable(recommendedChoice.id)) ||
+      (recommendedChoice === undefined && recommendedId !== 'dsh' && availableChoices.length === 0))
+  const summaryLabel = selected
+    ? selectedAvailable
+      ? (selectedHarness?.name ?? selected.harnessRef)
+      : `${selectedHarness?.name ?? selected.harnessRef}（未安装）`
+    : onlyHarness
+      ? onlyHarness.name
+      : recommendedUnavailable
+        ? `${recommendedHarness?.name ?? recommendedId}（未安装）`
+        : availableChoices.length > 0
+          ? '请选择'
+          : (recommendedHarness?.name ?? '请选择')
   return (
     <button
       type="button"
@@ -960,9 +1338,7 @@ export function OfficialCombinationOption({
       onClick={() => openPane({ key: 'opl-combinations', title: '执行引擎' })}
     >
       <span className={css.cellLabel}>执行引擎</span>
-      <span className={css.cellValue}>
-        {loading ? '加载中…' : (selectedHarness?.name ?? onlyHarness?.name ?? '请选择')}
-      </span>
+      <span className={css.cellValue}>{summaryLabel}</span>
       <IconChevronRightOutlineRegular className={css.cellChevron} />
     </button>
   )

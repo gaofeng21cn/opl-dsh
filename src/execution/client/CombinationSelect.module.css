@@ -238,3 +238,68 @@
   margin-left: 6px;
   font-size: 12px;
 }
+.hint {
+  border-radius: var(--dsw-radius-md, 8px);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  margin: 2px 2px 6px;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 16px;
+}
+.optionRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.badge {
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-tertiary);
+  padding: 1px 5px;
+  font-size: 10px;
+  line-height: 14px;
+  flex: none;
+}
+.unavailableRow {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 7px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--dsw-alias-label-dimmed);
+}
+.installAction {
+  border-radius: var(--dsw-radius-sm, 6px);
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  flex: none;
+}
+.installAction:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.installAction:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.paneFooter {
+  border-top: 0.5px solid var(--dsw-alias-border-l3);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+.defaultAction {
+  composes: cell;
+  justify-content: center;
+  height: 30px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}

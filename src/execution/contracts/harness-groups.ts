@@ -21,6 +21,35 @@ export function isPrimaryHarness(id: string): boolean {
   return PRIMARY_HARNESS_ORDER.has(id)
 }
 
+/** Built-in engines shipped with OPL; any other `kind: 'acp'` entry is user-registered custom ACP. */
+export const BUILTIN_HARNESS_IDS: ReadonlySet<string> = new Set([
+  'dsh',
+  'codex',
+  'claude',
+  'grok-build',
+  'antigravity',
+  'opencode',
+  'minimax-code',
+  'kimi-code',
+  'qwen-code',
+  'pi',
+  'kilo',
+  'vibe',
+])
+
+export function isCustomAcpHarness(harness?: {
+  id: string
+  kind: string
+  adapter?: string
+}): boolean {
+  return (
+    harness !== undefined &&
+    harness.kind === 'acp' &&
+    !BUILTIN_HARNESS_IDS.has(harness.id) &&
+    (harness.adapter === 'acp-custom' || harness.id.startsWith('custom-'))
+  )
+}
+
 /** Built-in and common engines first; remaining adapted engines retain catalog order. */
 export function harnessDirectoryOrder(left: string, right: string): number {
   return (

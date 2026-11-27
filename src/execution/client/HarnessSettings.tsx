@@ -259,8 +259,8 @@ export function HarnessSettings({ call, embedded = false }: { call: Call; embedd
           )}
         </div>
       )}
-      <details className={css.details}>
-        <summary>登记其他 Harness</summary>
+      <details className={css.details} data-opl-panel="custom-acp-registration">
+        <summary>添加自定义标准 ACP 引擎</summary>
         <div className={css.detailsBody}>
           <label className={css.field}>
             名称
@@ -272,20 +272,38 @@ export function HarnessSettings({ call, embedded = false }: { call: Call; embedd
           </label>
           <label className={css.field}>
             可执行文件
+            <div className={css.pathInputRow}>
+              <input
+                className={css.input}
+                value={draft.command}
+                placeholder="绝对路径或 PATH 中的命令"
+                onChange={(e) => setDraft({ ...draft, command: e.target.value })}
+              />
+              <ExecutableBrowser
+                disabled={busy}
+                onPick={(path) => setDraft({ ...draft, command: path })}
+              />
+            </div>
+          </label>
+          <label className={css.field}>
+            启动参数（可选）
             <input
               className={css.input}
-              value={draft.command}
-              onChange={(e) => setDraft({ ...draft, command: e.target.value })}
+              value={draft.args}
+              placeholder="例如 acp 或 --acp，留空则直接启动"
+              onChange={(e) => setDraft({ ...draft, args: e.target.value })}
             />
           </label>
           <p className={css.muted}>
-            可登记并检测本机程序。登记仅用于发现程序和查看路径，不会自动增加对话执行能力。
+            支持标准 ACP（Agent Client Protocol）的 CLI
+            登记并验证通过后，即可直接在聊天框中为任意模型选择使用；自定义 ACP 引擎使用 CLI
+            自身登录态与完全访问权限。
           </p>
           <Button
             disabled={busy || !draft.name.trim() || !draft.command.trim()}
             onClick={() => void register()}
           >
-            登记 Harness
+            添加自定义 ACP 引擎
           </Button>
         </div>
       </details>

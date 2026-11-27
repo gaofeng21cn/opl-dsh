@@ -57,6 +57,7 @@ import {
 import {
   assertOpenCodeModelOffered,
   assertOpenCodeModelPinned,
+  isOpenCodeGatewayChatModel,
   isOpenCodeGatewayGeminiModel,
   isOpenCodeModel,
   openCodeWireModel,
@@ -78,6 +79,7 @@ export {
   OPENCODE_GATEWAY_GEMINI_MODELS,
   OPENCODE_OFM_PROVIDER,
   OPENCODE_OFM_MODELS,
+  isOpenCodeGatewayChatModel,
   isOpenCodeGatewayGeminiModel,
   openCodeWireModel,
 } from './opencode-models.ts'
@@ -222,7 +224,7 @@ export const openCodeAdapter: HarnessAdapter = {
     reasoning: 'none',
     autoReview: 'unsupported',
   },
-  matches: (ref: ModelRef) => isOpenCodeModel(ref) || isOpenCodeGatewayGeminiModel(ref),
+  matches: (ref: ModelRef) => isOpenCodeModel(ref) || isOpenCodeGatewayChatModel(ref),
   async available(ctx, options) {
     const path = await openCodePath(options)
     if (!path)
@@ -263,7 +265,7 @@ export const openCodeAdapter: HarnessAdapter = {
       )
     const path = await openCodePath(options)
     if (!path) throw Error('未找到官方 OpenCode CLI（opencode），无法启动此组合')
-    const gatewayGemini = isOpenCodeGatewayGeminiModel(record.modelRef)
+    const gatewayChat = isOpenCodeGatewayChatModel(record.modelRef)
     if (!options.modelSources)
       throw new HarnessConfigurationError('该模型来源尚未适配此 Harness，已停止，未启动 OpenCode。')
 
@@ -271,7 +273,7 @@ export const openCodeAdapter: HarnessAdapter = {
     // a source that is unloaded or re-registered mid-preparation cannot still yield a
     // launch. The registry's own re-check inside `resolve` does not cover the awaits this
     // adapter performs after it.
-    const lease = gatewayGemini
+    const lease = gatewayChat
       ? undefined
       : options.modelSources.lease(OPENCODE_HARNESS, record.modelRef)
     const nativeModel = officialOpenCodeModel(record.modelRef)
@@ -309,7 +311,7 @@ export const openCodeAdapter: HarnessAdapter = {
       },
       ...(started.verbatim ? { windowsVerbatimArguments: true } : {}),
     }
-    return !gatewayGemini && !nativeModel
+    return !gatewayChat && !nativeModel
       ? chatToolCompatibilityLaunch(prepared, 'opencode')
       : prepared
   },

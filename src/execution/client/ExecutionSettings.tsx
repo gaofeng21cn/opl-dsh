@@ -10,9 +10,9 @@ import css from '../../shared/client/SettingsSection.module.css'
 import type { ExecutionCall as Call } from '../../shared/client/remote-call.ts'
 
 /**
- * One user-facing execution page. The common task is choosing a combination;
- * low-frequency program, proxy and limits controls stay in existing rows
- * inside this page instead of consuming separate settings navigation entries.
+ * One user-facing execution page. Common tasks (detecting local engines, one-click install/update,
+ * per-harness proxies, and custom standard ACP engines) sit flat at the top, while explicit default
+ * overrides and turn limits live cleanly inside collapsible panels below.
  */
 export function ExecutionSettings({
   call,
@@ -24,21 +24,25 @@ export function ExecutionSettings({
   const minimaxSnapshot = useMiniMaxIntegrationSnapshot(minimax.form)
   return (
     <div className={css.section} data-opl-panel="execution">
-      <h2 className={css.title}>执行与组合</h2>
+      <h2 className={css.title}>执行引擎与组合</h2>
       <p className={css.intro}>
-        为模型绑定 Harness
-        与权限，并在同一页维护执行程序、独立网络代理和工具审批。已启用的组合显示在官方会话输入框中；模型与账号仍在对应来源页面管理。
+        日常对话会自动按推荐策略匹配引擎，也可在聊天框「执行引擎」里为任意模型随时自由切换；本页用于管理本机执行引擎、网络代理与可选默认预设。
       </p>
-      <ExecutionCatalogSection
-        call={call}
-        embedded
-        refreshKey={miniMaxIntegrationEnabled(minimaxSnapshot)}
-      />
-      <ExecutionLimitsSection call={call} />
-      <details className={css.details} data-opl-panel="execution-settings">
-        <summary>执行引擎与网络代理</summary>
+      <HarnessSettings call={call} embedded />
+      <details className={css.details}>
+        <summary>自定义默认规则与快捷预设</summary>
         <div className={css.detailsBody}>
-          <HarnessSettings call={call} embedded />
+          <ExecutionCatalogSection
+            call={call}
+            embedded
+            refreshKey={miniMaxIntegrationEnabled(minimaxSnapshot)}
+          />
+        </div>
+      </details>
+      <details className={css.details}>
+        <summary>运行超时与队列限制</summary>
+        <div className={css.detailsBody}>
+          <ExecutionLimitsSection call={call} />
         </div>
       </details>
     </div>

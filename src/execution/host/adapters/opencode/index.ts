@@ -30,6 +30,7 @@ export {
   assertOpenCodeModelOffered,
   assertOpenCodeModelPinned,
   isOpenCodeModel,
+  isOpenCodeGatewayChatModel,
   isOpenCodeGatewayGeminiModel,
   openCodeWireModel,
   openCodeConfigOption,

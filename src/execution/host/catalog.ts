@@ -157,7 +157,7 @@ export function normalizeCatalog(value: unknown): ExecutionCatalog {
       if (!harnesses.some((h) => h.id === harnessRef)) throw Error('组合引用不存在的 Harness')
       if (!['read-only', 'workspace', 'full-access'].includes(permissionPolicy))
         throw Error('组合权限无效')
-      if (permissionPolicy === 'full-access' && !harnessAllowsFullAccess(harnessRef))
+      if (permissionPolicy === 'full-access' && !harnessAllowsFullAccess(harnessRef, harnesses))
         throw Error('此 Harness 不支持 full-access 组合权限')
       return {
         id: text(x.id, '组合 ID'),

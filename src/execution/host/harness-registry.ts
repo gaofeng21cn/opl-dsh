@@ -4,6 +4,7 @@ import { join, delimiter, isAbsolute, extname, resolve, dirname, relative, sep }
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { HarnessDefinition } from '../contracts/catalog.ts'
+import { isCustomAcpHarness } from '../contracts/harness-groups.ts'
 import type { HarnessInstallation } from '../contracts/installations.ts'
 const exec = promisify(execFile)
 type DetectedCommand = {
@@ -494,7 +495,10 @@ async function probeVersion(
   if (!options.fresh && cached && cached.expires > Date.now()) return cached.result
   const result = (async (): Promise<VersionProbe> => {
     try {
-      const launch = commandLaunch(path, [...(harness.prefix ?? []), '--version'])
+      const probeArgs = isCustomAcpHarness(harness)
+        ? [...(harness.prefix ?? []).filter(configuredPath), '--version']
+        : [...(harness.prefix ?? []), '--version']
+      const launch = commandLaunch(path, probeArgs)
       const pending = exec(launch.command, launch.args, {
         ...(launch.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
         timeout,
@@ -611,14 +615,19 @@ export async function inspectHarness(
         : path && ['grok-build', 'antigravity'].includes(harness.id)
           ? 'update'
           : undefined
-  const supported = harness.kind === 'grok-build' || Object.hasOwn(info, harness.id)
+  const custom = isCustomAcpHarness(harness)
+  const supported = harness.kind === 'grok-build' || Object.hasOwn(info, harness.id) || custom
   const base = {
     id: harness.id,
     name: harness.name,
     installed: !!path || (!!selectionRequired && native.entries.length > 0),
     runnable: false,
     instructions:
-      suiteInstructions ?? entry?.instructions ?? '使用此 Harness 的官方安装与更新方式。',
+      suiteInstructions ??
+      entry?.instructions ??
+      (custom
+        ? '标准 ACP（Agent Client Protocol）外部引擎，使用 CLI 自身登录与版本管理。'
+        : '使用此 Harness 的官方安装与更新方式。'),
     website: entry?.website ?? '',
     ...(entry?.installable ? { installable: true } : {}),
     ...(maintenanceAction ? { maintenanceAction: maintenanceAction as 'install' | 'update' } : {}),
