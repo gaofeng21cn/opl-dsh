@@ -9,9 +9,10 @@ import { fileURLToPath } from 'node:url'
 for (const effort of ['high', 'max'])
   test(
     `packaged bridge forwards ${effort}, resumes native Codex identity and refuses sandbox escalation`,
+    { timeout: 10000 },
     async () => {
       const bridge = fileURLToPath(
-        new URL('../dist/execution-package/package/lib/native-harness-bridge.mjs', import.meta.url),
+        new URL('../dist/package/lib/native-harness-bridge.mjs', import.meta.url),
       )
       const fixture = fileURLToPath(new URL('./fixtures/codex-app-server.mjs', import.meta.url))
       // The bridge spawns the native command as an executable, which relies on the fixture's
@@ -41,13 +42,31 @@ for (const effort of ['high', 'max'])
           },
           stdio: ['pipe', 'pipe', 'pipe'],
         })
-        child.stderr.resume()
-        const closed = new Promise((resolve, reject) => {
-          child.once('exit', resolve)
-          child.once('error', reject)
+        let stderr = ''
+        child.stderr.setEncoding('utf8')
+        child.stderr.on('data', (chunk) => {
+          stderr += chunk
         })
         let seq = 0
         const pending = new Map()
+        const rejectPending = (reason) => {
+          for (const p of pending.values()) p.reject(reason)
+          pending.clear()
+        }
+        const closed = new Promise((resolve, reject) => {
+          child.once('exit', (code, signal) => {
+            rejectPending(
+              Error(
+                `packaged bridge exited early (${code ?? signal})${stderr ? `: ${stderr.trim()}` : ''}`,
+              ),
+            )
+            resolve()
+          })
+          child.once('error', (error) => {
+            rejectPending(error)
+            reject(error)
+          })
+        })
         createInterface({ input: child.stdout }).on('line', (line) => {
           const m = JSON.parse(line)
           if (m.method === 'session/update') output.push(m.params.update.content.text)
@@ -92,7 +111,6 @@ for (const effort of ['high', 'max'])
           await rm(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
       }
     },
-    { timeout: 10000 },
   )
 // A `.cmd`/`.bat` launcher is not an executable image: it must be handed to cmd.exe and can live
 // under an absolute path with spaces. Node's own Windows argument escaping used to turn the inner

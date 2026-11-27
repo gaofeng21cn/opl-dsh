@@ -20,7 +20,12 @@ import {
   type PermissionMemorySettings,
 } from '../../shared/client/FeaturePreferences.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import { SETTINGS_ORDER } from '../../shared/client/settings-navigation.ts'
+import {
+  SETTINGS_NAVIGATION_NS,
+  SETTINGS_ORDER,
+  settingsNavigationEn,
+  settingsNavigationZh,
+} from '../../shared/client/settings-navigation.ts'
 import { installGoogleAccountChoices } from './google-account-choices.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import { watchStopEditSession } from './stop-edit-session-watch.ts'
@@ -138,6 +143,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 export function apply(ctx: Context, config: ClientConfig = {}): void {
   ctx.effect(() =>
+    ctx.locale.register(SETTINGS_NAVIGATION_NS, {
+      zh: settingsNavigationZh,
+      en: settingsNavigationEn,
+    }),
+  )
+  ctx.effect(() =>
     ctx.locale.register(MINIMAX_ACCOUNT_NAMESPACE, { zh: minimaxAccountZh, en: minimaxAccountEn }),
   )
   ctx.effect(() =>
@@ -199,7 +210,7 @@ export function apply(ctx: Context, config: ClientConfig = {}): void {
           name: 'settings.section',
           id: 'opl-execution',
           order: SETTINGS_ORDER['opl-execution'],
-          label: () => '执行引擎与协作',
+          label: () => ctx.locale.bind(SETTINGS_NAVIGATION_NS)('opl-execution'),
           inject: () => ({
             call,
             minimax: { form: executionForm, t: minimaxT },
