@@ -115,6 +115,7 @@ test('installer directory files match artifact payloadFiles exactly', async () =
   actual.delete('artifact.json')
   assert.deepEqual([...actual.keys()].sort(), Object.keys(manifest.payloadFiles).sort())
   assert.ok(Object.hasOwn(manifest.payloadFiles, 'installation-paths.d.mts'))
+  assert.ok(Object.hasOwn(manifest.payloadFiles, 'runtime-backups.mjs'))
   assert.equal(Object.hasOwn(manifest.payloadFiles, 'cleanup-skill/quit-windows.ps1'), false)
   assert.equal(Object.hasOwn(manifest.payloadFiles, 'kimi-cu.mjs'), false)
   assert.equal(Object.hasOwn(manifest.payloadFiles, 'split-plugins.cjs'), false)

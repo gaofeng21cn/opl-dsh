@@ -357,6 +357,7 @@ for (const file of [
   'skill/coordinator/runtime.mjs',
   'skill/coordinator/state.mjs',
   'windows-lifecycle.mjs',
+  'runtime-backups.mjs',
   name,
 ]) {
   payloadFiles[file] = createHash('sha256')
