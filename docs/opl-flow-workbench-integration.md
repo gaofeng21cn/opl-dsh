@@ -36,7 +36,7 @@ OPL DSH 的核心定位是**官方 DeepSeek Harness 的轻量化增强套件**�
    - 非微信 `channel_access` 插件过滤等相关桥接修复归属 `opl-framework-bridge`（Wave 2），不在 `opl-dsh` 侧重复过滤或旁路适配。
 3. **上游保留面与 DSH 只读原则**：
    - Framework v2 仅保留只读 `opl_base` 版本展示与 `source_refresh`；
-   - `opl-dsh` 如需消费外部状态投影（例如 [domain-agent-presets.ts](../src/collaboration/host/domain-agent-presets.ts) 通过 `opl app state --profile fast --json` 读取领域智能体预设），必须保持严格只读，不得调用已删除的 v1 CLI 或引入多安装切换/回滚写操作。
+   - `opl-dsh` 如需消费外部状态投影（例如 [domain-agent-presets.ts](../src/collaboration/host/domain-agent-presets.ts)），应优先通过本机 `opld` JSON-RPC（`app.state.get` / `pack.list`）只读读取领域智能体预设（仅保留 `opl app state --profile fast --json` 作为 v1 兼容回退），必须保持严格只读，不得调用已删除的 v1 写命令或引入多安装切换/回滚写操作。
 
 ---
 
