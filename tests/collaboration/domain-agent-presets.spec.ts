@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -9,6 +10,7 @@ import {
   domainAgentPresetDefinition,
   domainAgentPresetId,
   parseDomainAgentProjection,
+  readDomainAgentDefinitions,
   type DomainAgentDefinition,
 } from '../../src/collaboration/host/domain-agent-presets.ts'
 
@@ -121,6 +123,125 @@ describe('OPL domain Agent projection', () => {
     ])
     entry.installations[0].active = false
     expect(parseDomainAgentProjection(value)).toEqual([])
+  })
+
+  it('resolves Framework v2 pack.list install_path and plugin:skill visible entry', () => {
+    const value = projection({
+      configured_carrier: null,
+      capability_metadata: {},
+      home_shortcuts: [
+        {
+          shortcut_id: 'research',
+          default_visible: true,
+          route: {
+            route_kind: 'agent_package_shortcut',
+            executor: 'codex_cli',
+            codex_visible_entry: 'med-autoscience:med-autoscience',
+          },
+        },
+      ],
+    })
+    const packages = [
+      {
+        package_id: 'mas',
+        enabled: true,
+        install_path: carrierDirectory,
+        provides: { skills: [{ id: 'med-autoscience' }] },
+      },
+    ]
+    expect(parseDomainAgentProjection(value, packages)).toEqual([
+      {
+        packageId: 'mas',
+        name: 'Med Auto Science',
+        description: '医学研究与论文工作。',
+        shortcutId: 'research',
+        visibleEntry: 'med-autoscience:med-autoscience',
+        requiredSkillIds: ['med-autoscience'],
+        skillsDirectory,
+      },
+    ])
+  })
+
+  it('reads domain agents over opld handshake + app.state.get + pack.list IPC', async () => {
+    if (process.platform === 'win32') return
+    const stateDir = await mkdtemp('/tmp/opld-dsh-test-')
+    const prevStateDir = process.env.OPL_STATE_DIR
+    cleanups.push(async () => {
+      if (prevStateDir === undefined) delete process.env.OPL_STATE_DIR
+      else process.env.OPL_STATE_DIR = prevStateDir
+      await rm(stateDir, { recursive: true, force: true })
+    })
+    const runDir = join(stateDir, 'run')
+    await mkdir(runDir, { recursive: true })
+    const socketPath = join(runDir, 'opld.sock')
+    const token = 'test-opld-token'
+    const methods: string[] = []
+    const server = createServer((conn) => {
+      let buf = ''
+      conn.on('data', (chunk) => {
+        buf += chunk.toString('utf8')
+        let idx: number
+        while ((idx = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, idx).trim()
+          buf = buf.slice(idx + 1)
+          if (!line) continue
+          const req = JSON.parse(line) as {
+            id: number
+            method: string
+            params?: Record<string, unknown>
+          }
+          methods.push(req.method)
+          if (req.method === 'daemon.handshake') {
+            expect(req.params?.token).toBe(token)
+            conn.write(
+              `${JSON.stringify({ jsonrpc: '2.0', id: req.id, result: { api_version: '2.0' } })}\n`,
+            )
+          } else if (req.method === 'app.state.get') {
+            const v2State = projection({ configured_carrier: null, capability_metadata: {} })
+            v2State.app_state.agent_packages.directory.entries[0].home_shortcuts[0].route.codex_visible_entry =
+              'med-autoscience:med-autoscience'
+            conn.write(`${JSON.stringify({ jsonrpc: '2.0', id: req.id, result: v2State })}\n`)
+          } else if (req.method === 'pack.list') {
+            conn.write(
+              `${JSON.stringify({
+                jsonrpc: '2.0',
+                id: req.id,
+                result: {
+                  packages: [
+                    {
+                      package_id: 'mas',
+                      enabled: true,
+                      install_path: carrierDirectory,
+                      provides: { skills: [{ id: 'med-autoscience' }] },
+                    },
+                  ],
+                },
+              })}\n`,
+            )
+          }
+        }
+      })
+    })
+    await new Promise<void>((resolveListen) => server.listen(socketPath, resolveListen))
+    cleanups.push(() => new Promise<void>((resolveClose) => server.close(() => resolveClose())))
+    await writeFile(
+      join(runDir, 'opld.session.json'),
+      JSON.stringify({ pid: process.pid, socket_path: socketPath, token }),
+    )
+    process.env.OPL_STATE_DIR = stateDir
+    const agents = await readDomainAgentDefinitions()
+    expect(methods).toEqual(['daemon.handshake', 'app.state.get', 'pack.list'])
+    expect(agents).toEqual([
+      {
+        packageId: 'mas',
+        name: 'Med Auto Science',
+        description: '医学研究与论文工作。',
+        shortcutId: 'research',
+        visibleEntry: 'med-autoscience:med-autoscience',
+        requiredSkillIds: ['med-autoscience'],
+        skillsDirectory,
+      },
+    ])
   })
 
   it.each([
