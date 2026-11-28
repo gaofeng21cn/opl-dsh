@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
-import { readFile, stat } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { OplFlowAvailability } from '../contracts/index.ts'
 
 export interface ProbeOplFlowOptions {
@@ -66,12 +66,56 @@ export async function probeOplFlowControlPlane(
     return { available: false, reason: 'bound ledger directory does not exist' }
   }
 
+  const defaultStateDirForHome = (homeRoot: string): string => {
+    if (process.platform === 'darwin') {
+      return join(homeRoot, 'Library', 'Application Support', 'OPL', 'state')
+    }
+    if (process.platform === 'win32') {
+      const localAppData =
+        asNonEmptyString(process.env.LOCALAPPDATA) ?? join(homeRoot, 'AppData', 'Local')
+      return join(localAppData, 'OPL', 'state')
+    }
+    const xdgState =
+      asNonEmptyString(process.env.XDG_STATE_HOME) ?? join(homeRoot, '.local', 'state')
+    return join(xdgState, 'opl')
+  }
+
+  const envStateDir = asNonEmptyString(process.env.OPL_STATE_DIR)
+  const envDataDir = asNonEmptyString(process.env.OPL_DATA_DIR)
+  const v2StateDirs = [
+    ...(envStateDir ? [resolve(envStateDir)] : []),
+    ...(envDataDir ? [join(resolve(envDataDir), 'opl', 'state')] : []),
+    defaultStateDirForHome(home),
+  ]
+  const v2ScriptCandidates: string[] = []
+  const seenStateDirs = new Set<string>()
+  for (const stateDir of v2StateDirs) {
+    if (seenStateDirs.has(stateDir)) continue
+    seenStateDirs.add(stateDir)
+    const flowRoot = join(stateDir, 'packages', 'opl-flow')
+    v2ScriptCandidates.push(join(flowRoot, 'current', 'scripts', 'opl_app_contribution.py'))
+    if (await isDirectory(flowRoot)) {
+      try {
+        const entries = (await readdir(flowRoot, { withFileTypes: true }))
+          .filter((entry) => entry.isDirectory() && entry.name !== 'current')
+          .map((entry) => entry.name)
+          .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+        for (const versionDir of entries) {
+          v2ScriptCandidates.push(join(flowRoot, versionDir, 'scripts', 'opl_app_contribution.py'))
+        }
+      } catch {
+        // ignore unreadable package directory
+      }
+    }
+  }
+
   const sourceRoot = asNonEmptyString(parsedConfig.source_root)
   const scriptCandidates = [
     options.scriptPath,
     asNonEmptyString(process.env.OPL_FLOW_CONTRIBUTION_SCRIPT),
     asNonEmptyString(parsedConfig.contribution_script),
     sourceRoot ? join(sourceRoot, 'scripts', 'opl_app_contribution.py') : undefined,
+    ...v2ScriptCandidates,
     join(home, '.opl', 'packages', 'opl-flow', 'current', 'scripts', 'opl_app_contribution.py'),
     join(
       home,

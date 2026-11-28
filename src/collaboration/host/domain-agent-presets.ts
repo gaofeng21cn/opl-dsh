@@ -1,6 +1,8 @@
 import { execFile as execFileCallback } from 'node:child_process'
-import { stat } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
+import { readFile, stat } from 'node:fs/promises'
+import { createConnection } from 'node:net'
+import { homedir } from 'node:os'
+import { isAbsolute, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
@@ -8,6 +10,7 @@ import type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 const execFile = promisify(execFileCallback)
 const AGENT_ID = /^[a-z][a-z0-9-]*$/u
 const SKILL_ID = /^[a-z0-9][a-z0-9-]*$/u
+const VISIBLE_ENTRY_ID = /^[a-z0-9][a-z0-9-:]*(?::[a-z0-9][a-z0-9-]*)?$/u
 
 // Plan-mode instructions mirrored from the official standard preset
 // (@deepseek-ai/dsh-web-app presets/standard.patch.yml). Keep in sync.
@@ -55,11 +58,36 @@ const validId = (value: unknown, pattern: RegExp): string => {
   return id
 }
 
+const validSkillId = (value: unknown): string => {
+  const id = text(value)
+  if (SKILL_ID.test(id)) return id
+  if (VISIBLE_ENTRY_ID.test(id) && id.includes(':')) {
+    const suffix = id.split(':').at(-1) ?? ''
+    if (SKILL_ID.test(suffix)) return suffix
+  }
+  throw Error('OPL 智能体或 Skill 标识无效')
+}
+
 /** Read only launch-ready, explicitly visible standard Agents from the canonical App projection. */
-export function parseDomainAgentProjection(input: unknown): DomainAgentDefinition[] {
+export function parseDomainAgentProjection(
+  input: unknown,
+  installedPackages?: unknown,
+): DomainAgentDefinition[] {
   const projection = object(object(input).app_state?.agent_packages ?? object(input).agent_packages)
   const directory = object(projection.directory)
   const statusIndex = object(projection.status_index)
+  const rawPackages =
+    installedPackages !== undefined
+      ? Array.isArray(installedPackages)
+        ? installedPackages
+        : records(object(installedPackages).packages)
+      : records(object(input).packages)
+  const packagesById = new Map(
+    rawPackages
+      .filter((row): row is Record<string, any> => Boolean(row && typeof row === 'object'))
+      .map((row) => [text(row.package_id ?? row.id), row] as const)
+      .filter(([id]) => Boolean(id)),
+  )
   const statuses = new Map(
     records(statusIndex.packages).map((row) => [text(row.package_id ?? row.id), row] as const),
   )
@@ -68,6 +96,8 @@ export function parseDomainAgentProjection(input: unknown): DomainAgentDefinitio
     const packageId = text(entry.package_id ?? entry.id)
     if (!AGENT_ID.test(packageId) || text(entry.package_role ?? entry.role) !== 'standard_agent')
       continue
+    const pkg = packagesById.get(packageId)
+    if (pkg && pkg.enabled === false) continue
     const status = statuses.get(packageId) ?? {}
     const readiness = object(entry.readiness)
     const launchAllowed = readiness.launch_allowed ?? status.launch_allowed
@@ -109,6 +139,13 @@ export function parseDomainAgentProjection(input: unknown): DomainAgentDefinitio
       )
       pluginSourcePath = text(installation?.location)
     }
+    if (!isAbsolute(pluginSourcePath)) {
+      const candidate =
+        text(entry.install_path) || text(entry.physical_path) || (pkg ? text(pkg.install_path) : '')
+      if (isAbsolute(candidate)) {
+        pluginSourcePath = candidate
+      }
+    }
     if (!isAbsolute(pluginSourcePath)) continue
     const preferences = new Map(
       records(status.home_shortcut_preferences).map((row) => [text(row.shortcut_id), row] as const),
@@ -128,12 +165,13 @@ export function parseDomainAgentProjection(input: unknown): DomainAgentDefinitio
       )
         continue
       try {
+        const rawSkills = strings(object(entry.capability_metadata).required_skill_ids)
+        const v2Skills =
+          rawSkills.length > 0
+            ? rawSkills
+            : records(object(pkg?.provides).skills).map((skill) => skill.id ?? skill.name)
         const requiredSkillIds = [
-          ...new Set(
-            strings(object(entry.capability_metadata).required_skill_ids)
-              .map((item) => validId(item, SKILL_ID))
-              .filter(Boolean),
-          ),
+          ...new Set(v2Skills.map((item) => validSkillId(item)).filter(Boolean)),
         ] as string[]
         if (!requiredSkillIds.length) continue
         result.push({
@@ -141,7 +179,7 @@ export function parseDomainAgentProjection(input: unknown): DomainAgentDefinitio
           name: localized(entry.display_name_i18n, text(entry.display_name) || packageId),
           description: localized(entry.description_i18n, text(entry.description)),
           shortcutId,
-          visibleEntry: validId(visibleEntry, SKILL_ID),
+          visibleEntry: validId(visibleEntry, VISIBLE_ENTRY_ID),
           requiredSkillIds,
           skillsDirectory: join(pluginSourcePath, 'skills'),
         })
@@ -154,10 +192,118 @@ export function parseDomainAgentProjection(input: unknown): DomainAgentDefinitio
   return result
 }
 
-export async function readDomainAgentDefinitions(
-  run: Exec = execFile,
-): Promise<DomainAgentDefinition[]> {
-  const { stdout } = await run('opl', ['app', 'state', '--profile', 'fast', '--json'], {
+function sessionCandidatePaths(): string[] {
+  const envState = text(process.env.OPL_STATE_DIR)
+  if (envState) return [join(resolve(envState), 'run', 'opld.session.json')]
+  const envData = text(process.env.OPL_DATA_DIR)
+  if (envData) return [join(resolve(envData), 'opl', 'state', 'run', 'opld.session.json')]
+  const home = text(process.env.HOME) || homedir()
+  const stateDir =
+    process.platform === 'darwin'
+      ? join(home, 'Library', 'Application Support', 'OPL', 'state')
+      : process.platform === 'win32'
+        ? join(text(process.env.LOCALAPPDATA) || join(home, 'AppData', 'Local'), 'OPL', 'state')
+        : join(text(process.env.XDG_STATE_HOME) || join(home, '.local', 'state'), 'opl')
+  return [
+    join(stateDir, 'run', 'opld.session.json'),
+    join(home, '.opl', 'run', 'opld.session.json'),
+  ]
+}
+
+async function readOpldSession(): Promise<{ socketPath: string; token: string } | null> {
+  for (const candidate of sessionCandidatePaths()) {
+    try {
+      const parsed = JSON.parse(await readFile(candidate, 'utf8')) as Record<string, unknown>
+      const socketPath = text(parsed.socket_path)
+      const token = text(parsed.token)
+      if (socketPath && token) return { socketPath, token }
+    } catch {
+      // ignore absent or malformed session file
+    }
+  }
+  return null
+}
+
+async function queryDomainAgentsViaOpld(timeoutMs = 5000): Promise<DomainAgentDefinition[] | null> {
+  const session = await readOpldSession()
+  if (!session) return null
+  return new Promise<DomainAgentDefinition[] | null>((resolveResult) => {
+    const socket = createConnection(session.socketPath)
+    let buffer = ''
+    let settled = false
+    let nextId = 1
+    const pending = new Map<
+      number,
+      { resolve: (v: unknown) => void; reject: (e: unknown) => void }
+    >()
+    const finish = (value: DomainAgentDefinition[] | null) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      for (const entry of pending.values()) entry.reject(new Error('opld connection closed'))
+      pending.clear()
+      socket.destroy()
+      resolveResult(value)
+    }
+    const timer = setTimeout(() => finish(null), timeoutMs)
+    const call = (method: string, params: Record<string, unknown>) =>
+      new Promise<unknown>((res, rej) => {
+        const id = nextId++
+        pending.set(id, { resolve: res, reject: rej })
+        socket.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`)
+      })
+    socket.on('data', (chunk) => {
+      buffer += chunk.toString('utf8')
+      let idx: number
+      while ((idx = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, idx).trim()
+        buffer = buffer.slice(idx + 1)
+        if (!line) continue
+        try {
+          const msg = JSON.parse(line) as {
+            id?: number
+            result?: unknown
+            error?: { message?: string }
+          }
+          if (typeof msg.id === 'number' && pending.has(msg.id)) {
+            const waiter = pending.get(msg.id)!
+            pending.delete(msg.id)
+            if (msg.error) waiter.reject(new Error(msg.error.message || 'opld rpc error'))
+            else waiter.resolve(msg.result)
+          }
+        } catch {
+          // wait for complete JSON-RPC payload
+        }
+      }
+    })
+    socket.on('error', () => finish(null))
+    socket.on('close', () => finish(null))
+    socket.on('connect', async () => {
+      try {
+        await call('daemon.handshake', {
+          token: session.token,
+          client_kind: 'sdk_python',
+          api_version: '2.0',
+        })
+        const [appState, packList] = await Promise.all([
+          call('app.state.get', { profile: 'fast' }),
+          call('pack.list', { intent: 'agent', enabled_only: true }),
+        ])
+        finish(parseDomainAgentProjection(appState, (packList as any)?.packages ?? packList))
+      } catch {
+        finish(null)
+      }
+    })
+  })
+}
+
+export async function readDomainAgentDefinitions(run?: Exec): Promise<DomainAgentDefinition[]> {
+  if (!run) {
+    const viaIpc = await queryDomainAgentsViaOpld()
+    if (viaIpc !== null) return viaIpc
+  }
+  const exec = run ?? execFile
+  const { stdout } = await exec('opl', ['app', 'state', '--profile', 'fast', '--json'], {
     timeout: 120000,
     maxBuffer: 8 * 1024 * 1024,
     windowsHide: true,

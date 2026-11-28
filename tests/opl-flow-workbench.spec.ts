@@ -82,6 +82,24 @@ describe('OPL Flow conditional DSH workbench', () => {
       instanceName: 'demo',
       scriptPath,
     })
+
+    const v2StateDir = join(tmp, 'v2-state')
+    const v2ScriptsDir = join(v2StateDir, 'packages', 'opl-flow', '0.4.0', 'scripts')
+    mkdirSync(v2ScriptsDir, { recursive: true })
+    const v2ScriptPath = join(v2ScriptsDir, 'opl_app_contribution.py')
+    writeFileSync(v2ScriptPath, '#!/usr/bin/env python3\n')
+    const prevStateDir = process.env.OPL_STATE_DIR
+    cleanups.push(() => {
+      if (prevStateDir === undefined) delete process.env.OPL_STATE_DIR
+      else process.env.OPL_STATE_DIR = prevStateDir
+    })
+    process.env.OPL_STATE_DIR = v2StateDir
+    const v2Ready = await probeOplFlowControlPlane({ homeDir: tmp })
+    expect(v2Ready).toMatchObject({
+      available: true,
+      instanceName: 'demo',
+      scriptPath: v2ScriptPath,
+    })
   })
 
   it('registers zero sidebar/main slots when unavailable and mounts order-34 slots when available', async () => {
