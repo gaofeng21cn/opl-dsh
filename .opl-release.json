@@ -1,0 +1,20 @@
+{
+  "schema_version": "opl.release.v1",
+  "subject_id": "opl-dsh",
+  "kind": "product",
+  "repository": "gaofeng21cn/opl-dsh",
+  "schedule": "owner_schedule",
+  "trigger": "owner_schedule",
+  "tag_prefix": "opl-dsh-v",
+  "lanes": [
+    {
+      "lane": "stable",
+      "workflow": "stable-release.yml",
+      "primary": true,
+      "daily_dispatch": true,
+      "channel": {
+        "kind": "github_release"
+      }
+    }
+  ]
+}
